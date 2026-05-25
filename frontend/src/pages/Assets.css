@@ -1,0 +1,138 @@
+.assets-page__description {
+  margin: calc(-1 * var(--space-3)) 0 var(--space-5);
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.assets-page__description code {
+  font-family: var(--font-metric);
+  font-size: 0.85em;
+}
+
+.assets-page__banner {
+  margin-bottom: var(--space-4);
+}
+
+.assets-page__table-empty {
+  margin-bottom: 0;
+}
+
+.assets-main {
+  display: grid;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+@media (min-width: 960px) {
+  .assets-main {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 35%);
+    align-items: start;
+  }
+}
+
+.assets-main__table {
+  min-width: 0;
+}
+
+.assets-main__chart {
+  min-width: 0;
+}
+
+.assets-allocation-card.ui-chart-card {
+  margin-bottom: 0;
+}
+
+.assets-chart-panel {
+  min-height: 280px;
+}
+
+.assets-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.assets-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.assets-table th,
+.assets-table td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.assets-table th {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  letter-spacing: 0.06em;
+}
+
+.assets-table__sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.assets-table__sortable:hover {
+  color: var(--text-primary);
+}
+
+.assets-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.assets-table__row-clickable {
+  cursor: pointer;
+}
+
+.assets-table tbody tr:hover td {
+  background: var(--bg-surface-hover);
+}
+
+.num-col {
+  text-align: right;
+  font-family: var(--font-metric);
+  font-variant-numeric: tabular-nums;
+}
+
+.symbol-col {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.assets-table__symbol-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.assets-table__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.assets-previous {
+  margin-top: var(--space-4);
+}
+
+.assets-previous__table {
+  margin-top: var(--space-1);
+}
+
+.assets-previous .ui-section-card__body:empty {
+  display: none;
+}
+
+@media (max-width: 959px) {
+  .assets-main__chart {
+    order: -1;
+  }
+}

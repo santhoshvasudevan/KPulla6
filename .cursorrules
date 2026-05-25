@@ -1,0 +1,61 @@
+# KPulla6 — Portfolio Insight (active project)
+
+## Project identity
+- Local-first portfolio tracker: Django 5 + DRF backend, React 19 + Vite frontend, PostgreSQL 16 (Docker Compose).
+- API base: `/api/v1`. Transactions are source of truth; prices/FX cached in DB.
+- Key docs: `AGENTS.md`, `docs/current-state.md`, `docs/architecture.md`, `docs/api-design.md`, `docs/workflows.md`.
+- Dev: `make dev` · tests: `make test` · market sync: `make refresh`.
+
+## Hard boundaries
+- **Only modify files under `KPulla6/`.**
+- **`../KPulla5/` is read-only reference** — never edit, commit, or depend on it at runtime.
+- Do not reset, wipe, or recreate user/database data (`make db-reset` only if user explicitly asks).
+- Do not install PostgreSQL globally; use `make db` (Docker Compose).
+
+## Architecture rules
+- Inspect existing code and docs before editing.
+- Smallest safe change; do not rewrite unrelated files.
+- Keep views thin; business logic in services/domain modules.
+- Finance logic in `backend/finance/` — pure Python, no Django imports.
+- Preserve `/api/v1` contracts where practical.
+- **All Portfolios** is virtual (`portfolio_scope=all`); only real portfolios are DB rows.
+
+## Backend rules
+- Django + DRF only (not FastAPI/SQLAlchemy).
+- Schema changes: Django migrations only — no runtime `ALTER TABLE`.
+- Read/render APIs (holdings, summary, performance): **no live yfinance or external market-data calls**.
+- Use cached `HistoricalPrice` and `FXRate` for read paths; manual sync via `make refresh` or refresh endpoints.
+- Sync providers (yfinance) belong in sync/management commands only, not in GET handlers.
+
+## Frontend rules
+- API-driven React; no FIFO, XIRR, TWROR, FX conversion, or benchmark math in the client.
+- Use `frontend/src/api.js` and `portfolioContext` for scoped requests.
+- Match existing page/component patterns; do not add finance calculations to JSX.
+
+## Database / data rules
+- PostgreSQL via Docker Compose (`make db`, `make migrate`).
+- Backend tests use SQLite (`DJANGO_TEST_USE_SQLITE=1` via `make test-backend`) — do not require Docker for pytest.
+- Seed: `make seed` / `manage.py seed_initial_data`.
+
+## Testing rules
+- Add or update tests for API, DB, finance, and frontend behavior changes.
+- Run relevant tests and state results clearly in the final response.
+- Backend: `make test-backend` · frontend: `cd frontend && npm test` · build: `cd frontend && npm run build`.
+
+## Documentation rules
+- Update `docs/changelog.md` for behavior, API, database, or architecture changes.
+- Update `docs/current-state.md`, `docs/api-design.md`, or `docs/architecture.md` when contracts or limitations change.
+- Do not add unsolicited README/docs unless behavior or run instructions change.
+
+## Graphify rules
+- Graphify is a **navigation aid**, not source of truth. Code, tests, migrations, and docs are authoritative.
+- Before broad or structural work, use `graphify-out/GRAPH_REPORT.md`, `graphify query "<question>"`, or `graphify-out/graph.html` to orient — prefer query over reading the full report.
+- **Run `make graphify`** after major structural changes: new Django apps, large service refactors, API flow changes, model/migration changes, frontend routing/page structure changes, or architecture shifts.
+- **Do not run Graphify** for small one-file bug fixes, UI text/style tweaks, docs-only edits, or test-only changes.
+- After routine code edits in a session, `graphify update .` (AST-only, no API cost) is enough if the graph already exists.
+
+## Final response expectations
+- Summarize what changed and why.
+- List changed files.
+- Report test/build results when code changed.
+- Note remaining assumptions or manual steps (e.g. `make refresh`, `make migrate`).

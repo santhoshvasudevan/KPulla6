@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: kpulla6_postgres
+    environment:
+      POSTGRES_DB: portfolio_insight_kpulla6
+      POSTGRES_USER: santhosh_admin
+      POSTGRES_PASSWORD: kpulla6
+    ports:
+      - "5432:5432"
+    volumes:
+      - kpulla6_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U santhosh_admin -d portfolio_insight_kpulla6"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  kpulla6_postgres_data:

@@ -1,0 +1,88 @@
+---
+description: KPulla6 frontend design and UX rules
+alwaysApply: false
+---
+
+# KPulla6 Frontend Design Rules
+
+## Product Feel
+
+Design KPulla6 as a premium portfolio analytics dashboard: professional, calm, data-rich, trustworthy.
+Closer to institutional wealth analytics than a terminal UI or casual expense tracker.
+
+## Architecture Constraints (non-negotiable)
+
+- React is API-driven — render values from `/api/v1` only.
+- Do NOT implement finance calculations in React: no FIFO, XIRR, TWROR, FX conversion, benchmark normalization, or valuation logic.
+- Display formatting (currency, percent, axis labels, pie tooltip %) is allowed.
+- Preserve existing API contracts unless explicitly requested.
+- Do not modify backend or KPulla5.
+
+## Visual System — Institutional Slate
+
+Canonical tokens live in `frontend/src/index.css`. Use these names in new code:
+
+- Backgrounds: `--bg-app`, `--bg-surface`, `--bg-surface-raised`, `--bg-surface-hover`
+- Borders: `--border-subtle`, `--border-strong`
+- Text: `--text-primary`, `--text-secondary`, `--text-muted`
+- Semantic: `--accent`, `--gain`, `--loss`, `--warn`
+- Charts: `--chart-1` … `--chart-6`
+
+Use only canonical token names in CSS. Do not introduce legacy `--color-*` or `--font-mono` aliases.
+
+- Cards: elevated surfaces, 8px radius, subtle border/shadow — not hard 1px grid gaps everywhere (later phases).
+- Typography: Inter; tabular nums for metrics.
+- Restrained palette: accent for controls, green/red ONLY for P/L, amber for warnings.
+- Avoid neon terminal colors, pure black backgrounds, decorative gradients.
+
+Full spec: `docs/frontend-design.md`.
+
+## Required Components (Phase 1+ — prefer reuse over one-off markup)
+
+- PageHeader, MetricCard, ChartCard, SectionCard, DataTable
+- StatusBadge, WarningBanner, EmptyState
+- CurrencyValue, PercentValue, SegmentedControl, Button
+
+Before adding inline styles or new CSS classes on a page, check whether an existing or planned component fits.
+
+## Page Rules
+
+### Dashboard
+- Performance chart is full-width and visually dominant.
+- KPI row above chart; Total Value is the primary metric.
+- Group metric, range, and benchmark controls in the chart toolbar.
+- Show FX/benchmark warnings near the chart.
+- Do not add client-side performance calculations.
+
+### Assets
+- Table-first; allocation chart supports the table.
+- Closed holdings collapsed by default.
+- Numeric columns right-aligned.
+- StatusBadge for ok, closed, oversold, price_missing, fx_unavailable.
+
+### Asset Detail
+- Tear-sheet layout: hero KPIs, grouped sections, transaction table.
+- Breadcrumb to Assets.
+
+### Transactions
+- Type badges via `.ui-txn-type`; right-aligned numbers.
+- Import errors in WarningBanner-style alert.
+- TransactionModal: canonical tokens, modal-local form styles, shared `Button`.
+
+### Settings
+- SectionCard layout; explain display currency sync and cached data assumptions.
+
+## Accessibility
+
+- Do not rely on color alone for P/L or status.
+- Maintain WCAG-friendly contrast on dark surfaces.
+- Preserve aria-labels on portfolio/currency selectors and chart controls.
+
+## Implementation Discipline
+
+- Inspect `frontend/src` before editing.
+- Smallest safe change; do not rewrite unrelated pages in one PR.
+- Phase 0–8B complete (page migrations, modal cleanup, token cleanup).
+- `DataTable` deferred — use page-local table CSS and `.ui-txn-type` for txn types.
+- Update frontend tests when UI text, roles, or structure changes.
+- Run `make test-frontend` and report results.

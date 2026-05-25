@@ -1,0 +1,37 @@
+---
+description: KPulla6 core project rules (Django, React, PostgreSQL)
+alwaysApply: true
+---
+
+# KPulla6 — Portfolio Insight
+
+## Project identity
+- **Active project:** KPulla6 only. **`../KPulla5/` is read-only reference** — never modify.
+- Backend: Django 5 + Django REST Framework. Frontend: React + Vite. DB: PostgreSQL via Docker Compose (`make db`).
+- API: `/api/v1`. Key docs: `AGENTS.md`, `docs/current-state.md`, `docs/architecture.md`, `docs/api-design.md`.
+
+## Safety
+- Inspect existing code before editing. Smallest safe change. Do not rewrite unrelated files.
+- Do not reset, wipe, or recreate user data unless the user explicitly asks.
+
+## Backend
+- Schema: Django migrations only (no runtime `ALTER TABLE`).
+- Thin DRF views; use-case logic in services/domain modules.
+- Pure finance in `backend/finance/` — no Django ORM imports.
+- Transactions = source of truth. `HistoricalPrice` and `FXRate` = cached read inputs.
+- Read/render APIs (holdings, summary, performance): **no live yfinance or external market-data calls**. Sync belongs in management commands / refresh endpoints only.
+
+## Frontend
+- API-driven React only. **No** FIFO, XIRR, TWROR, FX conversion, benchmark normalization, or portfolio valuation in the client.
+- Surface backend `warnings`, `price_status`, `fx_status`, `holding_status` clearly.
+
+## Testing
+- Add/update tests for API, DB, finance, sync, and frontend behavior changes.
+- Run relevant tests (`make test-backend`, `cd frontend && npm test`) and state results.
+
+## Docs
+- API → `docs/api-design.md` · schema/data → `docs/database.md` · architecture → `docs/architecture.md`
+- Completed work → `docs/current-state.md` + `docs/changelog.md`
+
+## Graphify
+- See `.cursor/rules/graphify.mdc`. Navigation aid only — code, tests, migrations, and docs are source of truth.

@@ -1,0 +1,31 @@
+import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import App from './App';
+
+vi.mock('./api', () => ({
+  fetchPortfolios: vi.fn().mockResolvedValue([]),
+  getSettings: vi.fn().mockResolvedValue({ display_currency: 'EUR' }),
+  updateSettings: vi.fn(),
+  invalidateDashboardSummaryCache: vi.fn(),
+}));
+
+// Mock components
+vi.mock('./pages/Dashboard', () => ({ default: () => <div data-testid="dashboard">Dashboard Page</div> }));
+vi.mock('./pages/Transactions', () => ({ default: () => <div data-testid="transactions">Transactions Page</div> }));
+vi.mock('./pages/Assets', () => ({ default: () => <div data-testid="assets">Assets Page</div> }));
+vi.mock('./pages/Settings', () => ({ default: () => <div data-testid="settings">Settings Page</div> }));
+vi.mock('./pages/AssetDetail', () => ({ default: () => <div data-testid="asset-detail">Asset Detail Page</div> }));
+
+describe('App routing', () => {
+  it('renders Dashboard by default', () => {
+    window.history.pushState({}, 'Test', '/');
+    render(<App />);
+    expect(screen.getByTestId('dashboard')).toBeInTheDocument();
+  });
+
+  it('renders Transactions page on /transactions', () => {
+    window.history.pushState({}, 'Test', '/transactions');
+    render(<App />);
+    expect(screen.getByTestId('transactions')).toBeInTheDocument();
+  });
+});

@@ -1,0 +1,104 @@
+.asset-detail__breadcrumb-link {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.asset-detail__breadcrumb-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.asset-detail__banner {
+  margin-bottom: var(--space-4);
+}
+
+.asset-detail-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.asset-detail-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.asset-detail__dl {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.asset-detail__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin: 0;
+}
+
+.asset-detail__row-label {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.asset-detail__row-value {
+  margin: 0;
+  font-family: var(--font-metric);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.asset-detail__quantity {
+  font-family: var(--font-metric);
+  font-variant-numeric: tabular-nums;
+}
+
+.asset-detail__status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.asset-detail-table-wrapper {
+  overflow-x: auto;
+  margin: calc(-1 * var(--space-1));
+}
+
+.asset-detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.asset-detail-table th,
+.asset-detail-table td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.asset-detail-table th {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.asset-detail-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.asset-detail-table tbody tr:hover td {
+  background: var(--bg-surface-hover);
+}
+
+.asset-detail-table .num-col {
+  text-align: right;
+  font-family: var(--font-metric);
+  font-variant-numeric: tabular-nums;
+}

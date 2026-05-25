@@ -1,0 +1,54 @@
+---
+description: KPulla6 Django/DRF backend development
+globs: backend/**/*
+alwaysApply: false
+---
+
+# Django / DRF — KPulla6
+
+General project rules: `.cursor/rules/project-core.mdc`. Graphify: `.cursor/rules/graphify.mdc`.
+
+**If unsure about Django/DRF behavior, consult official Django and DRF docs — do not guess.**
+
+## Django structure
+- Domain-focused apps: `portfolios`, `transactions`, `market_data`, `fx`, `settings_app`, `api`.
+- Models = persistence only. Use-cases in `*_service.py` / `services.py` (e.g. `holdings_service`, `summary_service`, `performance_service`, `transactions/services.py`).
+- Reusable finance in `backend/finance/` (pure Python). ORM → DTO via `transactions/finance_adapter.py`.
+- Thin DRF views (`APIView` pattern used project-wide); delegate to services.
+
+## DRF
+- Serializers: validation + response shape only — no complex business logic.
+- Match existing style (`APIView`, query-param scoping via `portfolios/scope.py`).
+- Preserve `/api/v1` contracts unless intentionally changing API.
+- Errors: `400` bad input · `404` missing/inactive portfolio or asset · `422` scope conflicts (e.g. `portfolio_scope=all` + `portfolio_id`). Use `{"detail": "..."}` consistently.
+
+## Database
+- Django migrations only — never runtime schema changes. Never reset/wipe user data.
+- Index/constraint common filters (symbol, date, portfolio FK).
+- `select_related` / `prefetch_related` on list endpoints; avoid N+1 on holdings, summary, performance, transactions.
+
+## Market data
+- **Read APIs:** cached `HistoricalPrice` + `FXRate` only — no live yfinance/external calls.
+- **Sync:** providers in `market_data/providers/`, `fx/providers/`; commands `sync_prices`, `sync_benchmarks`, `sync_fx_rates`, refresh endpoints.
+- Missing price/FX → explicit `price_status`, `fx_status`, `warnings`; never crash read paths.
+
+## Finance
+- Transactions = source of truth. Metrics computed in services + `backend/finance/`, not React.
+- Preserve documented FIFO, fees, oversell, splits, XIRR, TWROR behavior (see `docs/api-design.md`, tests).
+
+## Testing
+- pytest-django in `backend/tests/`: models, services, serializers, APIs.
+- Mock yfinance/external providers in sync tests. Regression tests for bug fixes.
+- Run `make test-backend` for backend changes; state results.
+
+## Security / scalability
+- Secrets via env (`.env`); keep `DEBUG` / `ALLOWED_HOSTS` / CORS environment-specific. Do not log secrets.
+- Keep sync logic in services/commands (future Celery/RQ). No long blocking provider calls in GET handlers.
+
+## Graphify
+- Broad Django architecture questions: `graphify query`, `graphify path`, or `GRAPH_REPORT.md` first.
+- Update graph only after major structural/API/model/service changes (`graphify update .` / `make graphify`).
+
+## Docs
+- API → `docs/api-design.md` · schema → `docs/database.md` · architecture → `docs/architecture.md`
+- Done → `docs/current-state.md` + `docs/changelog.md`

@@ -1,0 +1,108 @@
+.transactions-page__file-input {
+  display: none;
+}
+
+.transactions-page__add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.transactions-page__banner {
+  margin-bottom: var(--space-4);
+}
+
+.transactions-page__banner strong {
+  font-weight: 600;
+}
+
+.transactions-import-block {
+  border: 1px solid color-mix(in srgb, var(--loss) 35%, var(--border-subtle));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--loss) 8%, var(--bg-surface));
+  overflow: hidden;
+}
+
+.transactions-import-block .ui-banner {
+  margin-bottom: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.transactions-import-errors {
+  margin: 0;
+  padding: 0 var(--space-4) var(--space-4);
+  padding-left: var(--space-5);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.transactions-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.transactions-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.transactions-table th,
+.transactions-table td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.transactions-table th {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.transactions-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.transactions-table__row:hover td {
+  background: var(--bg-surface-hover);
+}
+
+.transactions-table__symbol {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.num-col {
+  text-align: right;
+  font-family: var(--font-metric);
+  font-variant-numeric: tabular-nums;
+}
+
+.actions-col {
+  text-align: right;
+  width: 1%;
+  white-space: nowrap;
+}
+
+.transactions-table__actions {
+  display: flex;
+  gap: var(--space-1);
+  justify-content: flex-end;
+}
+
+.transactions-table__icon-btn.ui-btn {
+  min-width: unset;
+  padding: var(--space-2);
+}
+
+.transactions-table__icon-btn--danger.ui-btn:hover {
+  color: var(--loss);
+  border-color: color-mix(in srgb, var(--loss) 40%, var(--border-subtle));
+}
