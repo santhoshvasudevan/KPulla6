@@ -1,5 +1,14 @@
 # Changelog — KPulla6
 
+## 2026-05-25 — Page layout governance documentation
+
+### Added
+- `docs/page-layouts.md` — source of truth for per-page layout; change process and ownership table
+- Cross-reference from `docs/frontend-design.md`
+
+### Notes
+- Documentation only; no app code changes
+
 ## 2026-05-25 — Dev stack stop commands
 
 ### Added

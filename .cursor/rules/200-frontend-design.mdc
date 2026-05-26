@@ -45,6 +45,18 @@ Full spec: `docs/frontend-design.md`.
 
 Before adding inline styles or new CSS classes on a page, check whether an existing or planned component fits.
 
+## Page layout governance
+
+Before changing any page layout, page structure, or major page-level UI:
+
+1. Read `docs/page-layouts.md`.
+2. Propose the layout change in `docs/page-layouts.md` first (use the template there).
+3. Mark the proposed change as **Proposed**.
+4. Do **not** implement code changes until the user approves the markdown change.
+5. After approval: implement the code change, update tests, update `docs/changelog.md`, and mark the layout change as **Implemented**.
+
+Per-page layout spec: `docs/page-layouts.md`.
+
 ## Page Rules
 
 ### Dashboard

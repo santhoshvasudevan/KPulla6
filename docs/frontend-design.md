@@ -5,6 +5,8 @@
 KPulla6 is a premium portfolio analytics dashboard: professional, calm, data-rich, and trustworthy.
 Visual direction: institutional wealth analytics, not a terminal toy or casual budgeting app.
 
+**Page layouts:** per-page structure and layout governance live in [page-layouts.md](./page-layouts.md). Propose layout changes there before coding.
+
 ## Core Principles
 
 1. Analytics first — charts and KPIs lead each page.
