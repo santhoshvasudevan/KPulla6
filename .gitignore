@@ -44,6 +44,7 @@ pnpm-debug.log*
 
 # Docker / local data
 *.pid
+backups/
 
 # Local CSV import/test files
 *.csv

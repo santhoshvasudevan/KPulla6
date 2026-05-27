@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState, useRef } from 'react';
-import { fetchTransactions, deleteTransaction, importTransactionsCsv } from '../api';
+import { useCallback, useEffect, useState, useRef, useMemo } from 'react';
+import { fetchTransactions, deleteTransaction, importTransactionsCsv, updateTransaction } from '../api';
 import TransactionModal from '../components/TransactionModal';
 import {
   PageHeader,
@@ -9,7 +9,18 @@ import {
   EmptyState,
   WarningBanner,
   CurrencyValue,
+  StatusBadge,
 } from '../components/ui';
+import {
+  isMutualFundTransaction,
+  transactionSymbolLabel,
+  transactionQuantity,
+  transactionUnitPrice,
+  transactionLineTotal,
+  navVerificationBadgeStatus,
+  navVerificationLabel,
+} from '../utils/transactionDisplay';
+import { buildTransactionUpdatePayload } from '../utils/transactionPayload';
 import { Plus, Edit2, Trash2 } from 'lucide-react';
 import './Transactions.css';
 import { usePortfolio } from '../portfolioContext';
@@ -20,13 +31,12 @@ function importBannerSeverity(status) {
   return 'info';
 }
 
-function displayLineTotal(txn) {
-  if (txn.type === 'STOCK_SPLIT') return null;
-  return Number(txn.quantity) * Number(txn.price_per_share) + Number(txn.fees || 0);
-}
-
 export default function Transactions() {
-  const { apiQuery, selectedPortfolioName, selectedPortfolioMode } = usePortfolio();
+  const { apiQuery, selectedPortfolioName, selectedPortfolioMode, portfolios } = usePortfolio();
+  const activePortfolios = useMemo(
+    () => (portfolios || []).filter((p) => p && p.is_active),
+    [portfolios]
+  );
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -37,6 +47,11 @@ export default function Transactions() {
   const [importErrors, setImportErrors] = useState([]);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef(null);
+
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkPortfolioId, setBulkPortfolioId] = useState('');
+  const [bulkStatus, setBulkStatus] = useState('');
+  const [bulkAssigning, setBulkAssigning] = useState(false);
 
   const loadData = useCallback(() => {
     setLoading(true);
@@ -55,6 +70,68 @@ export default function Transactions() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setBulkStatus('');
+  }, [apiQuery]);
+
+  const items = data?.items ?? [];
+  const allVisibleSelected =
+    items.length > 0 && items.every((txn) => selectedIds.has(txn.id));
+  const someVisibleSelected = items.some((txn) => selectedIds.has(txn.id));
+
+  const toggleSelectAll = () => {
+    if (allVisibleSelected) {
+      setSelectedIds(new Set());
+      return;
+    }
+    setSelectedIds(new Set(items.map((txn) => txn.id)));
+  };
+
+  const toggleSelectRow = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleBulkAssign = async () => {
+    const targetId = Number(bulkPortfolioId);
+    if (!targetId || selectedIds.size === 0) return;
+
+    setBulkAssigning(true);
+    setBulkStatus('');
+    const selected = items.filter((txn) => selectedIds.has(txn.id));
+    let succeeded = 0;
+    let failed = 0;
+    let firstError = '';
+
+    for (const txn of selected) {
+      try {
+        const payload = buildTransactionUpdatePayload(txn, targetId);
+        await updateTransaction(txn.id, payload);
+        succeeded += 1;
+      } catch (err) {
+        failed += 1;
+        if (!firstError) firstError = err.message || 'Update failed';
+      }
+    }
+
+    setSelectedIds(new Set());
+    setBulkAssigning(false);
+    loadData();
+
+    if (failed === 0) {
+      setBulkStatus(`Assigned ${succeeded} transaction${succeeded === 1 ? '' : 's'} successfully.`);
+    } else {
+      setBulkStatus(
+        `${succeeded} succeeded, ${failed} failed.${firstError ? ` ${firstError}` : ''}`
+      );
+    }
+  };
 
   const handleAdd = () => {
     setEditingTransaction(null);
@@ -125,7 +202,6 @@ export default function Transactions() {
     );
   }
 
-  const items = data?.items ?? [];
   const importTarget =
     selectedPortfolioMode === 'portfolio' ? selectedPortfolioName : 'Default Portfolio';
 
@@ -191,6 +267,54 @@ export default function Transactions() {
         </div>
       ) : null}
 
+      {bulkStatus ? (
+        <WarningBanner
+          severity={bulkStatus.includes('failed') ? 'warning' : 'success'}
+          message={bulkStatus}
+          className="transactions-page__banner"
+        />
+      ) : null}
+
+      {someVisibleSelected ? (
+        <div className="transactions-bulk-toolbar" aria-label="Bulk actions">
+          <span className="transactions-bulk-toolbar__count">
+            {selectedIds.size} selected
+          </span>
+          <label className="transactions-bulk-toolbar__label" htmlFor="bulk-portfolio-select">
+            Assign to portfolio
+          </label>
+          <select
+            id="bulk-portfolio-select"
+            aria-label="assign to portfolio"
+            className="transactions-bulk-toolbar__select"
+            value={bulkPortfolioId}
+            onChange={(e) => setBulkPortfolioId(e.target.value)}
+            disabled={bulkAssigning}
+          >
+            <option value="">Select portfolio…</option>
+            {activePortfolios.map((p) => (
+              <option key={p.id} value={String(p.id)}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <Button
+            variant="primary"
+            disabled={!bulkPortfolioId || bulkAssigning}
+            onClick={handleBulkAssign}
+          >
+            {bulkAssigning ? 'Assigning…' : 'Apply'}
+          </Button>
+          <Button
+            variant="ghost"
+            disabled={bulkAssigning}
+            onClick={() => setSelectedIds(new Set())}
+          >
+            Clear
+          </Button>
+        </div>
+      ) : null}
+
       {items.length === 0 ? (
         <EmptyState
           title="No transactions found."
@@ -201,28 +325,59 @@ export default function Transactions() {
           <table className="transactions-table">
             <thead>
               <tr>
+                <th className="transactions-table__select-col">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all transactions on this page"
+                    checked={allVisibleSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected;
+                    }}
+                    onChange={toggleSelectAll}
+                  />
+                </th>
                 <th>Portfolio</th>
                 <th>Symbol</th>
                 <th>Date</th>
                 <th>Type</th>
-                <th className="num-col">Quantity</th>
-                <th className="num-col">Price / Share</th>
+                <th className="num-col">Qty / Units</th>
+                <th className="num-col">Price / NAV</th>
                 <th className="num-col">Fees</th>
                 <th className="num-col">Total</th>
+                <th>NAV status</th>
                 <th className="actions-col">Actions</th>
               </tr>
             </thead>
             <tbody>
               {items.map((txn) => {
                 const isSplit = txn.type === 'STOCK_SPLIT';
-                const total = displayLineTotal(txn);
-                const currency = txn.currency || 'EUR';
+                const isMf = isMutualFundTransaction(txn);
+                const total = transactionLineTotal(txn);
+                const currency = txn.currency || (isMf ? 'INR' : 'EUR');
+                const qty = transactionQuantity(txn);
+                const unitPrice = transactionUnitPrice(txn);
+                const navStatus = txn.nav_verification_status;
 
                 return (
                   <tr key={txn.id} className="transactions-table__row">
+                    <td className="transactions-table__select-col">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select transaction ${txn.id}`}
+                        checked={selectedIds.has(txn.id)}
+                        onChange={() => toggleSelectRow(txn.id)}
+                      />
+                    </td>
                     <td>{txn.portfolio_name || (txn.portfolio_id != null ? `#${txn.portfolio_id}` : '')}</td>
-                    <td className="transactions-table__symbol">{txn.asset_symbol}</td>
-                    <td>{txn.date}</td>
+                    <td className="transactions-table__symbol">
+                      <div className="transactions-table__symbol-cell">
+                        <span>{transactionSymbolLabel(txn)}</span>
+                        {isMf && txn.folio_number ? (
+                          <span className="transactions-table__folio">Folio {txn.folio_number}</span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td>{isMf ? txn.nav_date || txn.date : txn.date}</td>
                     <td>
                       <span
                         className={`ui-txn-type ui-txn-type--${String(txn.type || '').toLowerCase().replace(/_/g, '-')}`}
@@ -231,13 +386,13 @@ export default function Transactions() {
                       </span>
                     </td>
                     <td className="num-col">
-                      {isSplit ? `${txn.split_from}:${txn.split_to}` : txn.quantity}
+                      {isSplit ? `${txn.split_from}:${txn.split_to}` : qty}
                     </td>
                     <td className="num-col">
-                      {isSplit ? (
+                      {isSplit || unitPrice == null ? (
                         '—'
                       ) : (
-                        <CurrencyValue value={txn.price_per_share} currency={currency} />
+                        <CurrencyValue value={unitPrice} currency={currency} />
                       )}
                     </td>
                     <td className="num-col">
@@ -252,6 +407,16 @@ export default function Transactions() {
                         '—'
                       ) : (
                         <CurrencyValue value={total} currency={currency} />
+                      )}
+                    </td>
+                    <td>
+                      {isMf && navStatus ? (
+                        <StatusBadge
+                          status={navVerificationBadgeStatus(navStatus)}
+                          label={navVerificationLabel(navStatus)}
+                        />
+                      ) : (
+                        '—'
                       )}
                     </td>
                     <td className="actions-col">

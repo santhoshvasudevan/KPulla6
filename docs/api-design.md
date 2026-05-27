@@ -251,9 +251,48 @@ Response: `{ "message": "Price sync scheduled" }`.
 
 ### `POST /api/v1/portfolio/force-sync` — **202 Accepted**
 
-Alias for full market-data sync: stock prices + benchmark indices + FX rates.
+Full market-data sync: stock prices + benchmark indices + FX rates + mutual fund NAVs.
 
-Response: `{ "message": "Sync started in background" }` (KPulla5-compatible message; execution is synchronous in KPulla6).
+Response (202): KPulla5-compatible `message` plus sync detail:
+
+```json
+{
+  "message": "Sync started in background",
+  "prices_success": true,
+  "benchmarks_success": true,
+  "fx_success": true,
+  "fx_partial": false,
+  "mutual_funds": {
+    "synced": 2,
+    "skipped": 0,
+    "failed": 0,
+    "success": true
+  },
+  "warnings": []
+}
+```
+
+Execution is synchronous in the request thread (no Celery/RQ). Mutual fund NAV failures do not fail stock/benchmark/FX success flags.
+
+### `POST /api/v1/nav/refresh` — **202 Accepted** (MF-9)
+
+Manual incremental mutual fund NAV sync. Optional JSON: `{ "scheme_codes": ["120503", "120504"] }`. Omit `scheme_codes` to sync all active `MutualFundProfile` rows in DB.
+
+Response:
+
+```json
+{
+  "message": "Mutual fund NAV sync completed",
+  "synced": 2,
+  "skipped": 0,
+  "failed": 0,
+  "warnings": []
+}
+```
+
+**Sync mode:** synchronous in the request thread. Calls MFAPI via `AmfiNavProvider` (live in MF-10). Read APIs never call the provider.
+
+Per-scheme provider failure increments `failed` and adds a warning; other schemes continue.
 
 ### `GET /api/v1/benchmarks/indices`
 
@@ -274,17 +313,18 @@ Returns enabled rows from `benchmark_index_config` (seeded on `make seed`):
 | `sync_prices` | Incremental stock `HistoricalPrice` sync (`--symbols` optional) |
 | `sync_benchmarks` | Incremental benchmark index sync (`asset_type=INDEX`) |
 | `sync_fx_rates` | Incremental FX pair sync (yfinance provider; logs when data missing) |
-| `sync_market_data` | Combined sync (`--symbols`, `--skip-fx`) |
+| `sync_market_data` | Combined sync (`--symbols`, `--skip-fx`, `--skip-mutual-funds`) |
 
 Make targets: `make sync-prices`, `make sync-benchmarks`, `make sync-fx`, `make sync-market-data`.
 
 ### Phase 8 read-path contracts (for summary/performance)
 
 1. `POST /api/v1/prices/refresh` — stock price sync only.
-2. `POST /api/v1/portfolio/force-sync` — stocks + benchmarks + FX.
-3. Summary and value-history endpoints use cached `HistoricalPrice` and `FXRate` only.
-4. No yfinance or external calls during read APIs.
-5. `historical_prices` unique key is `(asset_symbol, date)` only; `STOCK` and `INDEX` must not share the same symbol+date.
+2. `POST /api/v1/portfolio/force-sync` — stocks + benchmarks + FX + mutual fund NAVs.
+3. `POST /api/v1/nav/refresh` — mutual fund NAV sync only (MF-9).
+4. Summary and value-history endpoints use cached `HistoricalPrice` and `FXRate` only.
+5. No yfinance or external NAV provider calls during read APIs.
+6. `historical_prices` unique key is `(asset_symbol, date)` only; `STOCK` and `INDEX` must not share the same symbol+date.
 
 ---
 
@@ -358,3 +398,123 @@ Validation: invalid `metric` / `range` / `display_currency` → **400**; `portfo
 ```
 
 Query parameters (`portfolio_scope`, `portfolio_id`, `display_currency`, `range`, etc.) remain as documented in KPulla5 until ported.
+
+---
+
+## Indian Mutual Funds
+
+Full design: [mutual-funds.md](./mutual-funds.md).
+
+**Preservation rule:** Stock transaction, holdings, summary, performance, benchmark, FX, and CSV import endpoints remain valid. MF support is additive.
+
+### Implemented: Mutual fund transactions (MF-3)
+
+`POST/PUT /api/v1/transactions` with `"asset_type": "MUTUAL_FUND"` creates/updates mutual fund BUY/SELL rows. Stock requests omit `asset_type` and use the existing payload unchanged.
+
+**Request fields (MF BUY/SELL)**
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `asset_type` | Yes | `"MUTUAL_FUND"` |
+| `scheme_code` | Yes | AMFI canonical id → `Transaction.asset_symbol` |
+| `scheme_name` | Yes | Display metadata; upserts `MutualFundProfile` |
+| `folio_number` | Yes | Upserts `Folio` per portfolio + asset |
+| `type` | Yes | `BUY` or `SELL` only |
+| `investment_date` | Yes | Stored on `MutualFundTransactionDetail` |
+| `nav_date` | Yes | Primary valuation date → `Transaction.date` |
+| `nav` | Yes | Per-unit NAV → `Transaction.price_per_share` |
+| `units_allotted` | Yes | → `Transaction.quantity` |
+| `paid_value` | Yes | Actual cash amount |
+| `market_value` | Yes | Reference amount |
+| `portfolio_id` | No | Defaults to Default Portfolio |
+| `currency` | No | Default `INR` |
+| `fees` | No | Default `paid_value - market_value` when omitted; error if negative |
+| `fund_house`, `scheme_type`, `scheme_category`, `isin_growth`, `isin_reinvestment`, `direct_or_regular`, `growth_or_idcw` | No | Profile metadata |
+
+**Validation:**
+- No external NAV provider calls on create/update/read
+- Cached NAV compare on create/update (MF-6): `scheme_code` + `nav_date` vs `HistoricalPrice` (`MUTUAL_FUND`); no external provider; mismatch does not block save
+- Atomic create/update: `Transaction` + `MutualFundTransactionDetail` in one transaction
+- DELETE hard-deletes transaction; detail cascades; Asset/Profile/Folio retained
+
+**List/create response extensions (MF rows only):** `asset_type`, `scheme_code`, `scheme_name`, `folio_number`, `investment_date`, `nav_date`, `nav`, `units_allotted`, `paid_value`, `market_value`, `nav_verification_status`, optional `nav_verification_message`. Stock rows unchanged (no `asset_type` field).
+
+**`nav_verification_status` (MF-6):**
+
+| Status | Meaning |
+|--------|---------|
+| `VERIFIED` | Cached NAV matches entered NAV (±0.01 INR) and `market_value` matches `nav×units` (±1 INR) |
+| `NAV_MISSING` | No cached NAV row for scheme + `nav_date` — transaction still saved |
+| `NAV_MISMATCH` | Cached NAV exists but entered NAV outside tolerance |
+| `VALUE_MISMATCH` | NAV matches cache but `market_value` outside tolerance vs `nav×units` |
+| `NOT_VERIFIED` | Default on manual DB rows only |
+| `OK` / `WARNING` / `UNCHECKED` | Legacy MF-3 values on older rows |
+
+Structural invalid input (missing fields, non-positive nav/units, negative values, negative computed fees) → **400**.
+
+**PUT:** Existing MF transactions auto-route to MF handler (or send `asset_type=MUTUAL_FUND`).
+
+### Planned: Scheme lookup (MF-4+)
+
+`GET /api/v1/mutual-funds/schemes?q={search}` — search by scheme name, return `scheme_code` + metadata from DB profile table. DB only; no live AMFI on read.
+
+### Holdings (`GET /api/v1/portfolio/holdings`) — MF-4 implemented
+
+Mutual fund positions appear as additional holding rows (stock rows unchanged — no `asset_type` on stock rows):
+
+| Field | Notes |
+|-------|-------|
+| `asset_type` | `MUTUAL_FUND` on MF rows only |
+| `asset_symbol` / `scheme_code` | AMFI `scheme_code` for MF |
+| `scheme_name` | From `MutualFundProfile` |
+| `folio_number` | Folio for MF |
+| `holding_key` | `{scheme_code}:{folio_number}` |
+| `units` | Same as `quantity` (units) for MF |
+| `latest_nav` | Cached NAV (MF); stocks keep `latest_price` |
+| `latest_price` | Also set to latest NAV on MF rows (backward compatibility) |
+| `nav_status` | `ok` \| `nav_missing` (MF); stocks keep `price_status` |
+| `price_status` | `ok` \| `price_missing`; MF mirrors NAV (`nav_missing` → `price_missing`) |
+| `primary_asset_class` | `EQUITY`, `DEBT`, `HYBRID`, `LIQUID`, `COMMODITY`, `OTHER`, `UNKNOWN` (MF-7) |
+| `classification_source` | `EXPLICIT`, `INFERRED`, `UNKNOWN` (MF-7) |
+| `classification_notes` | Optional inference note (MF-7) |
+
+**Grouping (MVP):** one row per `(scheme_code, folio_number)` within resolved portfolio scope. FIFO and oversell per folio group. Valuation: `current_value = remaining units × latest cached NAV` (`HistoricalPrice`, `asset_type=MUTUAL_FUND`). No external NAV provider on read.
+
+### Asset detail — MF-4 implemented
+
+`GET /api/v1/portfolio/assets/{scheme_code}?folio_number={folio}` — MF tear-sheet with folio-scoped FIFO and transactions (MF fields on transaction rows). Stock route `{asset_symbol}` unchanged for tickers.
+
+- Single folio for scheme: `folio_number` optional.
+- Multiple folios: omitting `folio_number` → **400** `folio_number is required when multiple folios exist for this scheme`.
+- Unknown folio → **404**.
+
+MF response extensions: `asset_type`, `scheme_code`, `scheme_name`, `folio_number`, `latest_nav`, `nav_status`, `units`, `primary_asset_class`, `classification_source`, optional `classification_notes`.
+
+### Summary and performance — MF-5 implemented
+
+No new endpoints. `GET /api/v1/portfolio/summary` and `GET /api/v1/portfolio/performance` include mutual fund positions when MF transactions exist:
+
+| Area | Behavior |
+|------|----------|
+| Totals | MF `current_value` = units × latest cached NAV; FIFO invested/realized/unrealized merged into portfolio totals |
+| Timeseries | Daily MF value from units × forward-filled historical NAV (`list_mutual_fund_navs_for_schemes`); merged with stock series |
+| XIRR | Stock flows unchanged; MF BUY/SELL use `investment_date` and `paid_value` (`merge_portfolio_xirr`) |
+| Performance flows | `cumulative_return` / `twror` external flows use MF `paid_value` on `investment_date` |
+| FX | INR MF amounts converted to `portfolio_base` / `display_currency` via cached `FXRate` (7-day fill) |
+| Warnings | `Latest cached NAV missing for mutual fund {scheme}` when NAV absent |
+
+Stock-only portfolios: same calculations and response shape (warnings only when MF rows exist). No external NAV provider on read.
+
+### NAV sync — management command + HTTP (MF-2 + MF-9)
+
+| Command / endpoint | Purpose |
+|--------------------|---------|
+| `sync_mutual_fund_navs` | Incremental NAV sync for active `MutualFundProfile` rows; optional `--scheme-code` |
+| `POST /api/v1/nav/refresh` | Manual NAV sync; optional `{ "scheme_codes": [...] }` |
+| `sync_market_data` / `POST /api/v1/portfolio/force-sync` | Includes MF NAV sync by default (`--skip-mutual-funds` to opt out) |
+
+Sync calls MFAPI via `AmfiNavProvider` (MF-10); inject mock `http_get` in tests. Holdings/summary/performance/dashboard reads may **not** call NAV providers.
+
+### Planned: Settings (MF-10+)
+
+`PUT /api/v1/settings` — optional `mutual_fund_grouping`: `scheme_and_folio` \| `scheme_only` (aggregates holdings by scheme).

@@ -12,7 +12,11 @@ from market_data.models import AssetType, BenchmarkIndexConfig, HistoricalPrice
 from market_data.price_lookup import latest_historical_price, normalize_asset_symbol
 from market_data.providers.base import DailyPrice
 from market_data.services.benchmark_sync import sync_benchmark_prices
-from market_data.services.price_sync import sync_one_stock_symbol, sync_stock_prices
+from market_data.services.price_sync import (
+    resolve_stock_sync_start_date,
+    sync_one_stock_symbol,
+    sync_stock_prices,
+)
 from portfolios.seed import ensure_default_portfolio
 from transactions.models import Transaction, TransactionType
 
@@ -66,9 +70,16 @@ def test_sync_uses_earliest_transaction_date_when_no_rows(seeded):
 
 
 @pytest.mark.django_db
-def test_sync_uses_latest_stored_date_plus_one(seeded):
+def test_sync_uses_latest_stored_date_plus_one_when_coverage_from_inception(seeded):
     today = date.today()
     _buy("AAPL", today - timedelta(days=5))
+    HistoricalPrice.objects.create(
+        asset_symbol="AAPL",
+        date=today - timedelta(days=5),
+        close_price=Decimal("154"),
+        currency="USD",
+        asset_type=AssetType.STOCK,
+    )
     HistoricalPrice.objects.create(
         asset_symbol="AAPL",
         date=today - timedelta(days=3),
@@ -86,7 +97,102 @@ def test_sync_uses_latest_stored_date_plus_one(seeded):
     )
     sync_one_stock_symbol("AAPL", provider)
     assert provider.calls[0][1] == today - timedelta(days=2)
-    assert HistoricalPrice.objects.filter(asset_symbol="AAPL").count() == 3
+    assert HistoricalPrice.objects.filter(asset_symbol="AAPL").count() == 4
+
+
+@pytest.mark.django_db
+def test_sync_backfills_when_transaction_predates_earliest_cached_price(seeded):
+    txn_date = date(2022, 5, 2)
+    cache_start = date(2022, 12, 23)
+    _buy("GOOG", txn_date)
+    HistoricalPrice.objects.create(
+        asset_symbol="GOOG",
+        date=cache_start,
+        close_price=Decimal("90"),
+        currency="USD",
+        asset_type=AssetType.STOCK,
+    )
+    HistoricalPrice.objects.create(
+        asset_symbol="GOOG",
+        date=date(2022, 12, 24),
+        close_price=Decimal("91"),
+        currency="USD",
+        asset_type=AssetType.STOCK,
+    )
+    provider = MockPriceProvider(
+        {
+            "GOOG": [
+                DailyPrice(date(2022, 5, 3), Decimal("100"), "USD"),
+                DailyPrice(date(2022, 12, 22), Decimal("89"), "USD"),
+            ]
+        }
+    )
+    sync_one_stock_symbol("GOOG", provider, end=date(2022, 12, 24))
+    assert provider.calls[0][1] == txn_date
+    assert HistoricalPrice.objects.filter(asset_symbol="GOOG", date=date(2022, 5, 3)).exists()
+    assert HistoricalPrice.objects.filter(asset_symbol="GOOG", date=date(2022, 12, 22)).exists()
+
+
+@pytest.mark.django_db
+def test_sync_backfills_only_symbols_with_coverage_gaps(seeded):
+    gap_txn = date(2022, 5, 2)
+    ok_txn = date.today() - timedelta(days=5)
+    _buy("GOOG", gap_txn)
+    _buy("AAPL", ok_txn)
+    HistoricalPrice.objects.create(
+        asset_symbol="GOOG",
+        date=date(2022, 12, 23),
+        close_price=Decimal("90"),
+        currency="USD",
+        asset_type=AssetType.STOCK,
+    )
+    HistoricalPrice.objects.create(
+        asset_symbol="AAPL",
+        date=ok_txn,
+        close_price=Decimal("150"),
+        currency="USD",
+        asset_type=AssetType.STOCK,
+    )
+    provider = MockPriceProvider(
+        {
+            "GOOG": [DailyPrice(date(2022, 5, 3), Decimal("100"), "USD")],
+            "AAPL": [DailyPrice(ok_txn + timedelta(days=1), Decimal("151"), "USD")],
+        }
+    )
+    sync_stock_prices(provider=provider)
+    calls = {sym: start for sym, start, _ in provider.calls}
+    assert calls["GOOG"] == gap_txn
+    assert calls["AAPL"] == ok_txn + timedelta(days=1)
+
+
+def test_resolve_stock_sync_start_date_rules():
+    txn = date(2022, 5, 2)
+    cache_start = date(2022, 12, 23)
+    cache_end = date(2026, 3, 15)
+    assert (
+        resolve_stock_sync_start_date(
+            min_txn_date=txn,
+            min_hist_date=None,
+            max_hist_date=None,
+        )
+        == txn
+    )
+    assert (
+        resolve_stock_sync_start_date(
+            min_txn_date=txn,
+            min_hist_date=cache_start,
+            max_hist_date=cache_end,
+        )
+        == txn
+    )
+    assert (
+        resolve_stock_sync_start_date(
+            min_txn_date=txn,
+            min_hist_date=txn,
+            max_hist_date=cache_end,
+        )
+        == cache_end + timedelta(days=1)
+    )
 
 
 @pytest.mark.django_db

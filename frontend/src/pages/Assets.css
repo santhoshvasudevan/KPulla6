@@ -113,6 +113,12 @@
   gap: var(--space-2);
 }
 
+.assets-table__symbol-meta {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
 .assets-table__badges {
   display: flex;
   flex-wrap: wrap;

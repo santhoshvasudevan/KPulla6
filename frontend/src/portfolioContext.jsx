@@ -63,6 +63,37 @@ export function PortfolioProvider({
     setSelectedDisplayCurrency(c);
   }, []);
 
+  const reloadPortfolios = useCallback(async () => {
+    try {
+      const rows = await fetchPortfolios();
+      const list = Array.isArray(rows) ? rows : [];
+      setPortfolios(list);
+      setPortfoliosError('');
+
+      if (selectedPortfolioMode === 'portfolio' && selectedPortfolioId != null) {
+        const match = list.find((p) => p.id === selectedPortfolioId && p.is_active);
+        if (match) {
+          setSelectedPortfolioName(match.name);
+        } else {
+          setSelectedPortfolioMode('all');
+          setSelectedPortfolioId(null);
+          setSelectedPortfolioName('All Portfolios');
+        }
+      }
+      return list;
+    } catch (e) {
+      setPortfolios([]);
+      setPortfoliosError(e?.message || 'Failed to load portfolios');
+      throw e;
+    }
+  }, [selectedPortfolioMode, selectedPortfolioId]);
+
+  const selectPortfolio = useCallback((id, name) => {
+    setSelectedPortfolioMode('portfolio');
+    setSelectedPortfolioId(id);
+    setSelectedPortfolioName(name || '');
+  }, []);
+
   const selectorOptions = useMemo(() => {
     const real = (portfolios || []).filter((p) => p && p.is_active);
     return [
@@ -88,6 +119,8 @@ export function PortfolioProvider({
       selectedPortfolioName,
       selectedDisplayCurrency,
       setDisplayCurrency,
+      reloadPortfolios,
+      selectPortfolio,
       setSelectedPortfolioMode,
       setSelectedPortfolioId,
       setSelectedPortfolioName,
@@ -102,6 +135,8 @@ export function PortfolioProvider({
       selectedPortfolioName,
       selectedDisplayCurrency,
       setDisplayCurrency,
+      reloadPortfolios,
+      selectPortfolio,
       apiQuery,
     ]
   );

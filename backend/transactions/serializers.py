@@ -3,6 +3,7 @@ from decimal import Decimal
 from rest_framework import serializers
 
 from transactions.models import Transaction, TransactionType
+from transactions.mutual_fund_services import validate_mutual_fund_transaction_payload
 from transactions.services import validate_transaction_payload
 
 
@@ -32,6 +33,23 @@ class TransactionSerializer(serializers.ModelSerializer):
         for key in ("quantity", "price_per_share", "fees", "split_from", "split_to"):
             if data.get(key) is not None:
                 data[key] = float(data[key])
+
+        detail = getattr(instance, "mutual_fund_detail", None)
+        if detail is not None:
+            profile = getattr(detail.folio.asset, "mutual_fund_profile", None)
+            data["asset_type"] = "MUTUAL_FUND"
+            data["scheme_code"] = instance.asset_symbol
+            data["scheme_name"] = profile.scheme_name if profile else detail.folio.asset.display_name
+            data["folio_number"] = detail.folio.folio_number
+            data["investment_date"] = detail.investment_date.isoformat()
+            data["nav_date"] = detail.nav_date.isoformat()
+            data["nav"] = float(detail.nav)
+            data["units_allotted"] = float(detail.units_allotted)
+            data["paid_value"] = float(detail.paid_value)
+            data["market_value"] = float(detail.market_value)
+            data["nav_verification_status"] = detail.nav_verification_status
+            if detail.nav_verification_message:
+                data["nav_verification_message"] = detail.nav_verification_message
         return data
 
 
@@ -93,6 +111,69 @@ class TransactionWriteSerializer(serializers.Serializer):
             raise
         attrs.update(validated)
         return attrs
+
+
+class MutualFundTransactionWriteSerializer(serializers.Serializer):
+    asset_type = serializers.ChoiceField(choices=[("MUTUAL_FUND", "Mutual fund")])
+    scheme_code = serializers.CharField(max_length=32)
+    scheme_name = serializers.CharField(max_length=512)
+    folio_number = serializers.CharField(max_length=64)
+    type = serializers.ChoiceField(choices=[TransactionType.BUY, TransactionType.SELL])
+    investment_date = serializers.DateField()
+    nav_date = serializers.DateField()
+    nav = serializers.DecimalField(max_digits=18, decimal_places=6)
+    units_allotted = serializers.DecimalField(max_digits=18, decimal_places=8)
+    paid_value = serializers.DecimalField(max_digits=18, decimal_places=4)
+    market_value = serializers.DecimalField(max_digits=18, decimal_places=4)
+    portfolio_id = serializers.IntegerField(required=False, allow_null=True)
+    currency = serializers.CharField(max_length=3, required=False, allow_null=True)
+    fees = serializers.DecimalField(
+        max_digits=18,
+        decimal_places=4,
+        required=False,
+        allow_null=True,
+    )
+    fund_house = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    scheme_type = serializers.CharField(max_length=128, required=False, allow_blank=True)
+    scheme_category = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    isin_growth = serializers.CharField(max_length=12, required=False, allow_blank=True)
+    isin_reinvestment = serializers.CharField(max_length=12, required=False, allow_blank=True)
+    direct_or_regular = serializers.CharField(max_length=16, required=False, allow_blank=True)
+    growth_or_idcw = serializers.CharField(max_length=16, required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        from transactions.services import TransactionValidationError
+
+        data = dict(attrs)
+        if hasattr(self, "initial_data") and "portfolio_id" in self.initial_data:
+            data["portfolio_id"] = self.initial_data.get("portfolio_id")
+
+        try:
+            validated = validate_mutual_fund_transaction_payload(data)
+        except TransactionValidationError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
+        return {
+            "portfolio_id": validated.portfolio_id,
+            "scheme_code": validated.scheme_code,
+            "scheme_name": validated.scheme_name,
+            "folio_number": validated.folio_number,
+            "type": validated.txn_type,
+            "investment_date": validated.investment_date,
+            "nav_date": validated.nav_date,
+            "nav": validated.nav,
+            "units_allotted": validated.units_allotted,
+            "paid_value": validated.paid_value,
+            "market_value": validated.market_value,
+            "currency": validated.currency,
+            "fees": validated.fees,
+            "fund_house": validated.fund_house,
+            "scheme_type": validated.scheme_type,
+            "scheme_category": validated.scheme_category,
+            "isin_growth": validated.isin_growth,
+            "isin_reinvestment": validated.isin_reinvestment,
+            "direct_or_regular": validated.direct_or_regular,
+            "growth_or_idcw": validated.growth_or_idcw,
+        }
 
 
 class TransactionListSerializer(serializers.Serializer):

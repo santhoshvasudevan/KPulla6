@@ -85,13 +85,17 @@ Recharts uses hex mirrors in `chartTheme.js` — not CSS variables.
 ### Transactions
 
 - Header with record count and primary actions (Import, Add)
+- Row checkboxes + select-all on visible page; bulk toolbar when selected: assign to real portfolio (full PUT per row), clear selection on success
 - Right-aligned numeric columns; type badges
 - Pagination when `total > page_size`
+- **Mutual funds (MF-8):** Add/Edit modal supports `asset_type` Stock (default) or Mutual fund; MF form uses backend field names (`scheme_code`, `scheme_name`, `folio_number`, `investment_date`, `nav_date`, `nav`, `units_allotted`, `paid_value`, `market_value`). Stock form unchanged. List shows scheme/folio, units/NAV columns, calm `nav_verification_status` badge. No client-side NAV math or external AMFI calls.
 
 ### Settings
 
-- Section cards: Display & tax; Data & sync (explainer)
+- Section cards: Display & tax; **Portfolios** (CRUD for real portfolios); Data & sync (explainer)
+- Portfolio table: name, base currency, default flag; create form (name, optional description, base currency default EUR); edit modal; deactivate for non-default only
 - Display currency must stay in sync with sidebar selector
+- **All Portfolios** remains virtual — not created or assignable as a target portfolio
 
 ## Component Catalog
 

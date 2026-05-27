@@ -15,6 +15,22 @@
   margin-top: var(--space-4);
 }
 
+.settings-sync-note {
+  margin: 0 0 var(--space-3);
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.settings-sync-note:last-child {
+  margin-bottom: 0;
+}
+
+.settings-sync-note code {
+  font-family: var(--font-metric);
+  font-size: 0.8125rem;
+}
+
 .form-group {
   display: flex;
   flex-direction: column;
@@ -46,4 +62,121 @@
   border-color: var(--accent);
   outline: 2px solid rgba(59, 130, 246, 0.25);
   outline-offset: 0;
+}
+
+.portfolio-management__intro {
+  margin-top: 0;
+  margin-bottom: var(--space-4);
+}
+
+.portfolio-management__subheading {
+  margin: 0 0 var(--space-3);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.portfolio-management__create {
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.portfolio-management__create-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.portfolio-management__description {
+  grid-column: 1 / -1;
+}
+
+.portfolio-management__table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.portfolio-management__table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.portfolio-management__table th,
+.portfolio-management__table td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.portfolio-management__table th {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.portfolio-management__table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.portfolio-management__actions-col {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.portfolio-management__actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.portfolio-management__default-note {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.portfolio-management__edit-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: var(--space-4);
+}
+
+.portfolio-management__edit-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.portfolio-management__edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.portfolio-management__edit-actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}
+
+@media (max-width: 640px) {
+  .portfolio-management__create-grid {
+    grid-template-columns: 1fr;
+  }
 }

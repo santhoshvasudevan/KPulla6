@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from finance.fifo import calculate_fifo_cost_basis_metrics
+from finance.fifo import build_split_adjusted_lot_snapshots, calculate_fifo_cost_basis_metrics
 from finance.oversell import detect_oversell
 from finance.splits import apply_stock_split_adjustments
 from finance.twror import compute_twror_series
@@ -204,6 +204,18 @@ def test_fully_sold_asset_zero_qty_and_realized_pl():
     assert m.cumulative_qty == Decimal("0")
     assert m.realized_pl == Decimal("-100")
     assert m.unrealized_pl == Decimal("0")
+
+
+def test_build_split_adjusted_lot_snapshots_goog_like():
+    txns = [
+        _buy(date(2024, 6, 1), 1, 2149, sym="GOOG"),
+        _split(date(2024, 7, 15), 1, 20, sym="GOOG"),
+    ]
+    qty_timeline, inv_timeline = build_split_adjusted_lot_snapshots(txns)
+    assert qty_timeline[date(2024, 6, 1)] == Decimal("20")
+    assert inv_timeline[date(2024, 6, 1)] == Decimal("2149")
+    split_adjusted_price = Decimal("107.45")
+    assert qty_timeline[date(2024, 6, 1)] * split_adjusted_price == Decimal("2149")
 
 
 def test_stock_split_adjusts_prior_same_symbol_transactions():

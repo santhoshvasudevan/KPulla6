@@ -34,7 +34,16 @@ class PaginatedTransactions:
 
 
 def _base_queryset() -> QuerySet[Transaction]:
-    return Transaction.objects.select_related("portfolio").order_by("-date", "-id")
+    return (
+        Transaction.objects.select_related(
+            "portfolio",
+            "mutual_fund_detail",
+            "mutual_fund_detail__folio",
+            "mutual_fund_detail__folio__asset",
+            "mutual_fund_detail__folio__asset__mutual_fund_profile",
+        )
+        .order_by("-date", "-id")
+    )
 
 
 def list_transactions(

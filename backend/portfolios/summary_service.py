@@ -5,14 +5,20 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Optional
 
+from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import QuerySet
 
-from finance.fifo import calculate_fifo_cost_basis_metrics
+from finance.fifo import build_split_adjusted_lot_snapshots, calculate_fifo_cost_basis_metrics
+from finance.mutual_fund_cashflows import MutualFundCashflowEvent, merge_portfolio_xirr
 from finance.oversell import detect_oversell
 from finance.splits import apply_stock_split_adjustments
 from finance.types import TransactionType
-from finance.xirr import calculate_portfolio_xirr
 from fx.lookup import convert_amount_with_fill, fx_lookup_from_maps, load_fx_rate_maps
+from market_data.nav_lookup import normalize_scheme_code
+from market_data.nav_repository import (
+    latest_mutual_fund_navs_by_scheme,
+    list_mutual_fund_navs_for_schemes,
+)
 from market_data.price_lookup import normalize_asset_symbol
 from market_data.price_repository import latest_stock_prices_by_symbol, list_stock_prices_in_range
 from portfolios import dates as portfolio_dates
@@ -20,6 +26,8 @@ from portfolios.scope import ResolvedPortfolioScope
 from settings_app.services import get_settings
 from transactions.finance_adapter import transaction_to_finance_dto
 from transactions.models import Transaction as TransactionModel
+
+MF_BASE_CURRENCY = "INR"
 
 
 def _norm_ccy(value: str | None) -> str:
@@ -42,8 +50,20 @@ def _portfolio_base_currency(all_txns: list[TransactionModel]) -> str:
 def _fifo_eligible_queryset(portfolio_ids: list[int]) -> QuerySet[TransactionModel]:
     return (
         TransactionModel.objects.filter(portfolio_id__in=portfolio_ids)
+        .select_related(
+            "mutual_fund_detail",
+            "mutual_fund_detail__folio",
+        )
         .order_by("date", "id")
     )
+
+
+def _is_mutual_fund_transaction(txn: TransactionModel) -> bool:
+    try:
+        txn.mutual_fund_detail
+    except ObjectDoesNotExist:
+        return False
+    return True
 
 
 def _transactions_by_symbol(
@@ -51,9 +71,68 @@ def _transactions_by_symbol(
 ) -> dict[str, list[TransactionModel]]:
     by_symbol: dict[str, list[TransactionModel]] = {}
     for txn in queryset:
+        if _is_mutual_fund_transaction(txn):
+            continue
         sym = normalize_asset_symbol(txn.asset_symbol)
         by_symbol.setdefault(sym, []).append(txn)
     return by_symbol
+
+
+def _mf_holding_key(scheme_code: str, folio_number: str) -> str:
+    return f"{normalize_scheme_code(scheme_code)}:{folio_number.strip()}"
+
+
+def transactions_by_mf_holding(
+    queryset: QuerySet[TransactionModel],
+) -> dict[str, list[TransactionModel]]:
+    by_key: dict[str, list[TransactionModel]] = {}
+    for txn in queryset:
+        if not _is_mutual_fund_transaction(txn):
+            continue
+        detail = txn.mutual_fund_detail
+        key = _mf_holding_key(txn.asset_symbol, detail.folio.folio_number)
+        by_key.setdefault(key, []).append(txn)
+    return by_key
+
+
+def _mf_cashflow_events(db_txns: list[TransactionModel]) -> list[MutualFundCashflowEvent]:
+    events: list[MutualFundCashflowEvent] = []
+    for txn in db_txns:
+        if not _is_mutual_fund_transaction(txn):
+            continue
+        detail = txn.mutual_fund_detail
+        if txn.type == TransactionType.BUY.value:
+            events.append(
+                MutualFundCashflowEvent(
+                    flow_date=detail.investment_date,
+                    amount=-Decimal(detail.paid_value),
+                )
+            )
+        elif txn.type == TransactionType.SELL.value:
+            events.append(
+                MutualFundCashflowEvent(
+                    flow_date=detail.investment_date,
+                    amount=Decimal(detail.paid_value),
+                )
+            )
+    return events
+
+
+def _convert_mf_amount_to_base(
+    amount: Decimal,
+    *,
+    conv_date: date,
+    portfolio_base: str,
+    fx_maps: dict,
+) -> tuple[Decimal, bool]:
+    if portfolio_base == MF_BASE_CURRENCY:
+        return amount, False
+    converted, fx_st = fx_lookup_from_maps(
+        fx_maps, MF_BASE_CURRENCY, portfolio_base, conv_date
+    )
+    if converted is None:
+        return Decimal("0"), True
+    return amount * converted, fx_st == "filled"
 
 
 def _to_fifo_dtos(db_txns: list[TransactionModel]):
@@ -123,12 +202,12 @@ def _calculate_holdings(
                 if fx_st == "filled":
                     pass
 
-        fifo_txns = apply_stock_split_adjustments(_to_fifo_dtos(txns))
-        if detect_oversell(_to_fifo_dtos(txns)):
+        fifo_dtos = _to_fifo_dtos(txns)
+        if detect_oversell(fifo_dtos):
             warnings.append(f"Oversell detected for {sym}")
 
         fifo_metrics = calculate_fifo_cost_basis_metrics(
-            fifo_txns, current_price=current_price
+            fifo_dtos, current_price=current_price
         )
         qty = fifo_metrics.cumulative_qty
         invested = fifo_metrics.cumulative_invested_amount
@@ -152,15 +231,250 @@ def _calculate_holdings(
     )
 
 
+def _calculate_mf_holdings(
+    by_mf: dict[str, list[TransactionModel]],
+    *,
+    portfolio_base: str,
+) -> HoldingsCalcResult:
+    if not by_mf:
+        return HoldingsCalcResult(
+            total_invested=Decimal("0"),
+            current_value=Decimal("0"),
+            realized_pl=Decimal("0"),
+            unrealized_pl=Decimal("0"),
+            total_pl=Decimal("0"),
+            any_fx_missing=False,
+            warnings=[],
+        )
+
+    schemes = sorted(
+        {normalize_scheme_code(txns[0].asset_symbol) for txns in by_mf.values()}
+    )
+    latest_navs = latest_mutual_fund_navs_by_scheme(schemes)
+    today = portfolio_dates.current_date()
+    nav_dates: list[date] = []
+    for nav in latest_navs.values():
+        if nav.date is not None:
+            nav_dates.append(nav.date)
+    fx_start = min(nav_dates) - timedelta(days=7) if nav_dates else today - timedelta(days=7)
+    fx_pairs = {(MF_BASE_CURRENCY, portfolio_base)}
+    fx_maps = load_fx_rate_maps(fx_pairs, fx_start, today)
+
+    total_invested = Decimal("0")
+    current_value = Decimal("0")
+    realized_pl = Decimal("0")
+    any_fx_missing = False
+    warnings: list[str] = []
+
+    for _key, txns in by_mf.items():
+        scheme = normalize_scheme_code(txns[0].asset_symbol)
+        nav_result = latest_navs.get(scheme)
+        current_nav: Optional[Decimal] = None
+        nav_date = today
+        if nav_result is not None and nav_result.status == "ok" and nav_result.nav is not None:
+            current_nav = nav_result.nav
+            nav_date = nav_result.date or today
+        else:
+            warnings.append(f"Latest cached NAV missing for mutual fund {scheme}")
+
+        fifo_txns = _to_fifo_dtos(txns)
+        if detect_oversell(fifo_txns):
+            warnings.append(f"Oversell detected for mutual fund {scheme}")
+
+        fifo_metrics = calculate_fifo_cost_basis_metrics(
+            fifo_txns, current_price=current_nav
+        )
+        qty = fifo_metrics.cumulative_qty
+        cv_inr = (current_nav or Decimal("0")) * qty
+        inv_inr = fifo_metrics.cumulative_invested_amount
+        real_inr = fifo_metrics.realized_pl
+
+        cv_base, fx_fill = _convert_mf_amount_to_base(
+            cv_inr, conv_date=nav_date, portfolio_base=portfolio_base, fx_maps=fx_maps
+        )
+        inv_base, inv_fx = _convert_mf_amount_to_base(
+            inv_inr, conv_date=nav_date, portfolio_base=portfolio_base, fx_maps=fx_maps
+        )
+        real_base, real_fx = _convert_mf_amount_to_base(
+            real_inr, conv_date=nav_date, portfolio_base=portfolio_base, fx_maps=fx_maps
+        )
+        if fx_fill or inv_fx or real_fx:
+            any_fx_missing = True
+            cv_base = Decimal("0") if fx_fill else cv_base
+
+        total_invested += inv_base
+        current_value += cv_base
+        realized_pl += real_base
+
+    unrealized_pl = current_value - total_invested
+    total_pl = realized_pl + unrealized_pl
+
+    return HoldingsCalcResult(
+        total_invested=total_invested,
+        current_value=current_value,
+        realized_pl=realized_pl,
+        unrealized_pl=unrealized_pl,
+        total_pl=total_pl,
+        any_fx_missing=any_fx_missing,
+        warnings=warnings,
+    )
+
+
+def _merge_holdings_results(
+    stock: HoldingsCalcResult, mf: HoldingsCalcResult
+) -> HoldingsCalcResult:
+    unrealized = (stock.current_value + mf.current_value) - (
+        stock.total_invested + mf.total_invested
+    )
+    total_pl = stock.realized_pl + mf.realized_pl + unrealized
+    return HoldingsCalcResult(
+        total_invested=stock.total_invested + mf.total_invested,
+        current_value=stock.current_value + mf.current_value,
+        realized_pl=stock.realized_pl + mf.realized_pl,
+        unrealized_pl=unrealized,
+        total_pl=total_pl,
+        any_fx_missing=stock.any_fx_missing or mf.any_fx_missing,
+        warnings=stock.warnings + mf.warnings,
+    )
+
+
+def _mf_timeseries_by_date(
+    by_mf: dict[str, list[TransactionModel]],
+    *,
+    inception_date: date,
+    today: date,
+    portfolio_base: str,
+) -> dict[date, dict]:
+    """Per-day MF portfolio value and invested amount in portfolio_base."""
+    if not by_mf:
+        return {}
+
+    schemes = sorted(
+        {normalize_scheme_code(txns[0].asset_symbol) for txns in by_mf.values()}
+    )
+    hist_navs = list_mutual_fund_navs_for_schemes(schemes, inception_date, today)
+    nav_dict: dict[str, dict[date, Decimal]] = {}
+    for row in hist_navs:
+        scheme = normalize_scheme_code(row.asset_symbol)
+        nav_dict.setdefault(scheme, {})[row.date] = Decimal(row.close_price)
+
+    fx_pairs = {(MF_BASE_CURRENCY, portfolio_base)}
+    fx_maps = load_fx_rate_maps(fx_pairs, inception_date, today)
+
+    qty_dict: dict[str, dict[date, Decimal]] = {}
+    inv_dict: dict[str, dict[date, Decimal]] = {}
+
+    for key, txns in by_mf.items():
+        scheme = normalize_scheme_code(txns[0].asset_symbol)
+        adjusted = _to_fifo_dtos(txns)
+        txns_sorted = sorted(adjusted, key=lambda x: x.date)
+        timeline: dict[date, Decimal] = {}
+        inv_timeline: dict[date, Decimal] = {}
+        lots: list[dict[str, Decimal]] = []
+
+        for t in txns_sorted:
+            if t.type == TransactionType.BUY:
+                if t.quantity > 0:
+                    lots.append({"qty": t.quantity, "unit_cost": t.price})
+            elif t.type == TransactionType.SELL:
+                remaining = t.quantity
+                while remaining > 0 and lots:
+                    lot = lots[0]
+                    take = min(lot["qty"], remaining)
+                    lot["qty"] -= take
+                    remaining -= take
+                    if lot["qty"] <= 0:
+                        lots.pop(0)
+            cum_qty = sum(l["qty"] for l in lots)
+            cum_inv = sum(l["qty"] * l["unit_cost"] for l in lots)
+            timeline[t.date] = cum_qty
+            inv_timeline[t.date] = cum_inv
+
+        qty_dict[key] = timeline
+        inv_dict[key] = inv_timeline
+
+    current_state: dict[str, dict] = {}
+    for key in by_mf:
+        scheme = normalize_scheme_code(by_mf[key][0].asset_symbol)
+        current_state[key] = {
+            "scheme": scheme,
+            "qty": Decimal("0"),
+            "inv": Decimal("0"),
+            "nav": None,
+        }
+
+    daily: dict[date, dict] = {}
+    d = inception_date
+    while d <= today:
+        daily_value_inr = Decimal("0")
+        daily_inv_inr = Decimal("0")
+        daily_fx_missing = False
+
+        for key in by_mf:
+            st = current_state[key]
+            if d in qty_dict.get(key, {}):
+                st["qty"] = qty_dict[key][d]
+            if d in inv_dict.get(key, {}):
+                st["inv"] = inv_dict[key][d]
+            scheme = st["scheme"]
+            if d in nav_dict.get(scheme, {}):
+                st["nav"] = nav_dict[scheme][d]
+
+            daily_inv_inr += st["inv"]
+            if st["qty"] > 0 and st["nav"] is not None:
+                daily_value_inr += st["qty"] * st["nav"]
+
+        value_base: Decimal | None = Decimal("0")
+        if daily_value_inr > 0:
+            converted, fx_miss = _convert_mf_amount_to_base(
+                daily_value_inr,
+                conv_date=d,
+                portfolio_base=portfolio_base,
+                fx_maps=fx_maps,
+            )
+            if fx_miss:
+                daily_fx_missing = True
+                value_base = None
+            else:
+                value_base = converted
+
+        inv_conv, inv_miss = _convert_mf_amount_to_base(
+            daily_inv_inr, conv_date=d, portfolio_base=portfolio_base, fx_maps=fx_maps
+        )
+        inv_base = Decimal("0")
+        if inv_miss:
+            daily_fx_missing = True
+        else:
+            inv_base = inv_conv
+
+        daily[d] = {
+            "value": None if daily_fx_missing else value_base,
+            "invested": inv_base,
+            "fx_missing": daily_fx_missing,
+        }
+        d += timedelta(days=1)
+
+    return daily
+
+
 def _build_portfolio_value_timeseries(
     all_txns: list[TransactionModel],
     by_symbol: dict[str, list[TransactionModel]],
+    by_mf: dict[str, list[TransactionModel]] | None = None,
 ) -> list[dict]:
     if not all_txns:
         return []
 
+    by_mf = by_mf or {}
     inception_date = min(t.date for t in all_txns)
     today = portfolio_dates.current_date()
+    portfolio_base = _portfolio_base_currency(all_txns)
+    mf_daily = _mf_timeseries_by_date(
+        by_mf,
+        inception_date=inception_date,
+        today=today,
+        portfolio_base=portfolio_base,
+    )
 
     base_ccy_by_sym = {
         normalize_asset_symbol(sym): _symbol_base_currency(txns)
@@ -186,30 +500,7 @@ def _build_portfolio_value_timeseries(
     inv_dict: dict[str, dict[date, Decimal]] = {}
 
     for symbol, txns in by_symbol.items():
-        adjusted = apply_stock_split_adjustments(_to_fifo_dtos(txns))
-        txns_sorted = sorted(adjusted, key=lambda x: x.date)
-        timeline: dict[date, Decimal] = {}
-        inv_timeline: dict[date, Decimal] = {}
-        lots: list[dict[str, Decimal]] = []
-
-        for t in txns_sorted:
-            if t.type == TransactionType.BUY:
-                if t.quantity > 0:
-                    lots.append({"qty": t.quantity, "unit_cost": t.price})
-            elif t.type == TransactionType.SELL:
-                remaining = t.quantity
-                while remaining > 0 and lots:
-                    lot = lots[0]
-                    take = min(lot["qty"], remaining)
-                    lot["qty"] -= take
-                    remaining -= take
-                    if lot["qty"] <= 0:
-                        lots.pop(0)
-            cum_qty = sum(l["qty"] for l in lots)
-            cum_inv = sum(l["qty"] * l["unit_cost"] for l in lots)
-            timeline[t.date] = cum_qty
-            inv_timeline[t.date] = cum_inv
-
+        timeline, inv_timeline = build_split_adjusted_lot_snapshots(_to_fifo_dtos(txns))
         qty_dict[symbol] = timeline
         inv_dict[symbol] = inv_timeline
 
@@ -266,6 +557,16 @@ def _build_portfolio_value_timeseries(
                 current_state[sym]["qty"] * current_state[sym]["price"] * fx_rate
             )
 
+        mf_pt = mf_daily.get(d)
+        if mf_pt is not None:
+            daily_inv += mf_pt["invested"]
+            if mf_pt.get("fx_missing"):
+                if mf_pt["value"] is None:
+                    daily_fx_missing = True
+                    fx_status = "fx_unavailable"
+            elif mf_pt["value"] is not None:
+                daily_value += mf_pt["value"]
+
         timeseries.append(
             {
                 "date": d.isoformat(),
@@ -310,23 +611,28 @@ def build_portfolio_summary(
     queryset = _fifo_eligible_queryset(scope.portfolio_ids)
     all_txns = list(queryset)
     by_symbol = _transactions_by_symbol(queryset)
+    by_mf = transactions_by_mf_holding(queryset)
 
-    holdings_res = _calculate_holdings(by_symbol)
+    stock_holdings = _calculate_holdings(by_symbol)
     portfolio_base = _portfolio_base_currency(all_txns)
+    mf_holdings = _calculate_mf_holdings(by_mf, portfolio_base=portfolio_base)
+    holdings_res = _merge_holdings_results(stock_holdings, mf_holdings)
 
     timeseries: list[dict] = []
     if include_timeseries:
-        timeseries = _build_portfolio_value_timeseries(all_txns, by_symbol)
+        timeseries = _build_portfolio_value_timeseries(all_txns, by_symbol, by_mf)
 
     xirr: Optional[float] = None
     if all_txns:
-        cashflow_txns = []
+        stock_cashflow_txns = []
         for txns in by_symbol.values():
-            cashflow_txns.extend(
+            stock_cashflow_txns.extend(
                 apply_stock_split_adjustments(_to_fifo_dtos(txns))
             )
-        xirr = calculate_portfolio_xirr(
-            cashflow_txns,
+        mf_events = _mf_cashflow_events(all_txns)
+        xirr = merge_portfolio_xirr(
+            stock_cashflow_txns,
+            mf_events,
             terminal_value=holdings_res.current_value,
             include_fees_in_cashflows=True,
         )

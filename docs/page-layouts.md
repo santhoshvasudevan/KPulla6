@@ -118,12 +118,13 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 | **Header** | `PageHeader` — record count subtitle; actions: hidden file input + Import CSV + Add Transaction |
 | **Import info** | Info `WarningBanner` (target portfolio, CSV split rules) |
 | **Import feedback** | Success/warning banner; error block with row-level list |
-| **Table** | Portfolio, Symbol, Date, Type (`.ui-txn-type`), Qty, Price, Fees, Total, Actions (edit/delete icon buttons) |
+| **Table** | Checkbox, Portfolio, Symbol, Date, Type (`.ui-txn-type`), Qty, Price, Fees, Total, Actions (edit/delete icon buttons) |
+| **Bulk actions** | Toolbar when rows selected: portfolio dropdown (active real only), Apply, Clear; partial failure banner |
 | **Modal** | `TransactionModal` — add/edit; STOCK_SPLIT field swap; Cancel/Save `Button`s |
 
 **States:** `LoadingState` · `ErrorState` · table `EmptyState`.
 
-**Behavior:** Pagination params fixed (page 1, size 50); delete confirms; modal refresh on success; line total = display-only `qty × price + fees` (not for splits).
+**Behavior:** Pagination params fixed (page 1, size 50); delete confirms; modal refresh on success; bulk assign uses `buildTransactionUpdatePayload` + `updateTransaction` per selected row; line total = display-only `qty × price + fees` (not for splits).
 
 **APIs:** `fetchTransactions` · `createTransaction` / `updateTransaction` · `deleteTransaction` · `importTransactionsCsv`.
 
@@ -137,11 +138,12 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 |---------|--------|
 | **Header** | `PageHeader` “Settings” |
 | **Display & tax** | `SectionCard` — tax rate input, display currency select, hint linking to sidebar selector, Save `Button` |
+| **Portfolios** | `SectionCard` + `PortfolioManagement` — active portfolio table, create form, edit modal, deactivate (non-default); backend errors surfaced via `WarningBanner` |
 | **Feedback** | Success / error `WarningBanner` after save |
 
 **States:** `LoadingState` · `ErrorState` on initial load failure.
 
-**APIs:** `getSettings` · `updateSettings` (also updates `portfolioContext` display currency).
+**APIs:** `getSettings` · `updateSettings` (also updates `portfolioContext` display currency) · `createPortfolio` / `updatePortfolio` / `deletePortfolio` via `PortfolioManagement` + `reloadPortfolios()`.
 
 **Note:** Cached-data explainer lives in app shell sidebar footer, not on this page.
 
@@ -184,8 +186,8 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 | `/` | `pages/Dashboard.jsx` | `Dashboard.css` | PageHeader, MetricCard, ChartCard, SegmentedControl, WarningBanner, EmptyState | summary, performance, benchmarks | **Implemented** |
 | `/assets` | `pages/Assets.jsx` | `Assets.css` | PageHeader, ChartCard, SectionCard, StatusBadge, CurrencyValue, PercentValue | holdings | **Implemented** |
 | `/assets/:assetSymbol` | `pages/AssetDetail.jsx` | `AssetDetail.css` | PageHeader, MetricCard, SectionCard, StatusBadge, `.ui-txn-type` | asset detail | **Implemented** |
-| `/transactions` | `pages/Transactions.jsx` | `Transactions.css` | PageHeader, Button, WarningBanner, TransactionModal, `.ui-txn-type` | transactions CRUD, CSV import | **Implemented** |
-| `/settings` | `pages/Settings.jsx` | `Settings.css` | PageHeader, SectionCard, Button, WarningBanner | settings GET/PUT | **Implemented** |
+| `/transactions` | `pages/Transactions.jsx` | `Transactions.css` | PageHeader, Button, WarningBanner, TransactionModal, `.ui-txn-type` | transactions CRUD, CSV import, bulk assign | **Implemented** |
+| `/settings` | `pages/Settings.jsx` | `Settings.css` | PageHeader, SectionCard, PortfolioManagement, Button, WarningBanner | settings GET/PUT, portfolio CRUD | **Implemented** |
 | (shell) | `components/Layout.jsx` | `Layout.css` | WarningBanner, nav, selectors | portfolios, settings (context) | **Implemented** |
 
 **Shared:** `components/ui/*` · `components/charts/chartTheme.js` · `portfolioContext.jsx`
@@ -197,3 +199,4 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 | Date | Change | Status |
 |------|--------|--------|
 | 2026-05-25 | Initial layout spec post design migration | Implemented |
+| 2026-05-27 | Settings portfolio CRUD; Transactions bulk assign | Implemented |

@@ -26,6 +26,17 @@ def _stock_price_filter() -> Q:
     return Q(asset_type=AssetType.STOCK) | Q(asset_type__isnull=True)
 
 
+def _earliest_stock_price_date(symbol: str) -> date | None:
+    sym = normalize_asset_symbol(symbol)
+    agg = (
+        HistoricalPrice.objects.filter(
+            Q(asset_symbol__iexact=sym),
+            _stock_price_filter(),
+        ).aggregate(min_date=Min("date"))
+    )
+    return agg.get("min_date")
+
+
 def _latest_stock_price_date(symbol: str) -> date | None:
     sym = normalize_asset_symbol(symbol)
     agg = (
@@ -35,6 +46,26 @@ def _latest_stock_price_date(symbol: str) -> date | None:
         ).aggregate(max_date=Max("date"))
     )
     return agg.get("max_date")
+
+
+def resolve_stock_sync_start_date(
+    *,
+    min_txn_date: date,
+    min_hist_date: date | None,
+    max_hist_date: date | None,
+) -> date:
+    """
+    Choose provider fetch start for incremental stock price sync.
+
+    - No cached rows: from earliest transaction date.
+    - Earliest transaction before earliest cached price: backfill from transaction date.
+    - Otherwise: incremental from latest cached date + 1 day.
+    """
+    if max_hist_date is None or min_hist_date is None:
+        return min_txn_date
+    if min_txn_date < min_hist_date:
+        return min_txn_date
+    return max_hist_date + timedelta(days=1)
 
 
 def _symbol_base_currency(symbol: str) -> str:
@@ -85,11 +116,25 @@ def sync_one_stock_symbol(
         return True
 
     end = end or date.today()
+    min_hist_date = _earliest_stock_price_date(sym)
     max_hist_date = _latest_stock_price_date(sym)
-    start_date = max_hist_date + timedelta(days=1) if max_hist_date else min_txn_date
+    start_date = resolve_stock_sync_start_date(
+        min_txn_date=min_txn_date,
+        min_hist_date=min_hist_date,
+        max_hist_date=max_hist_date,
+    )
 
     if start_date > end:
         return True
+
+    if min_hist_date and min_txn_date < min_hist_date:
+        logger.info(
+            "Backfilling stock prices for %s from %s (earliest transaction before "
+            "earliest cached price %s)",
+            sym,
+            start_date,
+            min_hist_date,
+        )
 
     try:
         rows, quote_ccy = provider.fetch_history(sym, start_date, end)

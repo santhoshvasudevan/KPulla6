@@ -7,6 +7,8 @@ const STATUS_LABELS = {
   warning: 'Warning',
   error: 'Error',
   neutral: 'Neutral',
+  verified: 'NAV verified',
+  nav_warning: 'NAV check',
 };
 
 export default function StatusBadge({ status = 'neutral', label, className = '' }) {

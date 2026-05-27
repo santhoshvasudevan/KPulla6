@@ -8,6 +8,7 @@ from portfolios.views import PortfolioDetailView, PortfolioListCreateView
 from settings_app.views import SettingsView
 from market_data.views import (
     BenchmarkIndicesView,
+    NavRefreshView,
     PortfolioForceSyncView,
     PricesRefreshView,
 )
@@ -58,6 +59,7 @@ urlpatterns = [
         name="transaction-detail",
     ),
     path("prices/refresh", PricesRefreshView.as_view(), name="prices-refresh"),
+    path("nav/refresh", NavRefreshView.as_view(), name="nav-refresh"),
     path("benchmarks/indices", BenchmarkIndicesView.as_view(), name="benchmark-indices"),
     path("portfolio/force-sync", PortfolioForceSyncView.as_view(), name="portfolio-force-sync"),
 ]

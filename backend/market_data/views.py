@@ -5,6 +5,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from market_data.nav_refresh import market_data_sync_response_payload, run_mutual_fund_nav_refresh
 from market_data.price_lookup import normalize_asset_symbol
 from market_data.services.benchmark_sync import list_enabled_benchmark_indices
 from market_data.services.market_data_sync import sync_all_market_data
@@ -32,6 +33,22 @@ class PricesRefreshView(APIView):
         )
 
 
+class NavRefreshView(APIView):
+    """
+    Manual mutual fund NAV refresh (synchronous).
+    May call external NAV provider; not used during holdings/dashboard reads.
+    """
+
+    def post(self, request: Request) -> Response:
+        body = request.data if isinstance(request.data, dict) else {}
+        raw_codes = body.get("scheme_codes")
+        scheme_codes = None
+        if raw_codes:
+            scheme_codes = [str(c) for c in raw_codes if c]
+        payload = run_mutual_fund_nav_refresh(scheme_codes=scheme_codes)
+        return Response(payload, status=status.HTTP_202_ACCEPTED)
+
+
 class BenchmarkIndicesView(APIView):
     def get(self, request: Request) -> Response:
         return Response({"indices": list_enabled_benchmark_indices()})
@@ -39,13 +56,13 @@ class BenchmarkIndicesView(APIView):
 
 class PortfolioForceSyncView(APIView):
     """
-    Alias for full market-data sync (stocks + benchmarks + FX).
+    Full market-data sync: stock prices + benchmark indices + FX + mutual fund NAVs.
     Runs synchronously in the request thread (no Celery/RQ).
     """
 
     def post(self, request: Request) -> Response:
-        sync_all_market_data()
+        result = sync_all_market_data()
         return Response(
-            {"message": "Sync started in background"},
+            market_data_sync_response_payload(result),
             status=status.HTTP_202_ACCEPTED,
         )

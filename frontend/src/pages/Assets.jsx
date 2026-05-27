@@ -21,6 +21,7 @@ import {
   CHART_TOOLTIP_STYLE,
   CHART_LEGEND_STYLE,
 } from '../components/charts/chartTheme';
+import { holdingRowKey, holdingSymbolLabel } from '../utils/transactionDisplay';
 import './Assets.css';
 import { usePortfolio } from '../portfolioContext';
 
@@ -237,16 +238,24 @@ export default function Assets() {
                     const currency = h.currency || 'EUR';
                     const avgCost = avgCostValue(h);
                     const unrealizedTone = plTone(h.unrealized_pl);
+                    const isMf = h.asset_type === 'MUTUAL_FUND';
+                    const rowKey = holdingRowKey(h);
 
                     return (
                       <tr
-                        key={h.asset_symbol}
+                        key={rowKey}
                         className="assets-table__row-clickable"
                         onClick={() => navigate(`/assets/${h.asset_symbol}`)}
                       >
                         <td className="symbol-col">
                           <div className="assets-table__symbol-cell">
-                            <span>{h.asset_symbol}</span>
+                            <span>{holdingSymbolLabel(h)}</span>
+                            {isMf && h.scheme_code && h.scheme_name ? (
+                              <span className="assets-table__symbol-meta">{h.scheme_code}</span>
+                            ) : null}
+                            {isMf && h.folio_number ? (
+                              <span className="assets-table__symbol-meta">Folio {h.folio_number}</span>
+                            ) : null}
                             {(h.holding_status === 'oversold') && (
                               <div className="assets-table__badges">
                                 <span
@@ -387,11 +396,15 @@ export default function Assets() {
                 <tbody>
                   {previousHoldings.map((h) => {
                     const currency = h.currency || 'EUR';
+                    const isMf = h.asset_type === 'MUTUAL_FUND';
                     return (
-                      <tr key={`closed-${h.asset_symbol}`}>
+                      <tr key={`closed-${holdingRowKey(h)}`}>
                         <td className="symbol-col">
                           <div className="assets-table__symbol-cell">
-                            <span>{h.asset_symbol}</span>
+                            <span>{holdingSymbolLabel(h)}</span>
+                            {isMf && h.folio_number ? (
+                              <span className="assets-table__symbol-meta">Folio {h.folio_number}</span>
+                            ) : null}
                             {h.holding_status === 'closed' ? (
                               <div className="assets-table__badges">
                                 <StatusBadge status="closed" />

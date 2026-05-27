@@ -30,6 +30,7 @@ Local-first portfolio tracker. **KPulla6** uses Django + DRF + PostgreSQL + Reac
 - Pure Python; no Django ORM in `backend/finance/`.
 - **FIFO** (`calculate_fifo_cost_basis_metrics`): cumulative qty/invested, avg cost, realized/unrealized P/L; fees ignored in FIFO (KPulla5 parity).
 - **Splits** (`apply_stock_split_adjustments`): `split_to/split_from` on prior same-symbol BUY/SELL before split date.
+- **Value history** (`build_split_adjusted_lot_snapshots`): daily portfolio valuation pairs cached split-adjusted prices with split-adjusted quantities; `STOCK_SPLIT` rows are not cash flows.
 - **XIRR** (`calculate_xirr`): BUY negative, SELL positive, terminal holding value; uses `pyxirr`.
 - **TWROR** (`compute_twror_series`): chain-linked daily series helper; not wired to HTTP yet.
 

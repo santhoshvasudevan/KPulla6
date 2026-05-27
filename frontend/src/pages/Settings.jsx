@@ -9,6 +9,7 @@ import {
   ErrorState,
   WarningBanner,
 } from '../components/ui';
+import PortfolioManagement from '../components/PortfolioManagement';
 import './Settings.css';
 
 export default function Settings() {
@@ -103,6 +104,26 @@ export default function Settings() {
         {error && taxRate ? (
           <WarningBanner severity="error" message={error} className="settings-banner" />
         ) : null}
+      </SectionCard>
+
+      <SectionCard title="Portfolios">
+        <PortfolioManagement />
+      </SectionCard>
+
+      <SectionCard title="Data & sync">
+        <p className="settings-sync-note">
+          Market data is cached in the database. Dashboard, holdings, summary, and performance
+          reads use cached prices, FX rates, benchmark levels, and mutual fund NAVs only — no live
+          external calls on page load.
+        </p>
+        <p className="settings-sync-note">
+          To refresh cached data, run <code>make refresh</code> (or{' '}
+          <code>make sync-market-data</code>) on the backend. Full sync includes stock prices,
+          benchmark indices, FX rates, and mutual fund NAVs. Stock-only refresh:{' '}
+          <code>POST /api/v1/prices/refresh</code>. Mutual fund NAV only:{' '}
+          <code>POST /api/v1/nav/refresh</code>. Combined sync:{' '}
+          <code>POST /api/v1/portfolio/force-sync</code>.
+        </p>
       </SectionCard>
     </div>
   );

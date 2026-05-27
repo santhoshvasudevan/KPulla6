@@ -17,10 +17,12 @@ from market_data.price_repository import list_index_prices_in_range
 from portfolios import dates as portfolio_dates
 from portfolios.scope import ResolvedPortfolioScope
 from portfolios.summary_service import (
+    MF_BASE_CURRENCY,
     build_portfolio_value_timeseries,
     fifo_eligible_queryset,
     norm_display_currency,
     portfolio_base_currency,
+    transactions_by_mf_holding,
     transactions_by_symbol,
 )
 from transactions.models import Transaction as TransactionModel
@@ -44,6 +46,16 @@ class PerformanceComparisonResult:
     warnings: list[str]
 
 
+def _is_mutual_fund_transaction(txn: TransactionModel) -> bool:
+    from django.core.exceptions import ObjectDoesNotExist
+
+    try:
+        txn.mutual_fund_detail
+    except ObjectDoesNotExist:
+        return False
+    return True
+
+
 def _build_external_flows(
     all_txns: list[TransactionModel],
     base_currency: str,
@@ -52,25 +64,57 @@ def _build_external_flows(
     flows_unknown_from: Optional[date] = None
 
     fx_pairs: set[tuple[str, str]] = set()
-    txn_dates: list[date] = []
+    flow_dates: list[date] = []
     for t in all_txns:
         if t.type not in {TransactionType.BUY.value, TransactionType.SELL.value}:
+            continue
+        if _is_mutual_fund_transaction(t):
+            flow_dates.append(t.mutual_fund_detail.investment_date)
+            if MF_BASE_CURRENCY != base_currency:
+                fx_pairs.add((MF_BASE_CURRENCY, base_currency))
             continue
         if t.price_per_share is None or t.quantity is None:
             continue
         fc = norm_display_currency(t.currency)
         if fc != base_currency:
             fx_pairs.add((fc, base_currency))
-        txn_dates.append(t.date)
+        flow_dates.append(t.date)
 
-    if not txn_dates:
+    if not flow_dates:
         return flows_by_date, flows_unknown_from
 
-    fx_maps = load_fx_rate_maps(fx_pairs, min(txn_dates), max(txn_dates))
+    fx_maps = load_fx_rate_maps(fx_pairs, min(flow_dates), max(flow_dates))
 
     for t in all_txns:
         if t.type not in {TransactionType.BUY.value, TransactionType.SELL.value}:
             continue
+
+        if _is_mutual_fund_transaction(t):
+            detail = t.mutual_fund_detail
+            cash = Decimal(detail.paid_value)
+            flow_date = detail.investment_date
+            if MF_BASE_CURRENCY != base_currency:
+                fx_rate, _ = fx_lookup_from_maps(
+                    fx_maps, MF_BASE_CURRENCY, base_currency, flow_date
+                )
+                if fx_rate is None:
+                    flows_unknown_from = (
+                        min(flows_unknown_from, flow_date)
+                        if flows_unknown_from
+                        else flow_date
+                    )
+                    continue
+                cash = cash * fx_rate
+            if t.type == TransactionType.BUY.value:
+                flows_by_date[flow_date] = (
+                    flows_by_date.get(flow_date, Decimal("0")) + cash
+                )
+            else:
+                flows_by_date[flow_date] = (
+                    flows_by_date.get(flow_date, Decimal("0")) - cash
+                )
+            continue
+
         if t.price_per_share is None or t.quantity is None:
             continue
         amt = Decimal(t.quantity) * Decimal(t.price_per_share)
@@ -161,9 +205,10 @@ def build_portfolio_performance(
         return []
 
     by_symbol = transactions_by_symbol(queryset)
+    by_mf = transactions_by_mf_holding(queryset)
     base_currency = portfolio_base_currency(all_txns)
     disp_ccy = norm_display_currency(display_currency)
-    timeseries_full = build_portfolio_value_timeseries(all_txns, by_symbol)
+    timeseries_full = build_portfolio_value_timeseries(all_txns, by_symbol, by_mf)
     if not timeseries_full:
         return []
 

@@ -13,12 +13,22 @@ export async function fetchWithHandling(path, options = {}) {
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     const detail = errorData.detail;
-    const message =
+    let message =
       typeof detail === 'string'
         ? detail
         : Array.isArray(detail)
           ? detail.map((d) => d.msg || JSON.stringify(d)).join('; ')
-          : errorData.message || `Request failed (${response.status})`;
+          : errorData.message || '';
+    if (!message && typeof errorData === 'object') {
+      const fieldMsgs = Object.entries(errorData)
+        .filter(([key]) => key !== 'detail' && key !== 'message')
+        .map(([key, val]) => {
+          const text = Array.isArray(val) ? val.join(', ') : String(val);
+          return `${key}: ${text}`;
+        });
+      if (fieldMsgs.length) message = fieldMsgs.join('; ');
+    }
+    if (!message) message = `Request failed (${response.status})`;
     throw new Error(message);
   }
   if (response.status === 204) return null;

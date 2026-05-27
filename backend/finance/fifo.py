@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 from typing import Iterable, Optional
 
@@ -32,6 +33,41 @@ def _zero_metrics() -> FifoCostBasisMetrics:
         realized_pl=z,
         unrealized_pl=z,
     )
+
+
+def build_split_adjusted_lot_snapshots(
+    transactions: Iterable[Transaction],
+) -> tuple[dict[date, Decimal], dict[date, Decimal]]:
+    """
+    Per-transaction-date cumulative qty and invested amount after split-adjusted FIFO.
+
+    Use with split-adjusted historical prices (e.g. yfinance cache): pre-split BUY/SELL
+    quantities are scaled so ``qty * price`` stays economically consistent across splits.
+    """
+    txns = apply_stock_split_adjustments(list(transactions))
+    timeline: dict[date, Decimal] = {}
+    inv_timeline: dict[date, Decimal] = {}
+    lots: list[_Lot] = []
+
+    for t in sorted(txns, key=lambda x: x.date):
+        if t.type == TransactionType.BUY:
+            if t.quantity > 0:
+                lots.append(_Lot(qty=t.quantity, unit_cost=t.price))
+        elif t.type == TransactionType.SELL:
+            remaining = t.quantity
+            while remaining > 0 and lots:
+                lot = lots[0]
+                take = min(lot.qty, remaining)
+                lot.qty -= take
+                remaining -= take
+                if lot.qty <= 0:
+                    lots.pop(0)
+        cum_qty = sum((lot.qty for lot in lots), Decimal("0"))
+        cum_inv = sum((lot.qty * lot.unit_cost for lot in lots), Decimal("0"))
+        timeline[t.date] = cum_qty
+        inv_timeline[t.date] = cum_inv
+
+    return timeline, inv_timeline
 
 
 def calculate_fifo_cost_basis_metrics(

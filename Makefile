@@ -1,4 +1,4 @@
-.PHONY: db db-stop db-logs db-shell db-reset backend frontend migrate seed bootstrap test test-backend test-frontend dev setup-backend setup-frontend sync-prices sync-benchmarks sync-fx sync-market-data refresh graphify ports stop-backend stop-frontend stop-dev stop-all clean-dev
+.PHONY: db db-stop db-logs db-shell db-reset backup-db db-safety-check backend frontend migrate seed bootstrap test test-backend test-frontend dev setup-backend setup-frontend sync-prices sync-benchmarks sync-fx sync-market-data refresh graphify ports stop-backend stop-frontend stop-dev stop-all clean-dev
 
 BACKEND_DIR := backend
 FRONTEND_DIR := frontend
@@ -8,6 +8,10 @@ PIP := .venv/bin/pip
 
 BACKEND_PORT ?= 8000
 FRONTEND_PORT ?= 5173
+POSTGRES_CONTAINER := kpulla6_postgres
+POSTGRES_DB ?= portfolio_insight_kpulla6
+POSTGRES_USER ?= santhosh_admin
+BACKUP_DIR := backups
 
 db:
 	docker compose up -d postgres
@@ -24,6 +28,24 @@ db-shell:
 db-reset:
 	docker compose down -v
 	docker compose up -d postgres
+
+backup-db: db
+	@mkdir -p $(BACKUP_DIR)
+	@set -a && [ -f .env ] && . ./.env; set +a; \
+	BACKUP_FILE="$(BACKUP_DIR)/kpulla6_$$(date +%Y%m%d_%H%M%S).sql"; \
+	echo "Backing up $${POSTGRES_DB:-$(POSTGRES_DB)} to $$BACKUP_FILE"; \
+	docker exec $(POSTGRES_CONTAINER) pg_dump -U $${POSTGRES_USER:-$(POSTGRES_USER)} -d $${POSTGRES_DB:-$(POSTGRES_DB)} --no-owner --no-acl > "$$BACKUP_FILE"; \
+	echo "Backup written: $$BACKUP_FILE ($$(wc -c < "$$BACKUP_FILE" | tr -d ' ') bytes)"
+
+db-safety-check: db
+	@set -a && [ -f .env ] && . ./.env; set +a; \
+	DB=$${POSTGRES_DB:-$(POSTGRES_DB)}; \
+	USER=$${POSTGRES_USER:-$(POSTGRES_USER)}; \
+	echo "=== KPulla6 database safety check ==="; \
+	echo "Database: $$DB"; \
+	echo "Container: $(POSTGRES_CONTAINER)"; \
+	echo ""; \
+	docker exec $(POSTGRES_CONTAINER) psql -U $$USER -d $$DB -c "SELECT COUNT(*) AS transaction_count FROM transactions;" -c "SELECT COUNT(*) AS portfolio_count FROM portfolios;" -c "SELECT COUNT(*) AS historical_price_count FROM historical_prices;" -c "SELECT id, type, asset_symbol, date, created_at FROM transactions ORDER BY id DESC LIMIT 5;"
 
 setup-backend:
 	test -d $(VENV) || python3 -m venv $(VENV)
@@ -82,9 +104,7 @@ dev: setup-backend setup-frontend db migrate
 refresh: sync-market-data
 
 sync-market-data:
-	cd backend && .venv/bin/python manage.py sync_prices
-	cd backend && .venv/bin/python manage.py sync_benchmarks
-	cd backend && .venv/bin/python manage.py sync_fx_rates
+	cd backend && .venv/bin/python manage.py sync_market_data
 
 sync-prices:
 	cd backend && .venv/bin/python manage.py sync_prices

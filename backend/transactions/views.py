@@ -4,8 +4,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from portfolios.services import PortfolioNotFoundError
+from transactions.models import MutualFundTransactionDetail
+from transactions.mutual_fund_services import (
+    create_mutual_fund_transaction,
+    update_mutual_fund_transaction,
+)
 from transactions.serializers import (
     CsvImportResponseSerializer,
+    MutualFundTransactionWriteSerializer,
     TransactionListSerializer,
     TransactionSerializer,
     TransactionWriteSerializer,
@@ -15,6 +21,7 @@ from transactions.services import (
     TransactionValidationError,
     create_transaction,
     delete_transaction,
+    get_transaction,
     import_transactions_from_csv,
     list_transactions,
     update_transaction,
@@ -63,6 +70,11 @@ class TransactionListCreateView(APIView):
         return Response(payload)
 
     def post(self, request):
+        if request.data.get("asset_type") == "MUTUAL_FUND":
+            return self._post_mutual_fund(request)
+        return self._post_stock(request)
+
+    def _post_stock(self, request):
         serializer = TransactionWriteSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -83,12 +95,54 @@ class TransactionListCreateView(APIView):
             status=status.HTTP_201_CREATED,
         )
 
+    def _post_mutual_fund(self, request):
+        serializer = MutualFundTransactionWriteSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            transaction = create_mutual_fund_transaction(
+                validated_data=serializer.validated_data,
+            )
+        except PortfolioNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except TransactionValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response(
+                {"detail": str(exc) or "Failed to save mutual fund transaction"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            TransactionSerializer(transaction).data,
+            status=status.HTTP_201_CREATED,
+        )
+
 
 class TransactionDetailView(APIView):
     authentication_classes = []
     permission_classes = []
 
     def put(self, request, transaction_id: int):
+        try:
+            existing = get_transaction(transaction_id)
+        except TransactionNotFoundError:
+            return Response(
+                {"detail": "Transaction not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        is_mutual_fund = request.data.get("asset_type") == "MUTUAL_FUND"
+        if not is_mutual_fund:
+            try:
+                existing.mutual_fund_detail
+                is_mutual_fund = True
+            except MutualFundTransactionDetail.DoesNotExist:
+                pass
+        if is_mutual_fund:
+            return self._put_mutual_fund(request, transaction_id)
+
         serializer = TransactionWriteSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -111,6 +165,38 @@ class TransactionDetailView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
         except TransactionValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(TransactionSerializer(transaction).data)
+
+    def _put_mutual_fund(self, request, transaction_id: int):
+        payload = request.data.copy()
+        if "asset_type" not in payload:
+            payload["asset_type"] = "MUTUAL_FUND"
+        serializer = MutualFundTransactionWriteSerializer(data=payload)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        update_portfolio = "portfolio_id" in request.data
+        try:
+            transaction = update_mutual_fund_transaction(
+                transaction_id,
+                validated_data=serializer.validated_data,
+                update_portfolio=update_portfolio,
+            )
+        except TransactionNotFoundError:
+            return Response(
+                {"detail": "Transaction not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except PortfolioNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except TransactionValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response(
+                {"detail": str(exc) or "Failed to update mutual fund transaction"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         return Response(TransactionSerializer(transaction).data)
 

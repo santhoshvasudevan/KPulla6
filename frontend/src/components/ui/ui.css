@@ -270,10 +270,17 @@
 .ui-status-badge--oversold,
 .ui-status-badge--price_missing,
 .ui-status-badge--fx_unavailable,
-.ui-status-badge--warning {
+.ui-status-badge--warning,
+.ui-status-badge--nav_warning {
   color: var(--warn);
   background: rgba(245, 158, 11, 0.12);
   border-color: rgba(245, 158, 11, 0.35);
+}
+
+.ui-status-badge--verified {
+  color: var(--gain);
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.35);
 }
 
 .ui-status-badge--error {

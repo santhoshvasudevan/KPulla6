@@ -28,6 +28,25 @@ Override ports: `BACKEND_PORT=8001 FRONTEND_PORT=5174 make dev`
 
 Do **not** use `docker compose down -v` unless you intend to delete local database volumes. Normal stop (`make stop-all` or `make db-stop`) preserves DB data.
 
+See **`docs/data-safety.md`** for the 2026-05-26 incident, forbidden commands, and backup/restore workflow.
+
+## Data-sensitive phases
+
+Before migration-heavy work, schema experiments, or any task that might touch live transaction data:
+
+```bash
+make backup-db
+make db-safety-check
+```
+
+After the phase completes:
+
+```bash
+make db-safety-check
+```
+
+Compare transaction and portfolio counts to the pre-phase snapshot. If counts dropped unexpectedly, stop and restore from `backups/` (see `docs/data-safety.md`).
+
 ## Make targets
 | Target | Description |
 |--------|-------------|
@@ -35,6 +54,8 @@ Do **not** use `docker compose down -v` unless you intend to delete local databa
 | `make db-stop` | Stop PostgreSQL |
 | `make db-logs` | Follow Postgres logs |
 | `make db-shell` | `psql` in container |
+| `make backup-db` | `pg_dump` to `backups/kpulla6_YYYYMMDD_HHMMSS.sql` |
+| `make db-safety-check` | Print DB name, row counts, last 5 transactions |
 | `make migrate` | Django migrations (requires db) |
 | `make backend` | Run Django dev server |
 | `make frontend` | Run Vite dev server |
