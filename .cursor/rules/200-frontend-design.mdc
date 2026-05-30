@@ -73,7 +73,7 @@ Per-page layout spec: `docs/page-layouts.md`.
 - StatusBadge for ok, closed, oversold, price_missing, fx_unavailable.
 
 ### Asset Detail
-- Tear-sheet layout: hero KPIs, grouped sections, transaction table.
+- Metric Sheet layout: hero KPIs, grouped sections, transaction table.
 - Breadcrumb to Assets.
 
 ### Transactions

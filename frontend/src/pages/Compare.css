@@ -1,0 +1,18 @@
+.compare-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.compare-page__metrics-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.compare-page__metrics {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}

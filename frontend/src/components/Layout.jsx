@@ -10,6 +10,7 @@ function Layout() {
     selectedPortfolioId,
     selectedPortfolioName,
     selectedDisplayCurrency,
+    settingsLoaded,
     setDisplayCurrency,
     setSelectedPortfolioMode,
     setSelectedPortfolioId,
@@ -83,6 +84,14 @@ function Layout() {
             Assets
           </NavLink>
           <NavLink
+            to="/compare"
+            className={({ isActive }) =>
+              `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
+            }
+          >
+            Compare
+          </NavLink>
+          <NavLink
             to="/settings"
             className={({ isActive }) =>
               `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
@@ -125,12 +134,18 @@ function Layout() {
               className="app-sidebar__select"
               value={(selectedDisplayCurrency || 'EUR').toUpperCase()}
               onChange={onDisplayCurrencyChange}
+              disabled={!settingsLoaded}
+              aria-busy={!settingsLoaded}
             >
-              {['EUR', 'USD', 'INR', 'GBP', 'CHF'].map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
+              {!settingsLoaded ? (
+                <option value="EUR">Loading…</option>
+              ) : (
+                ['EUR', 'USD', 'INR', 'GBP', 'CHF'].map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))
+              )}
             </select>
           </div>
 

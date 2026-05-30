@@ -6,6 +6,8 @@ DEFAULT_BENCHMARK_INDICES: tuple[tuple[str, str, str | None], ...] = (
     ("^DJI", "Dow Jones Industrial Average", "USD"),
     ("^STOXX50E", "Euro Stoxx 50", "EUR"),
     ("^GDAXI", "DAX", "EUR"),
+    ("^NSEI", "Nifty 50", "INR"),
+    ("^BSESN", "BSE Sensex", "INR"),
 )
 
 

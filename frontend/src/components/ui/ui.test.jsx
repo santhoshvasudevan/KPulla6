@@ -67,6 +67,20 @@ describe('MetricCard', () => {
     expect(screen.getByText('All time')).toBeInTheDocument();
     expect(container.querySelector('.ui-metric-card--positive')).toBeInTheDocument();
   });
+
+  it('uses fluid typography for large INR hero values without wrapping', () => {
+    const { container } = render(
+      <MetricCard
+        size="hero"
+        label="Current Value"
+        value={<CurrencyValue value={16650000} currency="INR" />}
+      />
+    );
+    const valueEl = screen.getByTitle('₹16,650,000.00');
+    expect(valueEl.textContent).toBe('₹16,650,000.00');
+    expect(valueEl.closest('.ui-metric-card__value')).toBeInTheDocument();
+    expect(container.querySelector('.ui-metric-card--hero')).toBeInTheDocument();
+  });
 });
 
 describe('SectionCard', () => {
@@ -162,6 +176,11 @@ describe('CurrencyValue', () => {
     const { container } = render(<CurrencyValue value={100} currency="USD" tone="positive" showSign />);
     expect(container.querySelector('.ui-currency-value--positive')).toBeInTheDocument();
     expect(container.textContent).toBe('+$100.00');
+  });
+
+  it('exposes full formatted value in title for large amounts', () => {
+    render(<CurrencyValue value={9876543.21} currency="INR" />);
+    expect(screen.getByTitle('₹9,876,543.21')).toBeInTheDocument();
   });
 });
 

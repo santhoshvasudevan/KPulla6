@@ -22,6 +22,7 @@ from market_data.nav_repository import (
 from market_data.price_lookup import normalize_asset_symbol
 from market_data.price_repository import latest_stock_prices_by_symbol, list_stock_prices_in_range
 from portfolios import dates as portfolio_dates
+from portfolios.models import Portfolio
 from portfolios.scope import ResolvedPortfolioScope
 from settings_app.services import get_settings
 from transactions.finance_adapter import transaction_to_finance_dto
@@ -599,15 +600,84 @@ def _float(v: Decimal) -> float:
     return float(v)
 
 
-def build_portfolio_summary(
+def _combine_fx_status(statuses: list[str]) -> str:
+    if any(s == "fx_unavailable" for s in statuses):
+        return "fx_unavailable"
+    if any(s == "filled" for s in statuses):
+        return "filled"
+    return "ok"
+
+
+def compute_scope_xirr(scope: ResolvedPortfolioScope) -> Optional[float]:
+    """Money-weighted XIRR for the full portfolio scope (inception through today).
+
+    Uses all BUY/SELL cash flows and current holdings value; not sliced by
+    performance ``range``. Shared by summary aggregation and analytics Metric Sheet.
+    """
+    return _compute_scope_xirr(scope)
+
+
+def _compute_scope_xirr(scope: ResolvedPortfolioScope) -> Optional[float]:
+    queryset = _fifo_eligible_queryset(scope.portfolio_ids)
+    all_txns = list(queryset)
+    if not all_txns:
+        return None
+    by_symbol = _transactions_by_symbol(queryset)
+    by_mf = transactions_by_mf_holding(queryset)
+    portfolio_base = _portfolio_base_currency(all_txns)
+    stock_holdings = _calculate_holdings(by_symbol)
+    mf_holdings = _calculate_mf_holdings(by_mf, portfolio_base=portfolio_base)
+    holdings_res = _merge_holdings_results(stock_holdings, mf_holdings)
+
+    stock_cashflow_txns = []
+    for txns in by_symbol.values():
+        stock_cashflow_txns.extend(
+            apply_stock_split_adjustments(_to_fifo_dtos(txns))
+        )
+    mf_events = _mf_cashflow_events(all_txns)
+    return merge_portfolio_xirr(
+        stock_cashflow_txns,
+        mf_events,
+        terminal_value=holdings_res.current_value,
+        include_fees_in_cashflows=True,
+    )
+
+
+def _aggregate_timeseries_from_children(
+    children: list[PortfolioSummaryResult],
+) -> list[dict]:
+    by_date: dict[str, dict] = {}
+    for child in children:
+        for pt in child.timeseries:
+            d = pt["date"]
+            if d not in by_date:
+                by_date[d] = {
+                    "date": d,
+                    "portfolio_value": 0.0,
+                    "invested_amount": 0.0,
+                    "fx_status": "ok",
+                }
+            row = by_date[d]
+            child_pv = pt.get("portfolio_value")
+            if child_pv is None:
+                row["portfolio_value"] = None
+            elif row.get("portfolio_value") is not None:
+                row["portfolio_value"] = float(row["portfolio_value"]) + float(child_pv)
+            row["invested_amount"] = float(row["invested_amount"]) + float(
+                pt.get("invested_amount") or 0
+            )
+            row["fx_status"] = _combine_fx_status(
+                [row["fx_status"], pt.get("fx_status") or "ok"]
+            )
+    return [by_date[d] for d in sorted(by_date.keys())]
+
+
+def _build_single_portfolio_summary(
     *,
     scope: ResolvedPortfolioScope,
     include_timeseries: bool = True,
-    display_currency: str | None = None,
+    disp_ccy: str,
 ) -> PortfolioSummaryResult:
-    settings = get_settings()
-    disp_ccy = _norm_ccy(display_currency or settings.display_currency or "EUR")
-
     queryset = _fifo_eligible_queryset(scope.portfolio_ids)
     all_txns = list(queryset)
     by_symbol = _transactions_by_symbol(queryset)
@@ -688,6 +758,97 @@ def build_portfolio_summary(
         fx_status=fx_status,
         timeseries=converted_timeseries,
         warnings=holdings_res.warnings,
+    )
+
+
+def _build_all_active_portfolio_summary(
+    *,
+    scope: ResolvedPortfolioScope,
+    include_timeseries: bool = True,
+    disp_ccy: str,
+) -> PortfolioSummaryResult:
+    portfolio_names = {
+        p.id: p.name
+        for p in Portfolio.objects.filter(pk__in=scope.portfolio_ids).only("id", "name")
+    }
+
+    child_summaries: list[PortfolioSummaryResult] = []
+    for portfolio_id in scope.portfolio_ids:
+        child_scope = ResolvedPortfolioScope(kind="single", portfolio_ids=[portfolio_id])
+        child_summaries.append(
+            _build_single_portfolio_summary(
+                scope=child_scope,
+                include_timeseries=include_timeseries,
+                disp_ccy=disp_ccy,
+            )
+        )
+
+    if not child_summaries:
+        return PortfolioSummaryResult(
+            total_invested=0.0,
+            current_value=0.0,
+            realized_pl=0.0,
+            unrealized_pl=0.0,
+            total_pl=0.0,
+            xirr=None,
+            base_currency=disp_ccy,
+            display_currency=disp_ccy,
+            fx_status="ok",
+            timeseries=[],
+            warnings=[],
+        )
+
+    total_invested = sum(c.total_invested for c in child_summaries)
+    current_value = sum(c.current_value for c in child_summaries)
+    realized_pl = sum(c.realized_pl for c in child_summaries)
+    unrealized_pl = sum(c.unrealized_pl for c in child_summaries)
+    total_pl = sum(c.total_pl for c in child_summaries)
+
+    warnings: list[str] = []
+    for portfolio_id, child in zip(scope.portfolio_ids, child_summaries):
+        name = portfolio_names.get(portfolio_id, f"Portfolio {portfolio_id}")
+        for warning in child.warnings:
+            warnings.append(f"{name}: {warning}")
+
+    timeseries: list[dict] = []
+    if include_timeseries:
+        timeseries = _aggregate_timeseries_from_children(child_summaries)
+
+    return PortfolioSummaryResult(
+        total_invested=total_invested,
+        current_value=current_value,
+        realized_pl=realized_pl,
+        unrealized_pl=unrealized_pl,
+        total_pl=total_pl,
+        xirr=compute_scope_xirr(scope),
+        base_currency=disp_ccy,
+        display_currency=disp_ccy,
+        fx_status=_combine_fx_status([c.fx_status for c in child_summaries]),
+        timeseries=timeseries,
+        warnings=warnings,
+    )
+
+
+def build_portfolio_summary(
+    *,
+    scope: ResolvedPortfolioScope,
+    include_timeseries: bool = True,
+    display_currency: str | None = None,
+) -> PortfolioSummaryResult:
+    settings = get_settings()
+    disp_ccy = _norm_ccy(display_currency or settings.display_currency or "EUR")
+
+    if scope.kind == "all_active":
+        return _build_all_active_portfolio_summary(
+            scope=scope,
+            include_timeseries=include_timeseries,
+            disp_ccy=disp_ccy,
+        )
+
+    return _build_single_portfolio_summary(
+        scope=scope,
+        include_timeseries=include_timeseries,
+        disp_ccy=disp_ccy,
     )
 
 

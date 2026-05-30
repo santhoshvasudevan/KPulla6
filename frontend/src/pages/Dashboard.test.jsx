@@ -1,13 +1,16 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { useEffect } from 'react';
 import Dashboard from './Dashboard';
 import * as api from '../api';
-import { PortfolioProvider } from '../portfolioContext';
+import { PortfolioProvider, usePortfolio } from '../portfolioContext';
+import samplePortfolioMetricSheetPayload from '../components/metricSheet/fixtures/samplePortfolioMetricSheetPayload';
 
 vi.mock('../api', () => ({
   fetchDashboardSummary: vi.fn(),
   fetchPortfolioPerformance: vi.fn(),
   fetchBenchmarkIndices: vi.fn(),
+  getPortfolioMetricSheet: vi.fn(),
   fetchTransactions: vi.fn(),
   fetchPortfolios: vi.fn(),
   getSettings: vi.fn(),
@@ -59,13 +62,19 @@ const mockPerf = [
   { date: '2026-01-02', value: 110, metric: 'value', currency: 'EUR' },
 ];
 
+const DASHBOARD_SUMMARY_OPTS = { includeTimeseries: false };
+
+const mockMetricSheet = { ...samplePortfolioMetricSheetPayload };
+
 describe('Dashboard Component', () => {
   beforeEach(() => {
     api.fetchDashboardSummary.mockReset();
     api.fetchPortfolioPerformance.mockReset();
     api.fetchBenchmarkIndices.mockReset();
+    api.getPortfolioMetricSheet.mockReset();
     api.fetchPortfolios?.mockReset?.();
     api.fetchPortfolioPerformance.mockResolvedValue([]);
+    api.getPortfolioMetricSheet.mockResolvedValue(mockMetricSheet);
     api.fetchBenchmarkIndices.mockResolvedValue([
       { symbol: '^GSPC', name: 'S&P 500' },
       { symbol: '^IXIC', name: 'Nasdaq Composite' },
@@ -98,7 +107,7 @@ describe('Dashboard Component', () => {
       expect(screen.getByText('Current Value')).toBeInTheDocument();
       expect(screen.getByText('Total Invested')).toBeInTheDocument();
       expect(screen.getByText('Total P/L')).toBeInTheDocument();
-      expect(screen.getByText('XIRR')).toBeInTheDocument();
+      expect(within(document.querySelector('.dashboard-kpi-grid')).getByText('XIRR')).toBeInTheDocument();
       expect(screen.getByText(/€18,500\.00/)).toBeInTheDocument();
       expect(screen.getByText(/€3,500\.00/)).toBeInTheDocument();
     });
@@ -197,7 +206,10 @@ describe('Dashboard Component', () => {
     );
 
     await waitFor(() => {
-      expect(api.fetchDashboardSummary).toHaveBeenCalledWith({ portfolio_id: 2, display_currency: 'EUR' });
+      expect(api.fetchDashboardSummary).toHaveBeenCalledWith(
+        { portfolio_id: 2, display_currency: 'EUR' },
+        DASHBOARD_SUMMARY_OPTS
+      );
       expect(api.fetchPortfolioPerformance).toHaveBeenCalledWith('value', null, '1Y', { portfolio_id: 2, display_currency: 'EUR' });
     });
   });
@@ -321,7 +333,7 @@ describe('Dashboard Component', () => {
     });
   });
 
-  it('does not show benchmark index selector for Value History', async () => {
+  it('does not show chart benchmark selector for Value History', async () => {
     api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
     api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
     render(
@@ -334,7 +346,21 @@ describe('Dashboard Component', () => {
     });
   });
 
-  it('shows benchmark index selector for Cumulative Return %', async () => {
+  it('shows Metric Sheet benchmark selector on Value History', async () => {
+    api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
+    api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+    render(
+      <PortfolioProvider>
+        <Dashboard />
+      </PortfolioProvider>
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText('metric-sheet-benchmark')).toBeInTheDocument();
+      expect(api.fetchBenchmarkIndices).toHaveBeenCalled();
+    });
+  });
+
+  it('shows Metric Sheet benchmark selector for Cumulative Return %', async () => {
     api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
     api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
     render(
@@ -344,12 +370,11 @@ describe('Dashboard Component', () => {
     );
     fireEvent.click(await screen.findByRole('button', { name: 'Cumulative Return' }));
     await waitFor(() => {
-      expect(screen.getByLabelText('benchmark-indices')).toBeInTheDocument();
-      expect(api.fetchBenchmarkIndices).toHaveBeenCalled();
+      expect(screen.getByLabelText('metric-sheet-benchmark')).toBeInTheDocument();
     });
   });
 
-  it('shows benchmark index selector for TWROR', async () => {
+  it('shows Metric Sheet benchmark selector for TWROR', async () => {
     api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
     api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
     render(
@@ -359,11 +384,11 @@ describe('Dashboard Component', () => {
     );
     fireEvent.click(await screen.findByRole('button', { name: 'TWROR' }));
     await waitFor(() => {
-      expect(screen.getByLabelText('benchmark-indices')).toBeInTheDocument();
+      expect(screen.getByLabelText('metric-sheet-benchmark')).toBeInTheDocument();
     });
   });
 
-  it('selecting a benchmark calls performance with benchmark parameter (preserves scope/range/display currency)', async () => {
+  it('selecting a Metric Sheet benchmark calls performance with benchmark when return metric is active', async () => {
     api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
     api.fetchPortfolioPerformance.mockResolvedValue(mockPerf);
     render(
@@ -373,7 +398,7 @@ describe('Dashboard Component', () => {
     );
     fireEvent.click(await screen.findByRole('button', { name: 'Cumulative Return' }));
 
-    const benchSel = await screen.findByLabelText('benchmark-indices');
+    const benchSel = await screen.findByLabelText('metric-sheet-benchmark');
     fireEvent.change(benchSel, { target: { value: '^GSPC' } });
 
     await waitFor(() => {
@@ -427,16 +452,58 @@ describe('Dashboard Component', () => {
     );
 
     await waitFor(() => {
-      expect(api.fetchDashboardSummary).toHaveBeenCalledWith({
-        portfolio_scope: 'all',
-        display_currency: 'INR',
-      });
+      expect(api.fetchDashboardSummary).toHaveBeenCalledWith(
+        {
+          portfolio_scope: 'all',
+          display_currency: 'INR',
+        },
+        DASHBOARD_SUMMARY_OPTS
+      );
     });
     await waitFor(() => {
       expect(api.fetchPortfolioPerformance).toHaveBeenCalledWith('value', null, '1Y', {
         portfolio_scope: 'all',
         display_currency: 'INR',
       });
+    });
+  });
+
+  it('requests summary without timeseries and still renders KPI cards', async () => {
+    api.getSettings.mockResolvedValue({ display_currency: 'EUR' });
+    const summaryNoTimeseries = {
+      base_currency: 'EUR',
+      display_currency: 'EUR',
+      fx_status: 'ok',
+      total_invested: 15000,
+      current_value: 18500,
+      realized_pl: 500,
+      unrealized_pl: 3000,
+      total_pl: 3500,
+      xirr: 0.125,
+      timeseries: [],
+    };
+    api.fetchDashboardSummary.mockResolvedValueOnce(summaryNoTimeseries);
+    api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+
+    render(
+      <PortfolioProvider>
+        <Dashboard />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => {
+      expect(api.fetchDashboardSummary).toHaveBeenCalledWith(
+        expect.objectContaining({ portfolio_scope: 'all', display_currency: 'EUR' }),
+        DASHBOARD_SUMMARY_OPTS
+      );
+      expect(api.fetchPortfolioPerformance).toHaveBeenCalledWith(
+        'value',
+        null,
+        '1Y',
+        expect.objectContaining({ portfolio_scope: 'all', display_currency: 'EUR' })
+      );
+      expect(screen.getByText(/€18,500\.00/)).toBeInTheDocument();
+      expect(screen.getByText('Total P/L')).toBeInTheDocument();
     });
   });
 
@@ -465,6 +532,489 @@ describe('Dashboard Component', () => {
     await waitFor(() => {
       expect(screen.getByText(/₹1,665,000\.00/)).toBeInTheDocument();
       expect(screen.getAllByText(/₹315,000\.00/).length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it('keeps large INR KPI values on one line inside metric cards', async () => {
+    api.getSettings.mockResolvedValue({ display_currency: 'INR' });
+    api.fetchDashboardSummary.mockResolvedValue({
+      ...mockSummary,
+      display_currency: 'INR',
+      current_value: 16650000,
+      total_invested: 13500000,
+      total_pl: 3150000,
+    });
+    api.fetchPortfolioPerformance.mockResolvedValue([
+      { date: '2026-01-01', value: 16650000, metric: 'value', currency: 'INR' },
+    ]);
+
+    render(
+      <PortfolioProvider>
+        <Dashboard />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTitle('₹16,650,000.00')).toBeInTheDocument();
+      expect(screen.getByTitle('₹13,500,000.00')).toBeInTheDocument();
+    });
+
+    expect(screen.getByTitle('₹16,650,000.00').textContent).toBe('₹16,650,000.00');
+    expect(screen.getByTitle('₹16,650,000.00').closest('.ui-metric-card__value')).toBeInTheDocument();
+  });
+
+  it('does not fetch summary or performance until settings are loaded', async () => {
+    let resolveSettings;
+    api.getSettings.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSettings = () => resolve({ display_currency: 'INR' });
+      })
+    );
+    api.fetchDashboardSummary.mockResolvedValue({
+      ...mockSummary,
+      display_currency: 'INR',
+    });
+    api.fetchPortfolioPerformance.mockResolvedValue(mockPerf);
+
+    render(
+      <PortfolioProvider>
+        <Dashboard />
+      </PortfolioProvider>
+    );
+
+    expect(screen.getByText(/loading display settings/i)).toBeInTheDocument();
+    expect(api.fetchDashboardSummary).not.toHaveBeenCalled();
+    expect(api.fetchPortfolioPerformance).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveSettings();
+    });
+
+    await waitFor(() => {
+      expect(api.fetchDashboardSummary).toHaveBeenCalledTimes(1);
+      expect(api.fetchDashboardSummary).toHaveBeenCalledWith(
+        {
+          portfolio_scope: 'all',
+          display_currency: 'INR',
+        },
+        DASHBOARD_SUMMARY_OPTS
+      );
+    });
+    expect(api.fetchDashboardSummary).not.toHaveBeenCalledWith(
+      expect.objectContaining({ display_currency: 'EUR' }),
+      DASHBOARD_SUMMARY_OPTS
+    );
+    await waitFor(() => {
+      expect(api.fetchPortfolioPerformance).toHaveBeenCalledWith('value', null, '1Y', {
+        portfolio_scope: 'all',
+        display_currency: 'INR',
+      });
+    });
+  });
+
+  it('ignores stale summary responses when apiQuery changes', async () => {
+    api.getSettings.mockResolvedValue({ display_currency: 'INR' });
+    api.updateSettings.mockResolvedValue({ display_currency: 'EUR' });
+
+    let resolveInr;
+    let resolveEur;
+    api.fetchDashboardSummary.mockImplementation((params) => {
+      if (params.display_currency === 'INR') {
+        return new Promise((resolve) => {
+          resolveInr = () =>
+            resolve({
+              ...mockSummary,
+              display_currency: 'INR',
+              current_value: 1665000,
+            });
+        });
+      }
+      return new Promise((resolve) => {
+        resolveEur = () =>
+          resolve({
+            ...mockSummary,
+            display_currency: 'EUR',
+            current_value: 8500,
+          });
+      });
+    });
+    api.fetchPortfolioPerformance.mockResolvedValue(mockPerf);
+
+    function FlipToEurAfterLoad() {
+      const { settingsLoaded, setDisplayCurrency } = usePortfolio();
+      useEffect(() => {
+        if (!settingsLoaded) return;
+        void setDisplayCurrency('EUR');
+      }, [settingsLoaded, setDisplayCurrency]);
+      return <Dashboard />;
+    }
+
+    render(
+      <PortfolioProvider>
+        <FlipToEurAfterLoad />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => expect(api.fetchDashboardSummary).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      resolveEur();
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/€8,500\.00/)).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      resolveInr();
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/€8,500\.00/)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/₹1,665,000\.00/)).not.toBeInTheDocument();
+  });
+
+  it('ignores stale performance responses when apiQuery changes', async () => {
+    api.getSettings.mockResolvedValue({ display_currency: 'INR' });
+    api.updateSettings.mockResolvedValue({ display_currency: 'EUR' });
+    api.fetchDashboardSummary.mockResolvedValue({
+      ...mockSummary,
+      display_currency: 'EUR',
+      current_value: 8500,
+    });
+
+    let resolveInrPerf;
+    let resolveEurPerf;
+    api.fetchPortfolioPerformance.mockImplementation((_metric, _bench, _range, params) => {
+      if (params.display_currency === 'INR') {
+        return new Promise((resolve) => {
+          resolveInrPerf = () => resolve([{ date: '2026-01-01', value: 1665000, currency: 'INR' }]);
+        });
+      }
+      return new Promise((resolve) => {
+        resolveEurPerf = () => resolve([{ date: '2026-01-01', value: 8500, currency: 'EUR' }]);
+      });
+    });
+
+    function FlipToEurAfterLoad() {
+      const { settingsLoaded, setDisplayCurrency } = usePortfolio();
+      useEffect(() => {
+        if (!settingsLoaded) return;
+        void setDisplayCurrency('EUR');
+      }, [settingsLoaded, setDisplayCurrency]);
+      return <Dashboard />;
+    }
+
+    render(
+      <PortfolioProvider>
+        <FlipToEurAfterLoad />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => expect(api.fetchPortfolioPerformance).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      resolveEurPerf();
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/€8,500\.00/)).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      resolveInrPerf();
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/€8,500\.00/)).toBeInTheDocument();
+    });
+  });
+
+  describe('Metric Sheet', () => {
+    it('calls getPortfolioMetricSheet with scope, range, currency, and benchmark', async () => {
+      api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
+      api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+
+      render(
+        <PortfolioProvider>
+          <Dashboard />
+        </PortfolioProvider>
+      );
+
+      await waitFor(() => {
+        expect(api.getPortfolioMetricSheet).toHaveBeenCalledWith({
+          portfolio_scope: 'all',
+          display_currency: 'EUR',
+          range: '1Y',
+        });
+      });
+    });
+
+    it('renders Metric Sheet metrics after successful fetch', async () => {
+      api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
+      api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+
+      render(
+        <PortfolioProvider>
+          <Dashboard />
+        </PortfolioProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: 'Metric Sheet' })).toBeInTheDocument();
+      });
+      const metricSheetSection = screen
+        .getByRole('heading', { name: 'Metric Sheet' })
+        .closest('.ui-section-card');
+      expect(within(metricSheetSection).getByText('Cumulative Return')).toBeInTheDocument();
+      expect(within(metricSheetSection).getByText('Sharpe Ratio')).toBeInTheDocument();
+      expect(within(metricSheetSection).getByText('+12.34%')).toBeInTheDocument();
+    });
+
+    it('renders periodic returns and worst drawdown periods from backend', async () => {
+      api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
+      api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+
+      render(
+        <PortfolioProvider>
+          <Dashboard />
+        </PortfolioProvider>
+      );
+
+      const metricSheetSection = await waitFor(() => {
+        const card = screen
+          .getByRole('heading', { name: 'Metric Sheet' })
+          .closest('.ui-section-card');
+        expect(within(card).getByText('Periodic returns')).toBeInTheDocument();
+        return card;
+      });
+      expect(within(metricSheetSection).getByText('Worst drawdowns')).toBeInTheDocument();
+      expect(within(metricSheetSection).getByRole('columnheader', { name: 'Jan' })).toBeInTheDocument();
+      expect(within(metricSheetSection).getAllByText('+2.10%').length).toBeGreaterThan(0);
+      expect(within(metricSheetSection).getByText('Recovered')).toBeInTheDocument();
+    });
+
+    it('handles Metric Sheet payload without periodic_returns or drawdown_periods', async () => {
+      api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
+      api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+      const { periodic_returns: _p, drawdown_periods: _d, ...legacy } = mockMetricSheet;
+      api.getPortfolioMetricSheet.mockResolvedValueOnce(legacy);
+
+      render(
+        <PortfolioProvider>
+          <Dashboard />
+        </PortfolioProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: 'Metric Sheet' })).toBeInTheDocument();
+      });
+      expect(
+        screen.getByText(/no monthly return data available for this range/i)
+      ).toBeInTheDocument();
+    });
+
+    it('displays backend Metric Sheet warnings', async () => {
+      api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
+      api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+      api.getPortfolioMetricSheet.mockResolvedValueOnce(mockMetricSheet);
+
+      render(
+        <PortfolioProvider>
+          <Dashboard />
+        </PortfolioProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(/split-adjusted/i)).toBeInTheDocument();
+      });
+    });
+
+    it('shows em dash for null metric values', async () => {
+      api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
+      api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+      api.getPortfolioMetricSheet.mockResolvedValueOnce({
+        ...mockMetricSheet,
+        metrics: {
+          return: {
+            cumulative_return: null,
+            cagr: null,
+            xirr: null,
+            xirr_scope: 'full_scope',
+            twror: null,
+          },
+          risk: {
+            volatility_annualized: null,
+            downside_deviation: null,
+            sharpe_ratio: null,
+            sortino_ratio: null,
+          },
+          drawdown: {
+            max_drawdown: null,
+            longest_drawdown_days: null,
+            calmar_ratio: null,
+          },
+          periods: {
+            best_day: null,
+            worst_day: null,
+            win_rate: null,
+            average_daily_return: null,
+          },
+        },
+        benchmark: null,
+        warnings: ['Insufficient daily returns to compute risk metrics.'],
+      });
+
+      render(
+        <PortfolioProvider>
+          <Dashboard />
+        </PortfolioProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+        expect(screen.getByText('Volatility (annualized)')).toBeInTheDocument();
+      });
+    });
+
+    it('Metric Sheet failure does not break the Dashboard', async () => {
+      api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
+      api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+      api.getPortfolioMetricSheet.mockRejectedValueOnce(new Error('Analytics unavailable'));
+
+      render(
+        <PortfolioProvider>
+          <Dashboard />
+        </PortfolioProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Current Value')).toBeInTheDocument();
+        expect(screen.getByText('Metric Sheet unavailable')).toBeInTheDocument();
+        expect(screen.getByText('Analytics unavailable')).toBeInTheDocument();
+      });
+      expect(screen.queryByRole('alert', { name: /error loading dashboard/i })).not.toBeInTheDocument();
+    });
+
+    it('refetches Metric Sheet when range changes', async () => {
+      api.fetchDashboardSummary.mockResolvedValue(mockSummary);
+      api.fetchPortfolioPerformance.mockResolvedValue(mockPerf);
+
+      render(
+        <PortfolioProvider>
+          <Dashboard />
+        </PortfolioProvider>
+      );
+
+      await screen.findByRole('group', { name: 'performance-time-range' });
+      fireEvent.click(screen.getByRole('button', { name: '30D' }));
+
+      await waitFor(() => {
+        expect(api.getPortfolioMetricSheet).toHaveBeenCalledWith(
+          expect.objectContaining({ range: '30D' })
+        );
+      });
+    });
+
+    it('passes benchmark to Metric Sheet when benchmark is selected', async () => {
+      api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
+      api.fetchPortfolioPerformance.mockResolvedValue(mockPerf);
+
+      render(
+        <PortfolioProvider>
+          <Dashboard />
+        </PortfolioProvider>
+      );
+
+      const benchSel = await screen.findByLabelText('metric-sheet-benchmark');
+      fireEvent.change(benchSel, { target: { value: '^GSPC' } });
+
+      await waitFor(() => {
+        expect(api.getPortfolioMetricSheet).toHaveBeenCalledWith(
+          expect.objectContaining({
+            portfolio_scope: 'all',
+            display_currency: 'EUR',
+            range: '1Y',
+            benchmark: '^GSPC',
+          })
+        );
+      });
+    });
+
+    it('ignores stale Metric Sheet responses when apiQuery changes', async () => {
+      api.getSettings.mockResolvedValue({ display_currency: 'INR' });
+      api.updateSettings.mockResolvedValue({ display_currency: 'EUR' });
+      api.fetchDashboardSummary.mockResolvedValue({
+        ...mockSummary,
+        display_currency: 'EUR',
+        current_value: 8500,
+      });
+      api.fetchPortfolioPerformance.mockResolvedValue(mockPerf);
+
+      let resolveInrSheet;
+      let resolveEurSheet;
+      api.getPortfolioMetricSheet.mockImplementation((params) => {
+        if (params.display_currency === 'INR') {
+          return new Promise((resolve) => {
+            resolveInrSheet = () =>
+              resolve({
+                ...mockMetricSheet,
+                metrics: {
+                  ...mockMetricSheet.metrics,
+                  return: {
+                    ...mockMetricSheet.metrics.return,
+                    cumulative_return: 0.99,
+                  },
+                },
+              });
+          });
+        }
+        return new Promise((resolve) => {
+          resolveEurSheet = () =>
+            resolve({
+              ...mockMetricSheet,
+              metrics: {
+                ...mockMetricSheet.metrics,
+                return: {
+                  ...mockMetricSheet.metrics.return,
+                  cumulative_return: 0.1234,
+                },
+              },
+            });
+        });
+      });
+
+      function FlipToEurAfterLoad() {
+        const { settingsLoaded, setDisplayCurrency } = usePortfolio();
+        useEffect(() => {
+          if (!settingsLoaded) return;
+          void setDisplayCurrency('EUR');
+        }, [settingsLoaded, setDisplayCurrency]);
+        return <Dashboard />;
+      }
+
+      render(
+        <PortfolioProvider>
+          <FlipToEurAfterLoad />
+        </PortfolioProvider>
+      );
+
+      await waitFor(() => expect(api.getPortfolioMetricSheet).toHaveBeenCalledTimes(2));
+
+      const metricSheetSection = () =>
+        screen.getByRole('heading', { name: 'Metric Sheet' }).closest('.ui-section-card');
+
+      await act(async () => {
+        resolveEurSheet();
+      });
+      await waitFor(() => {
+        expect(within(metricSheetSection()).getByText('+12.34%')).toBeInTheDocument();
+      });
+
+      await act(async () => {
+        resolveInrSheet();
+      });
+      await waitFor(() => {
+        expect(within(metricSheetSection()).getByText('+12.34%')).toBeInTheDocument();
+      });
+      expect(within(metricSheetSection()).queryByText('+99.00%')).not.toBeInTheDocument();
     });
   });
 });

@@ -161,6 +161,18 @@ def _flows_known(flows_unknown_from: Optional[date], d: date) -> bool:
     return flows_unknown_from is None or d < flows_unknown_from
 
 
+def portfolio_external_flows(
+    all_txns: list[TransactionModel],
+    base_currency: str,
+) -> tuple[dict[date, Decimal], Optional[date]]:
+    """Net external flows by date in portfolio base currency (for analytics / TWROR)."""
+    return _build_external_flows(all_txns, base_currency)
+
+
+def portfolio_flows_known_on_date(flows_unknown_from: Optional[date], d: date) -> bool:
+    return _flows_known(flows_unknown_from, d)
+
+
 def _to_response_point(pt: PerformancePoint, *, label: str | None = None) -> dict:
     row: dict = {
         "date": pt.date,

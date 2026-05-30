@@ -13,7 +13,7 @@ vi.mock('../api', () => ({
 }));
 
 describe('Layout component', () => {
-  it('renders navigation links and outlet', () => {
+  it('renders navigation links and outlet', async () => {
     api.fetchPortfolios.mockResolvedValueOnce([]);
     api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });
     render(
@@ -28,15 +28,47 @@ describe('Layout component', () => {
       </PortfolioProvider>
     );
 
+    expect(screen.getByLabelText('display-currency')).toBeDisabled();
+    await waitFor(() => {
+      expect(screen.getByLabelText('display-currency')).not.toBeDisabled();
+    });
+
     expect(screen.getByText(/dashboard/i)).toBeInTheDocument();
     expect(screen.getByText(/transactions/i)).toBeInTheDocument();
     expect(screen.getByText(/assets/i)).toBeInTheDocument();
+    expect(screen.getByText(/^compare$/i)).toBeInTheDocument();
     expect(screen.getByText(/settings/i)).toBeInTheDocument();
     expect(screen.getByText(/portfolio view/i)).toBeInTheDocument();
     expect(screen.getByLabelText('portfolio-view')).toBeInTheDocument();
     expect(screen.getByText(/display currency/i)).toBeInTheDocument();
     expect(screen.getByLabelText('display-currency')).toBeInTheDocument();
     expect(screen.getByTestId('child')).toBeInTheDocument();
+  });
+
+  it('updates display currency via sidebar and persists through context', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });
+    api.updateSettings.mockResolvedValue({ display_currency: 'INR' });
+
+    render(
+      <PortfolioProvider>
+        <MemoryRouter initialEntries={['/']}>
+          <Routes>
+            <Route path="/" element={<Layout />}>
+              <Route index element={<div data-testid="child">Child</div>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </PortfolioProvider>
+    );
+
+    const currencySelect = await screen.findByLabelText('display-currency');
+    fireEvent.change(currencySelect, { target: { value: 'INR' } });
+
+    await waitFor(() => {
+      expect(api.updateSettings).toHaveBeenCalledWith({ display_currency: 'INR' });
+      expect(currencySelect).toHaveValue('INR');
+    });
   });
 
   it('shows renamed portfolio in selector after reloadPortfolios', async () => {

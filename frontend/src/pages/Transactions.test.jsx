@@ -2,10 +2,12 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Transactions from './Transactions';
 import * as api from '../api';
-import { PortfolioProvider } from '../portfolioContext';
+import { PortfolioProvider, usePortfolio } from '../portfolioContext';
+import * as csvGuidance from '../utils/csvImportGuidance';
 
 vi.mock('../api', () => ({
   fetchTransactions: vi.fn(),
+  fetchTransactionFilterOptions: vi.fn(),
   createTransaction: vi.fn(),
   updateTransaction: vi.fn(),
   deleteTransaction: vi.fn(),
@@ -16,20 +18,49 @@ vi.mock('../api', () => ({
   invalidateDashboardSummaryCache: vi.fn(),
 }));
 
+const NO_FILTERS = { symbols: [], date_from: null, date_to: null };
+
+const mockTxn = {
+  id: 1,
+  asset_symbol: 'AAPL',
+  date: '2026-05-01',
+  type: 'BUY',
+  quantity: 10,
+  price_per_share: 150.0,
+  fees: 2.5,
+  currency: 'EUR',
+  portfolio_id: 1,
+  portfolio_name: 'Default Portfolio',
+};
+
 const mockTransactions = {
-  items: [
-    { id: 1, asset_symbol: 'AAPL', date: '2026-05-01', type: 'BUY', quantity: 10, price_per_share: 150.00, fees: 2.50, currency: 'EUR', portfolio_id: 1, portfolio_name: 'Default Portfolio' },
-  ],
+  items: [mockTxn],
   total: 1,
   page: 1,
-  page_size: 20,
+  page_size: 50,
   pages: 1,
 };
+
+function makePagedResponse({ page = 1, pageSize = 50, total = 75, pages = 2 } = {}) {
+  const items = Array.from({ length: Math.min(pageSize, total - (page - 1) * pageSize) }, (_, i) => ({
+    ...mockTxn,
+    id: (page - 1) * pageSize + i + 1,
+    asset_symbol: page === 1 && i === 0 ? 'AAPL' : `SYM-${(page - 1) * pageSize + i + 1}`,
+  }));
+  return { items, total, page, page_size: pageSize, pages };
+}
+
+function mockPagedTransactions() {
+  api.fetchTransactions.mockImplementation((page) =>
+    Promise.resolve(makePagedResponse({ page }))
+  );
+}
 
 describe('Transactions Page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.confirm = vi.fn(() => true);
+    api.fetchTransactionFilterOptions.mockResolvedValue({ portfolios: [], symbols: [] });
   });
 
   it('renders transaction rows after data loads', async () => {
@@ -48,7 +79,12 @@ describe('Transactions Page', () => {
     expect(screen.getAllByText('Default Portfolio').length).toBeGreaterThan(0);
     // Called at least once initially, and again after settings load updates display currency.
     await waitFor(() => {
-      expect(api.fetchTransactions).toHaveBeenCalledWith(1, 50, { portfolio_scope: 'all', display_currency: 'USD' });
+      expect(api.fetchTransactions).toHaveBeenCalledWith(
+        1,
+        50,
+        { portfolio_scope: 'all', display_currency: 'USD' },
+        NO_FILTERS
+      );
     });
   });
 
@@ -94,6 +130,182 @@ describe('Transactions Page', () => {
     expect(screen.getByDisplayValue('10')).toBeInTheDocument();
   });
 
+  it('shows stock and mutual fund CSV import guidance', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'USD' });
+    api.fetchTransactions.mockResolvedValue(mockTransactions);
+    render(
+      <PortfolioProvider>
+        <Transactions />
+      </PortfolioProvider>
+    );
+    await waitFor(() => {
+      expect(screen.getByText('AAPL')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Supported CSV formats')).toBeInTheDocument();
+    expect(screen.getByText('Stock CSV')).toBeInTheDocument();
+    expect(screen.getByText('Mutual fund CSV')).toBeInTheDocument();
+    expect(screen.getByText(/ASSET SYMBOL/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Scheme Code/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Do not mix stock and mutual fund rows/i)).toBeInTheDocument();
+    expect(screen.getByText(/MF dates must be MM\/DD\/YY/i)).toBeInTheDocument();
+    expect(screen.getByText(/MF Currency defaults to INR/i)).toBeInTheDocument();
+    expect(screen.getByText(/SWAP rows import as splits/i)).toBeInTheDocument();
+  });
+
+  it('download sample MF CSV button triggers client-side download', async () => {
+    const downloadSpy = vi.spyOn(csvGuidance, 'downloadSampleMutualFundCsv').mockImplementation(() => {});
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'USD' });
+    api.fetchTransactions.mockResolvedValue(mockTransactions);
+    render(
+      <PortfolioProvider>
+        <Transactions />
+      </PortfolioProvider>
+    );
+    await waitFor(() => {
+      expect(screen.getByText('AAPL')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Download sample MF CSV' }));
+    expect(downloadSpy).toHaveBeenCalledTimes(1);
+    downloadSpy.mockRestore();
+  });
+
+  it('Import from CSV button still opens file picker flow', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'USD' });
+    api.fetchTransactions.mockResolvedValue(mockTransactions);
+    render(
+      <PortfolioProvider>
+        <Transactions />
+      </PortfolioProvider>
+    );
+    await waitFor(() => {
+      expect(screen.getByText('AAPL')).toBeInTheDocument();
+    });
+    const input = document.querySelector('input[type="file"]');
+    const clickSpy = vi.spyOn(input, 'click');
+    fireEvent.click(screen.getByRole('button', { name: 'Import from CSV' }));
+    expect(clickSpy).toHaveBeenCalled();
+    clickSpy.mockRestore();
+  });
+
+  it('renders pagination when total exceeds page_size', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'USD' });
+    mockPagedTransactions();
+    render(
+      <PortfolioProvider>
+        <Transactions />
+      </PortfolioProvider>
+    );
+    await waitFor(() => {
+      expect(screen.getByText('AAPL')).toBeInTheDocument();
+    });
+    expect(screen.getByLabelText('Transactions pagination')).toBeInTheDocument();
+    expect(screen.getByText(/Page 1 of 2/)).toBeInTheDocument();
+    expect(screen.getByText(/Showing 1–50 of 75/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Previous page' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeEnabled();
+  });
+
+  it('Next page button fetches page 2', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'USD' });
+    mockPagedTransactions();
+    render(
+      <PortfolioProvider>
+        <Transactions />
+      </PortfolioProvider>
+    );
+    await waitFor(() => {
+      expect(screen.getByText('AAPL')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    await waitFor(() => {
+      expect(api.fetchTransactions).toHaveBeenLastCalledWith(
+        2,
+        50,
+        {
+          portfolio_scope: 'all',
+          display_currency: 'USD',
+        },
+        NO_FILTERS
+      );
+    });
+  });
+
+  it('Previous page button fetches page 1 after navigating forward', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'USD' });
+    mockPagedTransactions();
+    render(
+      <PortfolioProvider>
+        <Transactions />
+      </PortfolioProvider>
+    );
+    await waitFor(() => {
+      expect(screen.getByText('AAPL')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    await waitFor(() => {
+      expect(api.fetchTransactions).toHaveBeenLastCalledWith(2, 50, expect.any(Object), expect.any(Object));
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Previous page' }));
+    await waitFor(() => {
+      expect(api.fetchTransactions).toHaveBeenLastCalledWith(1, 50, expect.any(Object), expect.any(Object));
+    });
+  });
+
+  it('resets to page 1 when portfolio scope changes', async () => {
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'USD' });
+    mockPagedTransactions();
+
+    function ScopeSwitcher() {
+      const { selectPortfolio } = usePortfolio();
+      return (
+        <button type="button" onClick={() => selectPortfolio(2, 'P2')}>
+          Switch to P2
+        </button>
+      );
+    }
+
+    render(
+      <PortfolioProvider
+        initialPortfolios={[
+          { id: 1, name: 'Default Portfolio', is_default: true, is_active: true, base_currency: 'EUR' },
+          { id: 2, name: 'P2', is_default: false, is_active: true, base_currency: 'EUR' },
+        ]}
+        disableFetch
+      >
+        <ScopeSwitcher />
+        <Transactions />
+      </PortfolioProvider>
+    );
+    await waitFor(() => {
+      expect(screen.getByText('AAPL')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    await waitFor(() => {
+      expect(api.fetchTransactions).toHaveBeenLastCalledWith(
+        2,
+        50,
+        expect.objectContaining({ portfolio_scope: 'all' }),
+        expect.any(Object)
+      );
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to P2' }));
+    await waitFor(() => {
+      expect(api.fetchTransactions).toHaveBeenLastCalledWith(
+        1,
+        50,
+        expect.objectContaining({ portfolio_id: 2 }),
+        expect.any(Object)
+      );
+    });
+  });
+
   it('CSV import success shows count and refetches', async () => {
     api.fetchPortfolios.mockResolvedValueOnce([]);
     api.getSettings.mockResolvedValueOnce({ display_currency: 'USD' });
@@ -115,6 +327,9 @@ describe('Transactions Page', () => {
       expect(screen.getByText('Imported 3 transactions')).toBeInTheDocument();
     });
     expect(api.fetchTransactions.mock.calls.length).toBeGreaterThan(1);
+    const lastFetch = api.fetchTransactions.mock.calls[api.fetchTransactions.mock.calls.length - 1];
+    expect(lastFetch[0]).toBe(1);
+    expect(lastFetch[1]).toBe(50);
   });
 
   it('CSV import shows validation errors', async () => {
@@ -166,7 +381,12 @@ describe('Transactions Page', () => {
     );
 
     await waitFor(() => {
-      expect(api.fetchTransactions).toHaveBeenCalledWith(1, 50, { portfolio_id: 2, display_currency: 'EUR' });
+      expect(api.fetchTransactions).toHaveBeenCalledWith(
+        1,
+        50,
+        { portfolio_id: 2, display_currency: 'EUR' },
+        NO_FILTERS
+      );
     });
 
     const file = new File(['a'], 't.csv', { type: 'text/csv' });
@@ -390,6 +610,198 @@ describe('Transactions Page', () => {
       expect(screen.getByText(/Test Direct Growth Fund/)).toBeInTheDocument();
       expect(screen.getByText(/Folio FOLIO-12345/)).toBeInTheDocument();
       expect(screen.getByText('NAV verified')).toBeInTheDocument();
+    });
+  });
+
+  describe('Column filters', () => {
+    function renderWithFilters() {
+      return render(
+        <PortfolioProvider
+          initialPortfolios={[
+            { id: 1, name: 'Default Portfolio', is_default: true, is_active: true, base_currency: 'EUR' },
+            { id: 2, name: 'P2', is_default: false, is_active: true, base_currency: 'EUR' },
+          ]}
+          initialDisplayCurrency="EUR"
+          disableFetch
+        >
+          <Transactions />
+        </PortfolioProvider>
+      );
+    }
+
+    beforeEach(() => {
+      api.fetchTransactions.mockResolvedValue(mockTransactions);
+      api.fetchTransactionFilterOptions.mockResolvedValue({
+        portfolios: [
+          { id: 1, name: 'Default Portfolio' },
+          { id: 2, name: 'P2' },
+        ],
+        symbols: ['AAPL', 'MSFT', '120503'],
+      });
+    });
+
+    it('renders filter controls', async () => {
+      renderWithFilters();
+      await waitFor(() => expect(screen.getByText('AAPL')).toBeInTheDocument());
+      expect(screen.getByLabelText('Filter by portfolio')).toBeInTheDocument();
+      expect(screen.getByLabelText('Filter by symbol')).toBeInTheDocument();
+      expect(screen.getByLabelText('Date filter mode')).toBeInTheDocument();
+    });
+
+    it('selecting a portfolio filter calls API with portfolio_id and resets to page 1', async () => {
+      renderWithFilters();
+      await waitFor(() => expect(screen.getByText('AAPL')).toBeInTheDocument());
+      fireEvent.change(screen.getByLabelText('Filter by portfolio'), { target: { value: '2' } });
+      await waitFor(() => {
+        expect(api.fetchTransactions).toHaveBeenLastCalledWith(
+          1,
+          50,
+          expect.objectContaining({ portfolio_id: 2 }),
+          NO_FILTERS
+        );
+      });
+    });
+
+    it('selecting a symbol filter calls API with symbols', async () => {
+      renderWithFilters();
+      await waitFor(() => expect(screen.getByText('AAPL')).toBeInTheDocument());
+      fireEvent.click(screen.getByLabelText('Filter by symbol'));
+      fireEvent.click(screen.getByRole('checkbox', { name: 'MSFT' }));
+      await waitFor(() => {
+        expect(api.fetchTransactions).toHaveBeenLastCalledWith(
+          1,
+          50,
+          expect.any(Object),
+          expect.objectContaining({ symbols: ['MSFT'] })
+        );
+      });
+    });
+
+    it('searching narrows the symbol option list', async () => {
+      renderWithFilters();
+      await waitFor(() => expect(screen.getByText('AAPL')).toBeInTheDocument());
+      fireEvent.click(screen.getByLabelText('Filter by symbol'));
+      fireEvent.change(screen.getByLabelText('Search symbols'), { target: { value: 'ms' } });
+      expect(screen.getByRole('checkbox', { name: 'MSFT' })).toBeInTheDocument();
+      expect(screen.queryByRole('checkbox', { name: 'AAPL' })).not.toBeInTheDocument();
+    });
+
+    it('earlier than date sends date_to', async () => {
+      renderWithFilters();
+      await waitFor(() => expect(screen.getByText('AAPL')).toBeInTheDocument());
+      fireEvent.change(screen.getByLabelText('Date filter mode'), { target: { value: 'before' } });
+      fireEvent.change(screen.getByLabelText('Date value'), { target: { value: '2026-03-01' } });
+      await waitFor(() => {
+        expect(api.fetchTransactions).toHaveBeenLastCalledWith(
+          1,
+          50,
+          expect.any(Object),
+          expect.objectContaining({ date_from: null, date_to: '2026-03-01' })
+        );
+      });
+    });
+
+    it('later than date sends date_from', async () => {
+      renderWithFilters();
+      await waitFor(() => expect(screen.getByText('AAPL')).toBeInTheDocument());
+      fireEvent.change(screen.getByLabelText('Date filter mode'), { target: { value: 'after' } });
+      fireEvent.change(screen.getByLabelText('Date value'), { target: { value: '2026-03-01' } });
+      await waitFor(() => {
+        expect(api.fetchTransactions).toHaveBeenLastCalledWith(
+          1,
+          50,
+          expect.any(Object),
+          expect.objectContaining({ date_from: '2026-03-01', date_to: null })
+        );
+      });
+    });
+
+    it('between dates sends date_from and date_to', async () => {
+      renderWithFilters();
+      await waitFor(() => expect(screen.getByText('AAPL')).toBeInTheDocument());
+      fireEvent.change(screen.getByLabelText('Date filter mode'), { target: { value: 'between' } });
+      fireEvent.change(screen.getByLabelText('Date from'), { target: { value: '2026-01-01' } });
+      fireEvent.change(screen.getByLabelText('Date to'), { target: { value: '2026-06-01' } });
+      await waitFor(() => {
+        expect(api.fetchTransactions).toHaveBeenLastCalledWith(
+          1,
+          50,
+          expect.any(Object),
+          expect.objectContaining({ date_from: '2026-01-01', date_to: '2026-06-01' })
+        );
+      });
+    });
+
+    it('does not call API when between range is invalid (from > to)', async () => {
+      renderWithFilters();
+      await waitFor(() => expect(screen.getByText('AAPL')).toBeInTheDocument());
+      fireEvent.change(screen.getByLabelText('Date filter mode'), { target: { value: 'between' } });
+      fireEvent.change(screen.getByLabelText('Date from'), { target: { value: '2026-06-01' } });
+      fireEvent.change(screen.getByLabelText('Date to'), { target: { value: '2026-01-01' } });
+      await waitFor(() => {
+        expect(screen.getByRole('alert')).toBeInTheDocument();
+      });
+      const invalidCall = api.fetchTransactions.mock.calls.some(
+        (c) => c[3]?.date_from === '2026-06-01' && c[3]?.date_to === '2026-01-01'
+      );
+      expect(invalidCall).toBe(false);
+    });
+
+    it('pagination preserves active filters', async () => {
+      api.fetchTransactions.mockImplementation((page) =>
+        Promise.resolve(makePagedResponse({ page }))
+      );
+      renderWithFilters();
+      await waitFor(() => expect(screen.getByText('AAPL')).toBeInTheDocument());
+      fireEvent.click(screen.getByLabelText('Filter by symbol'));
+      fireEvent.click(screen.getByRole('checkbox', { name: 'AAPL' }));
+      await waitFor(() => {
+        expect(api.fetchTransactions).toHaveBeenLastCalledWith(
+          1,
+          50,
+          expect.any(Object),
+          expect.objectContaining({ symbols: ['AAPL'] })
+        );
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+      await waitFor(() => {
+        expect(api.fetchTransactions).toHaveBeenLastCalledWith(
+          2,
+          50,
+          expect.any(Object),
+          expect.objectContaining({ symbols: ['AAPL'] })
+        );
+      });
+    });
+
+    it('Clear filters resets all filters and refetches', async () => {
+      renderWithFilters();
+      await waitFor(() => expect(screen.getByText('AAPL')).toBeInTheDocument());
+      fireEvent.change(screen.getByLabelText('Filter by portfolio'), { target: { value: '2' } });
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+      await waitFor(() => {
+        expect(api.fetchTransactions).toHaveBeenLastCalledWith(
+          1,
+          50,
+          expect.objectContaining({ portfolio_scope: 'all' }),
+          NO_FILTERS
+        );
+      });
+      expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument();
+    });
+
+    it('shows active filter chips', async () => {
+      renderWithFilters();
+      await waitFor(() => expect(screen.getByText('AAPL')).toBeInTheDocument());
+      fireEvent.click(screen.getByLabelText('Filter by symbol'));
+      fireEvent.click(screen.getByRole('checkbox', { name: 'MSFT' }));
+      await waitFor(() => {
+        expect(screen.getByLabelText('Active filters')).toBeInTheDocument();
+        expect(screen.getByLabelText('Remove symbol MSFT')).toBeInTheDocument();
+      });
     });
   });
 });

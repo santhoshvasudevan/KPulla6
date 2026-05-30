@@ -68,6 +68,55 @@ Compare transaction and portfolio counts to the pre-phase snapshot. If counts dr
 | `make stop-all` | Stop backend, frontend, and Postgres container |
 | `make clean-dev` | `stop-all` then `ports` |
 
+## Market data sync (manual)
+
+Cached stock prices, benchmark indices, FX rates, and mutual fund NAVs live in PostgreSQL. Read APIs (holdings, dashboard, summary, performance) use the DB cache only — they do not call external providers. Refresh cache explicitly:
+
+| Target | Description |
+|--------|-------------|
+| `make refresh` | **All valuation data:** stocks + benchmarks + FX + mutual fund NAVs (runs `sync_market_data`) |
+| `make sync-market-data` | Same as `refresh` without the completion banner |
+| `make sync-prices` | Stock `HistoricalPrice` rows only |
+| `make sync-benchmarks` | Benchmark index prices only |
+| `make sync-fx` | FX rate pairs only |
+| `make sync-mutual-fund-navs` | Mutual fund NAV rows only (`asset_type=MUTUAL_FUND`) |
+
+HTTP equivalents: `POST /api/v1/prices/refresh` (stocks), `POST /api/v1/nav/refresh` (MF NAVs), `POST /api/v1/portfolio/force-sync` (combined, same as `sync_market_data`).
+
+`sync_market_data` accepts `--skip-fx` and `--skip-mutual-funds` to opt out of FX or MF NAV sync. Per-scheme MF failures are logged and counted (`failed=N`); the batch continues and the command prints a warning when `failed > 0`.
+
+### Incremental sync behavior (`make refresh`)
+
+`make refresh` runs `python manage.py sync_market_data` → `sync_all_market_data()` in order: **stocks → benchmarks → FX → mutual fund NAVs**. Read APIs never trigger sync; they use cached DB rows only.
+
+| Cache type | First run (no rows) | Warm cache (up to date) | Coverage gap |
+|------------|---------------------|-------------------------|--------------|
+| **Stocks** | Earliest stock/ETF transaction date per symbol | Latest stock price + 1 day through today; provider skipped if already current | Backfill from earliest stock transaction when cache starts later |
+| **Benchmarks** | Earliest **non-MF** transaction date (portfolio anchor) | Latest index price + 1 day; skipped if current | Backfill from anchor when cached index rows start later |
+| **FX** | Earliest required valuation date per pair | Latest FX row + 1 day | Backfill from required date when cache starts later |
+| **MF NAVs** | Earliest MF `nav_date` / transaction date per scheme | Latest cached NAV + 1 day | Separate AMFI/MFAPI path; MF scheme codes never sent to yfinance |
+
+**Mutual funds:** stock/yfinance sync collects symbols from stock/ETF transactions only. AMFI scheme codes sync via `sync_mutual_fund_navs` only.
+
+**Repeat refresh:** when all caches are current for a symbol/pair/scheme, `start > today` and that provider call is skipped (no full-history re-download).
+
+## Access from iPad / home LAN (frontend only)
+
+Use the **full app** on another device on the same Wi‑Fi without opening Django port 8000 in the browser. Vite serves the UI on the LAN; `/api` requests are proxied to Django on the Mac.
+
+| Step | Action |
+|------|--------|
+| Start stack | `make dev` on the Mac mini |
+| Mac LAN IP | `ipconfig getifaddr en0` (Wi‑Fi; IP may change after DHCP) |
+| iPad URL | `http://<mac-lan-ip>:5173` — not `localhost`, not `:8000` |
+| `.env` | Keep `VITE_API_BASE_URL` **empty** (see `.env.example`) |
+| Firewall | Allow incoming for Node (Vite) if macOS prompts |
+| Network | Same Wi‑Fi; avoid guest/isolated VLAN |
+
+Smoke check on iPad: app loads; network requests go to `http://<mac-ip>:5173/api/v1/...` only.
+
+Dev-only; do not expose to the public internet.
+
 ## Generic feature workflow
 Same discipline as KPulla5 (`../KPulla5/docs/workflows.md`):
 

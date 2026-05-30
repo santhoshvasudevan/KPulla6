@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { fetchAssetDetails } from '../api';
 import { usePortfolio } from '../portfolioContext';
 import { formatCurrency } from '../utils/formatters';
+import { AssetDetailMetricSheet } from '../components/metricSheet';
 import {
   PageHeader,
   MetricCard,
@@ -40,12 +41,14 @@ function DetailRow({ label, children }) {
 
 export default function AssetDetail() {
   const { assetSymbol } = useParams();
-  const { apiQuery, selectedPortfolioName, selectedDisplayCurrency } = usePortfolio();
+  const { apiQuery, selectedPortfolioName, selectedDisplayCurrency, settingsLoaded } =
+    usePortfolio();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const loadData = useCallback(() => {
+    if (!settingsLoaded || !apiQuery) return;
     setLoading(true);
     setError('');
     fetchAssetDetails(assetSymbol, apiQuery)
@@ -57,13 +60,22 @@ export default function AssetDetail() {
         setError(e.message);
         setLoading(false);
       });
-  }, [assetSymbol, apiQuery]);
+  }, [assetSymbol, apiQuery, settingsLoaded]);
 
   useEffect(() => {
+    if (!settingsLoaded || !apiQuery) return;
     loadData();
-  }, [loadData]);
+  }, [loadData, settingsLoaded, apiQuery]);
 
-  if (loading) return <LoadingState message="Loading asset details…" />;
+  if (!settingsLoaded || loading) {
+    return (
+      <LoadingState
+        message={
+          !settingsLoaded ? 'Loading display settings…' : 'Loading asset details…'
+        }
+      />
+    );
+  }
   if (error) {
     return (
       <ErrorState
@@ -151,6 +163,13 @@ export default function AssetDetail() {
           }
         />
       </div>
+
+      <AssetDetailMetricSheet
+        assetSymbol={data.asset_symbol || assetSymbol}
+        apiQuery={apiQuery}
+        folioNumber={data.folio_number || null}
+        settingsLoaded={settingsLoaded}
+      />
 
       <div className="asset-detail-sections">
         <SectionCard title="Position / Cost Basis">

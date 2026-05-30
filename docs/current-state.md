@@ -1,7 +1,7 @@
 # Current State — KPulla6 (Portfolio Insight)
 
 ## Last Updated
-2026-05-27 (Portfolio CRUD UI + bulk transaction assignment)
+2026-05-31 (Phase 11A: monthly returns grid)
 
 ## Stack
 - **Backend:** Django 5 + Django REST Framework
@@ -16,12 +16,19 @@
   - `GET/POST /api/v1/transactions`
   - `PUT/DELETE /api/v1/transactions/{id}`
   - Portfolio scoping: `portfolio_scope=all` (default) or `portfolio_id`
+  - **Column filters:** `asset_symbol`, `symbols` (comma-separated, case-insensitive), `date_from` / `date_to` (+ `date_after` / `date_before` aliases) applied before pagination; invalid date or `date_from > date_to` → `400`
+  - `GET /api/v1/transactions/filter-options` — distinct portfolios / symbols / types / date bounds for the current scope
 - **CSV import + stock splits** (Phase 5):
   - `POST /api/v1/transactions/import-csv` — all-or-nothing; row-level errors
+  - Stock CSV: `Action`, `Date`, `ASSET SYMBOL`, `Qty`, `Price/Share`, optional `FEES`
+  - **Mutual fund CSV (MF-11a):** detected by `Scheme Code` + `Folio Number` headers; BUY/SELL only; routes to `create_mutual_fund_transaction()`; no mixed stock+MF file
   - SWAP pair → `STOCK_SPLIT`; direct `STOCK_SPLIT` CSV rows
   - `transactions/csv_import.py`, `import_transactions_from_csv` in services
-- **Finance domain** (Phase 6):
-  - `backend/finance/` — FIFO, splits, XIRR, TWROR helpers (no Django imports)
+- **Finance domain** (Phase 6 + Phase 2 analytics foundation):
+  - `backend/finance/` — FIFO, splits, XIRR, TWROR, **returns** helpers (no Django imports)
+  - `finance/returns.py` — daily/monthly/yearly fractional return series from values, flows, or TWROR points
+  - `finance/performance_stats.py`, `finance/risk_metrics.py`, `finance/drawdowns.py` — Metric Sheet metrics from daily return fractions (Phase 3)
+  - `finance/comparison.py` — benchmark-relative metrics: beta, alpha, correlation, tracking error, etc. (Phase 4); `finance/benchmarks.py` remains chart-overlay rebasing only
   - `transactions/finance_adapter.py` — Transaction model → finance DTO
 - **Holdings + asset detail** (Phase 7):
   - `GET /api/v1/portfolio/holdings`
@@ -31,18 +38,23 @@
   - `POST /api/v1/prices/refresh`, `POST /api/v1/nav/refresh`, `POST /api/v1/portfolio/force-sync`, `GET /api/v1/benchmarks/indices`
   - `market_data/services/` (price + benchmark sync), `market_data/providers/` (yfinance, mockable)
   - Stock `sync_prices` backfills from earliest transaction date when cached prices start later than first transaction (GOOG-style gaps); otherwise incremental from latest cached date + 1
+  - Benchmark `sync_benchmarks` uses the same backfill/incremental rules with anchor = earliest transaction date (stocks and MF)
   - FX `sync_fx_rates` backfills from earliest required valuation date when cached FX starts later than needed (USD price + EUR holding with late FX rows); otherwise incremental from latest cached date + 1
   - `fx/lookup.py`, `fx/services.py`, `fx/providers/` (FX upsert + yfinance)
   - Management: `sync_prices`, `sync_benchmarks`, `sync_fx_rates`, `sync_market_data`
   - Manual refresh/sync is **synchronous**; holdings/dashboard reads use DB cache only
 - **Portfolio summary** (Phase 9):
   - `GET /api/v1/portfolio/summary` — FIFO metrics, optional daily timeseries, display currency
+  - **FIX-2:** `portfolio_scope=all` headline monetary fields sum per-active-portfolio summaries in requested `display_currency` (fixes mixed EUR stock + INR MF under-count)
   - `portfolios/summary_service.py`, `portfolios/summary_views.py`
   - Value timeseries uses `build_split_adjusted_lot_snapshots` with cached split-adjusted prices so pre-split holdings are quantity-adjusted before daily valuation
+  - **Stock price invariant:** yfinance sync stores **Adj Close** (split-adjusted); raw nominal pre-split prices are unsupported for valuation/Metric Sheet analytics — see `test_stock_split_valuation_api.py`, `test_analytics_split_metrics_api.py`
   - `market_data/price_repository.py`, `fx/lookup.convert_amount_with_fill`
   - Read path: no external market-data calls; no auto-sync on summary request
 - **Portfolio performance** (Phase 10):
   - `GET /api/v1/portfolio/performance` — `value`, `cumulative_return`, `twror`, `range`, optional benchmark
+  - `GET /api/v1/analytics/performance-metrics` — Metric Sheet metrics (Phase 5); `analytics/services.py`; `metrics.return.xirr_scope: "full_scope"` (Phase 5B)
+  - `GET /api/v1/analytics/assets/{asset_symbol}/performance-metrics` — asset Metric Sheet (Phase 6); stocks + MFs; optional `folio_number`; warns on likely raw split prices (Phase 6B)
   - `portfolios/performance_service.py`, `portfolios/performance_views.py`
   - `finance/performance_range.py`, `finance/benchmarks.py` (pure comparison math)
   - Reuses Phase 9 value timeseries; benchmark levels from `HistoricalPrice` (`asset_type=INDEX`)
@@ -62,7 +74,7 @@
   - `market_data/nav_lookup.py`, `market_data/nav_repository.py` — DB-only latest/range NAV lookup
   - Management: `sync_mutual_fund_navs` (`--scheme-code` optional)
   - Tests: `backend/tests/test_mutual_fund_nav_sync.py` (12 cases)
-  - **Not wired:** NAV refresh HTTP endpoint, `sync_market_data` MF inclusion, holdings/summary/performance reads, live AMFI download
+  - **Not wired:** holdings/summary/performance MF-specific metrics beyond cached NAV rows
 - **Mutual fund transaction API** (Phase MF-3):
   - `POST/PUT /api/v1/transactions` with `asset_type=MUTUAL_FUND` — BUY/SELL with scheme, folio, dual dates, NAV, units, paid/market value
   - `transactions/mutual_fund_services.py`, `MutualFundTransactionWriteSerializer`
@@ -105,22 +117,31 @@
   - Transactions table — scheme/folio/NAV status display; stock rows unchanged
   - Assets holdings — safe MF row labels (`scheme_name`, folio) without stock regression
   - Tests: `TransactionModal.test.jsx`, `Transactions.test.jsx`, `transactionDisplay.test.js`
-  - **Not wired:** scheme search, MF CSV import, allocation redesign
+  - **Not wired:** scheme search, allocation redesign
+  - MF CSV import guidance on Transactions page (MF-11b)
 - **Live mutual fund NAV provider** (Phase MF-10):
   - `AmfiNavProvider` — MFAPI fetch for latest NAV + date-range history; injectable `http_get`
   - Parser: `amfi_nav_parser.py`; timeout/network/malformed response handling
   - Tests: `backend/tests/test_amfi_nav_provider.py` (20 cases); all HTTP mocked
-  - **Not wired:** scheme search, MF CSV import, grouping setting
+  - **Not wired:** scheme search, grouping setting
+- **Mutual fund CSV import** (Phase MF-11a):
+  - `POST /api/v1/transactions/import-csv` — dedicated MF CSV headers; `parse_mutual_fund_transaction_csv` + `create_mutual_fund_transaction()`
+  - Cached NAV verification only on import; all-or-nothing; same `portfolio_id` query rules as stock CSV
+  - Tests: `backend/tests/test_mutual_fund_csv_import.py` (16 cases)
+- **Mutual fund CSV import guidance** (Phase MF-11b):
+  - Transactions page — expandable stock vs MF format panel, rules, inline example, client-side sample MF CSV download
+  - `frontend/src/utils/csvImportGuidance.js`; tests in `csvImportGuidance.test.js`, `Transactions.test.jsx`
+  - **Not wired:** stock sample CSV download
 
 ## Frontend (Phase 11 + design migration)
 - React Router app shell with virtual **All Portfolios** + real portfolio selector
 - **Portfolio management (Settings):** create, rename/edit, deactivate non-default portfolios; max 5 active; Default Portfolio cannot be deactivated; sidebar selector refreshes via `reloadPortfolios()`
 - **Bulk transaction assignment (Transactions):** row selection + assign selected rows to a real portfolio via full PUT payloads (stock, MF, STOCK_SPLIT)
-- Display currency from settings (sidebar + Settings page)
-- Dashboard: summary cards, performance chart (value / cumulative return / TWROR), range pills, benchmark overlay
+- Display currency from settings (sidebar + Settings page); **`portfolioContext` waits for `GET /settings` before exposing `apiQuery`**; Dashboard summary/performance fetches use request-sequence guards so stale responses cannot overwrite newer currency scope
+- Dashboard: summary cards via `GET /portfolio/summary?include_timeseries=false` (headline metrics only; chart uses performance API), performance chart (value / cumulative return / TWROR), range pills, benchmark overlay
 - Assets: holdings table, allocation chart, closed/oversold/price_missing states
 - Asset detail: FIFO metrics + transaction history (scoped)
-- Transactions: CRUD, CSV import, STOCK_SPLIT form, bulk assign to portfolio
+- Transactions: CRUD, CSV import (stock + MF formats documented in UI), STOCK_SPLIT form, bulk assign to portfolio, **column filters** (portfolio dropdown, searchable symbol multi-select, date Earlier than / Later than / Between) with active-filter chips and Clear filters; filters apply to the full dataset before pagination and persist across page navigation
 - API client: `VITE_API_BASE_URL` + `/api/v1` (no client-side finance/FX/benchmark math)
 - **Manual sync:** run `make refresh` (or `make sync-market-data`) for stocks, benchmarks, FX, and mutual fund NAVs; stock-only: `make sync-prices`; MF NAV only: `sync_mutual_fund_navs` or `POST /api/v1/nav/refresh`
 
@@ -134,6 +155,31 @@
 
 ## Not Yet Implemented
 - Automatic background sync scheduler (Celery/RQ not configured)
+- **Quantitative Statistics / Metric Sheet** — portfolio + asset + compare APIs **implemented** (Phase 5–7); Dashboard + Asset Detail + Compare Metric Sheet UI **implemented** (Phase 8B–8D)
+
+### Planned — Analytics Metric Sheet (Phase 1 docs complete)
+
+| Topic | Status |
+|-------|--------|
+| Architecture: TWROR-derived daily returns as primary stats input | **Documented** |
+| MVP: compute metrics on query; no DB persistence of derived series | **Documented** |
+| `backend/finance/returns.py` | **Done** (Phase 2) — unit tests in `test_finance_returns.py` |
+| `backend/finance/performance_stats.py`, `risk_metrics.py`, `drawdowns.py` | **Done** (Phase 3) — `test_finance_performance_stats.py`, `test_finance_risk_metrics.py`, `test_finance_drawdowns.py` |
+| `backend/finance/comparison.py` | **Done** (Phase 4) — `test_finance_comparison.py` |
+| `backend/analytics/services.py`, views | **Done** (Phase 5–6) — portfolio + asset Metric Sheet |
+| `GET /api/v1/analytics/performance-metrics` | **Done** (Phase 5) — `test_analytics_performance_metrics_api.py` |
+| `GET /api/v1/analytics/assets/{symbol}/performance-metrics` | **Done** (Phase 6) — `test_analytics_asset_metrics_api.py`; split hardening in `test_analytics_split_metrics_api.py` (Phase 6B) |
+| `GET /api/v1/analytics/compare` | **Done** (Phase 7) — `test_analytics_compare_api.py` |
+| Metric Sheet frontend foundation (API client, formatters, components) | **Done** (Phase 8A) — `metricSheet.test.jsx`, `metricFormatters.test.js` |
+| Dashboard Metric Sheet section | **Done** (Phase 8B) — `Dashboard.test.jsx` Metric Sheet tests |
+| Asset Detail Metric Sheet section | **Done** (Phase 8C) — `AssetDetail.test.jsx` Metric Sheet tests |
+| Compare UI | **Done** (Phase 8D) — `Compare.jsx`, `Compare.test.jsx` |
+| Metric Sheet UX hardening | **Done** (Phase 8E) — picker labels, range copy, XIRR note, warnings |
+| Metric Sheet periodic returns + drawdown periods (API) | **Done** (Phase 9A) — `periodic_returns`, `drawdown_periods` on portfolio/asset/compare |
+| Metric Sheet periodic/drawdown UI (frontend) | **Done** (Phase 9B) — `MetricSheetPeriodicReturnsTable`, `MetricSheetDrawdownPeriodsTable`, Compare sections |
+| Metric Sheet polish (Phase 10B) | **Done** — Dashboard benchmark control, table scroll, Asset Detail settings gate, clearer price/NAV warnings |
+| Metric Sheet monthly returns grid (Phase 11A) | **Done** — `MetricSheetMonthlyReturnsGrid` on Dashboard + Asset Detail |
+| Golden unit tests for analytics formulas | Partial — TWROR golden tests in `test_finance_domain.py` only |
 
 ## Planned — Indian Mutual Funds (MF-4+)
 
@@ -151,13 +197,14 @@ Design doc: [mutual-funds.md](./mutual-funds.md). **MF-1 schema, MF-2 NAV sync, 
 | Frontend MF transaction form + list display | **MF-8 done** |
 | NAV refresh HTTP + combined sync | **MF-9 done** |
 | Live NAV provider (MFAPI) | **MF-10 done** |
-| Scheme-only grouping / CSV | MF-11 |
+| Scheme-only grouping / frontend MF CSV UX | MF-11 |
 
 ## Phase 6 contracts (verified in tests)
 - FIFO cost basis, realized/unrealized P/L, stock split adjustments
 - XIRR cashflow rules; TWROR chain-link helper (not exposed via API)
 - Oversell: no hard reject; realized P/L uses full sell proceeds vs FIFO cost of held lots only
-- TWROR: `compute_twror_series` in `finance/twror.py`; exposed via performance API (Phase 10)
+- TWROR: `compute_twror_series` in `finance/twror.py`; golden unit tests in `test_finance_domain.py`; exposed via performance API (Phase 10)
+- Analytics Metric Sheet: design only (Phase 1) — see `docs/architecture.md` § Quantitative Statistics / Metric Sheet architecture
 
 ## Phase 10 contracts (verified in tests)
 - Performance scoping/validation matches summary (default `all`, 400/404/422 rules)
@@ -187,12 +234,13 @@ Design doc: [mutual-funds.md](./mutual-funds.md). **MF-1 schema, MF-2 NAV sync, 
 ## Phase 8 contracts (verified in tests)
 - Incremental, idempotent `HistoricalPrice` upsert (stocks + INDEX benchmarks)
 - Stock sync start date: earliest transaction when no cache; backfill from earliest transaction when cache starts later than first transaction; else latest cached date + 1
+- Benchmark sync start date: earliest transaction anchor when no cache; backfill when anchor predates earliest cached index row; else latest cached index date + 1
 - Stock symbols uppercased; benchmark symbols preserve `^` (e.g. `^GSPC`)
 - FX: same-date lookup only (no latest-rate fallback for historical dates); sync backfills when earliest required date precedes earliest cached FX row
 - All sync tests mock providers — no real network calls
 
 ## Test Status
-- Backend: `make test-backend` — 393 pytest tests
+- Backend: `make test-backend` — 409 pytest tests
 - Frontend: `make test-frontend` — vitest tests; `npm run build` passes
 
 ## Phase 4 contracts (verified in tests)

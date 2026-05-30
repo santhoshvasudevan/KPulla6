@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState, useRef, useMemo } from 'react';
-import { fetchTransactions, deleteTransaction, importTransactionsCsv, updateTransaction } from '../api';
+import {
+  fetchTransactions,
+  fetchTransactionFilterOptions,
+  deleteTransaction,
+  importTransactionsCsv,
+  updateTransaction,
+} from '../api';
 import TransactionModal from '../components/TransactionModal';
 import {
   PageHeader,
@@ -22,8 +28,19 @@ import {
 } from '../utils/transactionDisplay';
 import { buildTransactionUpdatePayload } from '../utils/transactionPayload';
 import { Plus, Edit2, Trash2 } from 'lucide-react';
+import TransactionFilterBar from '../components/TransactionFilterBar';
+import {
+  STOCK_CSV_COLUMNS,
+  MF_CSV_REQUIRED_COLUMNS,
+  MF_CSV_OPTIONAL_COLUMNS,
+  getSampleMutualFundCsvContent,
+  downloadSampleMutualFundCsv,
+} from '../utils/csvImportGuidance';
 import './Transactions.css';
 import { usePortfolio } from '../portfolioContext';
+
+const PAGE_SIZE_OPTIONS = [20, 50, 100];
+const DEFAULT_PAGE_SIZE = 50;
 
 function importBannerSeverity(status) {
   if (status.startsWith('Imported')) return 'success';
@@ -32,7 +49,13 @@ function importBannerSeverity(status) {
 }
 
 export default function Transactions() {
-  const { apiQuery, selectedPortfolioName, selectedPortfolioMode, portfolios } = usePortfolio();
+  const {
+    apiQuery,
+    selectedPortfolioName,
+    selectedPortfolioMode,
+    portfolios,
+    selectedDisplayCurrency,
+  } = usePortfolio();
   const activePortfolios = useMemo(
     () => (portfolios || []).filter((p) => p && p.is_active),
     [portfolios]
@@ -52,31 +75,190 @@ export default function Transactions() {
   const [bulkPortfolioId, setBulkPortfolioId] = useState('');
   const [bulkStatus, setBulkStatus] = useState('');
   const [bulkAssigning, setBulkAssigning] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
-  const loadData = useCallback(() => {
+  // Column filters.
+  const [filterPortfolioId, setFilterPortfolioId] = useState('');
+  const [symbolFilter, setSymbolFilter] = useState([]);
+  const [dateMode, setDateMode] = useState('any'); // 'any' | 'before' | 'after' | 'between'
+  const [dateValue, setDateValue] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [filterOptions, setFilterOptions] = useState({ portfolios: [], symbols: [] });
+
+  const computedDates = useMemo(() => {
+    if (dateMode === 'after') return { date_from: dateValue || null, date_to: null };
+    if (dateMode === 'before') return { date_from: null, date_to: dateValue || null };
+    if (dateMode === 'between') return { date_from: dateFrom || null, date_to: dateTo || null };
+    return { date_from: null, date_to: null };
+  }, [dateMode, dateValue, dateFrom, dateTo]);
+
+  const dateRangeInvalid =
+    dateMode === 'between' &&
+    computedDates.date_from &&
+    computedDates.date_to &&
+    computedDates.date_from > computedDates.date_to;
+
+  const symbolKey = symbolFilter.join(',');
+
+  const activeFilters = useMemo(
+    () => ({
+      symbols: symbolFilter,
+      date_from: computedDates.date_from,
+      date_to: computedDates.date_to,
+    }),
+    [symbolFilter, computedDates]
+  );
+
+  const effectiveScope = useMemo(() => {
+    if (filterPortfolioId) {
+      return {
+        portfolio_id: Number(filterPortfolioId),
+        display_currency: selectedDisplayCurrency || 'EUR',
+      };
+    }
+    return apiQuery;
+  }, [filterPortfolioId, apiQuery, selectedDisplayCurrency]);
+
+  const hasActiveFilters =
+    Boolean(filterPortfolioId) || symbolFilter.length > 0 || dateMode !== 'any';
+
+  const loadData = useCallback(
+    (targetPage = page, targetPageSize = pageSize) => {
+      if (dateRangeInvalid) return Promise.resolve(null);
+      setLoading(true);
+      setError('');
+      return fetchTransactions(targetPage, targetPageSize, effectiveScope, activeFilters)
+        .then((d) => {
+          setData(d);
+          setLoading(false);
+          return d;
+        })
+        .catch((err) => {
+          setError(err.message);
+          setLoading(false);
+          throw err;
+        });
+    },
+    [effectiveScope, activeFilters, dateRangeInvalid, page, pageSize]
+  );
+
+  useEffect(() => {
+    if (dateRangeInvalid) {
+      setLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
     setLoading(true);
     setError('');
-    fetchTransactions(1, 50, apiQuery)
+    fetchTransactions(page, pageSize, effectiveScope, activeFilters)
       .then((d) => {
+        if (cancelled) return;
         setData(d);
         setLoading(false);
       })
       .catch((err) => {
+        if (cancelled) return;
         setError(err.message);
         setLoading(false);
       });
-  }, [apiQuery]);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    apiQuery,
+    page,
+    pageSize,
+    filterPortfolioId,
+    symbolKey,
+    computedDates.date_from,
+    computedDates.date_to,
+    dateRangeInvalid,
+  ]);
 
+  // Distinct filter values (symbols, portfolios) for the current scope.
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    let cancelled = false;
+    fetchTransactionFilterOptions(effectiveScope)
+      .then((opts) => {
+        if (cancelled) return;
+        setFilterOptions({
+          portfolios: Array.isArray(opts?.portfolios) ? opts.portfolios : [],
+          symbols: Array.isArray(opts?.symbols) ? opts.symbols : [],
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setFilterOptions({ portfolios: [], symbols: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiQuery, filterPortfolioId]);
 
   useEffect(() => {
     setSelectedIds(new Set());
     setBulkStatus('');
+    setPage(1);
   }, [apiQuery]);
 
+  const handleFilterPortfolioChange = (value) => {
+    setFilterPortfolioId(value);
+    setPage(1);
+    setSelectedIds(new Set());
+  };
+
+  const handleSymbolFilterChange = (next) => {
+    setSymbolFilter(next);
+    setPage(1);
+    setSelectedIds(new Set());
+  };
+
+  const handleDateModeChange = (mode) => {
+    setDateMode(mode);
+    setPage(1);
+    setSelectedIds(new Set());
+  };
+
+  const handleClearFilters = () => {
+    setFilterPortfolioId('');
+    setSymbolFilter([]);
+    setDateMode('any');
+    setDateValue('');
+    setDateFrom('');
+    setDateTo('');
+    setPage(1);
+    setSelectedIds(new Set());
+  };
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [page]);
+
   const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const currentPage = data?.page ?? page;
+  const currentPageSize = data?.page_size ?? pageSize;
+  const totalPages = data?.pages ?? 1;
+  const showPagination = total > currentPageSize;
+  const rangeStart = total === 0 ? 0 : (currentPage - 1) * currentPageSize + 1;
+  const rangeEnd = total === 0 ? 0 : Math.min(currentPage * currentPageSize, total);
+
+  const goToPage = (nextPage) => {
+    if (nextPage < 1 || (totalPages > 0 && nextPage > totalPages)) return;
+    setPage(nextPage);
+  };
+
+  const handlePageSizeChange = (e) => {
+    setPageSize(Number(e.target.value));
+    setPage(1);
+    setSelectedIds(new Set());
+  };
+
+  const refreshAfterMutation = useCallback(() => loadData(), [loadData]);
   const allVisibleSelected =
     items.length > 0 && items.every((txn) => selectedIds.has(txn.id));
   const someVisibleSelected = items.some((txn) => selectedIds.has(txn.id));
@@ -122,7 +304,7 @@ export default function Transactions() {
 
     setSelectedIds(new Set());
     setBulkAssigning(false);
-    loadData();
+    refreshAfterMutation();
 
     if (failed === 0) {
       setBulkStatus(`Assigned ${succeeded} transaction${succeeded === 1 ? '' : 's'} successfully.`);
@@ -147,14 +329,14 @@ export default function Transactions() {
     if (!window.confirm('Are you sure you want to delete this transaction?')) return;
     try {
       await deleteTransaction(id);
-      loadData();
+      refreshAfterMutation();
     } catch (err) {
       alert(err.message);
     }
   };
 
   const handleModalSuccess = () => {
-    loadData();
+    refreshAfterMutation();
   };
 
   const handleImportClick = () => {
@@ -179,7 +361,11 @@ export default function Transactions() {
       const result = await importTransactionsCsv(file, portfolioId);
       if (result.success) {
         setImportStatus(`Imported ${result.imported_count} transactions`);
-        loadData();
+        if (page !== 1) {
+          setPage(1);
+        } else {
+          await loadData(1, pageSize);
+        }
       } else {
         setImportErrors(result.errors || []);
         setImportStatus('Import failed — fix errors and try again');
@@ -209,7 +395,7 @@ export default function Transactions() {
     <div className="transactions-page">
       <PageHeader
         title="Transactions"
-        subtitle={`${data?.total ?? 0} records · Source-of-truth activity ledger`}
+        subtitle={`${total} records · Source-of-truth activity ledger`}
         actions={
           <>
             <input
@@ -234,13 +420,63 @@ export default function Transactions() {
         severity="info"
         message={
           <>
-            Imported transactions will be added to: <strong>{importTarget}</strong>. CSV:
+            Imported transactions will be added to: <strong>{importTarget}</strong>. Stock CSV:
             Action=STOCK_SPLIT uses Qty=split_from and Price/Share=split_to; SWAP rows import as
             splits.
           </>
         }
         className="transactions-page__banner"
       />
+
+      <details className="transactions-import-help transactions-page__banner">
+        <summary>Supported CSV formats</summary>
+        <div className="transactions-import-help__body">
+          <p className="transactions-import-help__lead">
+            Use one format per file. The backend detects stock vs mutual fund from the header row.
+          </p>
+          <dl className="transactions-import-help__formats">
+            <div>
+              <dt>Stock CSV</dt>
+              <dd>
+                <code>{STOCK_CSV_COLUMNS}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>Mutual fund CSV</dt>
+              <dd>
+                <code>{MF_CSV_REQUIRED_COLUMNS}</code>
+                <span className="transactions-import-help__optional">
+                  Optional: {MF_CSV_OPTIONAL_COLUMNS}
+                </span>
+              </dd>
+            </div>
+          </dl>
+          <ul className="transactions-import-help__rules">
+            <li>Do not mix stock and mutual fund rows in one CSV.</li>
+            <li>MF Action supports BUY and SELL only.</li>
+            <li>MF dates must be MM/DD/YY or MM/DD/YYYY.</li>
+            <li>MF Currency defaults to INR when omitted.</li>
+            <li>
+              MF Fees: leave empty to let the backend derive fees from paid value minus market
+              value.
+            </li>
+          </ul>
+          <div className="transactions-import-help__example">
+            <p className="transactions-import-help__example-label">MF example (header + one row)</p>
+            <pre className="transactions-import-help__sample">
+              <code>{getSampleMutualFundCsvContent().trimEnd()}</code>
+            </pre>
+            <Button
+              type="button"
+              variant="secondary"
+              className="transactions-import-help__download"
+              onClick={downloadSampleMutualFundCsv}
+            >
+              Download sample MF CSV
+            </Button>
+          </div>
+        </div>
+      </details>
 
       {importStatus && importErrors.length === 0 ? (
         <WarningBanner
@@ -274,6 +510,26 @@ export default function Transactions() {
           className="transactions-page__banner"
         />
       ) : null}
+
+      <TransactionFilterBar
+        portfolios={filterOptions.portfolios.length ? filterOptions.portfolios : activePortfolios}
+        symbolOptions={filterOptions.symbols}
+        filterPortfolioId={filterPortfolioId}
+        onPortfolioChange={handleFilterPortfolioChange}
+        symbolFilter={symbolFilter}
+        onSymbolFilterChange={handleSymbolFilterChange}
+        dateMode={dateMode}
+        onDateModeChange={handleDateModeChange}
+        dateValue={dateValue}
+        onDateValueChange={setDateValue}
+        dateFrom={dateFrom}
+        onDateFromChange={setDateFrom}
+        dateTo={dateTo}
+        onDateToChange={setDateTo}
+        dateRangeInvalid={Boolean(dateRangeInvalid)}
+        hasActiveFilters={hasActiveFilters}
+        onClearFilters={handleClearFilters}
+      />
 
       {someVisibleSelected ? (
         <div className="transactions-bulk-toolbar" aria-label="Bulk actions">
@@ -315,13 +571,16 @@ export default function Transactions() {
         </div>
       ) : null}
 
-      {items.length === 0 ? (
+      {items.length === 0 && !loading ? (
         <EmptyState
           title="No transactions found."
           description="Add a transaction manually or import from CSV."
         />
-      ) : (
-        <div className="transactions-table-wrapper">
+      ) : items.length > 0 ? (
+        <div
+          className={`transactions-table-wrapper${loading ? ' transactions-table-wrapper--loading' : ''}`}
+          aria-busy={loading}
+        >
           <table className="transactions-table">
             <thead>
               <tr>
@@ -445,7 +704,62 @@ export default function Transactions() {
             </tbody>
           </table>
         </div>
-      )}
+      ) : null}
+
+      {total > 0 ? (
+        <nav className="transactions-pagination" aria-label="Transactions pagination">
+          <p className="transactions-pagination__range">
+            Showing {rangeStart}–{rangeEnd} of {total}
+            {showPagination ? (
+              <span className="transactions-pagination__page-label">
+                {' '}
+                · Page {page} of {totalPages}
+              </span>
+            ) : null}
+          </p>
+          <div className="transactions-pagination__controls">
+            <label className="transactions-pagination__label" htmlFor="transactions-page-size">
+              Rows per page
+            </label>
+            <select
+              id="transactions-page-size"
+              className="transactions-pagination__select"
+              value={pageSize}
+              onChange={handlePageSizeChange}
+              disabled={loading}
+              aria-label="Rows per page"
+            >
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+            {showPagination ? (
+              <div className="transactions-pagination__nav">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={loading || page <= 1}
+                  onClick={() => goToPage(page - 1)}
+                  aria-label="Previous page"
+                >
+                  Previous
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={loading || page >= totalPages}
+                  onClick={() => goToPage(page + 1)}
+                  aria-label="Next page"
+                >
+                  Next
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </nav>
+      ) : null}
 
       <TransactionModal
         isOpen={isModalOpen}

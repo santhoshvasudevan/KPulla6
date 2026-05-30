@@ -221,6 +221,31 @@ def test_sync_market_data_command_includes_mutual_funds(seeded):
 
 
 @pytest.mark.django_db
+def test_sync_market_data_command_warns_on_mutual_fund_failures(seeded):
+    with patch("market_data.management.commands.sync_market_data.sync_all_market_data") as m:
+        m.return_value = type(
+            "R",
+            (),
+            {
+                "prices_success": True,
+                "benchmarks_success": True,
+                "fx_success": True,
+                "fx_partial": False,
+                "mutual_funds_synced": 1,
+                "mutual_funds_skipped": 0,
+                "mutual_funds_failed": 2,
+                "success": True,
+                "mutual_funds_success": False,
+            },
+        )()
+        out = StringIO()
+        call_command("sync_market_data", stdout=out)
+    text = out.getvalue()
+    assert "failed=2" in text
+    assert "mutual fund NAV failures" in text
+
+
+@pytest.mark.django_db
 def test_sync_market_data_command_skip_mutual_funds(seeded):
     with patch("market_data.management.commands.sync_market_data.sync_all_market_data") as m:
         m.return_value = type(

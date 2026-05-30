@@ -7,6 +7,7 @@ export function PortfolioProvider({
   children,
   initialPortfolios = null,
   initialSelection = null,
+  initialDisplayCurrency = 'EUR',
   disableFetch = false,
 }) {
   const [portfolios, setPortfolios] = useState(Array.isArray(initialPortfolios) ? initialPortfolios : []);
@@ -17,7 +18,10 @@ export function PortfolioProvider({
   const [selectedPortfolioId, setSelectedPortfolioId] = useState(initialSelection?.id ?? null);
   const [selectedPortfolioName, setSelectedPortfolioName] = useState(initialSelection?.name || 'All Portfolios');
 
-  const [selectedDisplayCurrency, setSelectedDisplayCurrency] = useState('EUR');
+  const [settingsLoaded, setSettingsLoaded] = useState(disableFetch);
+  const [selectedDisplayCurrency, setSelectedDisplayCurrency] = useState(
+    disableFetch ? String(initialDisplayCurrency || 'EUR').toUpperCase() : null
+  );
 
   useEffect(() => {
     if (disableFetch) return;
@@ -46,10 +50,12 @@ export function PortfolioProvider({
         if (cancelled) return;
         const c = String(s?.display_currency || 'EUR').toUpperCase();
         setSelectedDisplayCurrency(c || 'EUR');
+        setSettingsLoaded(true);
       })
       .catch(() => {
         if (cancelled) return;
         setSelectedDisplayCurrency('EUR');
+        setSettingsLoaded(true);
       });
     return () => {
       cancelled = true;
@@ -103,11 +109,12 @@ export function PortfolioProvider({
   }, [portfolios]);
 
   const apiQuery = useMemo(() => {
+    if (!settingsLoaded || !selectedDisplayCurrency) return null;
     if (selectedPortfolioMode === 'portfolio' && selectedPortfolioId != null) {
       return { portfolio_id: selectedPortfolioId, display_currency: selectedDisplayCurrency };
     }
     return { portfolio_scope: 'all', display_currency: selectedDisplayCurrency };
-  }, [selectedPortfolioMode, selectedPortfolioId, selectedDisplayCurrency]);
+  }, [settingsLoaded, selectedPortfolioMode, selectedPortfolioId, selectedDisplayCurrency]);
 
   const value = useMemo(
     () => ({
@@ -118,6 +125,7 @@ export function PortfolioProvider({
       selectedPortfolioId,
       selectedPortfolioName,
       selectedDisplayCurrency,
+      settingsLoaded,
       setDisplayCurrency,
       reloadPortfolios,
       selectPortfolio,
@@ -134,6 +142,7 @@ export function PortfolioProvider({
       selectedPortfolioId,
       selectedPortfolioName,
       selectedDisplayCurrency,
+      settingsLoaded,
       setDisplayCurrency,
       reloadPortfolios,
       selectPortfolio,
@@ -149,4 +158,3 @@ export function usePortfolio() {
   if (!ctx) throw new Error('usePortfolio must be used within PortfolioProvider');
   return ctx;
 }
-

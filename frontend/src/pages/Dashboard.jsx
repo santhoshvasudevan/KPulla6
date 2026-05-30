@@ -1,5 +1,10 @@
-import { useEffect, useState, useMemo } from 'react';
-import { fetchDashboardSummary, fetchPortfolioPerformance, fetchBenchmarkIndices } from '../api';
+import { useEffect, useState, useMemo, useRef } from 'react';
+import {
+  fetchDashboardSummary,
+  fetchPortfolioPerformance,
+  fetchBenchmarkIndices,
+  getPortfolioMetricSheet,
+} from '../api';
 import { formatCurrency } from '../utils/formatters';
 import { usePortfolio } from '../portfolioContext';
 import {
@@ -14,6 +19,15 @@ import {
   SegmentedControl,
   EmptyState,
 } from '../components/ui';
+import {
+  MetricSheetSection,
+  MetricSheetSummaryCards,
+  MetricSheetRiskReturnTable,
+  MetricSheetBenchmarkTable,
+  MetricSheetWarnings,
+  MetricSheetPeriodicReturnsTable,
+  MetricSheetDrawdownPeriodsTable,
+} from '../components/metricSheet';
 import {
   LineChart,
   Line,
@@ -68,7 +82,7 @@ function plTone(val) {
 }
 
 export default function Dashboard() {
-  const { apiQuery, selectedPortfolioName } = usePortfolio();
+  const { apiQuery, selectedPortfolioName, settingsLoaded } = usePortfolio();
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -78,6 +92,12 @@ export default function Dashboard() {
   const [seriesLoading, setSeriesLoading] = useState(true);
   const [benchmarkOptions, setBenchmarkOptions] = useState([]);
   const [selectedBenchmark, setSelectedBenchmark] = useState('');
+  const [metricSheetData, setMetricSheetData] = useState(null);
+  const [metricSheetLoading, setMetricSheetLoading] = useState(true);
+  const [metricSheetError, setMetricSheetError] = useState('');
+  const summaryRequestIdRef = useRef(0);
+  const performanceRequestIdRef = useRef(0);
+  const metricSheetRequestIdRef = useRef(0);
 
   const showBenchmarkPicker =
     metric === 'cumulative_return' || metric === 'twror';
@@ -85,21 +105,25 @@ export default function Dashboard() {
   const shortChartRange = timeRange === '7D' || timeRange === '30D';
 
   useEffect(() => {
+    if (!settingsLoaded || !apiQuery) return;
+
+    const requestId = ++summaryRequestIdRef.current;
     setLoading(true);
     setError('');
-    fetchDashboardSummary(apiQuery)
+    fetchDashboardSummary(apiQuery, { includeTimeseries: false })
       .then((data) => {
+        if (requestId !== summaryRequestIdRef.current) return;
         setSummary(data);
         setLoading(false);
       })
       .catch((err) => {
+        if (requestId !== summaryRequestIdRef.current) return;
         setError(err.message);
         setLoading(false);
       });
-  }, [apiQuery]);
+  }, [settingsLoaded, apiQuery]);
 
   useEffect(() => {
-    if (!showBenchmarkPicker) return;
     let cancelled = false;
     fetchBenchmarkIndices()
       .then((rows) => {
@@ -112,23 +136,56 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [showBenchmarkPicker]);
+  }, []);
 
   useEffect(() => {
+    if (!settingsLoaded || !apiQuery) return;
+
+    const requestId = ++performanceRequestIdRef.current;
     setSeriesLoading(true);
-    setError('');
     const benchParam =
       showBenchmarkPicker && selectedBenchmark ? selectedBenchmark : null;
     fetchPortfolioPerformance(metric, benchParam, timeRange, apiQuery)
       .then((d) => {
+        if (requestId !== performanceRequestIdRef.current) return;
         setPerformanceData(d);
         setSeriesLoading(false);
       })
       .catch((e) => {
+        if (requestId !== performanceRequestIdRef.current) return;
         setError(e.message);
         setSeriesLoading(false);
       });
-  }, [metric, selectedBenchmark, showBenchmarkPicker, timeRange, apiQuery]);
+  }, [metric, selectedBenchmark, showBenchmarkPicker, timeRange, settingsLoaded, apiQuery]);
+
+  useEffect(() => {
+    if (!settingsLoaded || !apiQuery) return;
+
+    const requestId = ++metricSheetRequestIdRef.current;
+    setMetricSheetLoading(true);
+    setMetricSheetError('');
+
+    const params = {
+      ...apiQuery,
+      range: timeRange,
+    };
+    if (selectedBenchmark) {
+      params.benchmark = selectedBenchmark;
+    }
+
+    getPortfolioMetricSheet(params)
+      .then((data) => {
+        if (requestId !== metricSheetRequestIdRef.current) return;
+        setMetricSheetData(data);
+        setMetricSheetLoading(false);
+      })
+      .catch((err) => {
+        if (requestId !== metricSheetRequestIdRef.current) return;
+        setMetricSheetError(err.message || 'Failed to load Metric Sheet');
+        setMetricSheetData(null);
+        setMetricSheetLoading(false);
+      });
+  }, [settingsLoaded, apiQuery, timeRange, selectedBenchmark]);
 
   const chartTitle =
     metric === 'value'
@@ -197,7 +254,15 @@ export default function Dashboard() {
     ? getComparisonBarFill(summary.current_value, summary.total_invested)
     : getComparisonBarFill(0, 0);
 
-  if (loading) return <LoadingState message="Loading portfolio overview…" />;
+  if (!settingsLoaded || loading) {
+    return (
+      <LoadingState
+        message={
+          !settingsLoaded ? 'Loading display settings…' : 'Loading portfolio overview…'
+        }
+      />
+    );
+  }
   if (error) return <ErrorState title="Error loading dashboard" message={error} />;
   if (!summary) return null;
 
@@ -240,6 +305,10 @@ export default function Dashboard() {
   ].join(' · ');
 
   const rangeOptions = RANGE_OPTIONS.map((r) => ({ value: r, label: r }));
+
+  const metricSheetSubtitle = metricSheetData?.range
+    ? `Quantitative Statistics · ${metricSheetData.range.code} (${metricSheetData.range.start} – ${metricSheetData.range.end})`
+    : `Quantitative Statistics · ${timeRange}`;
 
   const chartFooter = (
     <>
@@ -334,23 +403,6 @@ export default function Dashboard() {
       <div className="dashboard-charts">
         <ChartCard
           title={chartTitle}
-          toolbar={
-            showBenchmarkPicker ? (
-              <select
-                aria-label="benchmark-indices"
-                className="dashboard-chart-select dashboard-chart-select--wide"
-                value={selectedBenchmark}
-                onChange={(e) => setSelectedBenchmark(e.target.value)}
-              >
-                <option value="">No benchmark</option>
-                {benchmarkOptions.map((b) => (
-                  <option key={b.symbol} value={b.symbol}>
-                    {b.name || b.display_name || b.symbol}
-                  </option>
-                ))}
-              </select>
-            ) : null
-          }
           footer={chartFooter}
         >
           <div className="dashboard-chart-controls">
@@ -422,6 +474,47 @@ export default function Dashboard() {
             ) : null}
           </div>
         </ChartCard>
+
+        <MetricSheetSection
+          className="dashboard-metric-sheet"
+          subtitle={metricSheetSubtitle}
+          actions={
+            <select
+              aria-label="metric-sheet-benchmark"
+              className="metric-sheet__benchmark-select dashboard-metric-sheet__benchmark-select"
+              value={selectedBenchmark}
+              onChange={(e) => setSelectedBenchmark(e.target.value)}
+            >
+              <option value="">No benchmark</option>
+              {benchmarkOptions.map((b) => (
+                <option key={b.symbol} value={b.symbol}>
+                  {b.name || b.display_name || b.symbol}
+                </option>
+              ))}
+            </select>
+          }
+        >
+          {metricSheetLoading ? (
+            <LoadingState message="Loading Metric Sheet…" variant="skeleton" />
+          ) : metricSheetError ? (
+            <ErrorState title="Metric Sheet unavailable" message={metricSheetError} />
+          ) : metricSheetData ? (
+            <>
+              <MetricSheetWarnings warnings={metricSheetData.warnings} />
+              <MetricSheetSummaryCards metrics={metricSheetData.metrics} />
+              <MetricSheetRiskReturnTable metrics={metricSheetData.metrics} />
+              {metricSheetData.benchmark ? (
+                <MetricSheetBenchmarkTable benchmark={metricSheetData.benchmark} />
+              ) : null}
+              <MetricSheetPeriodicReturnsTable
+                periodicReturns={metricSheetData.periodic_returns}
+              />
+              <MetricSheetDrawdownPeriodsTable
+                drawdownPeriods={metricSheetData.drawdown_periods}
+              />
+            </>
+          ) : null}
+        </MetricSheetSection>
 
         <ChartCard
           title="Invested vs Current"

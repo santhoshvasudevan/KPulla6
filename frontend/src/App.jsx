@@ -5,6 +5,7 @@ import Transactions from './pages/Transactions';
 import Assets from './pages/Assets';
 import Settings from './pages/Settings';
 import AssetDetail from './pages/AssetDetail';
+import Compare from './pages/Compare';
 import { PortfolioProvider } from './portfolioContext';
 
 function App() {
@@ -17,6 +18,7 @@ function App() {
             <Route path="transactions" element={<Transactions />} />
             <Route path="assets" element={<Assets />} />
             <Route path="assets/:assetSymbol" element={<AssetDetail />} />
+            <Route path="compare" element={<Compare />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>

@@ -19,6 +19,15 @@ vi.mock('./api', () => ({
   }),
   fetchPortfolioPerformance: vi.fn().mockResolvedValue([]),
   fetchBenchmarkIndices: vi.fn().mockResolvedValue([]),
+  getPortfolioMetricSheet: vi.fn().mockResolvedValue({
+    metrics: {
+      return: { cumulative_return: null, cagr: null, xirr: null, xirr_scope: 'full_scope', twror: null },
+      risk: { volatility_annualized: null, downside_deviation: null, sharpe_ratio: null, sortino_ratio: null },
+      drawdown: { max_drawdown: null, longest_drawdown_days: null, calmar_ratio: null },
+      periods: { best_day: null, worst_day: null, win_rate: null, average_daily_return: null },
+    },
+    warnings: [],
+  }),
 }));
 
 describe('App', () => {

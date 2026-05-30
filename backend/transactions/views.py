@@ -1,3 +1,5 @@
+from datetime import date, datetime
+
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
@@ -22,10 +24,29 @@ from transactions.services import (
     create_transaction,
     delete_transaction,
     get_transaction,
+    get_transaction_filter_options,
     import_transactions_from_csv,
     list_transactions,
     update_transaction,
 )
+
+
+def _parse_date_param(value: str | None) -> date | None:
+    if value is None or value == "":
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        raise ValueError(f"Invalid date '{value}'. Use YYYY-MM-DD.")
+
+
+def _parse_symbols_param(request) -> list[str] | None:
+    raw = request.query_params.get("symbols")
+    if not raw:
+        return None
+    parts = [p.strip() for p in raw.split(",")]
+    cleaned = [p for p in parts if p]
+    return cleaned or None
 
 
 class TransactionListCreateView(APIView):
@@ -43,13 +64,36 @@ class TransactionListCreateView(APIView):
             )
 
         portfolio_id = request.query_params.get("portfolio_id")
-        parsed_portfolio_id = int(portfolio_id) if portfolio_id is not None else None
+        try:
+            parsed_portfolio_id = int(portfolio_id) if portfolio_id is not None else None
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "portfolio_id must be an integer"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            date_after = _parse_date_param(request.query_params.get("date_after"))
+            date_before = _parse_date_param(request.query_params.get("date_before"))
+            date_from = _parse_date_param(request.query_params.get("date_from")) or date_after
+            date_to = _parse_date_param(request.query_params.get("date_to")) or date_before
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        if date_from is not None and date_to is not None and date_from > date_to:
+            return Response(
+                {"detail": "date_from must not be after date_to"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         try:
             result = list_transactions(
                 page=page,
                 page_size=page_size,
                 asset_symbol=request.query_params.get("asset_symbol"),
+                symbols=_parse_symbols_param(request),
+                date_from=date_from,
+                date_to=date_to,
                 portfolio_scope=request.query_params.get("portfolio_scope"),
                 portfolio_id=parsed_portfolio_id,
             )
@@ -117,6 +161,41 @@ class TransactionListCreateView(APIView):
         return Response(
             TransactionSerializer(transaction).data,
             status=status.HTTP_201_CREATED,
+        )
+
+
+class TransactionFilterOptionsView(APIView):
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request):
+        portfolio_id = request.query_params.get("portfolio_id")
+        try:
+            parsed_portfolio_id = int(portfolio_id) if portfolio_id is not None else None
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "portfolio_id must be an integer"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            options = get_transaction_filter_options(
+                portfolio_scope=request.query_params.get("portfolio_scope"),
+                portfolio_id=parsed_portfolio_id,
+            )
+        except PortfolioNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except TransactionValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        return Response(
+            {
+                "portfolios": options.portfolios,
+                "symbols": options.symbols,
+                "types": options.types,
+                "date_min": options.date_min,
+                "date_max": options.date_max,
+            }
         )
 
 

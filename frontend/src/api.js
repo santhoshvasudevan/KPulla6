@@ -86,21 +86,50 @@ export async function deletePortfolio(id) {
   return fetchWithHandling(`/portfolios/${id}`, { method: 'DELETE' });
 }
 
-export async function fetchTransactions(page = 1, pageSize = 20, scopeParams = null) {
+export async function fetchTransactions(page = 1, pageSize = 20, scopeParams = null, filters = null) {
   const params = withScopeParams({ page, page_size: pageSize }, scopeParams);
+  if (filters) {
+    if (Array.isArray(filters.symbols) && filters.symbols.length > 0) {
+      params.set('symbols', filters.symbols.join(','));
+    }
+    if (filters.date_from) params.set('date_from', filters.date_from);
+    if (filters.date_to) params.set('date_to', filters.date_to);
+  }
   return fetchWithHandling(`/transactions?${params.toString()}`);
+}
+
+export async function fetchTransactionFilterOptions(scopeParams = null) {
+  const params = withScopeParams({}, scopeParams);
+  // display_currency is irrelevant for filter options; keep payload minimal.
+  params.delete('display_currency');
+  return fetchWithHandling(`/transactions/filter-options?${params.toString()}`);
+}
+
+function _summaryCacheKey(scopeParams, options = {}) {
+  const ts =
+    options.includeTimeseries === false
+      ? 'false'
+      : options.includeTimeseries === true
+        ? 'true'
+        : 'default';
+  return `${_scopeKey(scopeParams)}&include_timeseries=${ts}`;
 }
 
 export function invalidateDashboardSummaryCache() {
   _dashboardSummaryCacheByScope = new Map();
 }
 
-export async function fetchDashboardSummary(scopeParams = null) {
-  const key = _scopeKey(scopeParams);
+export async function fetchDashboardSummary(scopeParams = null, options = {}) {
+  const key = _summaryCacheKey(scopeParams, options);
   if (_dashboardSummaryCacheByScope.has(key)) {
     return _dashboardSummaryCacheByScope.get(key);
   }
   const params = withScopeParams({}, scopeParams);
+  if (options.includeTimeseries === false) {
+    params.set('include_timeseries', 'false');
+  } else if (options.includeTimeseries === true) {
+    params.set('include_timeseries', 'true');
+  }
   const p = fetchWithHandling(`/portfolio/summary?${params.toString()}`);
   _dashboardSummaryCacheByScope.set(key, p);
   return p;
@@ -197,4 +226,64 @@ export async function refreshPrices() {
 
 export async function forceSyncPortfolio() {
   return fetchWithHandling('/portfolio/force-sync', { method: 'POST' });
+}
+
+function _scopeParamsFromMetricSheetParams(params = {}) {
+  const { portfolio_id, portfolio_scope, display_currency } = params;
+  if (portfolio_id != null) {
+    return { portfolio_id, display_currency };
+  }
+  return {
+    portfolio_scope: portfolio_scope ?? 'all',
+    display_currency,
+  };
+}
+
+export function buildMetricSheetQueryParams(params = {}) {
+  const {
+    portfolio_id,
+    portfolio_scope,
+    display_currency,
+    range = '1Y',
+    benchmark,
+    folio_number,
+    subjects,
+    ...rest
+  } = params;
+
+  const qs = withScopeParams({ range, ...rest }, _scopeParamsFromMetricSheetParams(params));
+
+  if (benchmark) {
+    qs.set('benchmark', benchmark);
+  }
+  if (folio_number) {
+    qs.set('folio_number', folio_number);
+  }
+  if (subjects) {
+    qs.set('subjects', subjects);
+  }
+
+  return qs;
+}
+
+/** GET /api/v1/analytics/performance-metrics — portfolio Metric Sheet. */
+export async function getPortfolioMetricSheet(params = {}) {
+  const qs = buildMetricSheetQueryParams(params);
+  return fetchWithHandling(`/analytics/performance-metrics?${qs.toString()}`);
+}
+
+/** GET /api/v1/analytics/assets/{symbol}/performance-metrics — asset Metric Sheet. */
+export async function getAssetMetricSheet(assetSymbol, params = {}) {
+  const sym = encodeURIComponent(assetSymbol);
+  const qs = buildMetricSheetQueryParams(params);
+  return fetchWithHandling(`/analytics/assets/${sym}/performance-metrics?${qs.toString()}`);
+}
+
+/** GET /api/v1/analytics/compare — two-asset Metric Sheet comparison. */
+export async function getCompareMetricSheet(params = {}) {
+  if (!params.subjects) {
+    throw new Error('subjects is required for compare Metric Sheet');
+  }
+  const qs = buildMetricSheetQueryParams(params);
+  return fetchWithHandling(`/analytics/compare?${qs.toString()}`);
 }

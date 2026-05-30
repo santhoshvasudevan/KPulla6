@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import date as date_type
 from decimal import Decimal
 from typing import Any
 
 from django.db import transaction as db_transaction
-from django.db.models import QuerySet
+from django.db.models import Max, Min, QuerySet
 
+from portfolios.models import Portfolio
 from portfolios.scope import (
     PortfolioScopeError,
     resolve_portfolio_id_or_default,
@@ -46,14 +48,62 @@ def _base_queryset() -> QuerySet[Transaction]:
     )
 
 
+def _normalize_symbols(
+    asset_symbol: str | None,
+    symbols: list[str] | None,
+) -> list[str] | None:
+    raw: list[str] = []
+    if asset_symbol:
+        raw.append(asset_symbol)
+    if symbols:
+        raw.extend(symbols)
+    normalized = [s.strip().upper() for s in raw if s and s.strip()]
+    if not normalized:
+        return None
+    # Preserve order while removing duplicates.
+    seen: set[str] = set()
+    unique: list[str] = []
+    for sym in normalized:
+        if sym not in seen:
+            seen.add(sym)
+            unique.append(sym)
+    return unique
+
+
+def _apply_transaction_filters(
+    queryset: QuerySet[Transaction],
+    *,
+    asset_symbol: str | None,
+    symbols: list[str] | None,
+    date_from: date_type | None,
+    date_to: date_type | None,
+) -> QuerySet[Transaction]:
+    normalized_symbols = _normalize_symbols(asset_symbol, symbols)
+    if normalized_symbols:
+        # asset_symbol is stored upper-cased, so an upper-cased __in is
+        # effectively case-insensitive.
+        queryset = queryset.filter(asset_symbol__in=normalized_symbols)
+    if date_from is not None:
+        queryset = queryset.filter(date__gte=date_from)
+    if date_to is not None:
+        queryset = queryset.filter(date__lte=date_to)
+    return queryset
+
+
 def list_transactions(
     *,
     page: int = 1,
     page_size: int = 20,
     asset_symbol: str | None = None,
+    symbols: list[str] | None = None,
+    date_from: date_type | None = None,
+    date_to: date_type | None = None,
     portfolio_scope: str | None = None,
     portfolio_id: int | None = None,
 ) -> PaginatedTransactions:
+    if date_from is not None and date_to is not None and date_from > date_to:
+        raise TransactionValidationError("date_from must not be after date_to")
+
     try:
         scope = resolve_portfolio_scope(
             portfolio_scope=portfolio_scope,
@@ -76,9 +126,13 @@ def list_transactions(
             )
         queryset = queryset.filter(portfolio_id__in=scope.portfolio_ids)
 
-    if asset_symbol:
-        symbol = asset_symbol.strip().upper()
-        queryset = queryset.filter(asset_symbol__iexact=symbol)
+    queryset = _apply_transaction_filters(
+        queryset,
+        asset_symbol=asset_symbol,
+        symbols=symbols,
+        date_from=date_from,
+        date_to=date_to,
+    )
 
     total = queryset.count()
     offset = (page - 1) * page_size
@@ -91,6 +145,63 @@ def list_transactions(
         page=page,
         page_size=page_size,
         pages=pages,
+    )
+
+
+@dataclass
+class TransactionFilterOptions:
+    portfolios: list[dict[str, Any]] = field(default_factory=list)
+    symbols: list[str] = field(default_factory=list)
+    types: list[str] = field(default_factory=list)
+    date_min: str | None = None
+    date_max: str | None = None
+
+
+def get_transaction_filter_options(
+    *,
+    portfolio_scope: str | None = None,
+    portfolio_id: int | None = None,
+) -> TransactionFilterOptions:
+    """Distinct filter values for the transactions table, scoped to the
+    requested portfolio selection. Portfolio options always list active real
+    portfolios so the dropdown can broaden the current scope."""
+    try:
+        scope = resolve_portfolio_scope(
+            portfolio_scope=portfolio_scope,
+            portfolio_id=portfolio_id,
+        )
+    except PortfolioScopeError as exc:
+        raise TransactionValidationError(str(exc)) from exc
+
+    queryset = _base_queryset()
+    if scope.portfolio_ids is not None:
+        if not scope.portfolio_ids:
+            queryset = queryset.none()
+        else:
+            queryset = queryset.filter(portfolio_id__in=scope.portfolio_ids)
+
+    # Drop the base ORDER BY: Django appends ordering columns to the SELECT for
+    # DISTINCT, which would otherwise break row-level distinctness.
+    distinct_qs = queryset.order_by()
+    symbols = sorted(
+        distinct_qs.values_list("asset_symbol", flat=True).distinct()
+    )
+    types = sorted(
+        distinct_qs.values_list("type", flat=True).distinct()
+    )
+    bounds = queryset.aggregate(date_min=Min("date"), date_max=Max("date"))
+
+    portfolios = [
+        {"id": p.id, "name": p.name}
+        for p in Portfolio.objects.filter(is_active=True).order_by("name", "id")
+    ]
+
+    return TransactionFilterOptions(
+        portfolios=portfolios,
+        symbols=list(symbols),
+        types=list(types),
+        date_min=bounds["date_min"].isoformat() if bounds["date_min"] else None,
+        date_max=bounds["date_max"].isoformat() if bounds["date_max"] else None,
     )
 
 
@@ -160,9 +271,10 @@ def import_transactions_from_csv(
     csv_text: str,
     portfolio_id: int | None = None,
 ) -> CsvImportResult:
-    from transactions.csv_import import parse_transaction_csv
+    from transactions.csv_import import parse_import_csv
+    from transactions.mutual_fund_services import create_mutual_fund_transaction
 
-    payloads, parse_errors = parse_transaction_csv(csv_text)
+    csv_format, payloads, parse_errors = parse_import_csv(csv_text)
     if parse_errors:
         return CsvImportResult(success=False, imported_count=0, errors=parse_errors)
 
@@ -171,19 +283,31 @@ def import_transactions_from_csv(
     except PortfolioNotFoundError:
         raise
 
-    for data in payloads:
-        validated = validate_transaction_payload(
-            txn_type=data["type"],
-            asset_symbol=data.get("asset_symbol"),
-            date=data.get("date"),
-            quantity=data.get("quantity"),
-            price_per_share=data.get("price_per_share"),
-            fees=data.get("fees"),
-            currency=data.get("currency"),
-            split_from=data.get("split_from"),
-            split_to=data.get("split_to"),
+    if csv_format == "stock":
+        for data in payloads:
+            validated = validate_transaction_payload(
+                txn_type=data["type"],
+                asset_symbol=data.get("asset_symbol"),
+                date=data.get("date"),
+                quantity=data.get("quantity"),
+                price_per_share=data.get("price_per_share"),
+                fees=data.get("fees"),
+                currency=data.get("currency"),
+                split_from=data.get("split_from"),
+                split_to=data.get("split_to"),
+            )
+            Transaction.objects.create(portfolio_id=target_portfolio_id, **validated)
+    elif csv_format == "mf":
+        for data in payloads:
+            create_mutual_fund_transaction(
+                validated_data={**data, "portfolio_id": target_portfolio_id}
+            )
+    else:
+        return CsvImportResult(
+            success=False,
+            imported_count=0,
+            errors=[{"row": 1, "field": "headers", "message": "Unsupported CSV format"}],
         )
-        Transaction.objects.create(portfolio_id=target_portfolio_id, **validated)
 
     return CsvImportResult(
         success=True,

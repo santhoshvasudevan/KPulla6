@@ -5,6 +5,10 @@
   margin-bottom: var(--space-5);
 }
 
+.dashboard-kpi-grid > * {
+  min-width: 0;
+}
+
 .dashboard-banner {
   margin-bottom: var(--space-4);
 }
@@ -65,4 +69,12 @@
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--text-secondary);
+}
+
+.dashboard-metric-sheet {
+  margin-top: 0;
+}
+
+.dashboard-metric-sheet__benchmark-select {
+  min-width: 220px;
 }

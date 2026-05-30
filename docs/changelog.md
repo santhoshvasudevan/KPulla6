@@ -1,5 +1,411 @@
 # Changelog — KPulla6
 
+## 2026-05-31 — FEAT: Metric Sheet monthly returns grid (Phase 11A)
+
+### Added
+- `MetricSheetMonthlyReturnsGrid` — year × month grid from backend `periodic_returns.monthly`; full-year column from `periodic_returns.yearly`
+- `metricSheetMonthlyGrid.js` — display-only period parsing and grid layout helpers
+- Tests: `metricSheetMonthlyGrid.test.js`; updates to `metricSheet.test.jsx`, `Dashboard.test.jsx`
+
+### Changed
+- `MetricSheetPeriodicReturnsTable` — monthly list replaced by grid; compact yearly table only when monthly is empty
+- Compare page unchanged (yearly side-by-side only)
+- `docs/frontend-design.md`, `docs/current-state.md`
+
+### Impact
+- Frontend display enhancement only; no backend APIs, caching, exports, or client-side return calculations
+
+## 2026-05-31 — FIX: Metric Sheet polish (Phase 10B)
+
+### Changed
+- Dashboard Metric Sheet benchmark selector moved to section header (always visible/editable); chart overlay still uses the same benchmark when cumulative return or TWROR is selected
+- `.metric-sheet-table-scroll` wrappers on wide Metric Sheet / Compare tables
+- Asset Detail waits for `settingsLoaded && apiQuery` before fetching asset detail
+- Dashboard stale Metric Sheet response test added
+- `analytics/services.py` — clearer missing cached price / NAV warnings; split-warning path reuses pre-built asset timeseries
+- Tests: Dashboard, Asset Detail, Metric Sheet component, analytics asset API
+
+### Impact
+- UX/reliability polish only; no new metrics, caching, or schema changes
+
+## 2026-05-31 — FEAT: Metric Sheet periodic returns and drawdown periods UI (Phase 9B)
+
+### Added
+- `MetricSheetPeriodicReturnsTable`, `MetricSheetDrawdownPeriodsTable`
+- `ComparePeriodicReturnsSection` (yearly side-by-side), `CompareDrawdownPeriodsSection` (per subject)
+- Dashboard, Asset Detail, and Compare integration; fixture and test updates
+
+### Changed
+- `docs/frontend-design.md`, `docs/current-state.md`
+
+### Impact
+- Display-only; no backend or finance logic changes
+
+## 2026-05-31 — FEAT: Metric Sheet periodic returns and drawdown periods (Phase 9A)
+
+### Added
+- `worst_drawdown_periods` in `finance/drawdowns.py` — peak/trough/recovery episodes from dated daily returns
+- `periodic_returns` (`monthly`, `yearly`) and `drawdown_periods.worst` on portfolio, asset, and compare Metric Sheet APIs
+- Tests: `test_finance_drawdowns.py` (worst periods), analytics API tests for new blocks
+
+### Changed
+- `analytics/services.py` — `build_periodic_returns_block`, `build_drawdown_periods_block`, empty payloads
+- `docs/api-design.md`, `docs/current-state.md`
+
+### Impact
+- Fractional returns only; no DB migrations; no frontend changes; existing `metrics` fields unchanged
+
+## 2026-05-31 — FEAT: Metric Sheet UX hardening (Phase 8E)
+
+### Changed
+- Compare asset pickers prefer open holdings; closed labeled `(closed)` with optgroups
+- Compare range context: requested range + common aligned dates in one note
+- XIRR full-scope helper text clarified across summary cards and compare table
+- `MetricSheetWarnings` severity mapping for FX, NAV, price, and benchmark overlap messages
+- Tests: `compareHoldings.test.js`, `metricSheetCopy.test.js`; updates to Compare and Metric Sheet tests
+
+### Impact
+- No backend or finance logic changes; display-only UX pass before Phase 9
+
+## 2026-05-31 — FEAT: Compare Metric Sheet UI (Phase 8D)
+
+### Added
+- `/compare` route and sidebar **Compare** navigation
+- `Compare.jsx` — dual asset pickers from holdings, range/benchmark controls, `getCompareMetricSheet` fetch
+- `CompareNormalizedChart`, `CompareMetricTable`, compare CSS and test fixture
+- Tests: `Compare.test.jsx`, `metricSheet.test.jsx` compare cases, Layout nav test
+
+### Changed
+- `frontend/src/App.jsx`, `frontend/src/components/Layout.jsx`, `metricSheet/index.js`
+- `docs/frontend-design.md`, `docs/current-state.md`
+
+### Impact
+- Normalized cumulative return chart and side-by-side metrics from backend only; MF multi-folio shows friendly error without folio picker UX
+
+## 2026-05-30 — FEAT: Asset Detail Metric Sheet integration (Phase 8C)
+
+### Added
+- `AssetDetailMetricSheet` component with local range and benchmark controls
+- Asset Detail page integration below hero KPIs via `getAssetMetricSheet`
+- `AssetDetail.test.jsx` Metric Sheet tests (9 cases)
+
+### Changed
+- `frontend/src/pages/AssetDetail.jsx`, `AssetDetail.css`
+- `docs/frontend-design.md`, `docs/current-state.md`
+
+### Impact
+- Independent Metric Sheet loading/errors; folio_number passed for MF assets; Compare UI deferred
+
+## 2026-05-30 — FEAT: Dashboard Metric Sheet integration (Phase 8B)
+
+### Added
+- Portfolio Metric Sheet section on Dashboard below the main performance chart
+- Independent `getPortfolioMetricSheet` fetch with section-local loading and error states
+- Dashboard tests for Metric Sheet API params, rendering, warnings, null metrics, and isolated failures
+
+### Changed
+- `frontend/src/pages/Dashboard.jsx`, `Dashboard.css`, `Dashboard.test.jsx`
+- `docs/frontend-design.md`, `docs/current-state.md`
+
+### Impact
+- Reuses Dashboard scope, currency, range, and benchmark controls; no finance calculations in React
+- Asset Detail and Compare UI deferred to Phase 8C+
+
+## 2026-05-30 — FEAT: Metric Sheet frontend foundation (Phase 8A)
+
+### Added
+- `getPortfolioMetricSheet`, `getAssetMetricSheet`, `getCompareMetricSheet` in `frontend/src/api.js`
+- `frontend/src/utils/metricFormatters.js` — display-only fraction/ratio/day formatting
+- `frontend/src/components/metricSheet/` — reusable Metric Sheet section, summary cards, risk/return tables, benchmark table, warnings
+- Tests: `metricFormatters.test.js`, `metricSheet.test.jsx`; API client tests in `api.test.js`
+
+### Changed
+- `docs/frontend-design.md`, `docs/current-state.md` — Phase 8A status
+
+### Impact
+- No page integration yet; no backend changes; no finance calculations in React
+
+## 2026-05-30 — FEAT: Compare API for Quantitative Statistics (Phase 7)
+
+### Added
+- `GET /api/v1/analytics/compare` — two-asset side-by-side Metric Sheet comparison
+- `align_multi_subject_returns`, `normalized_cumulative_return_series` in `finance/comparison.py`
+- `_prepare_asset_daily_metrics_inputs`, `build_analytics_compare`, `parse_compare_subjects` in `analytics/services.py`
+- `CompareAnalyticsView` in `analytics/views.py`
+- `backend/tests/test_analytics_compare_api.py` (15 cases); finance compare alignment tests
+
+### Changed
+- Asset Metric Sheet path refactored to shared `_prepare_asset_daily_metrics_inputs`
+- `docs/api-design.md`, `docs/current-state.md`, `docs/architecture.md`
+
+### Impact
+- No DB migrations; no frontend; portfolio/asset Metric Sheet response shapes unchanged
+- Compare metrics computed over common overlapping dates only; unknown asset in scope → 404
+
+## 2026-05-30 — HARDENING: Metric Sheet stock split × cached price invariant (Phase 6B)
+
+### Added
+- `_split_adjusted_price_inconsistency_warnings` in `analytics/services.py` — detects likely raw nominal prices around splits
+- `backend/tests/test_analytics_split_metrics_api.py` (6 cases): adjusted-price stability, raw-price warning, split flow neutrality
+
+### Changed
+- `docs/architecture.md`, `docs/api-design.md`, `docs/current-state.md` — split-adjusted price invariant documented
+- Metric Sheet portfolio + asset endpoints append warning when raw split-price mismatch detected
+
+### Impact
+- No formula changes; no migrations; yfinance sync already stores Adj Close
+- Raw manually inserted nominal prices: metrics may compute but API warns — not silently trusted
+
+## 2026-05-30 — FEAT: Asset-level analytics Metric Sheet API (Phase 6)
+
+### Added
+- `GET /api/v1/analytics/assets/{asset_symbol}/performance-metrics` — stock + MF asset Metric Sheet
+- `build_asset_performance_metrics`, `build_metric_sheet_from_daily_returns` in `analytics/services.py`
+- `AssetPerformanceMetricsView` in `analytics/views.py`
+- `backend/tests/test_analytics_asset_metrics_api.py` (11 cases)
+
+### Changed
+- Portfolio Metric Sheet assembly refactored to shared `build_metric_sheet_from_daily_returns`
+- `docs/api-design.md`, `docs/current-state.md`, `docs/architecture.md`
+
+### Impact
+- No DB migrations; no frontend; summary/performance API shapes unchanged
+- Asset series built from scoped transactions + cached prices/NAV/FX (reuses `build_portfolio_value_timeseries` for single asset/MF holding)
+
+## 2026-05-30 — REFACTOR: Analytics Metric Sheet API boundaries (Phase 5B)
+
+### Changed
+- `portfolios/summary_service.py` — public `compute_scope_xirr()` wrapper (full-scope XIRR shared by summary and analytics)
+- `backend/analytics/services.py` — import public XIRR helper; `metrics.return.xirr_scope: "full_scope"`; docstring notes on ratio vs currency
+- `backend/tests/test_analytics_performance_metrics_api.py` — public-import guard + `xirr_scope` assertions (12 cases)
+- `docs/api-design.md` — XIRR full-scope vs range-based metrics; ratio/currency wording
+
+### Impact
+- No finance formula changes; summary/performance response shapes unchanged
+- Analytics clients can distinguish range-sliced metrics from full-scope XIRR before Phase 6 asset-level work
+
+## 2026-05-30 — FEAT: Portfolio analytics API (Phase 5)
+
+### Added
+- `GET /api/v1/analytics/performance-metrics` — portfolio Metric Sheet (return, risk, drawdown, period metrics; optional benchmark block)
+- `backend/analytics/services.py`, `views.py`, `urls.py`, `serializers.py` (placeholder)
+- `backend/tests/test_analytics_performance_metrics_api.py` (10 cases)
+- `portfolios/performance_service.py` — `portfolio_external_flows`, `portfolio_flows_known_on_date` public helpers
+
+### Changed
+- `backend/api/urls.py` — include `analytics.urls`
+- `docs/api-design.md`, `docs/current-state.md`, `docs/architecture.md`
+
+### Impact
+- Read path uses cached DB only; metrics computed on query from value/flow → `daily_returns_from_values`. No frontend UI. Summary/performance API shapes unchanged.
+
+## 2026-05-30 — FEAT: Benchmark-relative Metric Sheet metrics (Phase 4)
+
+### Added
+- `backend/finance/comparison.py` — `align_return_series`, `correlation`, `beta`, `alpha`, `tracking_error`, `active_return`, `information_ratio`, `treynor_ratio`, `benchmark_summary`
+- `backend/tests/test_finance_comparison.py` — alignment, correlation, beta, alpha, tracking error, active return, information ratio, Treynor, summary tests
+
+### Changed
+- `backend/finance/__init__.py` — export comparison helpers
+- `docs/current-state.md`, `docs/architecture.md` — Phase 4 status; clarify `benchmarks.py` vs `comparison.py`
+
+### Impact
+- Pure finance only; no API/UI/DB. `finance/benchmarks.py` unchanged (performance chart rebasing).
+
+## 2026-05-30 — FEAT: Core Metric Sheet performance metrics (Phase 3)
+
+### Added
+- `backend/finance/performance_stats.py` — `cumulative_return`, `cagr`, `best_return`, `worst_return`, `win_rate`, `average_return`, `period_summary`
+- `backend/finance/risk_metrics.py` — `annualized_volatility`, `downside_deviation`, `sharpe_ratio`, `sortino_ratio`
+- `backend/finance/drawdowns.py` — `drawdown_series`, `max_drawdown`, `longest_drawdown_days`, `calmar_ratio`
+- `backend/finance/_return_inputs.py` — shared parsing for `DailyReturnPoint` / bare fractions
+- Tests: `test_finance_performance_stats.py`, `test_finance_risk_metrics.py`, `test_finance_drawdowns.py`
+
+### Changed
+- `backend/finance/__init__.py` — export Phase 3 helpers
+- `docs/current-state.md`, `docs/architecture.md`
+
+### Impact
+- Pure finance only; no API, UI, DB persistence, or benchmark-relative metrics (Phase 4).
+
+## 2026-05-30 — FEAT: Finance return-series foundation (Phase 2)
+
+### Added
+- `backend/finance/returns.py` — framework-independent helpers: `period_return`, `daily_returns_from_values`, `daily_returns_from_twror_series`, `compound_return`, `chain_returns`, `resample_monthly_returns`, `resample_yearly_returns`; datatypes `ValuePoint`, `DailyReturnPoint`, `PeriodReturnPoint`.
+- `backend/tests/test_finance_returns.py` — golden tests for period/daily/TWROR-derived returns, compounding, monthly/yearly resampling, and `None` handling.
+
+### Changed
+- `backend/finance/__init__.py` — export new return helpers.
+- `docs/current-state.md`, `docs/architecture.md` — Phase 2 return module documented.
+
+### Impact
+- No API routes, frontend UI, DB migrations, or persisted derived metrics. Metrics layer (`performance_stats`, `risk_metrics`, etc.) not wired yet.
+
+## 2026-05-30 — DOCS: Analytics documentation terminology cleanup (Phase 1B)
+
+### Changed
+- Replaced external package/report terminology (`QuantStats`, `tear sheet`, etc.) with app-owned terms: **Quantitative Statistics**, **Metric Sheet**, **performance metric sheet**, **analytics metrics** across `docs/architecture.md`, `docs/current-state.md`, `docs/api-design.md`, `docs/frontend-design.md`, and the Phase 1 changelog entry.
+
+### Impact
+- Documentation only. No code, API, or runtime behavior change.
+
+## 2026-05-30 — DOCS: Quantitative Statistics / Metric Sheet architecture (Phase 1)
+
+### Added
+- `docs/architecture.md` — **Quantitative Statistics / Metric Sheet architecture**: subject levels (portfolio, asset, compare), TWROR-derived daily returns as primary technical input, separate XIRR/FIFO roles, planned `finance/` modules (`returns`, `performance_stats`, `risk_metrics`, `drawdowns`, `comparison`), `analytics/services` orchestration, proposed API routes, frontend surfaces, warning behavior, MVP on-query calculation (no persistence of derived metrics), deferred cache design.
+- `docs/api-design.md` — **Proposed** analytics endpoints (`performance-metrics`, asset metrics, `compare`) with rough JSON shapes; marked not implemented.
+- `docs/frontend-design.md` — Future Metric Sheet UI: Performance Quality cards, risk/return table, drawdown and periodic return tables, asset detail section, compare page; API-only values.
+- `docs/current-state.md` — Analytics Metric Sheet planned; Phase 1 docs complete; no runtime change.
+
+### Impact
+- Documentation/design only. No migrations, models, API routes, `finance/` implementation, or frontend UI in this phase.
+
+## 2026-05-29 — PERF: Dashboard summary skips unused timeseries
+
+### Changed
+- Dashboard `fetchDashboardSummary` now passes `include_timeseries=false` — KPI cards and XIRR do not need summary timeseries; charts continue to use `GET /portfolio/performance`.
+- `api.js` — `fetchDashboardSummary(scopeParams, options)` supports `{ includeTimeseries: false }`; summary in-flight cache key includes `include_timeseries` so lightweight and full responses do not collide.
+
+### Impact
+- All-scope summary load drops from ~20s to ~0.1s on typical dev data (investigation); Dashboard initial load is no longer blocked on unused daily series computation.
+
+## 2026-05-29 — FEAT: Transactions page column filters (portfolio / symbol / date)
+
+### Added
+- **Transactions filter bar** — filter the full transaction dataset (not just the visible page) by portfolio, symbol (searchable multi-select), and date (Earlier than / Later than / Between). Active filter chips + Clear filters; filters reset to page 1 and are preserved across pagination.
+- `GET /api/v1/transactions` query params: `symbols` (comma-separated, case-insensitive), `date_from`, `date_to`, plus `date_after` / `date_before` aliases. Existing `asset_symbol` and scope params unchanged.
+- `GET /api/v1/transactions/filter-options` — distinct portfolios / symbols / types / date bounds for the current scope.
+- Frontend `TransactionFilterBar` component (+ CSS); `fetchTransactionFilterOptions` and `filters` arg on `fetchTransactions` in `api.js`.
+
+### Changed
+- `transactions/services.py` — `list_transactions` accepts `symbols` / `date_from` / `date_to` (applied before pagination); new `get_transaction_filter_options`.
+- `transactions/views.py` — date format / range validation returns `400`; new `TransactionFilterOptionsView`; route registered in `api/urls.py`.
+
+### Tests
+- `backend/tests/test_transaction_filters_api.py` — symbol/date/portfolio filters, pagination ordering, `400` validation, MF scheme code, filter-options scoping.
+- `frontend/src/pages/Transactions.test.jsx` — filter controls, per-filter API params, page reset, pagination preservation, clear, chips.
+
+## 2026-05-28 — FIX-2: All Portfolios summary aggregation (mixed currency / MF)
+
+### Fixed
+- **`portfolio_scope=all` under-counted headline totals** when active portfolios mixed EUR stocks and INR mutual funds — stock EUR and MF INR were merged before FX alignment, then treated as one base currency
+- All Portfolios `current_value` / `total_invested` / P/L fields now equal the sum of individual active portfolio summaries in the requested `display_currency`
+
+### Changed
+- `portfolios/summary_service.py` — `_build_all_active_portfolio_summary()` aggregates per-portfolio `_build_single_portfolio_summary()` results; single-portfolio path unchanged
+- All-scope response `base_currency` set to `display_currency`; `fx_status` combined from child summaries; warnings prefixed with portfolio name
+
+### Added
+- `backend/tests/test_portfolio_summary_all_scope_aggregation.py` — mixed stock/MF, INR display, inactive exclusion, fx_status, monetary field sums
+
+## 2026-05-28 — FIX-1: Dashboard display-currency flicker and stale API responses
+
+### Fixed
+- **Dashboard currency flicker** — `PortfolioProvider` no longer fires scoped API calls before `GET /settings` completes; `apiQuery` is `null` until `settingsLoaded`
+- **Stale summary/performance overwrite** — Dashboard uses monotonic request IDs so older in-flight responses are ignored when `apiQuery` changes
+
+### Changed
+- `portfolioContext.jsx` — `settingsLoaded`, `selectedDisplayCurrency` starts `null`, optional `initialDisplayCurrency` for test harnesses with `disableFetch`
+- `Dashboard.jsx` — waits for settings readiness; sequence guards on summary and performance effects
+- `Layout.jsx` — display currency selector disabled until settings load
+
+### Added
+- Frontend tests: `portfolioContext.test.jsx`, stale-response and settings-delay cases in `Dashboard.test.jsx`, sidebar currency tests in `Layout.test.jsx`
+
+## 2026-05-28 — SYNC-1: Incremental sync correctness and benchmark backfill parity
+
+### Fixed
+- **Benchmark sync** — same start-date rules as stock sync: warm cache → latest index date + 1; backfill when earliest non-MF transaction anchor predates first cached index row
+- **Benchmark anchor** — uses `earliest_stock_transaction_date()` (excludes mutual fund buys) instead of global `earliest_transaction_date()`
+
+### Added
+- `earliest_stock_transaction_date()` in `market_data/services/symbols.py`
+- Benchmark warm-cache, backfill, anchor, and combined `sync_all_market_data` incremental tests in `test_market_data_sync.py`
+
+### Changed
+- Docs: `workflows.md`, `current-state.md`, `database.md`, `api-design.md` — refresh / incremental sync behavior
+
+### Notes
+- Stock, FX, and MF NAV sync behavior unchanged in this phase
+- MF scheme codes remain excluded from yfinance stock sync
+
+## 2026-05-28 — Dashboard KPI overflow for large INR amounts
+
+### Fixed
+- **MetricCard / CurrencyValue** — fluid `clamp()` typography, `nowrap`, grid `min-width: 0`, and ellipsis fallback so large INR KPI values stay inside card bounds
+- **CurrencyValue** — `title` attribute carries full formatted amount for hover when truncated
+
+### Added
+- Frontend tests: `ui.test.jsx`, `Dashboard.test.jsx`
+
+## 2026-05-28 — Stock price sync excludes mutual fund scheme codes
+
+### Fixed
+- **`make refresh` / `sync_market_data`** — stock/yfinance price sync no longer collects AMFI scheme codes from mutual fund transactions; MF NAV sync continues to handle those codes separately via AMFI
+- **`stock_transaction_symbols()`** in `market_data/services/symbols.py` — excludes transactions with `MutualFundTransactionDetail` and symbols registered as `AssetType.MUTUAL_FUND`
+
+### Added
+- Regression tests in `test_market_data_sync.py` — stock symbol collection, stock sync, and combined `sync_all_market_data` routing
+
+### Notes
+- Fixes yfinance 404 / “possibly delisted” warnings for numeric MF scheme codes (e.g. 119062) during `make refresh`
+- Benchmark, FX, and MF NAV sync unchanged
+
+## 2026-05-27 — LAN / iPad access via Vite (port 5173)
+
+### Changed
+- **Vite** — `server.host: true` in `vite.config.js`; `make frontend` / `make dev` pass `--host 0.0.0.0`
+- **Docs** — iPad/home LAN section in `workflows.md`, `README.md`; `.env.example` notes for empty `VITE_API_BASE_URL`
+
+### Notes
+- iPad opens `http://<mac-lan-ip>:5173` only; `/api` proxied to Django on the Mac (no CORS or `ALLOWED_HOSTS` LAN IP required for that path)
+
+## 2026-05-27 — Makefile: `make refresh` includes mutual fund NAVs
+
+### Changed
+- **Makefile** — removed duplicate sync targets that bypassed `.env` / `setup-backend`; `make refresh` and `make sync-market-data` run `sync_market_data` (stocks, benchmarks, FX, mutual fund NAVs) with clear echo output
+- **`make sync-mutual-fund-navs`** — runs `manage.py sync_mutual_fund_navs`
+- **`sync_market_data` command** — WARNING styling when `mutual_funds_failed > 0` (failures visible in stdout)
+- Docs: `workflows.md`, `README.md`, `current-state.md`
+
+### Notes
+- Backend `sync_all_market_data()` already included MF NAV sync by default (MF-9); Makefile now documents and routes through that single command
+- Opt out: `python manage.py sync_market_data --skip-mutual-funds`
+
+## 2026-05-27 — MF-11b: Mutual fund CSV import guidance (frontend)
+
+### Added
+- **Transactions** expandable “Supported CSV formats” panel — stock vs mutual fund column lists, import rules, inline MF example
+- **Download sample MF CSV** — client-generated template (`csvImportGuidance.js`); no backend or NAV logic
+- Frontend tests: `Transactions.test.jsx` (guidance, download button, import button unchanged), `csvImportGuidance.test.js`
+
+### Changed
+- Transactions import info banner — stock split/SWAP note retained; MF format details moved to expandable panel
+- Docs: `current-state.md`, `frontend-design.md`, `page-layouts.md`
+
+### Notes
+- Backend MF CSV import unchanged (MF-11a)
+- No stock sample CSV download in this phase
+
+## 2026-05-27 — MF-11a: Mutual fund CSV import (backend)
+
+### Added
+- **Mutual fund CSV import** via existing `POST /api/v1/transactions/import-csv`
+- Header detection: `Scheme Code` + `Folio Number` → MF format; stock CSV unchanged
+- `parse_mutual_fund_transaction_csv`, `parse_import_csv` in `transactions/csv_import.py`
+- MF rows routed to `create_mutual_fund_transaction()` (Asset, Profile, Folio, detail upsert)
+- Cached DB NAV verification on import — no external AMFI/MFAPI calls
+- `backend/tests/test_mutual_fund_csv_import.py` — 16 tests
+
+### Changed
+- `import_transactions_from_csv` branches on detected CSV format (stock vs MF)
+- Docs: `api-design.md`, `mutual-funds.md`, `current-state.md`
+
+### Notes
+- Mixed stock + MF columns in one file → header validation error (not supported in MF-11a)
+- Stock CSV import behavior and tests unchanged
+- No frontend changes in this phase
+
 ## 2026-05-27 — Portfolio CRUD UI + bulk transaction assignment
 
 ### Added
@@ -346,10 +752,10 @@
 ### Notes
 - `fetchHoldings`, sorting, row navigation, and allocation chart data unchanged; chart color polish deferred to Phase 5B
 
-## 2026-05-25 — Phase 4: Asset Detail tear-sheet migration
+## 2026-05-25 — Phase 4: Asset Detail Metric Sheet migration
 
 ### Changed
-- **Asset Detail:** tear-sheet layout with `PageHeader` (symbol title, Assets breadcrumb, portfolio/currency subtitle), hero KPI row (`MetricCard` + `CurrencyValue` / `PercentValue`), grouped `SectionCard` sections (position, market, data quality, transactions), `StatusBadge` for holding/price/FX status, `WarningBanner` for API warnings, `LoadingState` / `ErrorState` / `EmptyState`
+- **Asset Detail:** Metric Sheet layout with `PageHeader` (symbol title, Assets breadcrumb, portfolio/currency subtitle), hero KPI row (`MetricCard` + `CurrencyValue` / `PercentValue`), grouped `SectionCard` sections (position, market, data quality, transactions), `StatusBadge` for holding/price/FX status, `WarningBanner` for API warnings, `LoadingState` / `ErrorState` / `EmptyState`
 - Transaction table styling improved with type badges and right-aligned numeric columns
 
 ### Notes

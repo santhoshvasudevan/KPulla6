@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import date, timedelta
 
-from django.db.models import Max
+from django.db.models import Max, Min
 
 from market_data.models import AssetType, BenchmarkIndexConfig, HistoricalPrice
 from market_data.providers.base import PriceProvider
@@ -12,6 +12,7 @@ from market_data.providers.yfinance_provider import (
     normalize_provider_symbol,
 )
 from market_data.seed import ensure_benchmark_indices
+from market_data.services.price_sync import resolve_stock_sync_start_date
 from market_data.services.symbols import earliest_transaction_date
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,16 @@ logger = logging.getLogger(__name__)
 
 def _norm_ccy(value: str | None) -> str:
     return (value or "USD").strip().upper() or "USD"
+
+
+def _earliest_index_price_date(symbol: str) -> date | None:
+    agg = (
+        HistoricalPrice.objects.filter(
+            asset_symbol=symbol,
+            asset_type=AssetType.INDEX,
+        ).aggregate(min_date=Min("date"))
+    )
+    return agg.get("min_date")
 
 
 def _latest_index_price_date(symbol: str) -> date | None:
@@ -59,11 +70,16 @@ def sync_benchmark_prices(
 ) -> bool:
     """
     Incrementally sync enabled benchmark indices (asset_type=INDEX).
-    Requires at least one transaction to establish a start date.
+
+    Anchor date: earliest transaction date across all portfolios (stocks and MF).
+    Start date follows the same rules as stock price sync:
+    - No cache: from anchor
+    - Anchor before earliest cached row: backfill from anchor
+    - Otherwise: latest cached index date + 1 day
     """
     ensure_benchmark_indices()
-    min_txn = earliest_transaction_date()
-    if not min_txn:
+    anchor_date = earliest_transaction_date()
+    if not anchor_date:
         return True
 
     provider = provider or default_price_provider()
@@ -76,10 +92,24 @@ def sync_benchmark_prices(
         if not sym:
             continue
 
+        min_hist = _earliest_index_price_date(sym)
         max_hist = _latest_index_price_date(sym)
-        start_date = max_hist + timedelta(days=1) if max_hist else min_txn
+        start_date = resolve_stock_sync_start_date(
+            min_txn_date=anchor_date,
+            min_hist_date=min_hist,
+            max_hist_date=max_hist,
+        )
         if start_date > end:
             continue
+
+        if min_hist and anchor_date < min_hist:
+            logger.info(
+                "Backfilling benchmark prices for %s from %s (anchor before "
+                "earliest cached price %s)",
+                sym,
+                start_date,
+                min_hist,
+            )
 
         try:
             rows, quote_ccy = provider.fetch_history(sym, start_date, end)

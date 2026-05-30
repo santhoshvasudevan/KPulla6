@@ -33,6 +33,7 @@ make bootstrap  # db + migrate + seed
 
 ### Portfolio
 - Real portfolios only; **`All Portfolios` is virtual** and must not be stored (`Portfolio.clean()` rejects that name).
+- All Portfolios summary does **not** use a single stored base currency; headline totals aggregate per-portfolio summaries in the requested `display_currency`.
 - At most one row with `is_default=True` (partial unique constraint).
 - Seed: `python manage.py seed_initial_data` creates **Default Portfolio** (`EUR` base currency).
 
@@ -50,7 +51,8 @@ make bootstrap  # db + migrate + seed
 - `asset_type`: `STOCK`, `INDEX`, `ETF`, `FX`, `MUTUAL_FUND` (MF-1).
 - **Unique:** `(asset_symbol, date)` — unchanged in MF-1.
 - Optional nullable `asset` FK → `assets` (MF-1); existing rows remain null; stock sync unchanged.
-- **Stock sync coverage:** `sync_prices` / `POST /api/v1/prices/refresh` fetch from the earliest transaction date when no rows exist, or when the earliest cached price date is after the earliest transaction date (backfill gap). When cached prices already start at or before the first transaction, sync continues incrementally from latest cached date + 1. Read APIs never trigger sync.
+- **Stock sync coverage:** `sync_prices` / `POST /api/v1/prices/refresh` sync symbols from stock/ETF transactions only (excludes mutual fund rows and AMFI scheme codes). MF NAVs use `sync_mutual_fund_navs` / `sync_market_data` MF path. Fetch from earliest transaction date when no rows exist, or when the earliest cached price date is after the earliest transaction date (backfill gap). When cached prices already start at or before the first transaction, sync continues incrementally from latest cached date + 1. Read APIs never trigger sync.
+- **Benchmark sync coverage:** `sync_benchmarks` / combined `sync_market_data` use `asset_type=INDEX` rows. Anchor = earliest transaction date (stocks and mutual funds). Same incremental/backfill rules as stocks (latest cached + 1 when continuous; backfill from anchor when cache starts later). Read APIs never trigger sync.
 
 ### Asset (MF-1)
 - Canonical instrument registry.
@@ -98,7 +100,7 @@ make bootstrap  # db + migrate + seed
 
 ### BenchmarkIndexConfig
 - **Unique:** `symbol`.
-- Seeded defaults: `^GSPC`, `^IXIC`, `^DJI`, `^STOXX50E`, `^GDAXI`.
+- Seeded defaults: `^GSPC`, `^IXIC`, `^DJI`, `^STOXX50E`, `^GDAXI`, `^NSEI` (Nifty 50), `^BSESN` (BSE Sensex).
 
 ### AppSettings
 - Singleton row (`pk=1` from seed): `tax_rate_percentage`, `display_currency` (`EUR` default).
@@ -132,7 +134,7 @@ make bootstrap  # db + migrate + seed
 - Provider failure per scheme does not abort batch; stock/FX/benchmark sync unchanged.
 - External provider used **only** in sync path (management command / injected provider), not in read APIs.
 
-**Not in MF-2:** `POST /api/v1/nav/refresh`, `sync_market_data` MF inclusion, summary/performance integration, live AMFI download.
+**Later phases:** `POST /api/v1/nav/refresh`, `sync_market_data` MF inclusion (MF-9), summary/performance MF metrics — see `docs/current-state.md`.
 
 ## MF-4 — Holdings and asset detail read path (implemented)
 

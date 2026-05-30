@@ -19,6 +19,10 @@
   margin-bottom: var(--space-5);
 }
 
+.asset-detail-metric-sheet {
+  margin-bottom: var(--space-5);
+}
+
 .asset-detail-sections {
   display: flex;
   flex-direction: column;

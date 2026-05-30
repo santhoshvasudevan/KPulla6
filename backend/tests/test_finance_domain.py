@@ -346,3 +346,147 @@ def test_twror_handles_zero_beginning_value():
     ]
     points = compute_twror_series(series, flows_by_date={})
     assert points[1].value is None
+
+
+# --- TWROR golden tests (hand-computed expectations) ---
+
+_TWROR_TOL = Decimal("0.0001")
+
+
+def _twror_rows(*days: tuple[str, int | float]) -> list[dict]:
+    return [{"date": d, "portfolio_value": v} for d, v in days]
+
+
+def _twror_on(points, day: str) -> Decimal | None:
+    target = date.fromisoformat(day)
+    return next(p.value for p in points if p.date == target)
+
+
+def _assert_twror_pct(points, day: str, expected_pct: Decimal) -> None:
+    actual = _twror_on(points, day)
+    assert actual is not None, f"TWROR on {day} was None"
+    assert abs(actual - expected_pct) < _TWROR_TOL, (
+        f"TWROR on {day}: got {actual}, expected {expected_pct}"
+    )
+
+
+def test_twror_golden_pure_market_gain_no_flow():
+    """(110 - 0 - 100) / 100 = 10% cumulative."""
+    points = compute_twror_series(
+        _twror_rows(("2026-01-01", 100), ("2026-01-02", 110)),
+        flows_by_date={},
+    )
+    assert _twror_on(points, "2026-01-01") is None
+    _assert_twror_pct(points, "2026-01-02", Decimal("10"))
+
+
+def test_twror_golden_contribution_no_market_gain():
+    """(200 - 100 - 100) / 100 = 0%."""
+    points = compute_twror_series(
+        _twror_rows(("2026-01-01", 100), ("2026-01-02", 200)),
+        flows_by_date={date(2026, 1, 2): Decimal("100")},
+    )
+    _assert_twror_pct(points, "2026-01-02", Decimal("0"))
+
+
+def test_twror_golden_contribution_plus_market_gain():
+    """(220 - 100 - 100) / 100 = 20%."""
+    points = compute_twror_series(
+        _twror_rows(("2026-01-01", 100), ("2026-01-02", 220)),
+        flows_by_date={date(2026, 1, 2): Decimal("100")},
+    )
+    _assert_twror_pct(points, "2026-01-02", Decimal("20"))
+
+
+def test_twror_golden_withdrawal_no_market_gain():
+    """(100 - (-100) - 200) / 200 = 0%."""
+    points = compute_twror_series(
+        _twror_rows(("2026-01-01", 200), ("2026-01-02", 100)),
+        flows_by_date={date(2026, 1, 2): Decimal("-100")},
+    )
+    _assert_twror_pct(points, "2026-01-02", Decimal("0"))
+
+
+def test_twror_golden_withdrawal_plus_market_gain():
+    """(120 - (-100) - 200) / 200 = 10%."""
+    points = compute_twror_series(
+        _twror_rows(("2026-01-01", 200), ("2026-01-02", 120)),
+        flows_by_date={date(2026, 1, 2): Decimal("-100")},
+    )
+    _assert_twror_pct(points, "2026-01-02", Decimal("10"))
+
+
+def test_twror_golden_three_day_mixed_flow_chain():
+    """
+    Day 2: (110 - 0 - 100) / 100 = 10%.
+    Day 3: (220 - 100 - 110) / 110 = 10/11 ≈ 9.090909%.
+    Chained: 1.10 * (1 + 10/110) - 1 = 20%.
+    """
+    points = compute_twror_series(
+        _twror_rows(
+            ("2026-01-01", 100),
+            ("2026-01-02", 110),
+            ("2026-01-03", 220),
+        ),
+        flows_by_date={date(2026, 1, 3): Decimal("100")},
+    )
+    assert _twror_on(points, "2026-01-01") is None
+    _assert_twror_pct(points, "2026-01-02", Decimal("10"))
+    day3_period = Decimal("10") / Decimal("110")
+    expected_day3 = (Decimal("1.10") * (Decimal("1") + day3_period) - Decimal("1")) * Decimal(
+        "100"
+    )
+    _assert_twror_pct(points, "2026-01-03", expected_day3)
+    _assert_twror_pct(points, "2026-01-03", Decimal("20"))
+
+
+def test_twror_golden_multiple_flows_same_day_as_net_flow():
+    """
+    compute_twror_series expects one net external flow per date (Mapping[date, Decimal]).
+    +70 and +30 on day 2 are netted to +100 before calling.
+    (210 - 100 - 100) / 100 = 10%.
+    """
+    points = compute_twror_series(
+        _twror_rows(("2026-01-01", 100), ("2026-01-02", 210)),
+        flows_by_date={date(2026, 1, 2): Decimal("70") + Decimal("30")},
+    )
+    _assert_twror_pct(points, "2026-01-02", Decimal("10"))
+
+
+def test_twror_golden_flows_unknown_from_excludes_from_cutoff():
+    """
+    flows_unknown_from uses d < cutoff: day 2 computed; day 3+ value is None.
+    """
+    points = compute_twror_series(
+        _twror_rows(
+            ("2026-01-01", 100),
+            ("2026-01-02", 110),
+            ("2026-01-03", 120),
+        ),
+        flows_by_date={},
+        flows_unknown_from=date(2026, 1, 3),
+    )
+    assert _twror_on(points, "2026-01-01") is None
+    _assert_twror_pct(points, "2026-01-02", Decimal("10"))
+    assert _twror_on(points, "2026-01-03") is None
+
+
+def test_twror_golden_zero_prev_value_with_contribution_no_crash():
+    """
+    prev_value <= 0 skips return calc (no divide-by-zero); TWROR stays None on day 2.
+    """
+    points = compute_twror_series(
+        _twror_rows(("2026-01-01", 0), ("2026-01-02", 100)),
+        flows_by_date={date(2026, 1, 2): Decimal("100")},
+    )
+    assert _twror_on(points, "2026-01-01") is None
+    assert _twror_on(points, "2026-01-02") is None
+
+
+def test_twror_golden_flat_value_series_zero_return():
+    """Unchanged valuation with zero flow -> 0% TWROR."""
+    points = compute_twror_series(
+        _twror_rows(("2026-01-01", 100), ("2026-01-02", 100)),
+        flows_by_date={},
+    )
+    _assert_twror_pct(points, "2026-01-02", Decimal("0"))

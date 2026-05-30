@@ -1,6 +1,6 @@
 # Indian Mutual Funds — Design (MF-0)
 
-**Status:** MF-1 schema through MF-10 live NAV provider implemented. Scheme search, CSV import, and polish remain MF-11+.
+**Status:** MF-1 schema through MF-10 live NAV provider implemented. **MF-11a mutual fund CSV import implemented.** Scheme search and polish remain MF-11+.
 
 **Related docs:** [architecture.md](./architecture.md) · [database.md](./database.md) · [api-design.md](./api-design.md) · [current-state.md](./current-state.md) · [decisions.md](./decisions.md)
 
@@ -66,7 +66,6 @@ KPulla6 today tracks **stocks** (and benchmark indices) with transactions as the
 - Treating hybrid funds as 100% equity for allocation charts
 - Using scheme name as a unique key or symbol substitute
 - Live NAV fetch on dashboard or holdings page load
-- CSV import for mutual funds in MVP (may follow in a later phase)
 - Merging folios automatically across portfolios (folios are scoped per real portfolio via transactions)
 
 ---
@@ -418,13 +417,13 @@ API-driven only ([frontend-design.md](./frontend-design.md)). **MF-8 implemented
 | **Transactions** | MF transaction form: manual `scheme_code` + `scheme_name`; folio, investment date, NAV date, NAV, units, market value, paid value |
 | **Transactions list** | Badge/column for asset type; show folio for MF rows; calm `nav_verification_status` |
 | **Assets / holdings** | MF rows show scheme name + folio; `price_status`/`latest_price` from cached NAV |
-| **Asset detail** | Unchanged in MF-8 (stock tear-sheet preserved) |
+| **Asset detail** | Unchanged in MF-8 (stock Metric Sheet preserved) |
 | **Dashboard** | No new client math; mixed portfolio uses backend summary |
 | **Settings** | Future: MF grouping mode |
 
 Reuse `StatusBadge`, `WarningBanner`, `CurrencyValue`; add `nav_missing` alongside `price_missing` empty states.
 
-**Deferred MF-11+:** scheme search autocomplete, MF CSV import, allocation redesign.
+**Deferred MF-11+:** scheme search autocomplete, allocation redesign, frontend MF CSV import UX.
 
 ---
 
@@ -443,7 +442,8 @@ Reuse `StatusBadge`, `WarningBanner`, `CurrencyValue`; add `nav_missing` alongsi
 | **MF-8** | Frontend | Transaction modal, holdings table, asset detail labels for MF |
 | **MF-9** | NAV refresh API + combined sync | `POST /api/v1/nav/refresh`; `sync_market_data` / `force-sync` include MF NAVs |
 | **MF-10** | Live NAV provider | MFAPI-backed `AmfiNavProvider`; parser + mocked HTTP tests |
-| **MF-11** | Polish + config | Scheme-only grouping setting; CSV import (if approved); exposure model prep |
+| **MF-11a** | MF CSV import | Backend CSV format + `POST /import-csv` routing to `create_mutual_fund_transaction()` |
+| **MF-11** | Polish + config | Scheme-only grouping setting; frontend CSV docs/sample; exposure model prep |
 
 Each phase: tests first where practical, `make test`, update docs/changelog, smallest safe diff.
 
@@ -475,7 +475,7 @@ Each phase: tests first where practical, `make test`, update docs/changelog, sma
 | 5 | Scheme master storage | Full AMFI master table vs profile on demand | Lazy profile create on first txn + sync refresh |
 | 6 | SELL partial units | Standard FIFO per folio | Same as stock FIFO within folio |
 | 7 | `paid_value` vs `market_value` for cost basis | Paid value includes charges | Use **paid_value** for invested amount; NAV × units for market reference |
-| 8 | CSV import for MF | Phase MF-9 or later | Defer; manual form first |
+| 8 | CSV import for MF | **MF-11a done** (backend); frontend docs deferred | Backend import via dedicated MF CSV headers; no mixed stock+MF file |
 
 Record decisions in [decisions.md](./decisions.md) as they are resolved during MF-1+.
 

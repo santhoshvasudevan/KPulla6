@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import include, path
 
 from api.views import HealthView
 from portfolios.holdings_views import PortfolioAssetDetailView, PortfolioHoldingsView
@@ -15,10 +15,12 @@ from market_data.views import (
 from transactions.views import (
     TransactionCsvImportView,
     TransactionDetailView,
+    TransactionFilterOptionsView,
     TransactionListCreateView,
 )
 
 urlpatterns = [
+    path("analytics/", include("analytics.urls")),
     path("health", HealthView.as_view(), name="health"),
     path("settings", SettingsView.as_view(), name="settings"),
     path("portfolios", PortfolioListCreateView.as_view(), name="portfolio-list-create"),
@@ -48,6 +50,11 @@ urlpatterns = [
         name="portfolio-asset-detail",
     ),
     path("transactions", TransactionListCreateView.as_view(), name="transaction-list-create"),
+    path(
+        "transactions/filter-options",
+        TransactionFilterOptionsView.as_view(),
+        name="transaction-filter-options",
+    ),
     path(
         "transactions/import-csv",
         TransactionCsvImportView.as_view(),

@@ -1,0 +1,200 @@
+.txn-filter {
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.txn-filter__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4);
+}
+
+.txn-filter__heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding-bottom: var(--space-2);
+}
+
+.txn-filter__control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.txn-filter__label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.txn-filter__select,
+.txn-filter__date-input {
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 0.875rem;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  min-width: 9rem;
+}
+
+.txn-filter__date-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.txn-filter__date-range {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.txn-filter__date-input {
+  min-width: 8.5rem;
+}
+
+.txn-filter__date-sep {
+  color: var(--text-muted);
+}
+
+.txn-filter__clear {
+  margin-left: auto;
+}
+
+.txn-filter__error {
+  margin: var(--space-3) 0 0;
+  font-size: 0.8125rem;
+  color: var(--loss);
+}
+
+/* Symbol multi-select */
+.txn-filter__symbol {
+  position: relative;
+}
+
+.txn-filter__symbol-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 11rem;
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 0.875rem;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.txn-filter__symbol-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  width: 16rem;
+  max-width: 80vw;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md, 0 8px 24px rgba(0, 0, 0, 0.18));
+  padding: var(--space-2);
+}
+
+.txn-filter__symbol-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-2);
+  color: var(--text-secondary);
+}
+
+.txn-filter__symbol-search input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 0.875rem;
+  outline: none;
+}
+
+.txn-filter__symbol-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.txn-filter__symbol-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.txn-filter__symbol-option:hover {
+  background: var(--bg-surface-hover);
+}
+
+.txn-filter__symbol-empty {
+  padding: var(--space-2);
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+/* Active filter chips */
+.txn-filter__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.txn-filter__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill, 999px);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.txn-filter__chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.txn-filter__chip button:hover {
+  color: var(--text-primary);
+}

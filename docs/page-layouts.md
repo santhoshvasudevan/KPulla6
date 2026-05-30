@@ -25,7 +25,7 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 - **Primitives** — `PageHeader`, `MetricCard`, `ChartCard`, `SectionCard`, `StatusBadge`, `WarningBanner`, `EmptyState`, `LoadingState`, `ErrorState`, `CurrencyValue`, `PercentValue`, `Button`, `SegmentedControl`.
 - **Numbers** — right-aligned in tables (`num-col`); tabular nums via `--font-metric`.
 - **Status** — `StatusBadge` / `WarningBanner`; never rely on color alone.
-- **Scope** — portfolio view and display currency from `portfolioContext` (`apiQuery`) apply to all data pages.
+- **Scope** — portfolio view and display currency from `portfolioContext` (`apiQuery`) apply to all data pages once `settingsLoaded` is true.
 
 ---
 
@@ -55,7 +55,7 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 | Section | Layout |
 |---------|--------|
 | **Header** | `PageHeader` — title “Portfolio Overview”; subtitle: portfolio name · display currency |
-| **KPI row** | Grid of `MetricCard`: Current Value (hero), Total Invested, Total P/L, XIRR; optional Realized/Unrealized P/L when API provides |
+| **KPI row** | Grid of `MetricCard`: Current Value (hero), Total Invested, Total P/L, XIRR; optional Realized/Unrealized P/L when API provides. Values use fluid typography (`clamp()` + `nowrap`) so large INR amounts stay inside card bounds. |
 | **FX warning** | `WarningBanner` if `summary.fx_status === 'fx_unavailable'` |
 | **Primary chart** | `ChartCard` — performance line chart (~300px); toolbar: benchmark select (return metrics only); controls: metric (`value` / `cumulative_return` / `twror`) + range pills (`7D`–`ALL`); footer: loading + benchmark warnings; empty: `EmptyState` |
 | **Secondary chart** | Compact `ChartCard` “Invested vs Current” — horizontal bar comparison |
@@ -116,7 +116,7 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 | Section | Layout |
 |---------|--------|
 | **Header** | `PageHeader` — record count subtitle; actions: hidden file input + Import CSV + Add Transaction |
-| **Import info** | Info `WarningBanner` (target portfolio, CSV split rules) |
+| **Import info** | Info `WarningBanner` (target portfolio, stock split/SWAP rules); expandable “Supported CSV formats” (stock + MF columns, rules, MF example, sample MF download) |
 | **Import feedback** | Success/warning banner; error block with row-level list |
 | **Table** | Checkbox, Portfolio, Symbol, Date, Type (`.ui-txn-type`), Qty, Price, Fees, Total, Actions (edit/delete icon buttons) |
 | **Bulk actions** | Toolbar when rows selected: portfolio dropdown (active real only), Apply, Clear; partial failure banner |
@@ -124,7 +124,7 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 **States:** `LoadingState` · `ErrorState` · table `EmptyState`.
 
-**Behavior:** Pagination params fixed (page 1, size 50); delete confirms; modal refresh on success; bulk assign uses `buildTransactionUpdatePayload` + `updateTransaction` per selected row; line total = display-only `qty × price + fees` (not for splits).
+**Behavior:** Paginated list (`page`, `page_size` 20/50/100); Previous/Next when `total > page_size`; resets to page 1 on portfolio scope change and after CSV import; delete confirms; modal refresh on success; bulk assign uses `buildTransactionUpdatePayload` + `updateTransaction` per selected row; line total = display-only `qty × price + fees` (not for splits).
 
 **APIs:** `fetchTransactions` · `createTransaction` / `updateTransaction` · `deleteTransaction` · `importTransactionsCsv`.
 

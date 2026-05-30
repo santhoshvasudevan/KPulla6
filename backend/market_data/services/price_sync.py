@@ -14,7 +14,7 @@ from market_data.providers.base import PriceProvider
 from market_data.providers.yfinance_provider import default_price_provider
 from market_data.services.symbols import (
     earliest_transaction_date_for_symbol,
-    transaction_symbols,
+    stock_transaction_symbols,
 )
 from settings_app.models import AppSettings
 from transactions.models import Transaction
@@ -71,7 +71,10 @@ def resolve_stock_sync_start_date(
 def _symbol_base_currency(symbol: str) -> str:
     sym = normalize_asset_symbol(symbol)
     raw = (
-        Transaction.objects.filter(asset_symbol__iexact=sym)
+        Transaction.objects.filter(
+            asset_symbol__iexact=sym,
+            mutual_fund_detail__isnull=True,
+        )
         .aggregate(min_ccy=Min("currency"))
         .get("min_ccy")
     )
@@ -179,7 +182,7 @@ def sync_stock_prices(
     When only_symbols is set, sync intersection with transaction symbols only.
     """
     provider = provider or default_price_provider()
-    txn_symbols = transaction_symbols()
+    txn_symbols = stock_transaction_symbols()
     if only_symbols is not None:
         requested = {normalize_asset_symbol(s) for s in only_symbols if s}
         symbols = sorted(txn_symbols & requested)

@@ -17,9 +17,28 @@ from transactions.services import (
     validate_transaction_payload,
 )
 
-REQUIRED_HEADER_KEYS = frozenset(
+STOCK_REQUIRED_HEADER_KEYS = frozenset(
     {"action", "date", "asset symbol", "qty", "price/share"}
 )
+# Backward compatibility for stock-only parser callers/tests.
+REQUIRED_HEADER_KEYS = STOCK_REQUIRED_HEADER_KEYS
+
+MF_REQUIRED_HEADER_KEYS = frozenset(
+    {
+        "action",
+        "scheme code",
+        "scheme name",
+        "folio number",
+        "investment date",
+        "nav date",
+        "nav",
+        "units allotted",
+        "paid value",
+        "market value",
+    }
+)
+MF_MARKER_HEADER_KEYS = frozenset({"scheme code", "folio number"})
+STOCK_MARKER_HEADER_KEYS = frozenset({"asset symbol", "qty", "price/share"})
 
 
 def _norm_header(h: str) -> str:
@@ -132,7 +151,7 @@ def parse_transaction_csv(text: str) -> tuple[list[dict[str, Any]], list[dict[st
 
     headers_norm = [_norm_header(h) for h in rows[0]]
     header_set = set(headers_norm)
-    missing = sorted(REQUIRED_HEADER_KEYS - header_set)
+    missing = sorted(STOCK_REQUIRED_HEADER_KEYS - header_set)
     if missing:
         return [], [
             {
@@ -388,3 +407,311 @@ def parse_transaction_csv(text: str) -> tuple[list[dict[str, Any]], list[dict[st
     merged = normal_payloads + direct_splits + split_payloads
     merged.sort(key=lambda x: x[0])
     return [p for _, p in merged], []
+
+
+def _detect_csv_format(header_set: set[str]) -> tuple[str | None, list[dict[str, Any]]]:
+    has_mf = MF_MARKER_HEADER_KEYS.issubset(header_set)
+    has_stock = bool(STOCK_MARKER_HEADER_KEYS & header_set)
+
+    if has_mf and has_stock:
+        return None, [
+            {
+                "row": 1,
+                "field": "headers",
+                "message": "Mixed stock and mutual fund CSV formats are not supported in one file",
+            }
+        ]
+
+    if has_mf:
+        missing = sorted(MF_REQUIRED_HEADER_KEYS - header_set)
+        if missing:
+            return None, [
+                {
+                    "row": 1,
+                    "field": "headers",
+                    "message": f"Missing required columns: {', '.join(missing)}",
+                }
+            ]
+        return "mf", []
+
+    missing = sorted(STOCK_REQUIRED_HEADER_KEYS - header_set)
+    if missing:
+        return None, [
+            {
+                "row": 1,
+                "field": "headers",
+                "message": f"Missing required columns: {', '.join(missing)}",
+            }
+        ]
+    return "stock", []
+
+
+def map_mf_action(raw: str) -> str | None:
+    x = (raw or "").strip().upper()
+    if x == "BUY":
+        return TransactionType.BUY
+    if x == "SELL":
+        return TransactionType.SELL
+    return None
+
+
+def _mf_error_field(message: str) -> str:
+    lower = message.lower()
+    if "scheme_code" in lower:
+        return "Scheme Code"
+    if "scheme_name" in lower:
+        return "Scheme Name"
+    if "folio_number" in lower:
+        return "Folio Number"
+    if "investment_date" in lower:
+        return "Investment Date"
+    if "nav_date" in lower:
+        return "NAV Date"
+    if "units_allotted" in lower:
+        return "Units Allotted"
+    if "paid_value" in lower:
+        return "Paid Value"
+    if "market_value" in lower:
+        return "Market Value"
+    if "fees" in lower:
+        return "Fees"
+    if "nav" in lower:
+        return "NAV"
+    if "unsupported transaction type" in lower or "buy and sell" in lower:
+        return "Action"
+    return "row"
+
+
+def _parse_mf_decimal(
+    raw: str,
+    *,
+    line_no: int,
+    field: str,
+    errors: list[dict[str, Any]],
+    required: bool = True,
+    gt_zero: bool = False,
+    ge_zero: bool = False,
+) -> Decimal | None:
+    if not (raw or "").strip():
+        if required:
+            errors.append({"row": line_no, "field": field, "message": f"{field} is required"})
+        return None
+    try:
+        value = parse_plain_decimal(raw)
+    except (ValueError, InvalidOperation):
+        errors.append({"row": line_no, "field": field, "message": f"Invalid {field}"})
+        return None
+    if gt_zero and value <= 0:
+        errors.append(
+            {
+                "row": line_no,
+                "field": field,
+                "message": f"{field} must be greater than 0",
+            }
+        )
+        return None
+    if ge_zero and value < 0:
+        errors.append(
+            {
+                "row": line_no,
+                "field": field,
+                "message": f"{field} must be greater than or equal to 0",
+            }
+        )
+        return None
+    return value
+
+
+def parse_mutual_fund_transaction_csv(
+    text: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    from transactions.mutual_fund_services import validate_mutual_fund_transaction_payload
+
+    errors: list[dict[str, Any]] = []
+    buf = io.StringIO(text)
+    reader = csv.reader(buf)
+    rows = list(reader)
+    if not rows:
+        return [], [{"row": 1, "field": "file", "message": "Empty CSV"}]
+
+    headers_norm = [_norm_header(h) for h in rows[0]]
+    header_set = set(headers_norm)
+    fmt, fmt_errors = _detect_csv_format(header_set)
+    if fmt != "mf":
+        return [], fmt_errors or [
+            {
+                "row": 1,
+                "field": "headers",
+                "message": "Not a mutual fund CSV format",
+            }
+        ]
+
+    col = {h: i for i, h in enumerate(headers_norm)}
+    has_fees = "fees" in col
+    has_currency = "currency" in col
+    payloads: list[tuple[int, dict[str, Any]]] = []
+
+    for line_no, vals in enumerate(rows[1:], start=2):
+        while len(vals) < len(headers_norm):
+            vals.append("")
+
+        action_raw = vals[col["action"]].strip()
+        txn_type = map_mf_action(action_raw)
+        if txn_type is None:
+            errors.append(
+                {
+                    "row": line_no,
+                    "field": "Action",
+                    "message": f"Invalid action for mutual fund CSV: {action_raw!r} (BUY or SELL only)",
+                }
+            )
+            continue
+
+        scheme_code_raw = vals[col["scheme code"]].strip()
+        scheme_name_raw = vals[col["scheme name"]].strip()
+        folio_raw = vals[col["folio number"]].strip()
+        investment_date_raw = vals[col["investment date"]].strip()
+        nav_date_raw = vals[col["nav date"]].strip()
+
+        if not scheme_code_raw:
+            errors.append(
+                {"row": line_no, "field": "Scheme Code", "message": "Scheme Code is required"}
+            )
+            continue
+        if not scheme_name_raw:
+            errors.append(
+                {"row": line_no, "field": "Scheme Name", "message": "Scheme Name is required"}
+            )
+            continue
+        if not folio_raw:
+            errors.append(
+                {"row": line_no, "field": "Folio Number", "message": "Folio Number is required"}
+            )
+            continue
+
+        try:
+            investment_date = parse_date_mmddyy(investment_date_raw)
+        except ValueError as exc:
+            errors.append(
+                {"row": line_no, "field": "Investment Date", "message": str(exc)}
+            )
+            continue
+
+        try:
+            nav_date = parse_date_mmddyy(nav_date_raw)
+        except ValueError as exc:
+            errors.append({"row": line_no, "field": "NAV Date", "message": str(exc)})
+            continue
+
+        nav = _parse_mf_decimal(
+            vals[col["nav"]],
+            line_no=line_no,
+            field="NAV",
+            errors=errors,
+            gt_zero=True,
+        )
+        if nav is None:
+            continue
+        units = _parse_mf_decimal(
+            vals[col["units allotted"]],
+            line_no=line_no,
+            field="Units Allotted",
+            errors=errors,
+            gt_zero=True,
+        )
+        if units is None:
+            continue
+        paid_value = _parse_mf_decimal(
+            vals[col["paid value"]],
+            line_no=line_no,
+            field="Paid Value",
+            errors=errors,
+            ge_zero=True,
+        )
+        if paid_value is None:
+            continue
+        market_value = _parse_mf_decimal(
+            vals[col["market value"]],
+            line_no=line_no,
+            field="Market Value",
+            errors=errors,
+            ge_zero=True,
+        )
+        if market_value is None:
+            continue
+
+        payload: dict[str, Any] = {
+            "asset_type": "MUTUAL_FUND",
+            "scheme_code": scheme_code_raw,
+            "scheme_name": scheme_name_raw,
+            "folio_number": folio_raw,
+            "type": txn_type,
+            "investment_date": investment_date,
+            "nav_date": nav_date,
+            "nav": nav,
+            "units_allotted": units,
+            "paid_value": paid_value,
+            "market_value": market_value,
+        }
+
+        if has_fees:
+            fees_raw = vals[col["fees"]].strip()
+            if fees_raw != "":
+                fees_val = _parse_mf_decimal(
+                    fees_raw,
+                    line_no=line_no,
+                    field="Fees",
+                    errors=errors,
+                    ge_zero=True,
+                )
+                if fees_val is None:
+                    continue
+                payload["fees"] = fees_val
+
+        if has_currency:
+            currency_raw = vals[col["currency"]].strip()
+            if currency_raw:
+                payload["currency"] = currency_raw.upper()
+
+        try:
+            validate_mutual_fund_transaction_payload(payload)
+        except TransactionValidationError as exc:
+            errors.append(
+                {
+                    "row": line_no,
+                    "field": _mf_error_field(str(exc)),
+                    "message": str(exc),
+                }
+            )
+            continue
+
+        payloads.append((line_no, payload))
+
+    if errors:
+        return [], errors
+
+    payloads.sort(key=lambda x: x[0])
+    return [p for _, p in payloads], []
+
+
+def parse_import_csv(
+    text: str,
+) -> tuple[str | None, list[dict[str, Any]], list[dict[str, Any]]]:
+    buf = io.StringIO(text)
+    reader = csv.reader(buf)
+    rows = list(reader)
+    if not rows:
+        return None, [], [{"row": 1, "field": "file", "message": "Empty CSV"}]
+
+    headers_norm = [_norm_header(h) for h in rows[0]]
+    header_set = set(headers_norm)
+    fmt, fmt_errors = _detect_csv_format(header_set)
+    if fmt_errors:
+        return None, [], fmt_errors
+    if fmt == "stock":
+        payloads, errors = parse_transaction_csv(text)
+        return "stock", payloads, errors
+    if fmt == "mf":
+        payloads, errors = parse_mutual_fund_transaction_csv(text)
+        return "mf", payloads, errors
+    return None, [], fmt_errors

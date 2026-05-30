@@ -1,4 +1,4 @@
-.PHONY: db db-stop db-logs db-shell db-reset backup-db db-safety-check backend frontend migrate seed bootstrap test test-backend test-frontend dev setup-backend setup-frontend sync-prices sync-benchmarks sync-fx sync-market-data refresh graphify ports stop-backend stop-frontend stop-dev stop-all clean-dev
+.PHONY: db db-stop db-logs db-shell db-reset backup-db db-safety-check backend frontend migrate seed bootstrap test test-backend test-frontend dev setup-backend setup-frontend sync-prices sync-benchmarks sync-fx sync-mutual-fund-navs sync-market-data refresh graphify ports stop-backend stop-frontend stop-dev stop-all clean-dev
 
 BACKEND_DIR := backend
 FRONTEND_DIR := frontend
@@ -59,7 +59,7 @@ backend: setup-backend db
 	cd $(BACKEND_DIR) && $(PYTHON) manage.py runserver 0.0.0.0:$(BACKEND_PORT)
 
 frontend: setup-frontend
-	cd $(FRONTEND_DIR) && npm run dev -- --port $(FRONTEND_PORT)
+	cd $(FRONTEND_DIR) && npm run dev -- --host 0.0.0.0 --port $(FRONTEND_PORT)
 
 migrate: setup-backend db
 	@set -a && [ -f .env ] && . ./.env; set +a; \
@@ -92,28 +92,23 @@ sync-fx: setup-backend db migrate
 	@set -a && [ -f .env ] && . ./.env; set +a; \
 	cd $(BACKEND_DIR) && $(PYTHON) manage.py sync_fx_rates
 
+sync-mutual-fund-navs: setup-backend db migrate
+	@echo "==> Syncing mutual fund NAVs (cached HistoricalPrice, asset_type=MUTUAL_FUND)"
+	@set -a && [ -f .env ] && . ./.env; set +a; \
+	cd $(BACKEND_DIR) && $(PYTHON) manage.py sync_mutual_fund_navs
+
 sync-market-data: setup-backend db migrate
+	@echo "==> Syncing valuation cache: stock prices, benchmark indices, FX rates, mutual fund NAVs"
 	@set -a && [ -f .env ] && . ./.env; set +a; \
 	cd $(BACKEND_DIR) && $(PYTHON) manage.py sync_market_data
+
+refresh: sync-market-data
+	@echo "==> Refresh complete (stocks, benchmarks, FX, mutual fund NAVs)"
 
 dev: setup-backend setup-frontend db migrate
 	@set -a && [ -f .env ] && . ./.env; set +a; \
 	cd $(BACKEND_DIR) && $(PYTHON) manage.py runserver 0.0.0.0:$(BACKEND_PORT) & \
-	cd $(FRONTEND_DIR) && npm run dev -- --port $(FRONTEND_PORT)
-
-refresh: sync-market-data
-
-sync-market-data:
-	cd backend && .venv/bin/python manage.py sync_market_data
-
-sync-prices:
-	cd backend && .venv/bin/python manage.py sync_prices
-
-sync-benchmarks:
-	cd backend && .venv/bin/python manage.py sync_benchmarks
-
-sync-fx:
-	cd backend && .venv/bin/python manage.py sync_fx_rates
+	cd $(FRONTEND_DIR) && npm run dev -- --host 0.0.0.0 --port $(FRONTEND_PORT)
 
 graphify:
 	graphify .

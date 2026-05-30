@@ -18,11 +18,13 @@ export default function CurrencyValue({
 
   const num = Number(value);
   const sign = num < 0 ? '−' : showSign && num > 0 ? '+' : '';
+  const formatted = formatCurrency(Math.abs(num), currency);
+  const display = `${sign}${formatted}`;
 
   return (
-    <span className={classes}>
+    <span className={classes} title={display}>
       {sign}
-      {formatCurrency(Math.abs(num), currency)}
+      {formatted}
     </span>
   );
 }

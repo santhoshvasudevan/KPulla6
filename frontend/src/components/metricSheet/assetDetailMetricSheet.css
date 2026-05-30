@@ -1,0 +1,10 @@
+.asset-detail-metric-sheet__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.asset-detail-metric-sheet__benchmark-select {
+  min-width: 180px;
+}

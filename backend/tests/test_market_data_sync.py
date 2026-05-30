@@ -11,13 +11,17 @@ from django.core.management import call_command
 from market_data.models import AssetType, BenchmarkIndexConfig, HistoricalPrice
 from market_data.price_lookup import latest_historical_price, normalize_asset_symbol
 from market_data.providers.base import DailyPrice
+from market_data.providers.mutual_fund_nav_provider import NavPoint
 from market_data.services.benchmark_sync import sync_benchmark_prices
+from market_data.services.market_data_sync import sync_all_market_data
 from market_data.services.price_sync import (
     resolve_stock_sync_start_date,
     sync_one_stock_symbol,
     sync_stock_prices,
 )
+from market_data.services.symbols import stock_transaction_symbols
 from portfolios.seed import ensure_default_portfolio
+from tests.test_mutual_fund_nav_sync import MockNavProvider, _mf_buy_with_detail
 from transactions.models import Transaction, TransactionType
 
 
@@ -336,6 +340,8 @@ def test_benchmark_indices_returns_enabled_seeded(api_client, seeded):
     assert r.status_code == 200
     symbols = {i["symbol"] for i in r.json()["indices"]}
     assert "^GSPC" in symbols
+    assert "^NSEI" in symbols
+    assert "^BSESN" in symbols
     assert all("name" in i for i in r.json()["indices"])
 
 
@@ -367,23 +373,112 @@ def test_benchmark_sync_stores_index_rows(seeded):
 
 @pytest.mark.django_db
 def test_benchmark_sync_incremental_idempotent(seeded):
-    _buy("AAPL", date(2026, 1, 1))
+    anchor = date(2026, 1, 1)
+    cached_through = date(2026, 1, 5)
+    _buy("AAPL", anchor)
+    HistoricalPrice.objects.create(
+        asset_symbol="^GSPC",
+        date=anchor,
+        close_price=Decimal("90"),
+        currency="USD",
+        asset_type=AssetType.INDEX,
+    )
+    HistoricalPrice.objects.create(
+        asset_symbol="^GSPC",
+        date=cached_through,
+        close_price=Decimal("100"),
+        currency="USD",
+        asset_type=AssetType.INDEX,
+    )
     provider = MockPriceProvider(
         {
             "^GSPC": [
-                DailyPrice(date(2026, 1, 1), Decimal("100"), "USD"),
-                DailyPrice(date(2026, 1, 2), Decimal("110"), "USD"),
+                DailyPrice(date(2026, 1, 6), Decimal("106"), "USD"),
+                DailyPrice(date(2026, 1, 7), Decimal("107"), "USD"),
             ]
         }
     )
-    sync_benchmark_prices(provider=provider)
-    sync_benchmark_prices(provider=provider)
+    sync_benchmark_prices(provider=provider, end=date(2026, 1, 7))
+    gspc_calls = [c for c in provider.calls if c[0] == "^GSPC"]
+    assert gspc_calls[0][1] == cached_through + timedelta(days=1)
     assert (
         HistoricalPrice.objects.filter(
             asset_symbol="^GSPC", asset_type=AssetType.INDEX
         ).count()
-        == 2
+        == 4
     )
+
+
+@pytest.mark.django_db
+def test_benchmark_sync_warm_cache_starts_at_latest_plus_one(seeded):
+    anchor = date(2026, 1, 1)
+    cached_through = date(2026, 1, 10)
+    _buy("AAPL", anchor)
+    HistoricalPrice.objects.create(
+        asset_symbol="^GSPC",
+        date=anchor,
+        close_price=Decimal("90"),
+        currency="USD",
+        asset_type=AssetType.INDEX,
+    )
+    HistoricalPrice.objects.create(
+        asset_symbol="^GSPC",
+        date=cached_through,
+        close_price=Decimal("100"),
+        currency="USD",
+        asset_type=AssetType.INDEX,
+    )
+    provider = MockPriceProvider(
+        {"^GSPC": [DailyPrice(date(2026, 1, 11), Decimal("101"), "USD")]}
+    )
+    sync_benchmark_prices(provider=provider, end=date(2026, 1, 11))
+    gspc_calls = [c for c in provider.calls if c[0] == "^GSPC"]
+    assert gspc_calls[0][1] == cached_through + timedelta(days=1)
+
+
+@pytest.mark.django_db
+def test_benchmark_sync_backfills_when_anchor_predates_earliest_cached(seeded):
+    anchor = date(2022, 5, 2)
+    cache_start = date(2022, 12, 23)
+    _buy("AAPL", anchor)
+    HistoricalPrice.objects.create(
+        asset_symbol="^GSPC",
+        date=cache_start,
+        close_price=Decimal("4000"),
+        currency="USD",
+        asset_type=AssetType.INDEX,
+    )
+    provider = MockPriceProvider(
+        {
+            "^GSPC": [
+                DailyPrice(date(2022, 5, 3), Decimal("3900"), "USD"),
+                DailyPrice(date(2022, 12, 22), Decimal("3950"), "USD"),
+            ]
+        }
+    )
+    sync_benchmark_prices(provider=provider, end=date(2022, 12, 24))
+    gspc_calls = [c for c in provider.calls if c[0] == "^GSPC"]
+    assert gspc_calls[0][1] == anchor
+    assert HistoricalPrice.objects.filter(
+        asset_symbol="^GSPC", date=date(2022, 5, 3)
+    ).exists()
+    assert HistoricalPrice.objects.filter(
+        asset_symbol="^GSPC", date=date(2022, 12, 22)
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_benchmark_sync_anchor_uses_earliest_transaction_including_mf(seeded):
+    mf_date = date(2019, 10, 24)
+    stock_date = date(2022, 5, 2)
+    _mf_buy_with_detail(scheme_code="119062", nav_date=mf_date)
+    _buy("AAPL", stock_date)
+    provider = MockPriceProvider(
+        {"^GSPC": [DailyPrice(mf_date, Decimal("3000"), "USD")]}
+    )
+    sync_benchmark_prices(provider=provider, end=stock_date)
+    gspc_calls = [c for c in provider.calls if c[0] == "^GSPC"]
+    assert gspc_calls[0][1] == mf_date
 
 
 @pytest.mark.django_db
@@ -421,3 +516,146 @@ def test_sync_stock_prices_filters_to_transaction_symbols(seeded):
     )
     sync_stock_prices(only_symbols={"AAPL", "MSFT"}, provider=provider)
     assert "MSFT" not in {c[0] for c in provider.calls}
+
+
+@pytest.mark.django_db
+def test_stock_transaction_symbols_exclude_mutual_fund_scheme_codes(seeded):
+    today = date.today()
+    _buy("AAPL", today - timedelta(days=2))
+    _mf_buy_with_detail(scheme_code="119062", nav_date=today - timedelta(days=3))
+
+    symbols = stock_transaction_symbols()
+    assert "AAPL" in symbols
+    assert "119062" not in symbols
+
+
+@pytest.mark.django_db
+def test_sync_stock_prices_does_not_fetch_mutual_fund_scheme_codes(seeded):
+    today = date.today()
+    _buy("AAPL", today - timedelta(days=2))
+    _mf_buy_with_detail(scheme_code="119062", nav_date=today - timedelta(days=3))
+
+    provider = MockPriceProvider(
+        {
+            "AAPL": [DailyPrice(today - timedelta(days=1), Decimal("150"), "USD")],
+            "119062": [DailyPrice(today - timedelta(days=1), Decimal("42"), "INR")],
+        }
+    )
+    sync_stock_prices(provider=provider)
+
+    called_symbols = {c[0] for c in provider.calls}
+    assert called_symbols == {"AAPL"}
+    assert "119062" not in called_symbols
+
+
+@pytest.mark.django_db
+def test_sync_all_market_data_routes_symbols_to_correct_providers(seeded):
+    today = date.today()
+    _buy("AAPL", today - timedelta(days=2))
+    _mf_buy_with_detail(scheme_code="119062", nav_date=today - timedelta(days=3))
+
+    stock_provider = MockPriceProvider(
+        {"AAPL": [DailyPrice(today - timedelta(days=1), Decimal("150"), "USD")]}
+    )
+    nav_provider = MockNavProvider(
+        {"119062": [NavPoint(today - timedelta(days=2), Decimal("42.50"), "INR")]}
+    )
+
+    with patch(
+        "market_data.services.market_data_sync.default_price_provider",
+        return_value=stock_provider,
+    ):
+        with patch(
+            "market_data.services.market_data_sync.sync_benchmark_prices",
+            return_value=True,
+        ):
+            with patch("fx.services.sync_fx_rates") as mock_fx:
+                mock_fx.return_value = type(
+                    "R", (), {"success": True, "partial": False}
+                )()
+                with patch(
+                    "market_data.services.mutual_fund_nav_sync.default_mutual_fund_nav_provider",
+                    return_value=nav_provider,
+                ):
+                    result = sync_all_market_data(run_mutual_funds=True)
+
+    stock_symbols = {c[0] for c in stock_provider.calls}
+    nav_codes = {c[0] for c in nav_provider.history_calls}
+
+    assert stock_symbols == {"AAPL"}
+    assert "119062" not in stock_symbols
+    assert "119062" in nav_codes
+    assert result.mutual_funds_synced >= 1
+    assert result.mutual_funds_failed == 0
+
+
+@pytest.mark.django_db
+def test_sync_all_market_data_incremental_with_warm_caches(seeded):
+    today = date.today()
+    txn_date = today - timedelta(days=10)
+    cache_through = today - timedelta(days=3)
+    _buy("AAPL", txn_date)
+    _mf_buy_with_detail(scheme_code="119062", nav_date=today - timedelta(days=8))
+
+    HistoricalPrice.objects.create(
+        asset_symbol="AAPL",
+        date=txn_date,
+        close_price=Decimal("150"),
+        currency="USD",
+        asset_type=AssetType.STOCK,
+    )
+    HistoricalPrice.objects.create(
+        asset_symbol="AAPL",
+        date=cache_through,
+        close_price=Decimal("155"),
+        currency="USD",
+        asset_type=AssetType.STOCK,
+    )
+    HistoricalPrice.objects.create(
+        asset_symbol="^GSPC",
+        date=txn_date,
+        close_price=Decimal("4000"),
+        currency="USD",
+        asset_type=AssetType.INDEX,
+    )
+    HistoricalPrice.objects.create(
+        asset_symbol="^GSPC",
+        date=cache_through,
+        close_price=Decimal("4100"),
+        currency="USD",
+        asset_type=AssetType.INDEX,
+    )
+
+    expected_start = cache_through + timedelta(days=1)
+    provider = MockPriceProvider(
+        {
+            "AAPL": [DailyPrice(expected_start, Decimal("156"), "USD")],
+            "^GSPC": [DailyPrice(expected_start, Decimal("4110"), "USD")],
+        }
+    )
+    nav_provider = MockNavProvider(
+        {"119062": [NavPoint(expected_start, Decimal("42.50"), "INR")]}
+    )
+
+    with patch(
+        "market_data.services.market_data_sync.default_price_provider",
+        return_value=provider,
+    ):
+        with patch("fx.services.sync_fx_rates") as mock_fx:
+            mock_fx.return_value = type(
+                "R", (), {"success": True, "partial": False}
+            )()
+            with patch(
+                "market_data.services.mutual_fund_nav_sync.default_mutual_fund_nav_provider",
+                return_value=nav_provider,
+            ):
+                result = sync_all_market_data(run_mutual_funds=True)
+
+    stock_calls = {sym: start for sym, start, _ in provider.calls}
+    assert stock_calls["AAPL"] == expected_start
+    assert stock_calls["^GSPC"] == expected_start
+    assert "119062" not in stock_calls
+    assert nav_provider.history_calls
+    assert nav_provider.history_calls[0][0] == "119062"
+    assert result.prices_success is True
+    assert result.benchmarks_success is True

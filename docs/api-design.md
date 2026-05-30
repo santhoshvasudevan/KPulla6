@@ -83,9 +83,34 @@ This document describes the **target** REST API (carried forward from KPulla5). 
 
 `GET /api/v1/transactions`
 
-Query: `page` (default 1), `page_size` (default 20), `asset_symbol` (case-insensitive), `portfolio_scope=all`, `portfolio_id`.
+Query: `page` (default 1), `page_size` (default 20), `portfolio_scope=all`, `portfolio_id`, plus column filters:
 
-Default (no scope params): all active real portfolios. Cannot combine `portfolio_scope=all` with `portfolio_id` (`422`).
+| Param | Meaning |
+| --- | --- |
+| `asset_symbol` | Single symbol, case-insensitive exact match |
+| `symbols` | Comma-separated symbols / AMFI scheme codes, case-insensitive (multi-select) |
+| `date_from` | Include transactions with `date >= date_from` (YYYY-MM-DD) |
+| `date_to` | Include transactions with `date <= date_to` (YYYY-MM-DD) |
+| `date_after` | Alias for `date_from` (used by the "Later than" date mode) |
+| `date_before` | Alias for `date_to` (used by the "Earlier than" date mode) |
+
+`asset_symbol` and `symbols` are combined into one symbol set. Date filter modes map to: *Earlier than X* → `date_to=X`; *Later than X* → `date_from=X`; *Between A and B* → `date_from=A&date_to=B`. All filters are applied **before** pagination, so `total`/`pages` reflect the filtered set.
+
+Default (no scope params): all active real portfolios. Cannot combine `portfolio_scope=all` with `portfolio_id` (`422`). Unknown/inactive `portfolio_id` → `404`. Malformed `portfolio_id` or date, or `date_from > date_to` → `400`.
+
+`GET /api/v1/transactions/filter-options`
+
+Distinct filter values for the current portfolio scope (same `portfolio_scope` / `portfolio_id` rules as the list endpoint). `portfolios` always lists active real portfolios so the dropdown can broaden the current scope; `symbols`, `types`, and the date bounds are scoped to the current selection.
+
+```json
+{
+  "portfolios": [{ "id": 1, "name": "Default Portfolio" }],
+  "symbols": ["AAPL", "120503"],
+  "types": ["BUY", "SELL", "DIVIDEND", "STOCK_SPLIT"],
+  "date_min": "2019-10-10",
+  "date_max": "2026-05-29"
+}
+```
 
 **Response (200 OK)**
 ```json
@@ -150,7 +175,7 @@ Default (no scope params): all active real portfolios. Cannot combine `portfolio
 }
 ```
 
-**CSV columns:** `Action`, `Date`, `ASSET SYMBOL`, `Qty`, `Price/Share`, optional `FEES`.
+**CSV columns (stock):** `Action`, `Date`, `ASSET SYMBOL`, `Qty`, `Price/Share`, optional `FEES`.
 
 | Rule | Detail |
 |------|--------|
@@ -163,6 +188,37 @@ Default (no scope params): all active real portfolios. Cannot combine `portfolio
 | Portfolio | Unknown/inactive `portfolio_id` query param → request-level **404** (`{"detail": "..."}`), not CSV row errors |
 | Encoding | UTF-8 required (`utf-8-sig`); invalid bytes → row-level `file` error in import response |
 | File type | MIME type and file extension are **not** validated yet |
+| Format detection | Stock vs mutual fund CSV is chosen from headers — see MF CSV below; **mixed stock + MF columns in one file → row 1 header error** |
+
+#### Mutual fund CSV import (MF-11a)
+
+Detected when headers include **Scheme Code** and **Folio Number** and do **not** also include stock marker columns (`ASSET SYMBOL`, `Qty`, or `Price/Share`).
+
+**Required columns:** `Action`, `Scheme Code`, `Scheme Name`, `Folio Number`, `Investment Date`, `NAV Date`, `NAV`, `Units Allotted`, `Paid Value`, `Market Value`
+
+**Optional columns:** `Fees` (empty/omitted → `paid_value - market_value` per MF transaction rules), `Currency` (default `INR`)
+
+| Column | Maps to |
+|--------|---------|
+| `Action` | `BUY` or `SELL` only |
+| `Scheme Code` | `asset_symbol` / AMFI `scheme_code` |
+| `Scheme Name` | `MutualFundProfile.scheme_name` |
+| `Folio Number` | folio (required) |
+| `Investment Date` | `MutualFundTransactionDetail.investment_date` |
+| `NAV Date` | `Transaction.date` |
+| `NAV` | `price_per_share` |
+| `Units Allotted` | `quantity` |
+| `Paid Value` | `MutualFundTransactionDetail.paid_value` |
+| `Market Value` | `MutualFundTransactionDetail.market_value` |
+
+| Rule | Detail |
+|------|--------|
+| Date format | Same as stock CSV: `MM/DD/YY` or `MM/DD/YYYY` |
+| Creation path | `create_mutual_fund_transaction()` — upserts Asset, Profile, Folio, detail row |
+| NAV validation | Cached `HistoricalPrice` (`MUTUAL_FUND`) only — no external AMFI/MFAPI on import |
+| All-or-nothing | Same as stock CSV |
+| Portfolio query | Same as stock CSV |
+| Mixed formats | Stock + MF columns in one file → **validation error** (not supported in MF-11a) |
 
 #### Phase 5 closed assumptions (verified in tests)
 
@@ -311,7 +367,7 @@ Returns enabled rows from `benchmark_index_config` (seeded on `make seed`):
 | Command | Purpose |
 |---------|---------|
 | `sync_prices` | Incremental stock `HistoricalPrice` sync (`--symbols` optional) |
-| `sync_benchmarks` | Incremental benchmark index sync (`asset_type=INDEX`) |
+| `sync_benchmarks` | Incremental benchmark index sync (`asset_type=INDEX`); anchor = earliest transaction date; backfill/incremental same rules as stocks |
 | `sync_fx_rates` | Incremental FX pair sync (yfinance provider; logs when data missing) |
 | `sync_market_data` | Combined sync (`--symbols`, `--skip-fx`, `--skip-mutual-funds`) |
 
@@ -347,6 +403,8 @@ Validation: `portfolio_scope=all` + `portfolio_id` → **422**; unknown/inactive
 
 **Metrics:** FIFO remaining cost basis (`total_invested`), latest cached prices for `current_value`, `realized_pl` / `unrealized_pl` / `total_pl`, optional portfolio `xirr` (Phase 6 helper, fees in cashflows). Timeseries: daily holdings from transactions, forward-filled stock prices, same-date FX with up to 7-day backfill for gaps (`fx_status`: `ok` / `filled` / `fx_unavailable`). Missing FX → `portfolio_value: null` on affected points.
 
+**All Portfolios aggregation (`portfolio_scope=all`):** Headline monetary fields (`total_invested`, `current_value`, `realized_pl`, `unrealized_pl`, `total_pl`) are the **sum of each active real portfolio’s summary** after conversion to the requested `display_currency`. Inactive portfolios are excluded; Default Portfolio is included once. Response `base_currency` equals `display_currency` for this virtual scope. `fx_status` is the worst status across child portfolios (`fx_unavailable` > `filled` > `ok`). `warnings` are prefixed with portfolio name. `xirr` is still computed from merged cashflows across all active portfolios (not summed). When `include_timeseries=true`, daily series points are summed by date from child portfolio series in `display_currency`.
+
 **Response (200 OK)** — see KPulla5 shape: `total_invested`, `current_value`, `realized_pl`, `unrealized_pl`, `total_pl`, `xirr`, `base_currency`, `display_currency`, `fx_status`, `timeseries[]`; optional `warnings` (e.g. oversell).
 
 ---
@@ -381,6 +439,174 @@ Validation: invalid `metric` / `range` / `display_currency` → **400**; `portfo
 **Range:** Never starts before first transaction date; clamped to inception when the requested window is earlier.
 
 **Response (no benchmark):** JSON array of `{ "date", "value", "metric", "currency", "label": null }`.
+
+---
+
+## Analytics performance metrics (Metric Sheet)
+
+Read paths use **cached DB data only** (same as summary/performance). Metrics are computed **on query**; MVP does not store derived analytics rows. Return values are **fractions** (e.g. `0.10` = 10%); UI may multiply by 100.
+
+**Currency field:** `currency` is the valuation/display currency context for the portfolio scope (same as summary/performance). Return and risk ratios (cumulative return, CAGR, TWROR, Sharpe, drawdowns, etc.) are dimensionless fractions computed from same-currency value and flow inputs — they are **not** currency amounts and are not converted like monetary fields.
+
+**Range vs XIRR:** Most metrics are computed over the selected `range` window (daily returns sliced from `range.start`). **XIRR** is an exception: it is always **full-scope** (inception through today), matching `GET /portfolio/summary`. The response includes `metrics.return.xirr_scope: "full_scope"` so clients can distinguish range-based stats from money-weighted IRR.
+
+**Stock splits:** Daily value series uses split-adjusted FIFO quantities (`build_split_adjusted_lot_snapshots`). Cached stock `HistoricalPrice` rows must be split-adjusted (yfinance **Adj Close** from `make sync-prices`). Raw nominal pre-split prices are **unsupported** for Metric Sheet analytics; responses include a `warnings` entry when split-date valuation drops match the split factor (likely raw prices).
+
+### Implemented: `GET /api/v1/analytics/performance-metrics` (Phase 5)
+
+Portfolio-level Quantitative Statistics. Wired in `analytics/services.py`, `analytics/views.py`.
+
+### Proposed (not yet implemented)
+
+### Common query parameters (all analytics endpoints)
+
+| Param | Default | Notes |
+|-------|---------|--------|
+| `range` | `1Y` | Same codes as performance: `7D`, `30D`, `YTD`, `1Y`, `3Y`, `5Y`, `ALL` |
+| `display_currency` | settings / EUR | `EUR`, `USD`, `INR`, `GBP`, `CHF` |
+| `benchmark` | — | Optional index symbol for beta, alpha, correlation |
+| `portfolio_scope` | `all` | Portfolio-level endpoints only |
+| `portfolio_id` | — | Single active portfolio |
+
+Validation mirrors performance/summary (400/404/422). Response includes `warnings: string[]` for data-quality issues, including: missing cached stock prices (`Cached prices are missing for one or more dates…`), missing MF NAVs (`Cached NAVs are missing…`; suggests NAV sync), FX gaps, benchmark coverage, split-adjusted price inconsistency, or insufficient history. Generic fallback when values are wholly unavailable remains.
+
+### `GET /api/v1/analytics/performance-metrics` (implemented)
+
+Portfolio-level performance metric sheet (Quantitative Statistics summary).
+
+**Rough response (200 OK):**
+```json
+{
+  "subject": { "type": "portfolio", "portfolio_scope": "all", "display_currency": "EUR" },
+  "range": "1Y",
+  "benchmark": "^GSPC",
+  "as_of": "2026-05-30",
+  "warnings": [],
+  "summary": {
+    "total_return_pct": 12.5,
+    "cagr_pct": 11.2,
+    "xirr": 0.105,
+    "volatility_pct": 14.0,
+    "sharpe": 0.85,
+    "sortino": 1.1,
+    "max_drawdown_pct": -8.2,
+    "calmar": 1.36,
+    "beta": 0.92,
+    "alpha_pct": 1.5,
+    "correlation": 0.88
+  },
+  "period_returns": {
+    "monthly": [{ "period": "2026-04", "return_pct": 2.1 }],
+    "yearly": [{ "period": "2025", "return_pct": 15.3 }]
+  },
+  "drawdowns": {
+    "max": { "pct": -8.2, "start": "2026-02-01", "trough": "2026-02-15", "end": "2026-03-01" },
+    "series": [{ "date": "2026-01-01", "drawdown_pct": 0 }]
+  },
+  "win_loss": { "win_rate_pct": 55.0, "best_day_pct": 3.2, "worst_day_pct": -2.8 }
+}
+```
+
+Fields may be `null` when data quality or history is insufficient. `xirr` is money-weighted (separate from TWROR-derived risk metrics). `xirr_scope` is always `"full_scope"` (not sliced by `range`); other return/risk/drawdown metrics use the selected range window.
+
+**Phase 9A — additional blocks (portfolio + asset):** Top-level siblings of `metrics` (existing `metrics.return` / `risk` / `drawdown` / `periods` unchanged):
+
+```json
+{
+  "periodic_returns": {
+    "monthly": [{ "period": "2026-01", "return": 0.021 }],
+    "yearly": [{ "period": "2025", "return": 0.143 }]
+  },
+  "drawdown_periods": {
+    "worst": [
+      {
+        "start_date": "2025-01-10",
+        "trough_date": "2025-02-05",
+        "recovery_date": "2025-03-20",
+        "drawdown": -0.182,
+        "days_to_trough": 26,
+        "days_to_recovery": 69,
+        "recovered": true
+      }
+    ]
+  }
+}
+```
+
+* `periodic_returns`: compounded fractional returns from daily series in the selected range (`resample_monthly_returns` / `resample_yearly_returns`); days with `null` daily return are skipped.
+* `drawdown_periods.worst`: up to 10 episodes ranked by severity (`worst_drawdown_periods` in `finance/drawdowns.py`); `drawdown` is a fraction (not percent). Empty arrays when history is insufficient; no extra warnings beyond existing Metric Sheet warnings.
+
+### Implemented: `GET /api/v1/analytics/assets/{asset_symbol}/performance-metrics` (Phase 6)
+
+Single-asset Metric Sheet (stock symbol or MF scheme code). Wired in `analytics/services.py`, `analytics/views.py`.
+
+| Param | Notes |
+|-------|--------|
+| `folio_number` | Required when multiple MF folios exist for the scheme (`400`) |
+| `portfolio_scope` / `portfolio_id` | Limit transactions to scope (same rules as portfolio endpoint) |
+| `range`, `display_currency`, `benchmark` | Same as portfolio Metric Sheet |
+
+**404** when no matching transactions in scope. **422** when `portfolio_scope=all` combined with `portfolio_id`.
+
+**Response (200 OK):** Same nested `metrics` / optional `benchmark` / `warnings` shape as portfolio Metric Sheet, plus `periodic_returns` and `drawdown_periods` (Phase 9A). Subject:
+
+```json
+{
+  "type": "asset",
+  "asset_symbol": "AAPL",
+  "name": "AAPL",
+  "portfolio_scope": "all",
+  "portfolio_id": null,
+  "folio_number": null
+}
+```
+
+Asset value series is built from scoped asset transactions + cached prices/NAV/FX (not portfolio series filtered post-hoc). Stocks use split-adjusted FIFO qty with cached historical prices; MFs use cached NAV rows and `investment_date` / `paid_value` cash flows (portfolio MF rules). `xirr_scope` is `"full_scope"`.
+
+### Implemented: `GET /api/v1/analytics/compare` (Phase 7)
+
+Side-by-side comparison of **exactly two** asset subjects (MVP). Wired in `analytics/services.py`, `analytics/views.py`.
+
+| Param | Notes |
+|-------|--------|
+| `subjects` | Required comma-separated list, e.g. `asset:AAPL,asset:MSFT` (MVP: `asset:<symbol>` only, exactly two) |
+| `portfolio_scope` / `portfolio_id` | Limit transactions to scope (same rules as portfolio Metric Sheet) |
+| `range`, `display_currency`, `benchmark` | Same as portfolio Metric Sheet |
+
+**400** when `subjects` missing, invalid format, wrong count, or unsupported subject type. **404** when a subject has no transactions in scope (same as asset Metric Sheet). **422** for invalid benchmark config or conflicting scope params.
+
+Compare API metrics are computed over **common overlapping dates only** (exact date intersection of non-`None` daily returns; no forward-fill). Each subject gets aligned-window Metric Sheet metrics plus optional per-subject benchmark block. `normalized_series` rebases cumulative fractional returns to `0` on the first common date.
+
+**Response (200 OK):**
+```json
+{
+  "range": { "code": "3Y", "start": "2026-01-02", "end": "2026-03-15" },
+  "currency": "EUR",
+  "subjects": [
+    {
+      "id": "asset:AAPL",
+      "type": "asset",
+      "asset_symbol": "AAPL",
+      "name": "AAPL",
+      "folio_number": null,
+      "metrics": { "return": {}, "risk": {}, "drawdown": {}, "periods": {} },
+      "periodic_returns": { "monthly": [], "yearly": [] },
+      "drawdown_periods": { "worst": [] },
+      "benchmark": { "symbol": "^GSPC", "paired_count": 10, "metrics": {} },
+      "warnings": []
+    }
+  ],
+  "normalized_series": [
+    { "date": "2026-01-02", "values": { "asset:AAPL": 0.0, "asset:MSFT": 0.0 } }
+  ],
+  "common_start_date": "2026-01-02",
+  "common_end_date": "2026-03-15",
+  "common_point_count": 42,
+  "warnings": ["Compare API metrics are computed over common overlapping dates only."]
+}
+```
+
+When `common_point_count < 2`, subject metrics are null, `periodic_returns` / `drawdown_periods` are empty arrays, and a global insufficient-overlap warning is included. Per-subject periodic returns and drawdown periods use the **aligned common-window** daily returns (not each asset’s independent full history). MF compare reuses asset Metric Sheet rules (single folio auto-resolved; multiple folios → **400** on asset resolution, same as asset endpoint — no per-subject `folio_number` in compare query yet).
 
 ---
 
@@ -482,7 +708,7 @@ Mutual fund positions appear as additional holding rows (stock rows unchanged �
 
 ### Asset detail — MF-4 implemented
 
-`GET /api/v1/portfolio/assets/{scheme_code}?folio_number={folio}` — MF tear-sheet with folio-scoped FIFO and transactions (MF fields on transaction rows). Stock route `{asset_symbol}` unchanged for tickers.
+`GET /api/v1/portfolio/assets/{scheme_code}?folio_number={folio}` — MF Metric Sheet with folio-scoped FIFO and transactions (MF fields on transaction rows). Stock route `{asset_symbol}` unchanged for tickers.
 
 - Single folio for scheme: `folio_number` optional.
 - Multiple folios: omitting `folio_number` → **400** `folio_number is required when multiple folios exist for this scheme`.

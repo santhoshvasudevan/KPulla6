@@ -41,7 +41,9 @@ class Command(BaseCommand):
         )
         if result.fx_partial:
             msg += " (fx partial — some pairs may lack provider data)"
-        if result.success:
+        if result.mutual_funds_failed:
+            msg += " (mutual fund NAV failures — see logs; batch continued)"
+        if result.success and result.mutual_funds_failed == 0:
             self.stdout.write(self.style.SUCCESS(msg))
         else:
             self.stdout.write(self.style.WARNING(msg))

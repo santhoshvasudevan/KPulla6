@@ -59,6 +59,24 @@ describe('API Service', () => {
     expect(data).toEqual(mockResponse);
   });
 
+  it('fetchDashboardSummary with includeTimeseries false appends query param', async () => {
+    const mockResponse = { total_invested: 15000, timeseries: [] };
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => mockResponse,
+    });
+
+    const data = await api.fetchDashboardSummary(
+      { portfolio_scope: 'all', display_currency: 'EUR' },
+      { includeTimeseries: false }
+    );
+    const url = global.fetch.mock.calls[0][0];
+    expect(url).toContain('portfolio_scope=all');
+    expect(url).toContain('display_currency=EUR');
+    expect(url).toContain('include_timeseries=false');
+    expect(data).toEqual(mockResponse);
+  });
+
   it('fetchDashboardSummary caches until invalidated', async () => {
     const mockResponse = { total_invested: 15000 };
     global.fetch.mockResolvedValueOnce({
@@ -79,6 +97,26 @@ describe('API Service', () => {
     });
     await api.fetchDashboardSummary();
     expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('fetchDashboardSummary uses separate cache keys for includeTimeseries false vs default', async () => {
+    global.fetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ total_invested: 1, label: 'light' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ total_invested: 2, label: 'full' }),
+      });
+
+    const light = await api.fetchDashboardSummary(null, { includeTimeseries: false });
+    const full = await api.fetchDashboardSummary();
+    expect(light.label).toBe('light');
+    expect(full.label).toBe('full');
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(global.fetch.mock.calls[0][0]).toContain('include_timeseries=false');
+    expect(global.fetch.mock.calls[1][0]).not.toContain('include_timeseries');
   });
 
   it('fetchHoldings calls the correct endpoint', async () => {
@@ -139,5 +177,55 @@ describe('API Service', () => {
     });
 
     await expect(api.fetchDashboardSummary()).rejects.toThrow('Bad request');
+  });
+
+  it('getPortfolioMetricSheet calls analytics performance-metrics with scope and range', async () => {
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ metrics: {} }) });
+    await api.getPortfolioMetricSheet({
+      portfolio_scope: 'all',
+      display_currency: 'EUR',
+      range: '3Y',
+      benchmark: '^GSPC',
+    });
+    const url = global.fetch.mock.calls[0][0];
+    expect(url).toContain('/api/v1/analytics/performance-metrics?');
+    expect(url).toContain('portfolio_scope=all');
+    expect(url).toContain('display_currency=EUR');
+    expect(url).toContain('range=3Y');
+    expect(url).toContain('benchmark=%5EGSPC');
+  });
+
+  it('getAssetMetricSheet encodes symbol and passes folio_number', async () => {
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ metrics: {} }) });
+    await api.getAssetMetricSheet('120503', {
+      portfolio_id: 2,
+      display_currency: 'INR',
+      range: 'ALL',
+      folio_number: 'FOLIO-12345',
+    });
+    const url = global.fetch.mock.calls[0][0];
+    expect(url).toContain('/api/v1/analytics/assets/120503/performance-metrics?');
+    expect(url).toContain('portfolio_id=2');
+    expect(url).toContain('display_currency=INR');
+    expect(url).toContain('range=ALL');
+    expect(url).toContain('folio_number=FOLIO-12345');
+  });
+
+  it('getCompareMetricSheet calls compare endpoint with subjects', async () => {
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ subjects: [] }) });
+    await api.getCompareMetricSheet({
+      portfolio_scope: 'all',
+      display_currency: 'EUR',
+      range: '1Y',
+      subjects: 'asset:AAPL,asset:MSFT',
+    });
+    const url = global.fetch.mock.calls[0][0];
+    expect(url).toContain('/api/v1/analytics/compare?');
+    expect(url).toContain('subjects=asset%3AAAPL%2Casset%3AMSFT');
+    expect(url).toContain('range=1Y');
+  });
+
+  it('getCompareMetricSheet requires subjects', async () => {
+    await expect(api.getCompareMetricSheet({ range: '1Y' })).rejects.toThrow('subjects is required');
   });
 });
