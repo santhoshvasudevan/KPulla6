@@ -13,14 +13,24 @@ from finance.mutual_fund_cashflows import MutualFundCashflowEvent, merge_portfol
 from finance.oversell import detect_oversell
 from finance.splits import apply_stock_split_adjustments
 from finance.types import TransactionType
-from fx.lookup import convert_amount_with_fill, fx_lookup_from_maps, load_fx_rate_maps
+from fx.lookup import (
+    convert_amount_with_fill,
+    convert_amount_with_fill_from_maps,
+    fx_lookup_from_maps,
+    load_fx_rate_maps,
+)
 from market_data.nav_lookup import normalize_scheme_code
 from market_data.nav_repository import (
+    last_mutual_fund_navs_on_or_before,
     latest_mutual_fund_navs_by_scheme,
     list_mutual_fund_navs_for_schemes,
 )
 from market_data.price_lookup import normalize_asset_symbol
-from market_data.price_repository import latest_stock_prices_by_symbol, list_stock_prices_in_range
+from market_data.price_repository import (
+    last_stock_prices_on_or_before,
+    latest_stock_prices_by_symbol,
+    list_stock_prices_in_range,
+)
 from portfolios import dates as portfolio_dates
 from portfolios.models import Portfolio
 from portfolios.scope import ResolvedPortfolioScope
@@ -29,6 +39,48 @@ from transactions.finance_adapter import transaction_to_finance_dto
 from transactions.models import Transaction as TransactionModel
 
 MF_BASE_CURRENCY = "INR"
+FX_LOOKBACK_DAYS = 7
+
+
+def _forward_fill_decimal(timeline: dict[date, Decimal], as_of: date) -> Decimal:
+    """Last event-based quantity/invested value on or before ``as_of``."""
+    result = Decimal("0")
+    for event_date in sorted(timeline.keys()):
+        if event_date <= as_of:
+            result = timeline[event_date]
+        else:
+            break
+    return result
+
+
+def _last_on_or_before_optional(
+    mapping: dict[date, Decimal], as_of: date
+) -> Decimal | None:
+    result: Decimal | None = None
+    for key in sorted(mapping.keys()):
+        if key <= as_of:
+            result = mapping[key]
+        else:
+            break
+    return result
+
+
+def _last_on_or_before_optional_str(
+    mapping: dict[date, str], as_of: date
+) -> str | None:
+    result: str | None = None
+    for key in sorted(mapping.keys()):
+        if key <= as_of:
+            result = mapping[key]
+        else:
+            break
+    return result
+
+
+def _data_load_start(emit_start_date: date | None, inception_date: date) -> date:
+    if emit_start_date is None:
+        return inception_date
+    return emit_start_date - timedelta(days=FX_LOOKBACK_DAYS)
 
 
 def _norm_ccy(value: str | None) -> str:
@@ -345,22 +397,33 @@ def _mf_timeseries_by_date(
     inception_date: date,
     today: date,
     portfolio_base: str,
+    emit_start_date: date | None = None,
 ) -> dict[date, dict]:
     """Per-day MF portfolio value and invested amount in portfolio_base."""
     if not by_mf:
         return {}
 
+    loop_start = emit_start_date if emit_start_date is not None else inception_date
+    load_start = _data_load_start(emit_start_date, inception_date)
+
     schemes = sorted(
         {normalize_scheme_code(txns[0].asset_symbol) for txns in by_mf.values()}
     )
-    hist_navs = list_mutual_fund_navs_for_schemes(schemes, inception_date, today)
+    hist_navs = list_mutual_fund_navs_for_schemes(schemes, load_start, today)
+    if emit_start_date is not None:
+        seen_nav = {(normalize_scheme_code(r.asset_symbol), r.date) for r in hist_navs}
+        for row in last_mutual_fund_navs_on_or_before(schemes, loop_start):
+            key = (normalize_scheme_code(row.asset_symbol), row.date)
+            if key not in seen_nav:
+                hist_navs.append(row)
+        hist_navs.sort(key=lambda r: (r.asset_symbol, r.date))
     nav_dict: dict[str, dict[date, Decimal]] = {}
     for row in hist_navs:
         scheme = normalize_scheme_code(row.asset_symbol)
         nav_dict.setdefault(scheme, {})[row.date] = Decimal(row.close_price)
 
     fx_pairs = {(MF_BASE_CURRENCY, portfolio_base)}
-    fx_maps = load_fx_rate_maps(fx_pairs, inception_date, today)
+    fx_maps = load_fx_rate_maps(fx_pairs, load_start, today)
 
     qty_dict: dict[str, dict[date, Decimal]] = {}
     inv_dict: dict[str, dict[date, Decimal]] = {}
@@ -399,13 +462,13 @@ def _mf_timeseries_by_date(
         scheme = normalize_scheme_code(by_mf[key][0].asset_symbol)
         current_state[key] = {
             "scheme": scheme,
-            "qty": Decimal("0"),
-            "inv": Decimal("0"),
-            "nav": None,
+            "qty": _forward_fill_decimal(qty_dict.get(key, {}), loop_start),
+            "inv": _forward_fill_decimal(inv_dict.get(key, {}), loop_start),
+            "nav": _last_on_or_before_optional(nav_dict.get(scheme, {}), loop_start),
         }
 
     daily: dict[date, dict] = {}
-    d = inception_date
+    d = loop_start
     while d <= today:
         daily_value_inr = Decimal("0")
         daily_inv_inr = Decimal("0")
@@ -462,6 +525,8 @@ def _build_portfolio_value_timeseries(
     all_txns: list[TransactionModel],
     by_symbol: dict[str, list[TransactionModel]],
     by_mf: dict[str, list[TransactionModel]] | None = None,
+    *,
+    emit_start_date: date | None = None,
 ) -> list[dict]:
     if not all_txns:
         return []
@@ -470,19 +535,27 @@ def _build_portfolio_value_timeseries(
     inception_date = min(t.date for t in all_txns)
     today = portfolio_dates.current_date()
     portfolio_base = _portfolio_base_currency(all_txns)
+    loop_start = emit_start_date if emit_start_date is not None else inception_date
+    load_start = _data_load_start(emit_start_date, inception_date)
     mf_daily = _mf_timeseries_by_date(
         by_mf,
         inception_date=inception_date,
         today=today,
         portfolio_base=portfolio_base,
+        emit_start_date=emit_start_date,
     )
 
-    base_ccy_by_sym = {
-        normalize_asset_symbol(sym): _symbol_base_currency(txns)
-        for sym, txns in by_symbol.items()
-    }
     syms = sorted(by_symbol.keys())
-    hist_prices = list_stock_prices_in_range(syms, inception_date, today)
+    hist_prices = list_stock_prices_in_range(syms, load_start, today)
+    if emit_start_date is not None:
+        seen_price = {
+            (normalize_asset_symbol(hp.asset_symbol), hp.date) for hp in hist_prices
+        }
+        for hp in last_stock_prices_on_or_before(syms, loop_start):
+            key = (normalize_asset_symbol(hp.asset_symbol), hp.date)
+            if key not in seen_price:
+                hist_prices.append(hp)
+        hist_prices.sort(key=lambda hp: (hp.asset_symbol, hp.date))
 
     price_dict: dict[str, dict[date, Decimal]] = {}
     price_ccy_dict: dict[str, dict[date, str]] = {}
@@ -492,10 +565,9 @@ def _build_portfolio_value_timeseries(
         k = normalize_asset_symbol(hp.asset_symbol)
         price_dict.setdefault(k, {})[hp.date] = Decimal(hp.close_price)
         price_ccy_dict.setdefault(k, {})[hp.date] = _norm_ccy(hp.currency)
-        base_ccy = base_ccy_by_sym.get(k) or "EUR"
-        fx_pairs.add((_norm_ccy(hp.currency), base_ccy))
+        fx_pairs.add((_norm_ccy(hp.currency), portfolio_base))
 
-    fx_maps = load_fx_rate_maps(fx_pairs, inception_date, today)
+    fx_maps = load_fx_rate_maps(fx_pairs, load_start, today)
 
     qty_dict: dict[str, dict[date, Decimal]] = {}
     inv_dict: dict[str, dict[date, Decimal]] = {}
@@ -507,15 +579,20 @@ def _build_portfolio_value_timeseries(
 
     current_state: dict[str, dict] = {}
     for sym in by_symbol:
+        sym_key = normalize_asset_symbol(sym)
         current_state[sym] = {
-            "qty": Decimal("0"),
-            "inv": Decimal("0"),
-            "price": None,
+            "qty": _forward_fill_decimal(qty_dict.get(sym, {}), loop_start),
+            "inv": _forward_fill_decimal(inv_dict.get(sym, {}), loop_start),
+            "price": _last_on_or_before_optional(price_dict.get(sym_key, {}), loop_start),
             "price_ccy": None,
         }
+        if current_state[sym]["price"] is not None:
+            current_state[sym]["price_ccy"] = _last_on_or_before_optional_str(
+                price_ccy_dict.get(sym_key, {}), loop_start
+            )
 
     timeseries: list[dict] = []
-    d = inception_date
+    d = loop_start
     while d <= today:
         daily_value = Decimal("0")
         daily_inv = Decimal("0")
@@ -540,11 +617,10 @@ def _build_portfolio_value_timeseries(
             if current_state[sym]["price"] is None:
                 continue
 
-            base_ccy = base_ccy_by_sym.get(sym_key) or _symbol_base_currency(by_symbol[sym])
             fx_rate, fx_st = fx_lookup_from_maps(
                 fx_maps,
                 current_state[sym]["price_ccy"],
-                base_ccy,
+                portfolio_base,
                 d,
             )
             if fx_rate is None:
@@ -643,12 +719,10 @@ def _compute_scope_xirr(scope: ResolvedPortfolioScope) -> Optional[float]:
     )
 
 
-def _aggregate_timeseries_from_children(
-    children: list[PortfolioSummaryResult],
-) -> list[dict]:
+def _aggregate_timeseries_lists(series_list: list[list[dict]]) -> list[dict]:
     by_date: dict[str, dict] = {}
-    for child in children:
-        for pt in child.timeseries:
+    for timeseries in series_list:
+        for pt in timeseries:
             d = pt["date"]
             if d not in by_date:
                 by_date[d] = {
@@ -670,6 +744,63 @@ def _aggregate_timeseries_from_children(
                 [row["fx_status"], pt.get("fx_status") or "ok"]
             )
     return [by_date[d] for d in sorted(by_date.keys())]
+
+
+def _aggregate_timeseries_from_children(
+    children: list[PortfolioSummaryResult],
+) -> list[dict]:
+    return _aggregate_timeseries_lists([child.timeseries for child in children])
+
+
+def build_all_scope_portfolio_value_timeseries(
+    scope: ResolvedPortfolioScope,
+    display_currency: str,
+    *,
+    emit_start_date: date | None = None,
+) -> list[dict]:
+    """Per-portfolio value history converted to display currency, then aggregated.
+
+    When ``emit_start_date`` is set, each portfolio emits daily rows from that date
+    only (opening holdings/prices/NAV are bootstrapped from all prior transactions).
+    """
+    disp_ccy = norm_display_currency(display_currency)
+    child_series: list[list[dict]] = []
+    for portfolio_id in scope.portfolio_ids:
+        child_scope = ResolvedPortfolioScope(kind="single", portfolio_ids=[portfolio_id])
+        queryset = _fifo_eligible_queryset(child_scope.portfolio_ids)
+        all_txns = list(queryset)
+        if not all_txns:
+            continue
+        by_symbol = _transactions_by_symbol(queryset)
+        by_mf = transactions_by_mf_holding(queryset)
+        portfolio_base = _portfolio_base_currency(all_txns)
+        raw_ts = _build_portfolio_value_timeseries(
+            all_txns, by_symbol, by_mf, emit_start_date=emit_start_date
+        )
+        if not raw_ts:
+            continue
+        series_start = date.fromisoformat(raw_ts[0]["date"])
+        end = date.fromisoformat(raw_ts[-1]["date"])
+        fx_maps: dict[tuple[str, str], dict[date, Decimal]] = {}
+        if portfolio_base != disp_ccy:
+            fx_start = _data_load_start(emit_start_date, series_start)
+            fx_maps = load_fx_rate_maps({(portfolio_base, disp_ccy)}, fx_start, end)
+        converted: list[dict] = []
+        for p in raw_ts:
+            pp = dict(p)
+            pt_date = date.fromisoformat(pp["date"])
+            if pp.get("portfolio_value") is not None:
+                cv, _ = convert_amount_with_fill_from_maps(
+                    Decimal(str(pp["portfolio_value"])),
+                    portfolio_base,
+                    disp_ccy,
+                    pt_date,
+                    fx_maps,
+                )
+                pp["portfolio_value"] = float(cv) if cv is not None else None
+            converted.append(pp)
+        child_series.append(converted)
+    return _aggregate_timeseries_lists(child_series)
 
 
 def _build_single_portfolio_summary(

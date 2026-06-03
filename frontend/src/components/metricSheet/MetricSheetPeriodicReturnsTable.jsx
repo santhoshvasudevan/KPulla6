@@ -3,6 +3,7 @@ import {
   METRIC_EM_DASH,
 } from '../../utils/metricFormatters';
 import MetricSheetMonthlyReturnsGrid from './MetricSheetMonthlyReturnsGrid';
+import MetricSheetYearlyReturnChart from './MetricSheetYearlyReturnChart';
 import './metricSheet.css';
 
 function YearlyReturnsSubTable({ rows }) {
@@ -13,26 +14,28 @@ function YearlyReturnsSubTable({ rows }) {
   return (
     <div className="metric-sheet__table-group">
       <h4 className="metric-sheet__table-title">Yearly</h4>
-      <table className="metric-sheet__table metric-sheet__data-table">
-        <thead>
-          <tr>
-            <th scope="col">Period</th>
-            <th scope="col" className="metric-sheet__data-table__num">
-              Return
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.period}>
-              <th scope="row">{row.period}</th>
-              <td className="metric-sheet__data-table__num">
-                {formatMetricPercentFraction(row.return, { showSign: true })}
-              </td>
+      <div className="metric-sheet-table-scroll">
+        <table className="metric-sheet__table metric-sheet__data-table">
+          <thead>
+            <tr>
+              <th scope="col">Period</th>
+              <th scope="col" className="metric-sheet__data-table__num">
+                Return
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.period}>
+                <th scope="row">{row.period}</th>
+                <td className="metric-sheet__data-table__num">
+                  {formatMetricPercentFraction(row.return, { showSign: true })}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -57,6 +60,7 @@ export default function MetricSheetPeriodicReturnsTable({
 
   return (
     <div className={['metric-sheet__periodic-returns', className].filter(Boolean).join(' ')}>
+      {showYearly ? <MetricSheetYearlyReturnChart yearly={yearly} /> : null}
       <h3 className="metric-sheet__section-heading">Periodic returns</h3>
       {showMonthly ? (
         <MetricSheetMonthlyReturnsGrid monthly={monthly} yearly={yearly} />

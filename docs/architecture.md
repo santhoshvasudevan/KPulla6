@@ -154,7 +154,7 @@ Responses should expose a `warnings` array (and per-metric `null` where needed),
 
 - Missing **stock price** → skip or null days; warn per symbol.
 - Missing **FX** → `flows_unknown_from` / `fx_unavailable` style gating (reuse performance patterns).
-- Missing **MF NAV** → null asset/portfolio value on affected days; warn.
+- Missing **MF NAV** → null asset/portfolio value on affected days; warn when no cached NAV exists, or when the latest cached NAV is older than 5 calendar days (weekend/holiday gaps are acceptable when forward-fill from a recent NAV is available).
 - Missing **benchmark** prices → portfolio-only metrics; beta/alpha/correlation null with warning.
 - **Insufficient history** (e.g. &lt; 2 return observations) → ratio metrics null, not zero.
 - **Stock split + price history:** when cached prices appear to be raw nominal (not split-adjusted) around a `STOCK_SPLIT`, Metric Sheet responses include a warning; metrics may still be returned but returns around the split are unreliable. Use `make sync-prices` (Adj Close) for supported symbols.

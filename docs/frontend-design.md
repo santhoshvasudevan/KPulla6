@@ -57,7 +57,7 @@ Recharts uses hex mirrors in `chartTheme.js` — not CSS variables.
 
 ### App shell
 
-- Fixed sidebar (~260px): brand, main navigation, portfolio/currency selectors at bottom, optional data note in footer
+- Fixed sidebar (~260px): brand, portfolio/currency selectors directly below brand, main navigation, optional data note in footer
 - Main content: `--bg-app` background, inner padding (`--space-5` / `--space-6`), max-width ~1400px
 - Active nav: left accent border + raised surface (not inverted high-contrast)
 - Selectors: raised surface, strong border, accent focus ring
@@ -222,6 +222,41 @@ Pages are wired on **Dashboard** (Phase 8B) and **Asset Detail** (Phase 8C). **C
 - Dashboard + Asset Detail: monthly list table replaced by scrollable grid (`max-height` + horizontal scroll); yearly fallback table only when monthly is empty but yearly exists.
 - Compare page unchanged (yearly side-by-side only).
 
+### Metric Sheet visualization charts (Phase 13C — implemented)
+
+- **Monthly heatmap scale** — five-band tone mapping in `metricSheetMonthlyHeatmap.js` (≤−10% strong red, −10% to −3% soft red, −3% to +3% neutral/yellow, +3% to +10% soft green, ≥+10% strong green); percentage text remains visible in every cell with aria labels.
+- **`MetricSheetYearlyReturnChart`** — Recharts bar chart from `periodic_returns.yearly`; title **Calendar-Year Return**; helper *Cash-flow adjusted return using daily TWROR.*; placed above Periodic Returns on Dashboard and Asset Detail.
+- **`MetricSheetDrawdownChart`** — Recharts area chart from `drawdown_series`; worst episodes shaded via `ReferenceArea` using `drawdown_periods.worst` ranks (rank 1 strongest); unrecovered episodes shade through series end; placed above Worst Drawdowns table.
+- Compare page unchanged (yearly table + drawdown tables only).
+
+### Compare metric highlighting (Phase 11B — implemented)
+
+- `compareMetricRanking.js` — display-only helper comparing exactly two backend metric values; returns `better` / `worse` / `tie` / `neutral` / `unknown` per cell (no new analytics).
+- `CompareMetricTable` — subtle per-cell highlights where metric direction is unambiguous; legend note above tables.
+- **Higher is better:** cumulative return, CAGR, TWROR, XIRR, Sharpe, Sortino, Calmar, alpha, information ratio, and related return/ratio keys in the direction map.
+- **Lower is better:** volatility, downside deviation (when shown).
+- **Less negative is better:** max drawdown (e.g. −10% beats −25%).
+- **Neutral (no highlight):** beta, correlation, tracking error, paired count, days, null/missing values, unknown keys.
+- **Tie:** equal values within tolerance — soft tie styling + “Equal values” label.
+- Accessible labels: `title` + visually hidden text on highlighted cells (`Best value in this row`, etc.); not color-only.
+- Styling: soft background + thin left border via design tokens (`--accent-muted`, `--border-subtle`); no aggressive gain/loss blocks.
+- Compare drawdown sections: per-subject tables keep `.metric-sheet-table-scroll`; no cross-asset episode ranking.
+- Monthly grid yearly column header: **Year Return** (distinct from row year label).
+
+### Metric Sheet release readiness (Phase 12A — implemented)
+
+- Compare API TWROR aligned to common overlapping window (backend fix).
+- Compare table labels aligned with Dashboard/Asset Detail risk metrics.
+- Yearly fallback table uses `.metric-sheet-table-scroll`.
+- Dashboard benchmark table requires active benchmark selection (matches Asset Detail).
+- Contract tests for compare payload shape, `xirr_scope`, and common-window warning.
+
+### Dashboard Metric Sheet full-width layout (Phase 12B — implemented)
+
+- Metric Sheet section spans full main content width on Dashboard (`.metric-sheet.ui-section-card { max-width: none }`); placed between performance chart and secondary charts (not nested in chart column).
+- Increased subsection spacing via `.metric-sheet .ui-section-card__body` flex gap.
+- MF NAV warnings: freshness-based only (`MF_NAV_STALE_AFTER_DAYS = 5`); no warning for weekend/holiday NAV gaps when latest cached NAV is recent.
+
 ### Data rules
 
 - All Metric Sheet numbers: backend APIs only.
@@ -248,6 +283,12 @@ Pages are wired on **Dashboard** (Phase 8B) and **Asset Detail** (Phase 8C). **C
 | **9B** | Periodic returns + worst drawdown periods display (done) |
 | **10B** | Metric Sheet polish — benchmark UX, table scroll, settings gate, warnings (done) |
 | **11A** | Monthly returns grid / heatmap display (done) |
+| **11B** | Compare metric scanability — subtle better/worse highlighting (done) |
+| **12A** | Metric Sheet release readiness audit (done) |
+| **12B** | Dashboard full-width Metric Sheet + MF NAV freshness warnings (done) |
+| **13A** | Sidebar context controls moved below brand (done) |
+| **13B** | Metric Sheet drawdown series + Calendar-Year Return API contract (done) |
+| **13C** | Metric Sheet charts: Calendar-Year Return bar, Drawdown area, monthly heatmap scale (done) |
 
 ## Implementation Constraints
 

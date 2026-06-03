@@ -23,9 +23,17 @@ vi.mock('recharts', async () => {
     ResponsiveContainer: ({ children }) => <div data-testid="recharts-wrapper">{children}</div>,
     LineChart: ({ children }) => <div>{children}</div>,
     BarChart: ({ children }) => <div>{children}</div>,
+    AreaChart: ({ children }) => <div data-testid="area-chart">{children}</div>,
     Line: () => <div />,
-    Bar: ({ dataKey, fill }) => (
-      <div data-testid={`bar-${dataKey}`} data-fill={fill} />
+    Bar: ({ children, dataKey, fill }) => (
+      <div data-testid={`bar-${dataKey}`} data-fill={fill}>
+        {children}
+      </div>
+    ),
+    Cell: ({ fill }) => <div data-testid="bar-cell" data-fill={fill} />,
+    Area: () => <div data-testid="area" />,
+    ReferenceArea: ({ className }) => (
+      <div className={className} data-testid="reference-area" />
     ),
     XAxis: ({ tickFormatter }) => <div data-testid="x-axis">{tickFormatter ? tickFormatter('2026-01-01') : ''}</div>,
     CartesianGrid: () => <div />,
@@ -762,7 +770,9 @@ describe('Dashboard Component', () => {
       });
       const metricSheetSection = screen
         .getByRole('heading', { name: 'Metric Sheet' })
-        .closest('.ui-section-card');
+        .closest('.dashboard-metric-sheet');
+      expect(metricSheetSection).toHaveClass('metric-sheet');
+      expect(metricSheetSection.closest('.dashboard-charts')).toBeNull();
       expect(within(metricSheetSection).getByText('Cumulative Return')).toBeInTheDocument();
       expect(within(metricSheetSection).getByText('Sharpe Ratio')).toBeInTheDocument();
       expect(within(metricSheetSection).getByText('+12.34%')).toBeInTheDocument();
@@ -783,9 +793,13 @@ describe('Dashboard Component', () => {
           .getByRole('heading', { name: 'Metric Sheet' })
           .closest('.ui-section-card');
         expect(within(card).getByText('Periodic returns')).toBeInTheDocument();
+        expect(within(card).getByText('Calendar-Year Return')).toBeInTheDocument();
         return card;
       });
       expect(within(metricSheetSection).getByText('Worst drawdowns')).toBeInTheDocument();
+      expect(
+        within(metricSheetSection).getByRole('heading', { name: 'Drawdown', level: 3 })
+      ).toBeInTheDocument();
       expect(within(metricSheetSection).getByRole('columnheader', { name: 'Jan' })).toBeInTheDocument();
       expect(within(metricSheetSection).getAllByText('+2.10%').length).toBeGreaterThan(0);
       expect(within(metricSheetSection).getByText('Recovered')).toBeInTheDocument();

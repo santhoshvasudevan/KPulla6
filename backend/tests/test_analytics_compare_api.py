@@ -196,6 +196,56 @@ def test_compare_normalized_series_and_common_dates(api_client, seeded, today_pa
 # --- E. Metrics over aligned window ---
 
 
+METRIC_SHEET_RETURN_KEYS = {
+    "cumulative_return",
+    "cagr",
+    "xirr",
+    "xirr_scope",
+    "twror",
+}
+METRIC_SHEET_RISK_KEYS = {
+    "volatility_annualized",
+    "downside_deviation",
+    "sharpe_ratio",
+    "sortino_ratio",
+}
+METRIC_SHEET_DRAWDOWN_KEYS = {
+    "max_drawdown",
+    "longest_drawdown_days",
+    "calmar_ratio",
+}
+METRIC_SHEET_PERIOD_KEYS = {
+    "best_day",
+    "worst_day",
+    "win_rate",
+    "average_daily_return",
+}
+
+
+def _assert_metric_sheet_metrics_shape(metrics: dict) -> None:
+    assert set(metrics["return"].keys()) == METRIC_SHEET_RETURN_KEYS
+    assert set(metrics["risk"].keys()) == METRIC_SHEET_RISK_KEYS
+    assert set(metrics["drawdown"].keys()) == METRIC_SHEET_DRAWDOWN_KEYS
+    assert set(metrics["periods"].keys()) == METRIC_SHEET_PERIOD_KEYS
+
+
+@pytest.mark.django_db
+def test_compare_success_includes_common_window_warning_and_xirr_scope(
+    api_client, seeded, today_patch
+):
+    _seed_two_stock_overlap(api_client)
+    data = api_client.get(
+        _compare_url(subjects="asset:AAPL,asset:MSFT", range="ALL", portfolio_scope="all")
+    ).json()
+    assert any(
+        "Compare API metrics are computed over common overlapping dates only." in w
+        for w in data["warnings"]
+    )
+    for subj in data["subjects"]:
+        assert subj["metrics"]["return"]["xirr_scope"] == "full_scope"
+        _assert_metric_sheet_metrics_shape(subj["metrics"])
+
+
 @pytest.mark.django_db
 def test_compare_metrics_use_aligned_window_not_independent_histories(
     api_client, seeded, today_patch
@@ -223,7 +273,12 @@ def test_compare_metrics_use_aligned_window_not_independent_histories(
     assert compare_cum is not None
     # MSFT buy day often yields None daily return; first common aligned date is day after.
     assert compare["common_start_date"] == "2026-02-02"
-    assert compare_cum != pytest.approx(solo_cum, rel=1e-6)
+    assert compare["range"]["start"] == compare["common_start_date"]
+    assert solo_aapl["range"]["start"] < compare["range"]["start"]
+    solo_twror = solo_aapl["metrics"]["return"]["twror"]
+    compare_twror = aapl_subject["metrics"]["return"]["twror"]
+    if solo_twror is not None and compare_twror is not None:
+        assert compare_twror != pytest.approx(solo_twror, rel=1e-6)
 
 
 # --- F. Missing overlap ---
@@ -262,6 +317,7 @@ def test_compare_insufficient_overlap_warning_and_null_metrics(
         assert subj["metrics"]["return"]["cumulative_return"] is None
         assert subj["periodic_returns"] == {"monthly": [], "yearly": []}
         assert subj["drawdown_periods"] == {"worst": []}
+        assert subj["drawdown_series"] == []
 
 
 @pytest.mark.django_db
@@ -279,6 +335,12 @@ def test_compare_subjects_include_periodic_returns_and_drawdown_periods(
         assert isinstance(subj["periodic_returns"]["monthly"], list)
         assert isinstance(subj["periodic_returns"]["yearly"], list)
         assert isinstance(subj["drawdown_periods"]["worst"], list)
+        assert "drawdown_series" in subj
+        assert isinstance(subj["drawdown_series"], list)
+        for pt in subj["drawdown_series"]:
+            assert pt["drawdown"] <= 0
+        for ep in subj["drawdown_periods"]["worst"]:
+            assert "rank" in ep
 
 
 # --- G. Benchmark metrics ---

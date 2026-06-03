@@ -210,7 +210,9 @@ def resample_yearly_returns(
     """
     Compound daily fractional returns by calendar year (``YYYY``).
 
-    Years with no valid daily returns are omitted.
+    Each row is **Calendar-Year Return**: cash-flow-adjusted daily returns
+    (TWROR-style) compounded within the calendar year — not simple start-vs-end
+    portfolio value change. Years with no valid daily returns are omitted.
     """
     return _compound_daily_by_key(
         daily_return_points,

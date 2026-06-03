@@ -71,8 +71,13 @@
   color: var(--text-secondary);
 }
 
+.dashboard-charts--secondary {
+  margin-bottom: 0;
+}
+
 .dashboard-metric-sheet {
-  margin-top: 0;
+  width: 100%;
+  margin-bottom: var(--space-5);
 }
 
 .dashboard-metric-sheet__benchmark-select {

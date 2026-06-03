@@ -9,15 +9,22 @@ import pandas as pd
 
 from finance.benchmarks import PerformancePoint, merge_performance_and_benchmarks
 from finance.performance_range import resolve_performance_range_start
+from finance.performance_stats import contributions_and_withdrawals_through
 from finance.twror import compute_twror_series
 from finance.types import TransactionType
-from fx.lookup import convert_amount_with_fill, fx_lookup_from_maps, load_fx_rate_maps
+from fx.lookup import (
+    convert_amount_with_fill,
+    convert_amount_with_fill_from_maps,
+    fx_lookup_from_maps,
+    load_fx_rate_maps,
+)
 from market_data.models import BenchmarkIndexConfig
 from market_data.price_repository import list_index_prices_in_range
 from portfolios import dates as portfolio_dates
 from portfolios.scope import ResolvedPortfolioScope
 from portfolios.summary_service import (
     MF_BASE_CURRENCY,
+    build_all_scope_portfolio_value_timeseries,
     build_portfolio_value_timeseries,
     fifo_eligible_queryset,
     norm_display_currency,
@@ -142,21 +149,6 @@ def _build_external_flows(
     return flows_by_date, flows_unknown_from
 
 
-def _contrib_withdrawals_upto(
-    flows_by_date: dict[date, Decimal], d: date
-) -> tuple[Decimal, Decimal]:
-    contrib = Decimal("0")
-    withdraw = Decimal("0")
-    for td, f in flows_by_date.items():
-        if td > d:
-            continue
-        if f >= 0:
-            contrib += f
-        else:
-            withdraw += -f
-    return contrib, withdraw
-
-
 def _flows_known(flows_unknown_from: Optional[date], d: date) -> bool:
     return flows_unknown_from is None or d < flows_unknown_from
 
@@ -167,6 +159,56 @@ def portfolio_external_flows(
 ) -> tuple[dict[date, Decimal], Optional[date]]:
     """Net external flows by date in portfolio base currency (for analytics / TWROR)."""
     return _build_external_flows(all_txns, base_currency)
+
+
+def _merge_flow_maps(
+    parts: list[tuple[dict[date, Decimal], Optional[date]]],
+) -> tuple[dict[date, Decimal], Optional[date]]:
+    merged: dict[date, Decimal] = {}
+    unknown_from: Optional[date] = None
+    for flows, ufrom in parts:
+        for d, amt in flows.items():
+            merged[d] = merged.get(d, Decimal("0")) + amt
+        if ufrom is not None:
+            unknown_from = min(unknown_from, ufrom) if unknown_from else ufrom
+    return merged, unknown_from
+
+
+def build_all_scope_external_flows(
+    scope: ResolvedPortfolioScope,
+    display_currency: str,
+) -> tuple[dict[date, Decimal], Optional[date]]:
+    """Per-portfolio external flows converted to display currency, aggregated by date."""
+    disp_ccy = norm_display_currency(display_currency)
+    parts: list[tuple[dict[date, Decimal], Optional[date]]] = []
+    for portfolio_id in scope.portfolio_ids:
+        child_scope = ResolvedPortfolioScope(kind="single", portfolio_ids=[portfolio_id])
+        queryset = fifo_eligible_queryset(child_scope.portfolio_ids)
+        txns = list(queryset)
+        if not txns:
+            continue
+        portfolio_base = portfolio_base_currency(txns)
+        raw_flows, raw_unknown = _build_external_flows(txns, portfolio_base)
+        converted: dict[date, Decimal] = {}
+        unknown_from = raw_unknown
+        if portfolio_base == disp_ccy:
+            converted = dict(raw_flows)
+        elif raw_flows:
+            flow_start = min(raw_flows.keys())
+            flow_end = max(raw_flows.keys())
+            fx_maps = load_fx_rate_maps({(portfolio_base, disp_ccy)}, flow_start, flow_end)
+            for flow_date, amount in raw_flows.items():
+                cv, _ = convert_amount_with_fill_from_maps(
+                    amount, portfolio_base, disp_ccy, flow_date, fx_maps
+                )
+                if cv is None:
+                    unknown_from = (
+                        min(unknown_from, flow_date) if unknown_from else flow_date
+                    )
+                    continue
+                converted[flow_date] = converted.get(flow_date, Decimal("0")) + cv
+        parts.append((converted, unknown_from))
+    return _merge_flow_maps(parts)
 
 
 def portfolio_flows_known_on_date(flows_unknown_from: Optional[date], d: date) -> bool:
@@ -220,17 +262,29 @@ def build_portfolio_performance(
     by_mf = transactions_by_mf_holding(queryset)
     base_currency = portfolio_base_currency(all_txns)
     disp_ccy = norm_display_currency(display_currency)
-    timeseries_full = build_portfolio_value_timeseries(all_txns, by_symbol, by_mf)
+    use_all_scope_display = scope.kind == "all_active"
+
+    inception = min(t.date for t in all_txns)
+    range_start = resolve_performance_range_start(range_code, today, inception)
+    range_start_iso = range_start.isoformat()
+    emit_start = None if range_code == "ALL" else range_start
+
+    if use_all_scope_display:
+        timeseries_full = build_all_scope_portfolio_value_timeseries(
+            scope, disp_ccy, emit_start_date=emit_start
+        )
+    else:
+        timeseries_full = build_portfolio_value_timeseries(
+            all_txns, by_symbol, by_mf, emit_start_date=emit_start
+        )
     if not timeseries_full:
         return []
 
-    inception = date.fromisoformat(timeseries_full[0]["date"])
-    series_end = date.fromisoformat(timeseries_full[-1]["date"])
-    range_start = resolve_performance_range_start(range_code, today, inception)
-    range_start_iso = range_start.isoformat()
-
     if metric == "value":
-        needs_display_conv = norm_display_currency(base_currency) != disp_ccy
+        needs_display_conv = (
+            not use_all_scope_display
+            and norm_display_currency(base_currency) != disp_ccy
+        )
 
         def _convert_value(pv: float, pt_date: date) -> float | None:
             if not needs_display_conv:
@@ -251,7 +305,7 @@ def build_portfolio_performance(
                 )
                 continue
             pt_date = date.fromisoformat(p["date"])
-            cv = _convert_value(float(pv), pt_date)
+            cv = float(pv) if use_all_scope_display else _convert_value(float(pv), pt_date)
             out.append(
                 PerformancePoint(
                     date=p["date"], value=cv, metric="value", currency=disp_ccy
@@ -259,12 +313,19 @@ def build_portfolio_performance(
             )
         return out
 
-    flows_by_date, flows_unknown_from = _build_external_flows(all_txns, base_currency)
+    if use_all_scope_display:
+        flows_by_date, flows_unknown_from = build_all_scope_external_flows(scope, disp_ccy)
+        metric_currency = disp_ccy
+    else:
+        flows_by_date, flows_unknown_from = _build_external_flows(all_txns, base_currency)
+        metric_currency = base_currency
 
     if metric == "cumulative_return":
         out: list[PerformancePoint] = []
         for p in timeseries_full:
             d = date.fromisoformat(p["date"])
+            if p["date"] < range_start_iso:
+                continue
             pv = p.get("portfolio_value")
             if pv is None or not _flows_known(flows_unknown_from, d):
                 out.append(
@@ -272,18 +333,20 @@ def build_portfolio_performance(
                         date=p["date"],
                         value=None,
                         metric="cumulative_return",
-                        currency=base_currency,
+                        currency=metric_currency,
                     )
                 )
                 continue
-            contrib, withdraw = _contrib_withdrawals_upto(flows_by_date, d)
+            contrib, withdraw = contributions_and_withdrawals_through(
+                flows_by_date, d
+            )
             if contrib <= 0:
                 out.append(
                     PerformancePoint(
                         date=p["date"],
                         value=None,
                         metric="cumulative_return",
-                        currency=base_currency,
+                        currency=metric_currency,
                     )
                 )
                 continue
@@ -295,15 +358,14 @@ def build_portfolio_performance(
                     date=p["date"],
                     value=float(val),
                     metric="cumulative_return",
-                    currency=base_currency,
+                    currency=metric_currency,
                 )
             )
-        return [pt for pt in out if pt.date >= range_start_iso]
+        return out
 
-    if range_code == "ALL":
-        ts_use = timeseries_full
-    else:
-        ts_use = [p for p in timeseries_full if p["date"] >= range_start_iso]
+    ts_use = timeseries_full if range_code == "ALL" else [
+        p for p in timeseries_full if p["date"] >= range_start_iso
+    ]
 
     twror_pts = compute_twror_series(
         ts_use, flows_by_date, flows_unknown_from=flows_unknown_from
@@ -313,7 +375,7 @@ def build_portfolio_performance(
             date=p.date.isoformat(),
             value=float(p.value) if p.value is not None else None,
             metric="twror",
-            currency=base_currency,
+            currency=metric_currency,
         )
         for p in twror_pts
     ]

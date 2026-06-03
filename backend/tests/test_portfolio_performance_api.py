@@ -487,3 +487,262 @@ def test_benchmark_no_yfinance(mock_dl, api_client, seeded, today_patch):
 def test_empty_portfolio_returns_empty_series(api_client, seeded, today_patch):
     r = api_client.get("/api/v1/portfolio/performance?metric=value&range=ALL")
     assert r.json() == []
+
+
+def _mf_payload(**overrides):
+    base = {
+        "asset_type": "MUTUAL_FUND",
+        "scheme_code": "120503",
+        "scheme_name": "Test Direct Growth Fund",
+        "folio_number": "FOLIO-12345",
+        "type": "BUY",
+        "investment_date": "2026-03-10",
+        "nav_date": "2026-03-15",
+        "nav": "42.500000",
+        "units_allotted": "100.00000000",
+        "paid_value": "4255.00",
+        "market_value": "4250.00",
+        "fund_house": "Test AMC",
+    }
+    base.update(overrides)
+    return base
+
+
+def _mf_buy(api_client, **kwargs):
+    return api_client.post(
+        "/api/v1/transactions",
+        _mf_payload(type="BUY", **kwargs),
+        format="json",
+    )
+
+
+def _mf_nav(scheme: str, d: str, close: str):
+    HistoricalPrice.objects.create(
+        asset_symbol=scheme,
+        date=date.fromisoformat(d),
+        close_price=Decimal(close),
+        currency="INR",
+        source="test",
+        asset_type=AssetType.MUTUAL_FUND,
+    )
+
+
+def _last_valid_performance_value(pts: list[dict]) -> float:
+    for pt in reversed(pts):
+        if pt.get("value") is not None:
+            return float(pt["value"])
+    raise AssertionError("no valid performance points")
+
+
+def _count_nulls_after(pts: list[dict], start_date: str) -> int:
+    return sum(1 for p in pts if p["date"] >= start_date and p.get("value") is None)
+
+
+def _largest_valid_gap_days(pts: list[dict]) -> int:
+    valid = [p for p in pts if p.get("value") is not None]
+    max_gap = 0
+    for i in range(1, len(valid)):
+        d1 = date.fromisoformat(valid[i - 1]["date"])
+        d2 = date.fromisoformat(valid[i]["date"])
+        max_gap = max(max_gap, (d2 - d1).days)
+    return max_gap
+
+
+def _setup_pln_stock_inr_mf_all_scope(api_client, monkeypatch):
+    monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2024, 4, 15))
+    eur_portfolio = Portfolio.objects.create(
+        name="EUR PLN Stock", base_currency="EUR", is_active=True
+    )
+    inr_portfolio = Portfolio.objects.create(
+        name="INR MF Only", base_currency="INR", is_active=True
+    )
+    _buy(
+        api_client,
+        portfolio_id=eur_portfolio.id,
+        asset_symbol="PLNSTK",
+        date="2024-04-01",
+        quantity="10",
+        price_per_share="100",
+        currency="EUR",
+    )
+    _mf_buy(
+        api_client,
+        portfolio_id=inr_portfolio.id,
+        scheme_code="120503",
+        folio_number="PLN-GAP-FOLIO",
+        investment_date="2024-04-01",
+        nav_date="2024-04-01",
+        nav="50.00",
+        units_allotted="100.00000000",
+        paid_value="5000.00",
+        market_value="5000.00",
+    )
+    _price("PLNSTK", "2024-04-01", "100", currency="PLN")
+    _price("PLNSTK", "2024-04-15", "110", currency="PLN")
+    _mf_nav("120503", "2024-04-01", "50.00")
+    _mf_nav("120503", "2024-04-15", "55.00")
+    for day in range(1, 16):
+        d = date(2024, 4, day)
+        upsert_fx_rate(
+            from_currency="PLN",
+            to_currency="EUR",
+            row_date=d,
+            rate=Decimal("0.23"),
+        )
+        upsert_fx_rate(
+            from_currency="INR",
+            to_currency="EUR",
+            row_date=d,
+            rate=Decimal("0.011"),
+        )
+    return eur_portfolio, inr_portfolio
+
+
+@pytest.mark.django_db
+def test_all_scope_summary_current_value_matches_performance_last_value(
+    api_client, seeded, monkeypatch
+):
+    """Value History (pooled scope) must match summary KPI when display currency is EUR."""
+    monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
+    stock_portfolio = Portfolio.objects.create(
+        name="EUR Stocks Perf", base_currency="EUR", is_active=True
+    )
+    mf_portfolio = Portfolio.objects.create(
+        name="INR MF Perf", base_currency="INR", is_active=True
+    )
+    _buy(
+        api_client,
+        portfolio_id=stock_portfolio.id,
+        asset_symbol="AAPL",
+        quantity="10",
+        price_per_share="100",
+    )
+    _mf_buy(
+        api_client,
+        portfolio_id=mf_portfolio.id,
+        scheme_code="120503",
+        folio_number="MF-FOLIO-PERF",
+    )
+    _price("AAPL", "2026-03-20", "120")
+    _mf_nav("120503", "2026-03-20", "50.00")
+    upsert_fx_rate(
+        from_currency="INR",
+        to_currency="EUR",
+        row_date=date(2026, 3, 20),
+        rate=Decimal("0.01"),
+    )
+
+    summary = api_client.get(
+        "/api/v1/portfolio/summary?portfolio_scope=all&display_currency=EUR&include_timeseries=false"
+    ).json()
+    perf = api_client.get(
+        "/api/v1/portfolio/performance?portfolio_scope=all&display_currency=EUR&metric=value&range=ALL"
+    ).json()
+
+    last_value = _last_valid_performance_value(perf)
+    assert summary["current_value"] == pytest.approx(last_value, rel=1e-4, abs=1.0)
+    assert summary["current_value"] == pytest.approx(1250.0, rel=1e-2)
+
+
+@pytest.mark.django_db
+def test_performance_all_scope_eur_value_history_no_gap_with_pln_stock(
+    api_client, seeded, monkeypatch
+):
+    """All-scope value history must not break when a PLN stock lacks PLN->INR FX."""
+    _setup_pln_stock_inr_mf_all_scope(api_client, monkeypatch)
+
+    perf = api_client.get(
+        "/api/v1/portfolio/performance?portfolio_scope=all&display_currency=EUR&metric=value&range=ALL"
+    ).json()
+    summary = api_client.get(
+        "/api/v1/portfolio/summary?portfolio_scope=all&display_currency=EUR&include_timeseries=false"
+    ).json()
+
+    perf_after_buy = [p for p in perf if p["date"] >= "2024-04-01"]
+    assert perf_after_buy
+    assert all(p["value"] is not None for p in perf_after_buy)
+
+    last_value = _last_valid_performance_value(perf)
+    assert summary["current_value"] == pytest.approx(last_value, rel=1e-4, abs=1.0)
+
+
+@pytest.mark.django_db
+def test_performance_all_scope_cumulative_return_no_gap_with_pln_stock_and_inr_mf(
+    api_client, seeded, monkeypatch
+):
+    _setup_pln_stock_inr_mf_all_scope(api_client, monkeypatch)
+
+    perf = api_client.get(
+        "/api/v1/portfolio/performance?portfolio_scope=all&display_currency=EUR&metric=cumulative_return&range=ALL"
+    ).json()
+    after_buy = [p for p in perf if p["date"] >= "2024-04-01"]
+    assert after_buy
+    assert all(p["value"] is not None for p in after_buy)
+    assert _largest_valid_gap_days(perf) <= 1
+
+
+@pytest.mark.django_db
+def test_performance_all_scope_twror_no_gap_with_pln_stock_and_inr_mf(
+    api_client, seeded, monkeypatch
+):
+    _setup_pln_stock_inr_mf_all_scope(api_client, monkeypatch)
+
+    perf = api_client.get(
+        "/api/v1/portfolio/performance?portfolio_scope=all&display_currency=EUR&metric=twror&range=ALL"
+    ).json()
+    after_buy = [p for p in perf if p["date"] >= "2024-04-02"]
+    assert after_buy
+    assert all(p["value"] is not None for p in after_buy)
+    assert _largest_valid_gap_days(perf) <= 1
+
+
+@pytest.mark.django_db
+def test_performance_all_scope_value_cumulative_twror_share_valid_calendar(
+    api_client, seeded, monkeypatch
+):
+    _setup_pln_stock_inr_mf_all_scope(api_client, monkeypatch)
+
+    base = "/api/v1/portfolio/performance?portfolio_scope=all&display_currency=EUR&range=ALL"
+    value_pts = api_client.get(f"{base}&metric=value").json()
+    cum_pts = api_client.get(f"{base}&metric=cumulative_return").json()
+    twror_pts = api_client.get(f"{base}&metric=twror").json()
+
+    for metric_pts in (value_pts, cum_pts, twror_pts):
+        assert _count_nulls_after(metric_pts, "2024-04-02") == 0
+        assert _largest_valid_gap_days(metric_pts) <= 1
+
+    value_by_date = {p["date"]: p["value"] for p in value_pts if p["date"] >= "2024-04-02"}
+    cum_by_date = {p["date"]: p["value"] for p in cum_pts if p["date"] >= "2024-04-02"}
+    twror_by_date = {p["date"]: p["value"] for p in twror_pts if p["date"] >= "2024-04-02"}
+    assert set(value_by_date) == set(cum_by_date) == set(twror_by_date)
+
+
+@pytest.mark.django_db
+def test_performance_all_scope_value_history_uses_bulk_fx_lookup(
+    api_client, seeded, monkeypatch
+):
+    """All-scope display conversion must bulk-load FX, not query per calendar day."""
+    from django.db import connection, reset_queries
+    from django.test.utils import CaptureQueriesContext
+
+    from portfolios.performance_service import build_portfolio_performance
+    from portfolios.scope import resolve_portfolio_scope
+
+    _setup_pln_stock_inr_mf_all_scope(api_client, monkeypatch)
+    scope = resolve_portfolio_scope(portfolio_scope="all")
+
+    reset_queries()
+    with CaptureQueriesContext(connection) as ctx:
+        build_portfolio_performance(
+            scope=scope,
+            metric="value",
+            range_code="ALL",
+            display_currency="EUR",
+        )
+
+    fx_queries = sum(1 for q in ctx.captured_queries if '"fx_rates"' in q["sql"])
+    assert len(ctx.captured_queries) < 200, (
+        f"expected bulk FX path, got {len(ctx.captured_queries)} queries "
+        f"({fx_queries} fx_rates)"
+    )
+    assert fx_queries <= 10, f"expected few bulk fx_rates loads, got {fx_queries}"

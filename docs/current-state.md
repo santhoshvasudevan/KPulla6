@@ -1,7 +1,7 @@
 # Current State — KPulla6 (Portfolio Insight)
 
 ## Last Updated
-2026-05-31 (Phase 11A: monthly returns grid)
+2026-05-31 (Phase B2B: range-aware value series builder for non-ALL ranges)
 
 ## Stack
 - **Backend:** Django 5 + Django REST Framework
@@ -27,7 +27,7 @@
 - **Finance domain** (Phase 6 + Phase 2 analytics foundation):
   - `backend/finance/` — FIFO, splits, XIRR, TWROR, **returns** helpers (no Django imports)
   - `finance/returns.py` — daily/monthly/yearly fractional return series from values, flows, or TWROR points
-  - `finance/performance_stats.py`, `finance/risk_metrics.py`, `finance/drawdowns.py` — Metric Sheet metrics from daily return fractions (Phase 3)
+  - `finance/performance_stats.py`, `finance/risk_metrics.py`, `finance/drawdowns.py` — Metric Sheet risk/drawdown from daily return fractions; headline `cumulative_return` / `cagr` align with performance chart money-weighted return (2026-06-01)
   - `finance/comparison.py` — benchmark-relative metrics: beta, alpha, correlation, tracking error, etc. (Phase 4); `finance/benchmarks.py` remains chart-overlay rebasing only
   - `transactions/finance_adapter.py` — Transaction model → finance DTO
 - **Holdings + asset detail** (Phase 7):
@@ -58,6 +58,8 @@
   - `portfolios/performance_service.py`, `portfolios/performance_views.py`
   - `finance/performance_range.py`, `finance/benchmarks.py` (pure comparison math)
   - Reuses Phase 9 value timeseries; benchmark levels from `HistoricalPrice` (`asset_type=INDEX`)
+  - **Phase B1:** all-scope display-currency conversion uses bulk FX maps (no per-day DB lookups)
+  - **Phase B2B:** non-ALL `range` builds bootstrap opening holdings/prices/NAV/FX at range start and emit only the window (~366 days for 1Y vs ~2,426 for ALL); XIRR remains full-scope
   - Read path: no external market-data calls
 - `GET /api/v1/health`
 - Services: `transactions/services.py`, `portfolios/scope.py`, `portfolios/holdings_service.py`
@@ -138,6 +140,7 @@
 - **Portfolio management (Settings):** create, rename/edit, deactivate non-default portfolios; max 5 active; Default Portfolio cannot be deactivated; sidebar selector refreshes via `reloadPortfolios()`
 - **Bulk transaction assignment (Transactions):** row selection + assign selected rows to a real portfolio via full PUT payloads (stock, MF, STOCK_SPLIT)
 - Display currency from settings (sidebar + Settings page); **`portfolioContext` waits for `GET /settings` before exposing `apiQuery`**; Dashboard summary/performance fetches use request-sequence guards so stale responses cannot overwrite newer currency scope
+- **Sidebar layout (Phase 13A):** Portfolio View and Display Currency selectors sit directly below the brand header, above navigation links, so primary context controls are visible without scrolling
 - Dashboard: summary cards via `GET /portfolio/summary?include_timeseries=false` (headline metrics only; chart uses performance API), performance chart (value / cumulative return / TWROR), range pills, benchmark overlay
 - Assets: holdings table, allocation chart, closed/oversold/price_missing states
 - Asset detail: FIFO metrics + transaction history (scoped)
@@ -176,9 +179,14 @@
 | Compare UI | **Done** (Phase 8D) — `Compare.jsx`, `Compare.test.jsx` |
 | Metric Sheet UX hardening | **Done** (Phase 8E) — picker labels, range copy, XIRR note, warnings |
 | Metric Sheet periodic returns + drawdown periods (API) | **Done** (Phase 9A) — `periodic_returns`, `drawdown_periods` on portfolio/asset/compare |
+| Metric Sheet drawdown series + Calendar-Year Return contract (API) | **Done** (Phase 13B) — `drawdown_series` on portfolio/asset/compare; `periodic_returns.yearly` = Calendar-Year Return (TWROR daily compounded); `drawdown_periods.worst[].rank` |
+| Metric Sheet visualization charts (frontend) | **Done** (Phase 13C) — Calendar-Year Return bar chart, Drawdown area chart with ranked shading, monthly heatmap five-band scale on Dashboard + Asset Detail |
 | Metric Sheet periodic/drawdown UI (frontend) | **Done** (Phase 9B) — `MetricSheetPeriodicReturnsTable`, `MetricSheetDrawdownPeriodsTable`, Compare sections |
 | Metric Sheet polish (Phase 10B) | **Done** — Dashboard benchmark control, table scroll, Asset Detail settings gate, clearer price/NAV warnings |
 | Metric Sheet monthly returns grid (Phase 11A) | **Done** — `MetricSheetMonthlyReturnsGrid` on Dashboard + Asset Detail |
+| Compare metric highlighting (Phase 11B) | **Done** — `compareMetricRanking.js`, subtle per-cell highlights in `CompareMetricTable`; yearly column labeled **Year Return** |
+| Metric Sheet release readiness (Phase 12A) | **Done** — compare TWROR aligned to common window; label/scroll/benchmark guard consistency; contract + warning tests |
+| Dashboard Metric Sheet full-width + MF NAV freshness (Phase 12B) | **Done** — full-width layout; NAV warnings only when missing or stale (>5 calendar days) |
 | Golden unit tests for analytics formulas | Partial — TWROR golden tests in `test_finance_domain.py` only |
 
 ## Planned — Indian Mutual Funds (MF-4+)
@@ -228,6 +236,9 @@ Design doc: [mutual-funds.md](./mutual-funds.md). **MF-1 schema, MF-2 NAV sync, 
 - `include_timeseries=false` omits series; `true` builds daily value history
 - FIFO `total_invested`, forward-filled prices, 7-day FX gap fill for timeseries
 - Split-adjusted cached prices paired with split-adjusted transaction quantities in value history (GOOG-style 1:20 scenarios)
+- All-scope `metric=value` performance uses per-portfolio timeseries → display-currency aggregation (matches summary; avoids pooled-base FX gaps e.g. PLN stock in EUR portfolio + INR MF)
+- All-scope `metric=cumulative_return` / `twror` and portfolio Metric Sheet use the same display-currency value/flow aggregation for `portfolio_scope=all`
+- All-scope display-currency conversion uses bulk `load_fx_rate_maps()` + in-memory 7-day FX fill (not per-day DB lookups)
 - Display-currency conversion via cached FX; `fx_unavailable` when missing
 - No yfinance on summary reads
 

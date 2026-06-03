@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
+from fx.services import upsert_fx_rate
 from market_data.models import AssetType, BenchmarkIndexConfig, HistoricalPrice
 from portfolios.models import Portfolio
 from portfolios.seed import ensure_default_portfolio
@@ -34,6 +35,30 @@ def _buy(api_client, **kwargs):
     }
     payload.update(kwargs)
     return api_client.post("/api/v1/transactions", payload, format="json")
+
+
+def _sell(api_client, **kwargs):
+    payload = {
+        "asset_symbol": "AAPL",
+        "date": "2026-01-02",
+        "type": "SELL",
+        "quantity": "1",
+        "price_per_share": "100",
+        "currency": "EUR",
+        "fees": "0",
+    }
+    payload.update(kwargs)
+    return api_client.post("/api/v1/transactions", payload, format="json")
+
+
+def _last_performance_fraction(api_client, *, metric: str, range_code: str) -> float | None:
+    pts = api_client.get(
+        f"/api/v1/portfolio/performance?metric={metric}&range={range_code}"
+    ).json()
+    if not pts:
+        return None
+    last = pts[-1]["value"]
+    return None if last is None else last / 100.0
 
 
 def _price(symbol: str, d: str, close: str, *, currency: str = "EUR", asset_type=AssetType.STOCK):
@@ -201,6 +226,78 @@ def test_analytics_scope_all(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
+def test_analytics_scope_all_pln_stock_uses_display_currency_series(
+    api_client, seeded, monkeypatch
+):
+    """Metric Sheet all-scope must not use pooled INR-base value/flow path."""
+    monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2024, 4, 15))
+    eur_portfolio = Portfolio.objects.create(
+        name="EUR PLN Analytics", base_currency="EUR", is_active=True
+    )
+    inr_portfolio = Portfolio.objects.create(
+        name="INR MF Analytics", base_currency="INR", is_active=True
+    )
+    _buy(
+        api_client,
+        portfolio_id=eur_portfolio.id,
+        asset_symbol="PLNAN",
+        date="2024-04-01",
+        quantity="10",
+        price_per_share="100",
+        currency="EUR",
+    )
+    api_client.post(
+        "/api/v1/transactions",
+        {
+            "asset_type": "MUTUAL_FUND",
+            "scheme_code": "120503",
+            "scheme_name": "Test Fund",
+            "folio_number": "AN-FOLIO",
+            "type": "BUY",
+            "investment_date": "2024-04-01",
+            "nav_date": "2024-04-01",
+            "nav": "50.00",
+            "units_allotted": "100.00000000",
+            "paid_value": "5000.00",
+            "market_value": "5000.00",
+            "portfolio_id": inr_portfolio.id,
+        },
+        format="json",
+    )
+    _price("PLNAN", "2024-04-01", "100", currency="PLN")
+    _price("PLNAN", "2024-04-15", "110", currency="PLN")
+    HistoricalPrice.objects.create(
+        asset_symbol="120503",
+        date=date(2024, 4, 1),
+        close_price=Decimal("50.00"),
+        currency="INR",
+        source="test",
+        asset_type=AssetType.MUTUAL_FUND,
+    )
+    HistoricalPrice.objects.create(
+        asset_symbol="120503",
+        date=date(2024, 4, 15),
+        close_price=Decimal("55.00"),
+        currency="INR",
+        source="test",
+        asset_type=AssetType.MUTUAL_FUND,
+    )
+    for day in range(1, 16):
+        d = date(2024, 4, day)
+        upsert_fx_rate(from_currency="PLN", to_currency="EUR", row_date=d, rate=Decimal("0.23"))
+        upsert_fx_rate(from_currency="INR", to_currency="EUR", row_date=d, rate=Decimal("0.011"))
+
+    r = api_client.get(
+        _metrics_url(portfolio_scope="all", display_currency="EUR", range="ALL")
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["currency"] == "EUR"
+    assert data["metrics"]["return"]["cumulative_return"] is not None
+    assert not any("Insufficient daily returns" in w for w in data["warnings"])
+
+
+@pytest.mark.django_db
 def test_analytics_portfolio_id_filter(api_client, seeded, today_patch):
     p1 = ensure_default_portfolio()
     p2 = Portfolio.objects.create(name="Scoped", base_currency="EUR", is_active=True)
@@ -246,10 +343,54 @@ def test_analytics_portfolio_includes_periodic_returns_and_drawdown_periods(
     worst = data["drawdown_periods"]["worst"]
     assert isinstance(worst, list)
     for ep in worst:
+        assert "rank" in ep
         assert "start_date" in ep
         assert "trough_date" in ep
         assert "drawdown" in ep
         assert "recovered" in ep
+    if len(worst) >= 2:
+        assert worst[0]["rank"] == 1
+        assert worst[0]["drawdown"] <= worst[1]["drawdown"]
+
+
+@pytest.mark.django_db
+def test_analytics_portfolio_includes_drawdown_series(
+    api_client, seeded, today_patch
+):
+    _buy(api_client)
+    _price("AAPL", "2026-01-01", "100")
+    _price("AAPL", "2026-01-02", "110")
+    _price("AAPL", "2026-02-01", "105")
+    _price("AAPL", "2026-03-15", "120")
+    data = api_client.get(_metrics_url(range="ALL")).json()
+    assert "drawdown_series" in data
+    series = data["drawdown_series"]
+    assert isinstance(series, list)
+    assert len(series) >= 1
+    for pt in series:
+        assert "date" in pt
+        assert "drawdown" in pt
+        assert isinstance(pt["drawdown"], (int, float))
+        assert pt["drawdown"] <= 0
+
+
+@pytest.mark.django_db
+def test_analytics_portfolio_yearly_returns_are_calendar_year_twror_compounded(
+    api_client, seeded, today_patch
+):
+    _buy(api_client, date="2026-01-01", quantity="10", price_per_share="100")
+    _buy(api_client, date="2026-02-01", quantity="10", price_per_share="150")
+    _price("AAPL", "2026-01-01", "100")
+    _price("AAPL", "2026-02-01", "150")
+    _price("AAPL", "2026-03-15", "120")
+    data = api_client.get(_metrics_url(range="ALL")).json()
+    yearly = data["periodic_returns"]["yearly"]
+    assert isinstance(yearly, list)
+    if yearly:
+        row = yearly[0]
+        assert "period" in row
+        assert "return" in row
+        assert isinstance(row["return"], (int, float))
 
 
 @pytest.mark.django_db
@@ -259,3 +400,47 @@ def test_analytics_portfolio_empty_data_returns_empty_periodic_and_drawdown_bloc
     data = api_client.get(_metrics_url(range="ALL")).json()
     assert data["periodic_returns"] == {"monthly": [], "yearly": []}
     assert data["drawdown_periods"] == {"worst": []}
+    assert data["drawdown_series"] == []
+
+
+@pytest.mark.django_db
+def test_metric_sheet_cumulative_return_matches_performance_api(api_client, seeded, today_patch):
+    """Metric Sheet cumulative return must match performance chart terminal point."""
+    _buy(api_client, date="2026-01-01", quantity="10", price_per_share="100")
+    _buy(api_client, date="2026-02-01", quantity="10", price_per_share="150")
+    _price("AAPL", "2026-01-01", "100")
+    _price("AAPL", "2026-02-01", "150")
+    _price("AAPL", "2026-03-15", "120")
+
+    perf_cum = _last_performance_fraction(
+        api_client, metric="cumulative_return", range_code="ALL"
+    )
+    metrics = api_client.get(_metrics_url(range="ALL")).json()["metrics"]["return"]
+    assert perf_cum is not None
+    assert metrics["cumulative_return"] == pytest.approx(perf_cum, rel=1e-6)
+
+
+@pytest.mark.django_db
+def test_metric_sheet_cumulative_return_differs_from_twror_with_staggered_buys(
+    api_client, seeded, today_patch
+):
+    """Regression: Metric Sheet must not reuse TWROR for cumulative return or CAGR."""
+    _buy(api_client, date="2026-01-01", quantity="10", price_per_share="100")
+    _buy(api_client, date="2026-02-01", quantity="10", price_per_share="150")
+    _price("AAPL", "2026-01-01", "100")
+    _price("AAPL", "2026-02-01", "150")
+    _price("AAPL", "2026-03-15", "120")
+
+    perf_cum = _last_performance_fraction(
+        api_client, metric="cumulative_return", range_code="ALL"
+    )
+    perf_twror = _last_performance_fraction(api_client, metric="twror", range_code="ALL")
+    ret = api_client.get(_metrics_url(range="ALL")).json()["metrics"]["return"]
+
+    assert perf_cum is not None and perf_twror is not None
+    assert perf_cum != pytest.approx(perf_twror, abs=0.001)
+    assert ret["cumulative_return"] == pytest.approx(perf_cum, rel=1e-6)
+    assert ret["twror"] == pytest.approx(perf_twror, rel=1e-6)
+    assert ret["cumulative_return"] != pytest.approx(ret["twror"], abs=0.001)
+    assert ret["cagr"] is not None
+    assert ret["cagr"] != pytest.approx(ret["twror"], abs=0.001)

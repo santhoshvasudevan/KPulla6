@@ -5,7 +5,10 @@ from finance.performance_stats import (
     average_return,
     best_return,
     cagr,
+    cagr_from_total_return,
+    contributions_and_withdrawals_through,
     cumulative_return,
+    economic_cumulative_return_fraction,
     period_summary,
     win_rate,
     worst_return,
@@ -55,6 +58,45 @@ def test_cagr_invalid_date_order_returns_none():
         date(2026, 1, 2),
         date(2026, 1, 1),
     ) is None
+
+
+def test_economic_cumulative_return_fraction():
+    _assert_frac(
+        economic_cumulative_return_fraction(
+            terminal_value=Decimal("2400"),
+            contributions=Decimal("2200"),
+            withdrawals=Decimal("0"),
+        ),
+        Decimal("200") / Decimal("2200"),
+    )
+
+
+def test_economic_cumulative_return_none_without_contributions():
+    assert (
+        economic_cumulative_return_fraction(
+            terminal_value=Decimal("100"),
+            contributions=Decimal("0"),
+            withdrawals=Decimal("0"),
+        )
+        is None
+    )
+
+
+def test_cagr_from_total_return_one_year_doubles():
+    start = date(2025, 1, 1)
+    end = date(2026, 1, 1)
+    _assert_frac(cagr_from_total_return(Decimal("1"), start, end), Decimal("1"))
+
+
+def test_contributions_and_withdrawals_through():
+    flows = {
+        date(2026, 1, 1): Decimal("1000"),
+        date(2026, 1, 15): Decimal("-200"),
+        date(2026, 2, 1): Decimal("500"),
+    }
+    contrib, withdraw = contributions_and_withdrawals_through(flows, date(2026, 1, 20))
+    assert contrib == Decimal("1000")
+    assert withdraw == Decimal("200")
 
 
 # --- C. best / worst / win_rate ---

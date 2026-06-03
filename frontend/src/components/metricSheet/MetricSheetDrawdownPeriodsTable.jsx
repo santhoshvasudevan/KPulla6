@@ -4,6 +4,7 @@ import {
   METRIC_EM_DASH,
 } from '../../utils/metricFormatters';
 import { formatDrawdownStatus } from './MetricSheetPeriodicReturnsTable';
+import MetricSheetDrawdownChart from './MetricSheetDrawdownChart';
 
 function formatRecoveryDays(value) {
   if (value == null || value === '' || Number.isNaN(Number(value))) {
@@ -19,6 +20,7 @@ function formatRecoveryDays(value) {
  */
 export default function MetricSheetDrawdownPeriodsTable({
   drawdownPeriods,
+  drawdownSeries,
   hideHeading = false,
   className = '',
 }) {
@@ -26,6 +28,10 @@ export default function MetricSheetDrawdownPeriodsTable({
 
   return (
     <div className={['metric-sheet__drawdown-periods', className].filter(Boolean).join(' ')}>
+      <MetricSheetDrawdownChart
+        drawdownSeries={drawdownSeries}
+        drawdownPeriods={drawdownPeriods}
+      />
       {hideHeading ? null : (
         <h3 className="metric-sheet__section-heading">Worst drawdowns</h3>
       )}
@@ -55,8 +61,9 @@ export default function MetricSheetDrawdownPeriodsTable({
               const tone = metricFractionTone(row.drawdown);
               const toneClass =
                 tone !== 'neutral' ? `metric-sheet__value--${tone}` : '';
+              const rowKey = `${row.start_date}-${row.trough_date}-${row.rank ?? index}`;
               return (
-                <tr key={`${row.start_date}-${row.trough_date}-${index}`}>
+                <tr key={rowKey}>
                   <th scope="row">{row.start_date || METRIC_EM_DASH}</th>
                   <td>{row.trough_date || METRIC_EM_DASH}</td>
                   <td>{row.recovery_date || METRIC_EM_DASH}</td>

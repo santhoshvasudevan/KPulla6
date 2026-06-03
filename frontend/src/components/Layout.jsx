@@ -57,50 +57,6 @@ function Layout() {
           <p className="app-sidebar__subtitle">Portfolio analytics</p>
         </div>
 
-        <nav className="app-sidebar__nav" aria-label="Main navigation">
-          <NavLink
-            to="/"
-            className={({ isActive }) =>
-              `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
-            }
-            end
-          >
-            Dashboard
-          </NavLink>
-          <NavLink
-            to="/transactions"
-            className={({ isActive }) =>
-              `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
-            }
-          >
-            Transactions
-          </NavLink>
-          <NavLink
-            to="/assets"
-            className={({ isActive }) =>
-              `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
-            }
-          >
-            Assets
-          </NavLink>
-          <NavLink
-            to="/compare"
-            className={({ isActive }) =>
-              `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
-            }
-          >
-            Compare
-          </NavLink>
-          <NavLink
-            to="/settings"
-            className={({ isActive }) =>
-              `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
-            }
-          >
-            Settings
-          </NavLink>
-        </nav>
-
         <div className="app-sidebar__controls">
           <div className="app-sidebar__field">
             <label className="app-sidebar__label" htmlFor="sidebar-portfolio-view">
@@ -157,6 +113,50 @@ function Layout() {
             />
           ) : null}
         </div>
+
+        <nav className="app-sidebar__nav" aria-label="Main navigation">
+          <NavLink
+            to="/"
+            className={({ isActive }) =>
+              `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
+            }
+            end
+          >
+            Dashboard
+          </NavLink>
+          <NavLink
+            to="/transactions"
+            className={({ isActive }) =>
+              `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
+            }
+          >
+            Transactions
+          </NavLink>
+          <NavLink
+            to="/assets"
+            className={({ isActive }) =>
+              `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
+            }
+          >
+            Assets
+          </NavLink>
+          <NavLink
+            to="/compare"
+            className={({ isActive }) =>
+              `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
+            }
+          >
+            Compare
+          </NavLink>
+          <NavLink
+            to="/settings"
+            className={({ isActive }) =>
+              `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
+            }
+          >
+            Settings
+          </NavLink>
+        </nav>
 
         <footer className="app-sidebar__footer">
           <p className="app-sidebar__footer-text">Valuations use cached prices and FX from the database.</p>

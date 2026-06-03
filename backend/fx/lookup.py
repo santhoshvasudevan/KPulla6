@@ -81,6 +81,28 @@ def convert_amount_with_fill(
     return None, "fx_unavailable"
 
 
+def convert_amount_with_fill_from_maps(
+    amount: float | Decimal,
+    from_currency: str,
+    to_currency: str,
+    d: date,
+    fx_maps: dict[tuple[str, str], dict[date, Decimal]],
+    *,
+    max_fill_days: int = 7,
+) -> tuple[Optional[Decimal], str]:
+    """Same semantics as convert_amount_with_fill using preloaded FX maps (no DB)."""
+    frm = _norm_ccy(from_currency)
+    to = _norm_ccy(to_currency)
+    if frm == to:
+        return Decimal(str(amount)), "ok"
+    fx_rate, status = fx_lookup_from_maps(
+        fx_maps, frm, to, d, max_fill_days=max_fill_days
+    )
+    if fx_rate is None:
+        return None, status
+    return Decimal(str(amount)) * fx_rate, status
+
+
 def load_fx_rate_maps(
     pairs: set[tuple[str, str]],
     start: date,

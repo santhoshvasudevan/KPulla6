@@ -63,6 +63,39 @@
   gap: var(--space-5);
 }
 
+.compare-metric-table__highlight-note {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.compare-metric-value__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.compare-metric-table tbody td.compare-metric-value--better {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-left: 2px solid var(--accent-muted);
+}
+
+.compare-metric-table tbody td.compare-metric-value--worse {
+  background: color-mix(in srgb, var(--bg-surface-hover) 55%, transparent);
+  border-left: 2px solid var(--border-subtle);
+}
+
+.compare-metric-table tbody td.compare-metric-value--tie {
+  background: color-mix(in srgb, var(--bg-surface-raised) 45%, transparent);
+  border-left: 2px solid var(--border-subtle);
+}
+
 .compare-metric-table--header {
   margin-bottom: calc(-1 * var(--space-3));
 }

@@ -140,6 +140,7 @@ export default function AssetDetailMetricSheet({
           />
           <MetricSheetDrawdownPeriodsTable
             drawdownPeriods={metricSheetData.drawdown_periods}
+            drawdownSeries={metricSheetData.drawdown_series}
           />
         </>
       ) : null}

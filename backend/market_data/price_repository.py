@@ -68,3 +68,24 @@ def latest_stock_prices_by_symbol(symbols: Iterable[str]) -> dict[str, Historica
         if row:
             out[sym] = row
     return out
+
+
+def last_stock_prices_on_or_before(
+    symbols: Iterable[str], as_of: date
+) -> list[HistoricalPrice]:
+    """Latest cached stock row per symbol with ``date <= as_of`` (for range bootstrap)."""
+    normalized = sorted({normalize_asset_symbol(s) for s in symbols if s})
+    rows: list[HistoricalPrice] = []
+    for sym in normalized:
+        row = (
+            HistoricalPrice.objects.filter(
+                Q(asset_symbol__iexact=sym),
+                _stock_filter(),
+                date__lte=as_of,
+            )
+            .order_by("-date", "-id")
+            .first()
+        )
+        if row:
+            rows.append(row)
+    return rows

@@ -8,6 +8,8 @@ export { default as CompareNormalizedChart } from './CompareNormalizedChart';
 export { default as CompareMetricTable } from './CompareMetricTable';
 export { default as MetricSheetPeriodicReturnsTable } from './MetricSheetPeriodicReturnsTable';
 export { default as MetricSheetMonthlyReturnsGrid } from './MetricSheetMonthlyReturnsGrid';
+export { default as MetricSheetYearlyReturnChart } from './MetricSheetYearlyReturnChart';
+export { default as MetricSheetDrawdownChart } from './MetricSheetDrawdownChart';
 export { default as MetricSheetDrawdownPeriodsTable } from './MetricSheetDrawdownPeriodsTable';
 export { default as ComparePeriodicReturnsSection } from './ComparePeriodicReturnsSection';
 export { default as CompareDrawdownPeriodsSection } from './CompareDrawdownPeriodsSection';

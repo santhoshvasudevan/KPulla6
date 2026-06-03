@@ -61,6 +61,7 @@ export default {
   drawdown_periods: {
     worst: [
       {
+        rank: 1,
         start_date: '2025-06-10',
         trough_date: '2025-07-05',
         recovery_date: '2025-08-20',
@@ -70,6 +71,7 @@ export default {
         recovered: true,
       },
       {
+        rank: 2,
         start_date: '2025-11-01',
         trough_date: '2025-12-15',
         recovery_date: null,
@@ -80,6 +82,14 @@ export default {
       },
     ],
   },
+  drawdown_series: [
+    { date: '2025-06-10', drawdown: 0 },
+    { date: '2025-07-05', drawdown: -0.182 },
+    { date: '2025-08-20', drawdown: 0 },
+    { date: '2025-11-01', drawdown: 0 },
+    { date: '2025-12-15', drawdown: -0.09 },
+    { date: '2026-03-15', drawdown: -0.09 },
+  ],
   warnings: [
     'Cached historical prices for AAPL may not be split-adjusted; Metric Sheet returns around stock splits may be unreliable.',
   ],

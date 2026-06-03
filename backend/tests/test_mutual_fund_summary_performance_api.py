@@ -223,7 +223,15 @@ def test_performance_value_includes_mf(api_client, seeded, monkeypatch):
 def test_performance_cumulative_return_includes_mf(api_client, seeded, monkeypatch):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
     _mf_buy(api_client, investment_date="2026-03-10", nav_date="2026-03-15")
+    _mf_nav("120503", "2026-03-15", "45.00")
     _mf_nav("120503", "2026-03-20", "50.00")
+    for d in (date(2026, 3, 10), date(2026, 3, 15), date(2026, 3, 20)):
+        upsert_fx_rate(
+            from_currency="INR",
+            to_currency="EUR",
+            row_date=d,
+            rate=Decimal("0.01"),
+        )
     pts = api_client.get(
         "/api/v1/portfolio/performance?metric=cumulative_return&range=ALL"
     ).json()
@@ -238,6 +246,13 @@ def test_performance_twror_includes_mf(api_client, seeded, monkeypatch):
     _mf_buy(api_client, investment_date="2026-03-10", nav_date="2026-03-15")
     _mf_nav("120503", "2026-03-15", "45.00")
     _mf_nav("120503", "2026-03-20", "50.00")
+    for d in (date(2026, 3, 10), date(2026, 3, 15), date(2026, 3, 20)):
+        upsert_fx_rate(
+            from_currency="INR",
+            to_currency="EUR",
+            row_date=d,
+            rate=Decimal("0.01"),
+        )
     pts = api_client.get(
         "/api/v1/portfolio/performance?metric=twror&range=ALL"
     ).json()

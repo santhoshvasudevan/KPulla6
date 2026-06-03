@@ -143,6 +143,27 @@ def test_resample_yearly_returns_separate_years():
     _assert_frac(periods["2026"], Decimal("0.05"))
 
 
+def test_resample_yearly_returns_cashflow_adjusted_not_simple_value_change():
+    """Calendar-year return compounds TWROR daily returns; ignores raw value delta."""
+    daily = daily_returns_from_values(
+        [
+            ValuePoint(date(2025, 1, 1), Decimal("100")),
+            ValuePoint(date(2025, 6, 1), Decimal("110")),
+            ValuePoint(date(2025, 6, 2), Decimal("210")),
+            ValuePoint(date(2025, 12, 31), Decimal("220")),
+        ],
+        flows_by_date={date(2025, 6, 2): Decimal("100")},
+    )
+    yearly = resample_yearly_returns(daily)
+    assert len(yearly) == 1
+    assert yearly[0].period == "2025"
+    simple_value_return = (Decimal("220") - Decimal("100")) / Decimal("100")
+    daily_fracs = [p.return_fraction for p in daily if p.return_fraction is not None]
+    expected = compound_return(daily_fracs)
+    _assert_frac(yearly[0].return_fraction, expected)
+    assert yearly[0].return_fraction != simple_value_return
+
+
 # --- G. None handling ---
 
 

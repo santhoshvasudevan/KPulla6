@@ -1,5 +1,171 @@
 # Changelog — KPulla6
 
+## 2026-06-02 — FEAT: Metric Sheet visualization charts (Phase 13C)
+
+### Added
+- `MetricSheetYearlyReturnChart` — Calendar-Year Return bar chart from `periodic_returns.yearly` with TWROR helper copy
+- `MetricSheetDrawdownChart` — drawdown area chart from `drawdown_series` with worst-episode shading by `drawdown_periods.worst` rank
+- `metricSheetMonthlyHeatmap.js` — five-band monthly return heatmap tone mapping
+- `metricSheetChartHelpers.js` — display-only chart data organization helpers
+
+### Changed
+- `MetricSheetMonthlyReturnsGrid` — stronger heatmap background scale (red / yellow / green bands) with visible cell text
+- Dashboard + Asset Detail Metric Sheet — Calendar-Year Return chart above Periodic Returns; Drawdown chart above Worst Drawdowns
+
+### Impact
+- Metric Sheet periodic/drawdown sections are easier to scan; Compare page unchanged (tables only)
+
+## 2026-06-02 — FEAT: Metric Sheet drawdown series + Calendar-Year Return contract (Phase 13B)
+
+### Changed
+- `periodic_returns.yearly` documented as **Calendar-Year Return** — cash-flow-adjusted daily TWROR returns compounded per calendar year (existing `resample_yearly_returns` semantics; no duplicate calculation)
+- `drawdown_periods.worst` entries now include `rank` (1 = deepest drawdown)
+
+### Added
+- `drawdown_series` top-level array on portfolio, asset, and compare Metric Sheet responses — dated running drawdown fractions (0 or negative) from `finance/drawdowns.drawdown_series`
+- Compare subjects include `drawdown_series` on the aligned common window
+- Tests: drawdown series shape/fractions, worst-period rank, calendar-year return cash-flow regression in `test_finance_returns.py`
+
+### Impact
+- Backend contract ready for Phase 13C frontend charts (Calendar-Year Return bar chart, drawdown line chart with worst-region shading)
+
+## 2026-06-02 — Phase 13A: Sidebar context controls at top
+
+### Changed
+- **Layout:** Portfolio View and Display Currency selectors moved from sidebar bottom to directly below the Portfolio Insight brand header, above main navigation
+- **Layout.css:** Controls use compact spacing with bottom divider; footer keeps `margin-top: auto` so the cached-data note stays at the sidebar bottom on desktop
+
+### Added
+- `Layout.test.jsx` — verifies portfolio view and display currency appear before navigation links in DOM order
+
+### Impact
+- Primary portfolio scope and display currency controls are immediately visible without scrolling the sidebar
+
+## 2026-06-01 — FIX: Metric Sheet cumulative return and CAGR aligned with performance chart
+
+### Changed
+- `build_metric_sheet_from_daily_returns` — `metrics.return.cumulative_return` uses the money-weighted terminal formula from `GET /portfolio/performance?metric=cumulative_return` (not compounded TWROR daily returns); removed TWROR fallback when compounding was unavailable
+- `metrics.return.cagr` — annualizes that economic cumulative return over the selected range (`cagr_from_total_return`), not TWROR compounding
+- `finance/performance_stats.py` — `economic_cumulative_return_fraction`, `contributions_and_withdrawals_through`, `cagr_from_total_return`; shared flow rollup used by `performance_service`
+
+### Added
+- Backend regression: Metric Sheet cumulative return matches performance API; cumulative return ≠ TWROR with staggered buys
+- Frontend regression: Metric Sheet summary cards render distinct cumulative return, CAGR, TWROR, and XIRR values
+
+### Impact
+- Dashboard Metric Sheet headline return metrics now match the performance chart for the same portfolio, range, and display currency
+
+## 2026-05-31 — PERF: Range-aware all-scope value series builder (Phase B2B)
+
+### Changed
+- `_build_portfolio_value_timeseries` / `build_all_scope_portfolio_value_timeseries` — optional `emit_start_date`; non-ALL ranges bootstrap opening holdings/prices/NAV/FX at range start and emit only the requested window (ALL unchanged)
+- `last_stock_prices_on_or_before` / `last_mutual_fund_navs_on_or_before` — bootstrap helpers for price/NAV forward-fill before range start
+- `build_portfolio_performance` / `build_portfolio_performance_metrics` — pass `emit_start_date` for non-ALL ranges; cumulative return iterates the shorter series only
+- `_slice_timeseries_for_range` — accepts optional true `inception` when series is pre-sliced
+
+### Added
+- `backend/tests/test_range_aware_series_b2b.py` — parity vs full-build+slice, opening holdings, NAV/FX bootstrap, split, TWROR re-chain, 1Y bulk-FX query guard
+
+### Impact
+- Non-ALL performance/Metric Sheet paths emit ~366 days instead of ~2,426; service-layer 1Y latency roughly halved with unchanged API shapes and financial semantics
+
+## 2026-05-31 — PERF: All-scope bulk FX maps for performance and Metric Sheet (Phase B1)
+
+### Changed
+- `build_all_scope_portfolio_value_timeseries` — preloads `load_fx_rate_maps()` per child portfolio and converts daily values via `convert_amount_with_fill_from_maps()` / `fx_lookup_from_maps()` instead of per-day `convert_amount_with_fill()` DB lookups
+- `build_all_scope_external_flows` — same bulk FX map approach for flow conversion
+- `fx.lookup.convert_amount_with_fill_from_maps()` — in-memory 7-day fill helper matching `convert_amount_with_fill` semantics
+
+### Added
+- Regression: `test_performance_all_scope_value_history_uses_bulk_fx_lookup` (query count guard)
+
+### Impact
+- All-scope performance and Metric Sheet read paths drop from ~9,000 FX SELECTs to a handful of bulk loads; endpoint latency reduced with unchanged financial semantics and API shapes
+
+## 2026-05-31 — FIX: All Portfolios cumulative_return and TWROR gaps (Phase 12B follow-up #3)
+
+### Fixed
+- `build_portfolio_performance` (`metric=cumulative_return` / `twror`, `portfolio_scope=all`) — uses the same all-scope display-currency value series as `metric=value`, plus aggregated per-portfolio external flows converted to display currency (`build_all_scope_external_flows`)
+- `build_portfolio_performance_metrics` (Metric Sheet) — same all-scope display-currency value/flow path for `portfolio_scope=all`
+
+### Added
+- `build_all_scope_external_flows()` in `portfolios/performance_service.py`
+- Regressions: `test_performance_all_scope_cumulative_return_no_gap_with_pln_stock_and_inr_mf`, `test_performance_all_scope_twror_no_gap_with_pln_stock_and_inr_mf`, `test_performance_all_scope_value_cumulative_twror_share_valid_calendar`, `test_analytics_scope_all_pln_stock_uses_display_currency_series`
+
+### Impact
+- All-scope TWROR semantics: computed from aggregated display-currency portfolio value and external cash-flow series
+- Dashboard Cumulative Return and TWROR charts no longer show multi-year null gaps when PLN/EUR/INR portfolios are combined
+
+## 2026-05-31 — FIX: All Portfolios value history gap after DNP.WA buy (Phase 12B follow-up #2)
+
+### Fixed
+- `build_portfolio_performance` (`metric=value`, `portfolio_scope=all`) — uses per-portfolio value timeseries converted to display currency and aggregated (same strategy as summary), instead of one pooled series in a single `portfolio_base`
+- Root cause: pooled all-scope build used INR as base (earliest transaction); Scalablefolio `DNP.WA` (PLN-denominated) required missing `PLN→INR` FX from 2024-03-27 until 2026-05-28, nulling 792 daily points
+- `build_all_scope_portfolio_value_timeseries` in `portfolios/summary_service.py`; shared `_aggregate_timeseries_lists` helper
+
+### Added
+- Regression: `test_performance_all_scope_eur_value_history_no_gap_with_pln_stock`
+
+### Impact
+- Dashboard Value History line is continuous for All Portfolios + EUR display; last chart point equals Current Value KPI (same valuation/FX path as summary)
+
+## 2026-05-31 — FIX: All Portfolios value history vs summary current value (Phase 12B follow-up)
+
+### Fixed
+- `build_portfolio_value_timeseries` — stock holdings now convert to `portfolio_base` before summing with mutual fund values (fixes mixed EUR stock + INR MF portfolios under `portfolio_scope=all` where EUR amounts were added to INR totals)
+- Regression: `test_all_scope_summary_current_value_matches_performance_last_value`
+
+### Impact
+- Dashboard Value History last point now aligns with Current Value KPI for All Portfolios + display currency EUR (within FX timing tolerance)
+
+## 2026-05-31 — FIX: Dashboard Metric Sheet layout + MF NAV freshness warnings (Phase 12B)
+
+### Fixed
+- Dashboard Metric Sheet uses full content width (overrides SectionCard 480px cap); section moved outside chart wrapper with increased internal spacing
+- MF NAV Metric Sheet warnings use freshness rule (`MF_NAV_STALE_AFTER_DAYS = 5`): no warning for weekend/holiday gaps when latest cached NAV is recent; stale vs missing copy separated
+
+### Added
+- Tests: `test_analytics_mf_nav_freshness.py`; asset metrics NAV freshness API cases; Dashboard full-width layout assertion
+
+### Changed
+- `docs/api-design.md`, `docs/architecture.md`, `docs/frontend-design.md`, `docs/current-state.md`
+
+### Impact
+- UX/data-quality refinement only; no new metrics, caching, exports, or read-path external calls
+
+## 2026-05-31 — AUDIT: Metric Sheet release readiness (Phase 12A)
+
+### Fixed
+- Compare API: TWROR (and cumulative fallback) now computed on the aligned common window, not the independent range slice (`analytics/services.py`)
+- Compare metric table labels aligned with Dashboard/Asset Detail (`Volatility (annualized)`, `Sharpe Ratio`, etc.)
+- Yearly fallback table wrapped in `.metric-sheet-table-scroll`
+- Dashboard benchmark table guard matches Asset Detail (`selectedBenchmark` required)
+
+### Added
+- Compare API contract tests: common-window warning, `xirr_scope`, metrics shape, aligned TWROR
+- Frontend tests: warning severity mapping, XIRR note on Compare, yearly scroll wrapper, empty yearly compare state
+
+### Changed
+- `docs/api-design.md`, `docs/frontend-design.md`, `docs/current-state.md`
+
+### Impact
+- Regression audit and small consistency fixes only; no new metrics, routes, exports, or caching
+
+## 2026-05-31 — FEAT: Compare metric scanability (Phase 11B)
+
+### Added
+- `compareMetricRanking.js` — display-only two-subject metric comparison for highlight state (`better` / `worse` / `tie` / `neutral` / `unknown`)
+- Subtle per-cell highlights in `CompareMetricTable` with accessible labels and legend note
+- Tests: `compareMetricRanking.test.js`; Compare + monthly grid updates in `metricSheet.test.jsx`
+
+### Changed
+- `MetricSheetMonthlyReturnsGrid` — yearly total column header renamed to **Year Return**
+- Compare drawdown sections verified to use `.metric-sheet-table-scroll` wrappers
+- `docs/frontend-design.md`, `docs/current-state.md`
+
+### Impact
+- Frontend display enhancement only; no backend APIs, exports, or client-side analytics calculations
+
 ## 2026-05-31 — FEAT: Metric Sheet monthly returns grid (Phase 11A)
 
 ### Added

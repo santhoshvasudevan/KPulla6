@@ -45,6 +45,37 @@ describe('Layout component', () => {
     expect(screen.getByTestId('child')).toBeInTheDocument();
   });
 
+  it('renders portfolio and currency controls before navigation links', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });
+    render(
+      <PortfolioProvider>
+        <MemoryRouter initialEntries={['/']}>
+          <Routes>
+            <Route path="/" element={<Layout />}>
+              <Route index element={<div data-testid="child">Child Content</div>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('display-currency')).not.toBeDisabled();
+    });
+
+    const portfolioView = screen.getByLabelText('portfolio-view');
+    const displayCurrency = screen.getByLabelText('display-currency');
+    const dashboardLink = screen.getByRole('link', { name: /dashboard/i });
+
+    expect(
+      portfolioView.compareDocumentPosition(dashboardLink) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      displayCurrency.compareDocumentPosition(dashboardLink) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
   it('updates display currency via sidebar and persists through context', async () => {
     api.fetchPortfolios.mockResolvedValueOnce([]);
     api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });

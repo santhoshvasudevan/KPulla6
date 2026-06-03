@@ -446,7 +446,19 @@ Validation: invalid `metric` / `range` / `display_currency` → **400**; `portfo
 
 Read paths use **cached DB data only** (same as summary/performance). Metrics are computed **on query**; MVP does not store derived analytics rows. Return values are **fractions** (e.g. `0.10` = 10%); UI may multiply by 100.
 
-**Currency field:** `currency` is the valuation/display currency context for the portfolio scope (same as summary/performance). Return and risk ratios (cumulative return, CAGR, TWROR, Sharpe, drawdowns, etc.) are dimensionless fractions computed from same-currency value and flow inputs — they are **not** currency amounts and are not converted like monetary fields.
+**Currency field:** `currency` is the valuation/display currency context for the portfolio scope (same as summary/performance). Return and risk ratios are dimensionless fractions — they are **not** currency amounts and are not converted like monetary fields.
+
+**Return metrics (`metrics.return`):**
+- `cumulative_return` — terminal money-weighted return for the selected `range`, same formula as `GET /portfolio/performance?metric=cumulative_return` (fraction; UI × 100).
+- `cagr` — compound annual growth rate from that terminal cumulative return and calendar span (`range.start` → `range.end`); not TWROR.
+- `twror` — terminal chain-linked TWROR for the range (matches `GET /portfolio/performance?metric=twror`).
+- `xirr` — full-scope money-weighted IRR from summary (`xirr_scope: "full_scope"`).
+
+Risk/drawdown/period stats still use TWROR-style daily returns from values and external flows.
+
+**All Portfolios value series:** `GET /portfolio/performance` with `portfolio_scope=all` and `metric=value` builds per-portfolio daily value series (each in its own portfolio base), converts each to `display_currency`, then aggregates — matching `GET /portfolio/summary` all-scope aggregation. The last valid `metric=value` point should equal `current_value` when display currency is set.
+
+**All Portfolios return metrics:** For `portfolio_scope=all`, `metric=cumulative_return` and `metric=twror` use the same aggregated display-currency value series. External cash flows are built per portfolio in portfolio base, converted to `display_currency` on each flow date (7-day FX fill), then aggregated by date. **All-scope TWROR** is computed from this aggregated display-currency value and external cash-flow series. Single-portfolio scopes still use portfolio-base value/flow series.
 
 **Range vs XIRR:** Most metrics are computed over the selected `range` window (daily returns sliced from `range.start`). **XIRR** is an exception: it is always **full-scope** (inception through today), matching `GET /portfolio/summary`. The response includes `metrics.return.xirr_scope: "full_scope"` so clients can distinguish range-based stats from money-weighted IRR.
 
@@ -468,7 +480,7 @@ Portfolio-level Quantitative Statistics. Wired in `analytics/services.py`, `anal
 | `portfolio_scope` | `all` | Portfolio-level endpoints only |
 | `portfolio_id` | — | Single active portfolio |
 
-Validation mirrors performance/summary (400/404/422). Response includes `warnings: string[]` for data-quality issues, including: missing cached stock prices (`Cached prices are missing for one or more dates…`), missing MF NAVs (`Cached NAVs are missing…`; suggests NAV sync), FX gaps, benchmark coverage, split-adjusted price inconsistency, or insufficient history. Generic fallback when values are wholly unavailable remains.
+Validation mirrors performance/summary (400/404/422). Response includes `warnings: string[]` for data-quality issues, including: missing cached stock prices (`Cached prices are missing for one or more dates…`), missing MF NAVs (`No cached NAV is available…`; suggests NAV sync), stale MF NAVs (`Latest cached NAV is older than 5 days…`; warns only when latest cached NAV is more than 5 calendar days older than the valuation end date — weekend/holiday gaps without forward-fill from a recent NAV do not trigger this), FX gaps, benchmark coverage, split-adjusted price inconsistency, or insufficient history. Generic fallback when values are wholly unavailable remains.
 
 ### `GET /api/v1/analytics/performance-metrics` (implemented)
 
@@ -517,9 +529,14 @@ Fields may be `null` when data quality or history is insufficient. `xirr` is mon
     "monthly": [{ "period": "2026-01", "return": 0.021 }],
     "yearly": [{ "period": "2025", "return": 0.143 }]
   },
+  "drawdown_series": [
+    { "date": "2026-01-02", "drawdown": 0.0 },
+    { "date": "2026-01-03", "drawdown": -0.012 }
+  ],
   "drawdown_periods": {
     "worst": [
       {
+        "rank": 1,
         "start_date": "2025-01-10",
         "trough_date": "2025-02-05",
         "recovery_date": "2025-03-20",
@@ -533,8 +550,10 @@ Fields may be `null` when data quality or history is insufficient. `xirr` is mon
 }
 ```
 
-* `periodic_returns`: compounded fractional returns from daily series in the selected range (`resample_monthly_returns` / `resample_yearly_returns`); days with `null` daily return are skipped.
-* `drawdown_periods.worst`: up to 10 episodes ranked by severity (`worst_drawdown_periods` in `finance/drawdowns.py`); `drawdown` is a fraction (not percent). Empty arrays when history is insufficient; no extra warnings beyond existing Metric Sheet warnings.
+* `periodic_returns.monthly`: compounded fractional returns from daily series in the selected range (`resample_monthly_returns`); days with `null` daily return are skipped.
+* `periodic_returns.yearly`: **Calendar-Year Return** — cash-flow-adjusted daily returns (TWROR-style `period_return` from values and external flows) compounded within each calendar year (`resample_yearly_returns`). **Not** simple start-vs-end portfolio value change. Frontend label: **Calendar-Year Return**; helper copy: *Cash-flow adjusted return using daily TWROR.*
+* `drawdown_series` (Phase 13B): running drawdown fractions from the same daily return series (`drawdown_series` in `finance/drawdowns.py`); `drawdown` is 0 or negative (fraction, not percent). One point per date with a computed drawdown; empty array when history is insufficient.
+* `drawdown_periods.worst`: up to 10 episodes ranked by severity (`worst_drawdown_periods` in `finance/drawdowns.py`); `rank` 1 = deepest drawdown; `drawdown` is a fraction (not percent). Empty arrays when history is insufficient; no extra warnings beyond existing Metric Sheet warnings.
 
 ### Implemented: `GET /api/v1/analytics/assets/{asset_symbol}/performance-metrics` (Phase 6)
 
@@ -575,7 +594,7 @@ Side-by-side comparison of **exactly two** asset subjects (MVP). Wired in `analy
 
 **400** when `subjects` missing, invalid format, wrong count, or unsupported subject type. **404** when a subject has no transactions in scope (same as asset Metric Sheet). **422** for invalid benchmark config or conflicting scope params.
 
-Compare API metrics are computed over **common overlapping dates only** (exact date intersection of non-`None` daily returns; no forward-fill). Each subject gets aligned-window Metric Sheet metrics plus optional per-subject benchmark block. `normalized_series` rebases cumulative fractional returns to `0` on the first common date.
+Compare API metrics are computed over **common overlapping dates only** (exact date intersection of non-`None` daily returns; no forward-fill). Each subject gets aligned-window Metric Sheet metrics (economic cumulative return, CAGR, TWROR, risk) plus optional per-subject benchmark block. **XIRR** remains full-scope per subject (`xirr_scope: "full_scope"`). `normalized_series` rebases cumulative fractional returns to `0` on the first common date.
 
 **Response (200 OK):**
 ```json
@@ -591,6 +610,7 @@ Compare API metrics are computed over **common overlapping dates only** (exact d
       "folio_number": null,
       "metrics": { "return": {}, "risk": {}, "drawdown": {}, "periods": {} },
       "periodic_returns": { "monthly": [], "yearly": [] },
+      "drawdown_series": [],
       "drawdown_periods": { "worst": [] },
       "benchmark": { "symbol": "^GSPC", "paired_count": 10, "metrics": {} },
       "warnings": []
@@ -606,7 +626,7 @@ Compare API metrics are computed over **common overlapping dates only** (exact d
 }
 ```
 
-When `common_point_count < 2`, subject metrics are null, `periodic_returns` / `drawdown_periods` are empty arrays, and a global insufficient-overlap warning is included. Per-subject periodic returns and drawdown periods use the **aligned common-window** daily returns (not each asset’s independent full history). MF compare reuses asset Metric Sheet rules (single folio auto-resolved; multiple folios → **400** on asset resolution, same as asset endpoint — no per-subject `folio_number` in compare query yet).
+When `common_point_count < 2`, subject metrics are null, `periodic_returns` / `drawdown_periods` / `drawdown_series` are empty arrays, and a global insufficient-overlap warning is included. Per-subject periodic returns, drawdown series, and drawdown periods use the **aligned common-window** daily returns (not each asset’s independent full history). MF compare reuses asset Metric Sheet rules (single folio auto-resolved; multiple folios → **400** on asset resolution, same as asset endpoint — no per-subject `folio_number` in compare query yet).
 
 ---
 

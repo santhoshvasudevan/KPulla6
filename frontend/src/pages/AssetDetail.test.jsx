@@ -179,9 +179,13 @@ describe('AssetDetail Page', () => {
       const section = await waitFor(() => {
         const card = screen.getByRole('heading', { name: 'Metric Sheet' }).closest('.ui-section-card');
         expect(within(card).getByText('Periodic returns')).toBeInTheDocument();
+        expect(within(card).getByText('Calendar-Year Return')).toBeInTheDocument();
         return card;
       });
       expect(within(section).getByText('Worst drawdowns')).toBeInTheDocument();
+      expect(
+        within(section).getByRole('heading', { name: 'Drawdown', level: 3 })
+      ).toBeInTheDocument();
       expect(within(section).getByRole('columnheader', { name: 'Feb' })).toBeInTheDocument();
       expect(within(section).getAllByText('−1.20%').length).toBeGreaterThan(0);
     });

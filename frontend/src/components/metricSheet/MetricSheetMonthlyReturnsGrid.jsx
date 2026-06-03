@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import {
   formatMetricPercentFraction,
-  metricFractionTone,
   METRIC_EM_DASH,
 } from '../../utils/metricFormatters';
 import {
@@ -9,14 +8,11 @@ import {
   MONTH_LABELS,
   monthlyCellAriaLabel,
 } from './metricSheetMonthlyGrid';
+import { monthlyHeatmapToneClass } from './metricSheetMonthlyHeatmap';
 import './metricSheet.css';
 
 function toneClass(value) {
-  const tone = metricFractionTone(value);
-  if (tone === 'positive') return 'metric-sheet-monthly-grid__cell--positive';
-  if (tone === 'negative') return 'metric-sheet-monthly-grid__cell--negative';
-  if (value == null || value === '') return 'metric-sheet-monthly-grid__cell--missing';
-  return 'metric-sheet-monthly-grid__cell--neutral';
+  return monthlyHeatmapToneClass(value);
 }
 
 function MonthlyGridCell({ monthIndex, year, value }) {
@@ -83,7 +79,7 @@ export default function MetricSheetMonthlyReturnsGrid({
             ))}
             {showYearlyColumn ? (
               <th scope="col" className="metric-sheet-monthly-grid__year-total-col">
-                Year
+                Year Return
               </th>
             ) : null}
           </tr>

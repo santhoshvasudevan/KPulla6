@@ -13,10 +13,12 @@ window, matching ``build_portfolio_performance`` TWROR behavior). **XIRR** is an
 exception: it is always full-scope (inception through today), not range-sliced; the
 response includes ``xirr_scope: "full_scope"``.
 
-Return and risk ratios (cumulative return, CAGR, TWROR, Sharpe, drawdowns, etc.) are
-dimensionless fractions computed from same-currency value and flow inputs. The
-``currency`` field is valuation/display context only — ratios are not currency amounts
-and are not converted like monetary fields.
+Return and risk ratios are dimensionless fractions from same-currency value and flow
+inputs. **Cumulative return** and **CAGR** in ``metrics.return`` use the money-weighted
+formula aligned with ``GET /portfolio/performance?metric=cumulative_return`` (not
+compounded TWROR daily returns). **TWROR** matches the performance chart TWROR series.
+Risk metrics still use TWROR-style daily returns from values and flows. The
+``currency`` field is valuation/display context only.
 
 Benchmark metrics use simple daily price returns from cached INDEX rows (no chart
 rebase from ``finance.benchmarks``).
@@ -46,12 +48,18 @@ from finance.comparison import (
 )
 from finance.drawdowns import (
     calmar_ratio,
+    drawdown_series,
     longest_drawdown_days,
     max_drawdown,
     worst_drawdown_periods,
 )
 from finance.mutual_fund_cashflows import MutualFundCashflowEvent, merge_portfolio_xirr
-from finance.performance_stats import cagr, cumulative_return, period_summary
+from finance.performance_stats import (
+    cagr_from_total_return,
+    contributions_and_withdrawals_through,
+    economic_cumulative_return_fraction,
+    period_summary,
+)
 from finance.performance_range import resolve_performance_range_start
 from finance.returns import (
     DailyReturnPoint,
@@ -72,8 +80,7 @@ from finance.splits import apply_stock_split_adjustments
 from finance.twror import compute_twror_series
 from finance.types import TransactionType
 from finance.xirr import calculate_xirr
-from market_data.nav_lookup import normalize_scheme_code
-from market_data.nav_repository import list_mutual_fund_navs_for_schemes
+from market_data.nav_lookup import latest_nav_for_asset, normalize_scheme_code
 from market_data.price_lookup import normalize_asset_symbol
 from market_data.price_repository import list_index_prices_in_range, list_stock_prices_in_range
 from portfolios import dates as portfolio_dates
@@ -81,15 +88,18 @@ from portfolios.holdings_service import AssetDetailValidationError, AssetNotFoun
 from portfolios.models import Portfolio
 from portfolios.performance_service import (
     BenchmarkConfigError,
+    build_all_scope_external_flows,
     portfolio_external_flows,
     portfolio_flows_known_on_date,
 )
 from portfolios.scope import ResolvedPortfolioScope
 from portfolios.summary_service import (
     MF_BASE_CURRENCY,
+    build_all_scope_portfolio_value_timeseries,
     build_portfolio_value_timeseries,
     compute_scope_xirr,
     fifo_eligible_queryset,
+    norm_display_currency,
     portfolio_base_currency,
     transactions_by_mf_holding,
     transactions_by_symbol,
@@ -104,10 +114,16 @@ _WARN_MISSING_STOCK_PRICES = (
     "Cached prices are missing for one or more dates; "
     "Metric Sheet values may be unavailable."
 )
+MF_NAV_STALE_AFTER_DAYS = 5
 _WARN_MISSING_MF_NAVS = (
-    "Cached NAVs are missing for one or more mutual fund dates; "
-    "run NAV sync and retry."
+    "No cached NAV is available for one or more mutual funds; "
+    "run NAV sync to load valuations."
 )
+_WARN_STALE_MF_NAVS = (
+    "Latest cached NAV is older than 5 days for one or more mutual funds; "
+    "run NAV sync to refresh valuations."
+)
+_MF_NAV_QUALITY_WARNINGS = frozenset({_WARN_MISSING_MF_NAVS, _WARN_STALE_MF_NAVS})
 
 
 @dataclass(frozen=True)
@@ -364,6 +380,38 @@ def _twror_cumulative_fraction(
     return None
 
 
+def _economic_cumulative_return_fraction(
+    ts_rows: list[dict],
+    flows_by_date: dict[date, Decimal],
+    flows_unknown_from: Optional[date],
+    window_end: date,
+) -> Optional[Decimal]:
+    """Terminal money-weighted cumulative return for the sliced window (performance chart)."""
+    terminal_value: Decimal | None = None
+    terminal_date: date | None = None
+    for row in reversed(ts_rows):
+        d = date.fromisoformat(row["date"])
+        if d > window_end:
+            continue
+        if not portfolio_flows_known_on_date(flows_unknown_from, d):
+            return None
+        pv = row.get("portfolio_value")
+        if pv is not None:
+            terminal_value = Decimal(str(pv))
+            terminal_date = d
+            break
+    if terminal_value is None or terminal_date is None:
+        return None
+    contrib, withdraw = contributions_and_withdrawals_through(
+        flows_by_date, terminal_date
+    )
+    return economic_cumulative_return_fraction(
+        terminal_value=terminal_value,
+        contributions=contrib,
+        withdrawals=withdraw,
+    )
+
+
 def _terminal_value_from_timeseries(timeseries_full: list[dict]) -> Decimal:
     for row in reversed(timeseries_full):
         pv = row.get("portfolio_value")
@@ -441,8 +489,11 @@ def _stock_missing_cached_prices_in_window(
     return False
 
 
-def _mf_missing_cached_navs_in_window(
-    scheme: str,
+def _has_mf_nav_quality_warning(warnings: list[str]) -> bool:
+    return any(w in _MF_NAV_QUALITY_WARNINGS for w in warnings)
+
+
+def _mf_has_holdings_in_window(
     txns: list[TransactionModel],
     window_start: date,
     window_end: date,
@@ -451,20 +502,44 @@ def _mf_missing_cached_navs_in_window(
     if not timeline:
         return False
 
-    scheme_key = normalize_scheme_code(scheme)
-    nav_rows = list_mutual_fund_navs_for_schemes([scheme_key], window_start, window_end)
-    nav_by_date = {row.date: row for row in nav_rows}
     qty_by_day = _forward_fill_qty_by_day(timeline, window_start, window_end)
-
-    last_nav = None
     d = window_start
     while d <= window_end:
-        if d in nav_by_date:
-            last_nav = nav_by_date[d]
-        if qty_by_day.get(d, _ZERO) > _ZERO and last_nav is None:
+        if qty_by_day.get(d, _ZERO) > _ZERO:
             return True
         d += timedelta(days=1)
     return False
+
+
+def _mf_nav_freshness_issue(
+    scheme: str,
+    txns: list[TransactionModel],
+    window_start: date,
+    window_end: date,
+) -> str | None:
+    """
+    Return ``missing`` or ``stale`` when an MF NAV warning is warranted, else None.
+
+    Uses latest cached NAV age vs ``window_end``. Weekend/holiday gaps are acceptable
+    when the latest cached NAV is recent enough for forward-fill.
+    """
+    if not _mf_has_holdings_in_window(txns, window_start, window_end):
+        return None
+
+    scheme_key = normalize_scheme_code(scheme)
+    nav_result = latest_nav_for_asset(scheme_key)
+    if (
+        nav_result is None
+        or nav_result.status != "ok"
+        or nav_result.nav is None
+        or nav_result.date is None
+    ):
+        return "missing"
+
+    if (window_end - nav_result.date).days > MF_NAV_STALE_AFTER_DAYS:
+        return "stale"
+
+    return None
 
 
 def _valuation_coverage_warnings(
@@ -480,13 +555,16 @@ def _valuation_coverage_warnings(
 
     if asset_ctx is not None:
         if asset_ctx.is_mutual_fund:
-            if _mf_missing_cached_navs_in_window(
+            issue = _mf_nav_freshness_issue(
                 asset_ctx.asset_symbol,
                 asset_ctx.asset_txns,
                 window_start,
                 window_end,
-            ):
+            )
+            if issue == "missing":
                 warnings.append(_WARN_MISSING_MF_NAVS)
+            elif issue == "stale":
+                warnings.append(_WARN_STALE_MF_NAVS)
         elif _stock_missing_cached_prices_in_window(
             asset_ctx.asset_symbol,
             asset_ctx.asset_txns,
@@ -505,13 +583,18 @@ def _valuation_coverage_warnings(
         warnings.append(_WARN_MISSING_STOCK_PRICES)
 
     mf_missing = False
+    mf_stale = False
     for txns in (by_mf or {}).values():
         scheme = normalize_scheme_code(txns[0].asset_symbol)
-        if _mf_missing_cached_navs_in_window(scheme, txns, window_start, window_end):
+        issue = _mf_nav_freshness_issue(scheme, txns, window_start, window_end)
+        if issue == "missing":
             mf_missing = True
-            break
+        elif issue == "stale":
+            mf_stale = True
     if mf_missing:
         warnings.append(_WARN_MISSING_MF_NAVS)
+    if mf_stale:
+        warnings.append(_WARN_STALE_MF_NAVS)
 
     return warnings
 
@@ -652,6 +735,10 @@ def _empty_drawdown_periods_block() -> dict[str, Any]:
     return {"worst": []}
 
 
+def _empty_drawdown_series_block() -> list[dict[str, Any]]:
+    return []
+
+
 def _period_return_rows(points: list[PeriodReturnPoint]) -> list[dict[str, Any]]:
     return [
         {"period": p.period, "return": _float_or_none(p.return_fraction)}
@@ -662,11 +749,31 @@ def _period_return_rows(points: list[PeriodReturnPoint]) -> list[dict[str, Any]]
 def build_periodic_returns_block(
     daily_pts: list[DailyReturnPoint],
 ) -> dict[str, Any]:
-    """Compounded monthly/yearly fractional returns for Metric Sheet APIs."""
+    """
+    Compounded monthly/yearly fractional returns for Metric Sheet APIs.
+
+    ``yearly`` rows are **Calendar-Year Return**: cash-flow-adjusted daily returns
+    (TWROR-style ``period_return`` from values and external flows) compounded
+    within each calendar year — not simple start-vs-end value change.
+    """
     return {
         "monthly": _period_return_rows(resample_monthly_returns(daily_pts)),
         "yearly": _period_return_rows(resample_yearly_returns(daily_pts)),
     }
+
+
+def build_drawdown_series_block(
+    daily_pts: list[DailyReturnPoint],
+) -> list[dict[str, Any]]:
+    """Running drawdown fractions (0 or negative) for Metric Sheet chart APIs."""
+    return [
+        {
+            "date": pt.date.isoformat(),
+            "drawdown": _float_or_none(pt.drawdown_fraction),
+        }
+        for pt in drawdown_series(daily_pts)
+        if pt.date is not None and pt.drawdown_fraction is not None
+    ]
 
 
 def build_drawdown_periods_block(
@@ -679,6 +786,7 @@ def build_drawdown_periods_block(
     return {
         "worst": [
             {
+                "rank": rank,
                 "start_date": ep.start_date.isoformat(),
                 "trough_date": ep.trough_date.isoformat(),
                 "recovery_date": (
@@ -689,18 +797,19 @@ def build_drawdown_periods_block(
                 "days_to_recovery": ep.days_to_recovery,
                 "recovered": ep.recovered,
             }
-            for ep in worst
+            for rank, ep in enumerate(worst, start=1)
         ]
     }
 
 
 def build_metric_sheet_extension_blocks(
     daily_pts: list[DailyReturnPoint],
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Periodic returns and drawdown periods from the same daily series as metrics."""
+) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+    """Periodic returns, drawdown periods, and drawdown series from daily returns."""
     return (
         build_periodic_returns_block(daily_pts),
         build_drawdown_periods_block(daily_pts),
+        build_drawdown_series_block(daily_pts),
     )
 
 
@@ -748,15 +857,19 @@ def build_metric_sheet_from_daily_returns(
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """Assemble return/risk/drawdown/period metrics and optional benchmark block."""
     summary = period_summary(daily_fracs)
-    cum_ret = cumulative_return(daily_fracs)
     twror_frac = _twror_cumulative_fraction(ts_use, flows_by_date, flows_unknown_from)
-    if cum_ret is None and twror_frac is not None:
-        cum_ret = twror_frac
+    cum_ret = _economic_cumulative_return_fraction(
+        ts_use, flows_by_date, flows_unknown_from, window_end
+    )
 
     metrics_block: dict[str, Any] = {
         "return": {
             "cumulative_return": _float_or_none(cum_ret),
-            "cagr": _float_or_none(cagr(daily_fracs, window_start, window_end)),
+            "cagr": _float_or_none(
+                cagr_from_total_return(cum_ret, window_start, window_end)
+                if cum_ret is not None
+                else None
+            ),
             "xirr": _float_or_none(
                 Decimal(str(xirr_val)) if xirr_val is not None else None
             ),
@@ -922,10 +1035,11 @@ def _slice_timeseries_for_range(
     *,
     range_code: str,
     today: date,
+    inception: date | None = None,
 ) -> tuple[list[dict], date, date, date]:
-    inception = date.fromisoformat(timeseries_full[0]["date"])
+    true_inception = inception or date.fromisoformat(timeseries_full[0]["date"])
     series_end = date.fromisoformat(timeseries_full[-1]["date"])
-    range_start = resolve_performance_range_start(range_code, today, inception)
+    range_start = resolve_performance_range_start(range_code, today, true_inception)
     range_start_iso = range_start.isoformat()
     if range_code == "ALL":
         ts_use = timeseries_full
@@ -934,6 +1048,17 @@ def _slice_timeseries_for_range(
     window_start = date.fromisoformat(ts_use[0]["date"]) if ts_use else range_start
     window_end = date.fromisoformat(ts_use[-1]["date"]) if ts_use else series_end
     return ts_use, window_start, window_end, range_start
+
+
+def _slice_timeseries_to_window(
+    ts_rows: list[dict],
+    window_start: date,
+    window_end: date,
+) -> list[dict]:
+    """Restrict value/timeseries rows to an inclusive date window."""
+    start_iso = window_start.isoformat()
+    end_iso = window_end.isoformat()
+    return [row for row in ts_rows if start_iso <= row["date"] <= end_iso]
 
 
 def _prepare_asset_daily_metrics_inputs(
@@ -994,7 +1119,7 @@ def _prepare_asset_daily_metrics_inputs(
         )
     )
     if not any(p.get("portfolio_value") is not None for p in ts_use) and not any(
-        _WARN_MISSING_STOCK_PRICES in w or _WARN_MISSING_MF_NAVS in w for w in warnings
+        _WARN_MISSING_STOCK_PRICES in w or _has_mf_nav_quality_warning([w]) for w in warnings
     ):
         warnings.append("Asset values are unavailable for the selected range.")
 
@@ -1079,8 +1204,8 @@ def build_asset_performance_metrics(
         benchmark_symbol=benchmark_symbol,
         warnings=warnings,
     )
-    periodic_returns, drawdown_periods = build_metric_sheet_extension_blocks(
-        inputs.daily_pts
+    periodic_returns, drawdown_periods, drawdown_series_block = (
+        build_metric_sheet_extension_blocks(inputs.daily_pts)
     )
 
     payload: dict[str, Any] = {
@@ -1099,6 +1224,7 @@ def build_asset_performance_metrics(
         "metrics": metrics_block,
         "periodic_returns": periodic_returns,
         "drawdown_periods": drawdown_periods,
+        "drawdown_series": drawdown_series_block,
         "warnings": warnings,
     }
     if benchmark_block is not None:
@@ -1222,10 +1348,13 @@ def build_analytics_compare(
                 DailyReturnPoint(date=d, return_fraction=r)
                 for d, r in zip(common_dates, aligned_fracs)
             ]
+            aligned_ts_use = _slice_timeseries_to_window(
+                inputs.ts_use, aligned_start, aligned_end
+            )
             metrics_block, _ = build_metric_sheet_from_daily_returns(
                 daily_pts=aligned_pts,
                 daily_fracs=aligned_fracs,
-                ts_use=inputs.ts_use,
+                ts_use=aligned_ts_use,
                 flows_by_date=inputs.flows_by_date,
                 flows_unknown_from=inputs.flows_unknown_from,
                 window_start=aligned_start,
@@ -1234,8 +1363,8 @@ def build_analytics_compare(
                 benchmark_symbol=None,
                 warnings=subject_warnings,
             )
-            periodic_returns, drawdown_periods = build_metric_sheet_extension_blocks(
-                aligned_pts
+            periodic_returns, drawdown_periods, drawdown_series_block = (
+                build_metric_sheet_extension_blocks(aligned_pts)
             )
             benchmark_block: dict[str, Any] | None = None
             if benchmark_symbol:
@@ -1251,6 +1380,7 @@ def build_analytics_compare(
             metrics_block = _null_metrics_block()
             periodic_returns = _empty_periodic_returns_block()
             drawdown_periods = _empty_drawdown_periods_block()
+            drawdown_series_block = _empty_drawdown_series_block()
             benchmark_block = None
             if benchmark_symbol:
                 cfg = _get_benchmark_config(benchmark_symbol)
@@ -1274,6 +1404,7 @@ def build_analytics_compare(
                 "metrics": metrics_block,
                 "periodic_returns": periodic_returns,
                 "drawdown_periods": drawdown_periods,
+                "drawdown_series": drawdown_series_block,
                 "benchmark": benchmark_block,
                 "warnings": subject_warnings,
             }
@@ -1324,8 +1455,23 @@ def build_portfolio_performance_metrics(
 
     by_symbol = transactions_by_symbol(queryset)
     by_mf = transactions_by_mf_holding(queryset)
-    base_currency = portfolio_base_currency(all_txns)
-    timeseries_full = build_portfolio_value_timeseries(all_txns, by_symbol, by_mf)
+    disp_ccy = norm_display_currency(display_currency)
+    inception = min(t.date for t in all_txns)
+    emit_start = (
+        None
+        if range_code == "ALL"
+        else resolve_performance_range_start(range_code, today, inception)
+    )
+    if scope.kind == "all_active":
+        base_currency = disp_ccy
+        timeseries_full = build_all_scope_portfolio_value_timeseries(
+            scope, disp_ccy, emit_start_date=emit_start
+        )
+    else:
+        base_currency = portfolio_base_currency(all_txns)
+        timeseries_full = build_portfolio_value_timeseries(
+            all_txns, by_symbol, by_mf, emit_start_date=emit_start
+        )
     if not timeseries_full:
         warnings.append("No portfolio value history available.")
         return PerformanceMetricsResult(
@@ -1341,7 +1487,7 @@ def build_portfolio_performance_metrics(
         )
 
     ts_use, window_start, window_end, _range_start = _slice_timeseries_for_range(
-        timeseries_full, range_code=range_code, today=today
+        timeseries_full, range_code=range_code, today=today, inception=inception
     )
 
     warnings.extend(
@@ -1360,11 +1506,15 @@ def build_portfolio_performance_metrics(
         )
     )
     if not any(p.get("portfolio_value") is not None for p in ts_use) and not any(
-        _WARN_MISSING_STOCK_PRICES in w or _WARN_MISSING_MF_NAVS in w for w in warnings
+        _WARN_MISSING_STOCK_PRICES in w or _has_mf_nav_quality_warning([w]) for w in warnings
     ):
         warnings.append("Portfolio values are unavailable for the selected range.")
 
-    flows_by_date, flows_unknown_from = portfolio_external_flows(all_txns, base_currency)
+    flows_by_date, flows_unknown_from = (
+        build_all_scope_external_flows(scope, disp_ccy)
+        if scope.kind == "all_active"
+        else portfolio_external_flows(all_txns, base_currency)
+    )
     if flows_unknown_from is not None:
         warnings.append(
             "FX rates are missing for some external cash flows; returns may be incomplete."
@@ -1394,7 +1544,9 @@ def build_portfolio_performance_metrics(
         benchmark_symbol=benchmark_symbol,
         warnings=warnings,
     )
-    periodic_returns, drawdown_periods = build_metric_sheet_extension_blocks(daily_pts)
+    periodic_returns, drawdown_periods, drawdown_series_block = (
+        build_metric_sheet_extension_blocks(daily_pts)
+    )
 
     payload: dict[str, Any] = {
         "subject": _subject_block(scope, display_currency=display_currency),
@@ -1407,6 +1559,7 @@ def build_portfolio_performance_metrics(
         "metrics": metrics_block,
         "periodic_returns": periodic_returns,
         "drawdown_periods": drawdown_periods,
+        "drawdown_series": drawdown_series_block,
         "warnings": warnings,
     }
     if benchmark_block is not None:
@@ -1441,6 +1594,7 @@ def _empty_asset_payload(
         "metrics": _null_metrics_block(),
         "periodic_returns": _empty_periodic_returns_block(),
         "drawdown_periods": _empty_drawdown_periods_block(),
+        "drawdown_series": _empty_drawdown_series_block(),
         "warnings": warnings,
     }
     if benchmark_symbol:
@@ -1473,6 +1627,7 @@ def _empty_payload(
         "metrics": _null_metrics_block(),
         "periodic_returns": _empty_periodic_returns_block(),
         "drawdown_periods": _empty_drawdown_periods_block(),
+        "drawdown_series": _empty_drawdown_series_block(),
         "warnings": warnings,
     }
     if benchmark_symbol:

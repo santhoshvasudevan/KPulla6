@@ -235,7 +235,35 @@ def test_asset_missing_mf_nav_warning(api_client, seeded, today_patch):
             folio_number="FOLIO-12345",
         )
     ).json()
-    assert any("Cached NAVs are missing" in w for w in data["warnings"])
+    assert any("No cached NAV is available" in w for w in data["warnings"])
+
+
+@pytest.mark.django_db
+def test_asset_mf_nav_no_warning_when_latest_nav_recent(api_client, seeded, today_patch):
+    _mf_buy(api_client, investment_date="2026-03-01", nav_date="2026-03-01")
+    _mf_nav("120503", "2026-03-13", "44.00")
+    data = api_client.get(
+        _asset_metrics_url(
+            "120503",
+            range="ALL",
+            folio_number="FOLIO-12345",
+        )
+    ).json()
+    assert not any("NAV" in w for w in data["warnings"])
+
+
+@pytest.mark.django_db
+def test_asset_mf_nav_stale_warning(api_client, seeded, today_patch):
+    _mf_buy(api_client, investment_date="2026-03-01", nav_date="2026-03-01")
+    _mf_nav("120503", "2026-03-01", "42.00")
+    data = api_client.get(
+        _asset_metrics_url(
+            "120503",
+            range="ALL",
+            folio_number="FOLIO-12345",
+        )
+    ).json()
+    assert any("Latest cached NAV is older than 5 days" in w for w in data["warnings"])
 
 
 @pytest.mark.django_db
@@ -307,6 +335,13 @@ def test_asset_metrics_includes_periodic_returns_and_drawdown_periods(
     assert "drawdown_periods" in data
     assert isinstance(data["periodic_returns"]["monthly"], list)
     assert isinstance(data["drawdown_periods"]["worst"], list)
+    assert "drawdown_series" in data
+    series = data["drawdown_series"]
+    assert isinstance(series, list)
+    for pt in series:
+        assert pt["drawdown"] <= 0
+    for ep in data["drawdown_periods"]["worst"]:
+        assert "rank" in ep
 
 
 @pytest.mark.django_db

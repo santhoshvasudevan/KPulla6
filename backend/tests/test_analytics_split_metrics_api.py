@@ -138,7 +138,10 @@ def test_asset_metrics_raw_nominal_prices_warn(api_client, seeded, today_patch):
     assert any("split-adjusted" in w.lower() for w in data["warnings"])
     ret = data["metrics"]["return"]
     assert ret["cumulative_return"] is not None
-    assert ret["cumulative_return"] < -0.5
+    # Economic cumulative return can look flat when contributions track the split-distorted
+    # terminal value; TWROR from daily returns still exposes the bad price history.
+    assert ret["twror"] is not None
+    assert ret["twror"] < -0.5
 
 
 @pytest.mark.django_db

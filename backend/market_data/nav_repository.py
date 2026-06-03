@@ -58,3 +58,24 @@ def latest_mutual_fund_navs_by_scheme(
         if result is not None:
             out[scheme] = result
     return out
+
+
+def last_mutual_fund_navs_on_or_before(
+    scheme_codes: Iterable[str], as_of: date
+) -> list[HistoricalPrice]:
+    """Latest cached NAV row per scheme with ``date <= as_of`` (for range bootstrap)."""
+    normalized = sorted({normalize_scheme_code(s) for s in scheme_codes if s})
+    rows: list[HistoricalPrice] = []
+    for scheme in normalized:
+        row = (
+            HistoricalPrice.objects.filter(
+                asset_symbol=scheme,
+                asset_type=AssetType.MUTUAL_FUND,
+                date__lte=as_of,
+            )
+            .order_by("-date", "-id")
+            .first()
+        )
+        if row:
+            rows.append(row)
+    return rows

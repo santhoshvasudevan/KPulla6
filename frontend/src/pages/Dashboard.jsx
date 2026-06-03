@@ -474,48 +474,51 @@ export default function Dashboard() {
             ) : null}
           </div>
         </ChartCard>
+      </div>
 
-        <MetricSheetSection
-          className="dashboard-metric-sheet"
-          subtitle={metricSheetSubtitle}
-          actions={
-            <select
-              aria-label="metric-sheet-benchmark"
-              className="metric-sheet__benchmark-select dashboard-metric-sheet__benchmark-select"
-              value={selectedBenchmark}
-              onChange={(e) => setSelectedBenchmark(e.target.value)}
-            >
-              <option value="">No benchmark</option>
-              {benchmarkOptions.map((b) => (
-                <option key={b.symbol} value={b.symbol}>
-                  {b.name || b.display_name || b.symbol}
-                </option>
-              ))}
-            </select>
-          }
-        >
-          {metricSheetLoading ? (
-            <LoadingState message="Loading Metric Sheet…" variant="skeleton" />
-          ) : metricSheetError ? (
-            <ErrorState title="Metric Sheet unavailable" message={metricSheetError} />
-          ) : metricSheetData ? (
-            <>
-              <MetricSheetWarnings warnings={metricSheetData.warnings} />
-              <MetricSheetSummaryCards metrics={metricSheetData.metrics} />
-              <MetricSheetRiskReturnTable metrics={metricSheetData.metrics} />
-              {metricSheetData.benchmark ? (
-                <MetricSheetBenchmarkTable benchmark={metricSheetData.benchmark} />
-              ) : null}
-              <MetricSheetPeriodicReturnsTable
-                periodicReturns={metricSheetData.periodic_returns}
-              />
-              <MetricSheetDrawdownPeriodsTable
-                drawdownPeriods={metricSheetData.drawdown_periods}
-              />
-            </>
-          ) : null}
-        </MetricSheetSection>
+      <MetricSheetSection
+        className="dashboard-metric-sheet"
+        subtitle={metricSheetSubtitle}
+        actions={
+          <select
+            aria-label="metric-sheet-benchmark"
+            className="metric-sheet__benchmark-select dashboard-metric-sheet__benchmark-select"
+            value={selectedBenchmark}
+            onChange={(e) => setSelectedBenchmark(e.target.value)}
+          >
+            <option value="">No benchmark</option>
+            {benchmarkOptions.map((b) => (
+              <option key={b.symbol} value={b.symbol}>
+                {b.name || b.display_name || b.symbol}
+              </option>
+            ))}
+          </select>
+        }
+      >
+        {metricSheetLoading ? (
+          <LoadingState message="Loading Metric Sheet…" variant="skeleton" />
+        ) : metricSheetError ? (
+          <ErrorState title="Metric Sheet unavailable" message={metricSheetError} />
+        ) : metricSheetData ? (
+          <>
+            <MetricSheetWarnings warnings={metricSheetData.warnings} />
+            <MetricSheetSummaryCards metrics={metricSheetData.metrics} />
+            <MetricSheetRiskReturnTable metrics={metricSheetData.metrics} />
+            {selectedBenchmark && metricSheetData.benchmark ? (
+              <MetricSheetBenchmarkTable benchmark={metricSheetData.benchmark} />
+            ) : null}
+            <MetricSheetPeriodicReturnsTable
+              periodicReturns={metricSheetData.periodic_returns}
+            />
+            <MetricSheetDrawdownPeriodsTable
+              drawdownPeriods={metricSheetData.drawdown_periods}
+              drawdownSeries={metricSheetData.drawdown_series}
+            />
+          </>
+        ) : null}
+      </MetricSheetSection>
 
+      <div className="dashboard-charts dashboard-charts--secondary">
         <ChartCard
           title="Invested vs Current"
           subtitle="Portfolio totals comparison"

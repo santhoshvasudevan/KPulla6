@@ -17,7 +17,7 @@ import math
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Iterable, Optional
+from typing import Iterable, Mapping, Optional
 
 from finance._return_inputs import ReturnInput, valid_fractions
 from finance.returns import compound_return
@@ -46,28 +46,74 @@ def cumulative_return(daily_returns: Iterable[ReturnInput]) -> Optional[Decimal]
     return compound_return(valid_fractions(daily_returns))
 
 
-def cagr(
-    daily_returns: Iterable[ReturnInput],
+def contributions_and_withdrawals_through(
+    flows_by_date: Mapping[date, Decimal], as_of: date
+) -> tuple[Decimal, Decimal]:
+    """Sum external contributions (buys) and withdrawals (sells) through ``as_of`` inclusive."""
+    contrib = _ZERO
+    withdraw = _ZERO
+    for flow_date, amount in flows_by_date.items():
+        if flow_date > as_of:
+            continue
+        if amount >= _ZERO:
+            contrib += amount
+        else:
+            withdraw += -amount
+    return contrib, withdraw
+
+
+def economic_cumulative_return_fraction(
+    *,
+    terminal_value: Decimal,
+    contributions: Decimal,
+    withdrawals: Decimal,
+) -> Optional[Decimal]:
+    """
+    Money-weighted cumulative return for a window end date.
+
+    ``(terminal_value + withdrawals - contributions) / contributions`` as a fraction.
+    Matches ``GET /portfolio/performance?metric=cumulative_return`` terminal points.
+    """
+    if contributions <= _ZERO:
+        return None
+    return (terminal_value + withdrawals - contributions) / contributions
+
+
+def cagr_from_total_return(
+    total_return: Decimal,
     start_date: date,
     end_date: date,
 ) -> Optional[Decimal]:
     """
-    Compound annual growth rate from cumulative return and calendar span.
+    Compound annual growth rate from a total return fraction and calendar span.
 
-    ``(1 + cumulative_return) ** (365 / days) - 1`` with ``days = (end_date - start_date).days``.
-    Returns ``None`` when cumulative return is unavailable, dates invalid, or ``days <= 0``.
+    ``(1 + total_return) ** (365 / days) - 1`` with ``days = (end_date - start_date).days``.
     """
     if end_date < start_date:
         return None
     days = (end_date - start_date).days
     if days <= 0:
         return None
+    base = float(_ONE + total_return)
+    exponent = float(_DAYS_PER_YEAR) / float(days)
+    return Decimal(str(base**exponent - 1.0))
+
+
+def cagr(
+    daily_returns: Iterable[ReturnInput],
+    start_date: date,
+    end_date: date,
+) -> Optional[Decimal]:
+    """
+    Compound annual growth rate from compounded daily returns and calendar span.
+
+    Uses ``cumulative_return(daily_returns)`` as the total return input. For Metric Sheet
+    headline CAGR, prefer ``cagr_from_total_return`` with economic cumulative return.
+    """
     cum = cumulative_return(daily_returns)
     if cum is None:
         return None
-    base = float(_ONE + cum)
-    exponent = float(_DAYS_PER_YEAR) / float(days)
-    return Decimal(str(base**exponent - 1.0))
+    return cagr_from_total_return(cum, start_date, end_date)
 
 
 def best_return(daily_returns: Iterable[ReturnInput]) -> Optional[Decimal]:

@@ -4,6 +4,17 @@
   gap: var(--space-4);
 }
 
+.metric-sheet.ui-section-card {
+  max-width: none;
+  width: 100%;
+}
+
+.metric-sheet .ui-section-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
 .metric-sheet__cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -203,6 +214,50 @@
 
 .metric-sheet-monthly-grid__cell--missing {
   color: var(--text-muted);
+}
+
+.metric-sheet-monthly-grid__cell--strong-negative {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--loss) 42%, var(--bg-surface));
+}
+
+.metric-sheet-monthly-grid__cell--soft-negative {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--loss) 22%, var(--bg-surface));
+}
+
+.metric-sheet-monthly-grid__cell--strong-positive {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--gain) 42%, var(--bg-surface));
+}
+
+.metric-sheet-monthly-grid__cell--soft-positive {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--gain) 22%, var(--bg-surface));
+}
+
+.metric-sheet-monthly-grid__cell--strong-negative,
+.metric-sheet-monthly-grid__cell--soft-negative,
+.metric-sheet-monthly-grid__cell--strong-positive,
+.metric-sheet-monthly-grid__cell--soft-positive,
+.metric-sheet-monthly-grid__cell--neutral {
+  border-bottom-color: var(--border-subtle);
+}
+
+.metric-sheet-monthly-grid__cell--neutral {
+  background: color-mix(in srgb, var(--warn) 18%, var(--bg-surface));
+}
+
+.metric-sheet-chart-panel {
+  width: 100%;
+  min-height: 12rem;
+}
+
+.metric-sheet-yearly-chart.ui-chart-card,
+.metric-sheet-drawdown-chart.ui-chart-card {
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
 }
 
 .metric-sheet__benchmark-select {
