@@ -10,8 +10,8 @@ from transactions.models import Transaction
 
 
 @pytest.mark.django_db
-def test_transaction_to_finance_dto(seeded):
-    portfolio = ensure_default_portfolio()
+def test_transaction_to_finance_dto(seeded, test_user):
+    portfolio = ensure_default_portfolio(test_user)
     txn = Transaction.objects.create(
         portfolio=portfolio,
         asset_symbol="aapl",

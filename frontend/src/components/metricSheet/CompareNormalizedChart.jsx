@@ -11,11 +11,11 @@ import {
 } from 'recharts';
 import {
   getSeriesColor,
-  chartGridProps,
-  chartAxisStroke,
-  chartAxisTick,
-  CHART_TOOLTIP_STYLE,
-  CHART_LEGEND_STYLE,
+  getChartGridProps,
+  getChartAxisStroke,
+  getChartAxisTick,
+  getChartTooltipStyle,
+  getChartLegendStyle,
 } from '../charts/chartTheme';
 import { formatMetricPercentFraction } from '../../utils/metricFormatters';
 import { EmptyState } from '../ui';
@@ -98,26 +98,26 @@ export default function CompareNormalizedChart({
     <div className={['compare-normalized-chart', className].filter(Boolean).join(' ')}>
       <ResponsiveContainer width="100%" height={320}>
         <LineChart data={chartData}>
-          <CartesianGrid {...chartGridProps} />
+          <CartesianGrid {...getChartGridProps()} />
           <XAxis
             dataKey="date"
-            stroke={chartAxisStroke}
-            tick={chartAxisTick}
+            stroke={getChartAxisStroke()}
+            tick={getChartAxisTick()}
             tickFormatter={axisDateFormatter}
             interval="preserveStartEnd"
             minTickGap={shortRange ? 8 : 24}
           />
           <YAxis
-            stroke={chartAxisStroke}
-            tick={chartAxisTick}
+            stroke={getChartAxisStroke()}
+            tick={getChartAxisTick()}
             tickFormatter={formatPercentAxis}
           />
           <Tooltip
-            contentStyle={CHART_TOOLTIP_STYLE}
+            contentStyle={getChartTooltipStyle()}
             formatter={(value) => formatMetricPercentFraction(value, { showSign: true })}
             labelFormatter={(l) => axisDateFormatter(l)}
           />
-          {lines.length > 1 ? <Legend wrapperStyle={CHART_LEGEND_STYLE} /> : null}
+          {lines.length > 1 ? <Legend wrapperStyle={getChartLegendStyle()} /> : null}
           {lines.map((line) => (
             <Line
               key={line.dataKey}

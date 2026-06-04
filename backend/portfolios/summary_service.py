@@ -965,9 +965,12 @@ def build_portfolio_summary(
     scope: ResolvedPortfolioScope,
     include_timeseries: bool = True,
     display_currency: str | None = None,
+    user=None,
 ) -> PortfolioSummaryResult:
-    settings = get_settings()
-    disp_ccy = _norm_ccy(display_currency or settings.display_currency or "EUR")
+    if display_currency is None and user is not None:
+        settings = get_settings(user)
+        display_currency = settings.display_currency
+    disp_ccy = _norm_ccy(display_currency or "EUR")
 
     if scope.kind == "all_active":
         return _build_all_active_portfolio_summary(

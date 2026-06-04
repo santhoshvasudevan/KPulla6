@@ -50,9 +50,6 @@ def _parse_symbols_param(request) -> list[str] | None:
 
 
 class TransactionListCreateView(APIView):
-    authentication_classes = []
-    permission_classes = []
-
     def get(self, request):
         try:
             page = int(request.query_params.get("page", 1))
@@ -88,6 +85,7 @@ class TransactionListCreateView(APIView):
 
         try:
             result = list_transactions(
+                request.user,
                 page=page,
                 page_size=page_size,
                 asset_symbol=request.query_params.get("asset_symbol"),
@@ -127,6 +125,7 @@ class TransactionListCreateView(APIView):
         portfolio_id = data.pop("portfolio_id", None)
         try:
             transaction = create_transaction(
+                request.user,
                 validated_data={**data, "portfolio_id": portfolio_id},
             )
         except PortfolioNotFoundError as exc:
@@ -146,6 +145,7 @@ class TransactionListCreateView(APIView):
 
         try:
             transaction = create_mutual_fund_transaction(
+                request.user,
                 validated_data=serializer.validated_data,
             )
         except PortfolioNotFoundError as exc:
@@ -165,9 +165,6 @@ class TransactionListCreateView(APIView):
 
 
 class TransactionFilterOptionsView(APIView):
-    authentication_classes = []
-    permission_classes = []
-
     def get(self, request):
         portfolio_id = request.query_params.get("portfolio_id")
         try:
@@ -180,6 +177,7 @@ class TransactionFilterOptionsView(APIView):
 
         try:
             options = get_transaction_filter_options(
+                request.user,
                 portfolio_scope=request.query_params.get("portfolio_scope"),
                 portfolio_id=parsed_portfolio_id,
             )
@@ -200,12 +198,9 @@ class TransactionFilterOptionsView(APIView):
 
 
 class TransactionDetailView(APIView):
-    authentication_classes = []
-    permission_classes = []
-
     def put(self, request, transaction_id: int):
         try:
-            existing = get_transaction(transaction_id)
+            existing = get_transaction(request.user, transaction_id)
         except TransactionNotFoundError:
             return Response(
                 {"detail": "Transaction not found"},
@@ -231,6 +226,7 @@ class TransactionDetailView(APIView):
 
         try:
             transaction = update_transaction(
+                request.user,
                 transaction_id,
                 validated_data=data,
                 update_portfolio=update_portfolio,
@@ -258,6 +254,7 @@ class TransactionDetailView(APIView):
         update_portfolio = "portfolio_id" in request.data
         try:
             transaction = update_mutual_fund_transaction(
+                request.user,
                 transaction_id,
                 validated_data=serializer.validated_data,
                 update_portfolio=update_portfolio,
@@ -281,7 +278,7 @@ class TransactionDetailView(APIView):
 
     def delete(self, request, transaction_id: int):
         try:
-            delete_transaction(transaction_id)
+            delete_transaction(request.user, transaction_id)
         except TransactionNotFoundError:
             return Response(
                 {"detail": "Transaction not found"},
@@ -291,8 +288,6 @@ class TransactionDetailView(APIView):
 
 
 class TransactionCsvImportView(APIView):
-    authentication_classes = []
-    permission_classes = []
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request):
@@ -337,6 +332,7 @@ class TransactionCsvImportView(APIView):
 
         try:
             result = import_transactions_from_csv(
+                request.user,
                 csv_text=text,
                 portfolio_id=portfolio_id,
             )

@@ -15,9 +15,6 @@ from portfolios.services import PortfolioNotFoundError
 
 
 class PortfolioHoldingsView(APIView):
-    authentication_classes = []
-    permission_classes = []
-
     def get(self, request):
         portfolio_id_param = request.query_params.get("portfolio_id")
         portfolio_id: int | None = None
@@ -38,6 +35,7 @@ class PortfolioHoldingsView(APIView):
 
         try:
             scope = resolve_portfolio_scope(
+                request.user,
                 portfolio_scope=request.query_params.get("portfolio_scope"),
                 portfolio_id=portfolio_id,
             )
@@ -57,9 +55,6 @@ class PortfolioHoldingsView(APIView):
 
 
 class PortfolioAssetDetailView(APIView):
-    authentication_classes = []
-    permission_classes = []
-
     def get(self, request, asset_symbol: str):
         portfolio_id_param = request.query_params.get("portfolio_id")
         portfolio_id: int | None = None
@@ -80,6 +75,7 @@ class PortfolioAssetDetailView(APIView):
 
         try:
             scope = resolve_portfolio_scope(
+                request.user,
                 portfolio_scope=request.query_params.get("portfolio_scope"),
                 portfolio_id=portfolio_id,
             )

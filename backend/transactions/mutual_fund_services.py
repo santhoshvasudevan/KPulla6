@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
+from django.contrib.auth.models import AbstractBaseUser
 from django.db import transaction as db_transaction
 
 from market_data.models import Asset, AssetType, MutualFundProfile
@@ -216,10 +217,12 @@ def _ensure_folio(*, portfolio_id: int, asset: Asset, folio_number: str) -> Foli
 
 
 @db_transaction.atomic
-def create_mutual_fund_transaction(*, validated_data: dict[str, Any]) -> Transaction:
+def create_mutual_fund_transaction(
+    user: AbstractBaseUser, *, validated_data: dict[str, Any]
+) -> Transaction:
     payload = validate_mutual_fund_transaction_payload(validated_data)
     try:
-        portfolio_id = resolve_portfolio_id_or_default(payload.portfolio_id)
+        portfolio_id = resolve_portfolio_id_or_default(user, payload.portfolio_id)
     except PortfolioNotFoundError:
         raise
 
@@ -256,17 +259,18 @@ def create_mutual_fund_transaction(*, validated_data: dict[str, Any]) -> Transac
         nav_verification_status=nav_status,
         nav_verification_message=nav_message,
     )
-    return get_transaction(txn.id)
+    return get_transaction(user, txn.id)
 
 
 @db_transaction.atomic
 def update_mutual_fund_transaction(
+    user: AbstractBaseUser,
     transaction_id: int,
     *,
     validated_data: dict[str, Any],
     update_portfolio: bool,
 ) -> Transaction:
-    transaction = get_transaction(transaction_id)
+    transaction = get_transaction(user, transaction_id)
     try:
         transaction.mutual_fund_detail
     except MutualFundTransactionDetail.DoesNotExist as exc:
@@ -276,7 +280,7 @@ def update_mutual_fund_transaction(
 
     if update_portfolio:
         try:
-            portfolio_id = resolve_portfolio_id_or_default(payload.portfolio_id)
+            portfolio_id = resolve_portfolio_id_or_default(user, payload.portfolio_id)
         except PortfolioNotFoundError:
             raise
     else:
@@ -315,4 +319,4 @@ def update_mutual_fund_transaction(
     detail.nav_verification_message = nav_message
     detail.save()
 
-    return get_transaction(transaction.id)
+    return get_transaction(user, transaction.id)

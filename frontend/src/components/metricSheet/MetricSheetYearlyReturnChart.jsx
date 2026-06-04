@@ -11,12 +11,12 @@ import {
 } from 'recharts';
 import { ChartCard } from '../ui';
 import {
-  chartGridProps,
-  chartAxisStroke,
-  chartAxisTick,
-  CHART_TOOLTIP_STYLE,
-  CHART_GAIN,
-  CHART_LOSS,
+  getChartGridProps,
+  getChartAxisStroke,
+  getChartAxisTick,
+  getChartTooltipStyle,
+  getChartGainColor,
+  getChartLossColor,
 } from '../charts/chartTheme';
 import { formatMetricPercentFraction } from '../../utils/metricFormatters';
 import { buildYearlyReturnChartData } from './metricSheetChartHelpers';
@@ -48,19 +48,19 @@ export default function MetricSheetYearlyReturnChart({ yearly = [], className = 
         <div className="metric-sheet-chart-panel">
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
-              <CartesianGrid {...chartGridProps} vertical={false} />
+              <CartesianGrid {...getChartGridProps()} vertical={false} />
               <XAxis
                 dataKey="period"
-                stroke={chartAxisStroke}
-                tick={chartAxisTick}
+                stroke={getChartAxisStroke()}
+                tick={getChartAxisTick()}
               />
               <YAxis
-                stroke={chartAxisStroke}
-                tick={chartAxisTick}
+                stroke={getChartAxisStroke()}
+                tick={getChartAxisTick()}
                 tickFormatter={formatPercentAxis}
               />
               <Tooltip
-                contentStyle={CHART_TOOLTIP_STYLE}
+                contentStyle={getChartTooltipStyle()}
                 formatter={(value) => [
                   formatMetricPercentFraction(value, { showSign: true }),
                   'Return',
@@ -73,8 +73,8 @@ export default function MetricSheetYearlyReturnChart({ yearly = [], className = 
                     key={entry.period}
                     fill={
                       entry.return != null && Number(entry.return) < 0
-                        ? CHART_LOSS
-                        : CHART_GAIN
+                        ? getChartLossColor()
+                        : getChartGainColor()
                     }
                   />
                 ))}

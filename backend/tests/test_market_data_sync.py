@@ -41,8 +41,8 @@ class MockPriceProvider:
         return filtered, ccy
 
 
-def _buy(symbol: str, d: date, *, currency: str = "EUR"):
-    portfolio = ensure_default_portfolio()
+def _buy(test_user, symbol: str, d: date, *, currency: str = "EUR"):
+    portfolio = ensure_default_portfolio(test_user)
     Transaction.objects.create(
         portfolio=portfolio,
         asset_symbol=symbol,
@@ -56,9 +56,9 @@ def _buy(symbol: str, d: date, *, currency: str = "EUR"):
 
 
 @pytest.mark.django_db
-def test_sync_uses_earliest_transaction_date_when_no_rows(seeded):
+def test_sync_uses_earliest_transaction_date_when_no_rows(seeded, test_user):
     today = date.today()
-    _buy("aapl", today - timedelta(days=5))
+    _buy(test_user, "aapl", today - timedelta(days=5))
     provider = MockPriceProvider(
         {
             "AAPL": [
@@ -74,9 +74,9 @@ def test_sync_uses_earliest_transaction_date_when_no_rows(seeded):
 
 
 @pytest.mark.django_db
-def test_sync_uses_latest_stored_date_plus_one_when_coverage_from_inception(seeded):
+def test_sync_uses_latest_stored_date_plus_one_when_coverage_from_inception(seeded, test_user):
     today = date.today()
-    _buy("AAPL", today - timedelta(days=5))
+    _buy(test_user, "AAPL", today - timedelta(days=5))
     HistoricalPrice.objects.create(
         asset_symbol="AAPL",
         date=today - timedelta(days=5),
@@ -105,10 +105,10 @@ def test_sync_uses_latest_stored_date_plus_one_when_coverage_from_inception(seed
 
 
 @pytest.mark.django_db
-def test_sync_backfills_when_transaction_predates_earliest_cached_price(seeded):
+def test_sync_backfills_when_transaction_predates_earliest_cached_price(seeded, test_user):
     txn_date = date(2022, 5, 2)
     cache_start = date(2022, 12, 23)
-    _buy("GOOG", txn_date)
+    _buy(test_user, "GOOG", txn_date)
     HistoricalPrice.objects.create(
         asset_symbol="GOOG",
         date=cache_start,
@@ -138,11 +138,11 @@ def test_sync_backfills_when_transaction_predates_earliest_cached_price(seeded):
 
 
 @pytest.mark.django_db
-def test_sync_backfills_only_symbols_with_coverage_gaps(seeded):
+def test_sync_backfills_only_symbols_with_coverage_gaps(seeded, test_user):
     gap_txn = date(2022, 5, 2)
     ok_txn = date.today() - timedelta(days=5)
-    _buy("GOOG", gap_txn)
-    _buy("AAPL", ok_txn)
+    _buy(test_user, "GOOG", gap_txn)
+    _buy(test_user, "AAPL", ok_txn)
     HistoricalPrice.objects.create(
         asset_symbol="GOOG",
         date=date(2022, 12, 23),
@@ -200,9 +200,9 @@ def test_resolve_stock_sync_start_date_rules():
 
 
 @pytest.mark.django_db
-def test_sync_normalizes_stock_symbols(seeded):
+def test_sync_normalizes_stock_symbols(seeded, test_user):
     today = date.today()
-    _buy("msft", today - timedelta(days=2))
+    _buy(test_user, "msft", today - timedelta(days=2))
     provider = MockPriceProvider(
         {"MSFT": [DailyPrice(today - timedelta(days=1), Decimal("200"), "USD")]}
     )
@@ -212,9 +212,9 @@ def test_sync_normalizes_stock_symbols(seeded):
 
 
 @pytest.mark.django_db
-def test_sync_stores_daily_close_prices(seeded):
+def test_sync_stores_daily_close_prices(seeded, test_user):
     today = date.today()
-    _buy("AAPL", today - timedelta(days=2))
+    _buy(test_user, "AAPL", today - timedelta(days=2))
     provider = MockPriceProvider(
         {"AAPL": [DailyPrice(today - timedelta(days=1), Decimal("123.45"), "USD")]}
     )
@@ -224,10 +224,10 @@ def test_sync_stores_daily_close_prices(seeded):
 
 
 @pytest.mark.django_db
-def test_sync_upsert_without_duplicates(seeded):
+def test_sync_upsert_without_duplicates(seeded, test_user):
     today = date.today()
     d = today - timedelta(days=1)
-    _buy("AAPL", today - timedelta(days=3))
+    _buy(test_user, "AAPL", today - timedelta(days=3))
     provider = MockPriceProvider({"AAPL": [DailyPrice(d, Decimal("100"), "USD")]})
     sync_one_stock_symbol("AAPL", provider)
     sync_one_stock_symbol("AAPL", provider)
@@ -235,9 +235,9 @@ def test_sync_upsert_without_duplicates(seeded):
 
 
 @pytest.mark.django_db
-def test_sync_idempotent_when_run_twice(seeded):
+def test_sync_idempotent_when_run_twice(seeded, test_user):
     today = date.today()
-    _buy("AAPL", today - timedelta(days=3))
+    _buy(test_user, "AAPL", today - timedelta(days=3))
     rows = [
         DailyPrice(today - timedelta(days=2), Decimal("10"), "USD"),
         DailyPrice(today - timedelta(days=1), Decimal("11"), "USD"),
@@ -249,26 +249,26 @@ def test_sync_idempotent_when_run_twice(seeded):
 
 
 @pytest.mark.django_db
-def test_sync_handles_empty_provider_response(seeded):
+def test_sync_handles_empty_provider_response(seeded, test_user):
     today = date.today()
-    _buy("AAPL", today - timedelta(days=2))
+    _buy(test_user, "AAPL", today - timedelta(days=2))
     provider = MockPriceProvider({"AAPL": []})
     assert sync_one_stock_symbol("AAPL", provider) is True
     assert HistoricalPrice.objects.filter(asset_symbol="AAPL").count() == 0
 
 
 @pytest.mark.django_db
-def test_sync_handles_provider_error(seeded):
+def test_sync_handles_provider_error(seeded, test_user):
     today = date.today()
-    _buy("AAPL", today - timedelta(days=2))
+    _buy(test_user, "AAPL", today - timedelta(days=2))
     provider = MockPriceProvider(fail={"AAPL"})
     assert sync_one_stock_symbol("AAPL", provider) is False
 
 
 @pytest.mark.django_db
-def test_prices_refresh_without_symbols(api_client, seeded):
+def test_prices_refresh_without_symbols(api_client, seeded, test_user):
     today = date.today()
-    _buy("AAPL", today - timedelta(days=2))
+    _buy(test_user, "AAPL", today - timedelta(days=2))
     with patch("market_data.views.sync_stock_prices") as mock_sync:
         r = api_client.post("/api/v1/prices/refresh", {}, format="json")
     assert r.status_code == 202
@@ -318,9 +318,9 @@ def test_missing_latest_price_returns_none(seeded):
 
 
 @pytest.mark.django_db
-def test_holdings_price_status_uses_latest_helper(api_client, seeded):
+def test_holdings_price_status_uses_latest_helper(api_client, seeded, test_user):
     today = date.today()
-    _buy("AAPL", today - timedelta(days=5), currency="EUR")
+    _buy(test_user, "AAPL", today - timedelta(days=5), currency="EUR")
     HistoricalPrice.objects.create(
         asset_symbol="AAPL",
         date=today - timedelta(days=1),
@@ -354,8 +354,8 @@ def test_disabled_benchmark_not_listed(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_benchmark_sync_stores_index_rows(seeded):
-    _buy("AAPL", date(2026, 1, 1))
+def test_benchmark_sync_stores_index_rows(seeded, test_user):
+    _buy(test_user, "AAPL", date(2026, 1, 1))
     provider = MockPriceProvider(
         {
             "^GSPC": [
@@ -372,10 +372,10 @@ def test_benchmark_sync_stores_index_rows(seeded):
 
 
 @pytest.mark.django_db
-def test_benchmark_sync_incremental_idempotent(seeded):
+def test_benchmark_sync_incremental_idempotent(seeded, test_user):
     anchor = date(2026, 1, 1)
     cached_through = date(2026, 1, 5)
-    _buy("AAPL", anchor)
+    _buy(test_user, "AAPL", anchor)
     HistoricalPrice.objects.create(
         asset_symbol="^GSPC",
         date=anchor,
@@ -410,10 +410,10 @@ def test_benchmark_sync_incremental_idempotent(seeded):
 
 
 @pytest.mark.django_db
-def test_benchmark_sync_warm_cache_starts_at_latest_plus_one(seeded):
+def test_benchmark_sync_warm_cache_starts_at_latest_plus_one(seeded, test_user):
     anchor = date(2026, 1, 1)
     cached_through = date(2026, 1, 10)
-    _buy("AAPL", anchor)
+    _buy(test_user, "AAPL", anchor)
     HistoricalPrice.objects.create(
         asset_symbol="^GSPC",
         date=anchor,
@@ -437,10 +437,10 @@ def test_benchmark_sync_warm_cache_starts_at_latest_plus_one(seeded):
 
 
 @pytest.mark.django_db
-def test_benchmark_sync_backfills_when_anchor_predates_earliest_cached(seeded):
+def test_benchmark_sync_backfills_when_anchor_predates_earliest_cached(seeded, test_user):
     anchor = date(2022, 5, 2)
     cache_start = date(2022, 12, 23)
-    _buy("AAPL", anchor)
+    _buy(test_user, "AAPL", anchor)
     HistoricalPrice.objects.create(
         asset_symbol="^GSPC",
         date=cache_start,
@@ -468,11 +468,11 @@ def test_benchmark_sync_backfills_when_anchor_predates_earliest_cached(seeded):
 
 
 @pytest.mark.django_db
-def test_benchmark_sync_anchor_uses_earliest_transaction_including_mf(seeded):
+def test_benchmark_sync_anchor_uses_earliest_transaction_including_mf(seeded, test_user):
     mf_date = date(2019, 10, 24)
     stock_date = date(2022, 5, 2)
-    _mf_buy_with_detail(scheme_code="119062", nav_date=mf_date)
-    _buy("AAPL", stock_date)
+    _mf_buy_with_detail(test_user, scheme_code="119062", nav_date=mf_date)
+    _buy(test_user, "AAPL", stock_date)
     provider = MockPriceProvider(
         {"^GSPC": [DailyPrice(mf_date, Decimal("3000"), "USD")]}
     )
@@ -482,8 +482,8 @@ def test_benchmark_sync_anchor_uses_earliest_transaction_including_mf(seeded):
 
 
 @pytest.mark.django_db
-def test_benchmark_symbol_caret_preserved(seeded):
-    _buy("AAPL", date(2026, 1, 1))
+def test_benchmark_symbol_caret_preserved(seeded, test_user):
+    _buy(test_user, "AAPL", date(2026, 1, 1))
     provider = MockPriceProvider(
         {"^GSPC": [DailyPrice(date(2026, 1, 1), Decimal("100"), "USD")]}
     )
@@ -508,9 +508,9 @@ def test_sync_benchmarks_command_calls_service(seeded):
 
 
 @pytest.mark.django_db
-def test_sync_stock_prices_filters_to_transaction_symbols(seeded):
+def test_sync_stock_prices_filters_to_transaction_symbols(seeded, test_user):
     today = date.today()
-    _buy("AAPL", today - timedelta(days=2))
+    _buy(test_user, "AAPL", today - timedelta(days=2))
     provider = MockPriceProvider(
         {"AAPL": [DailyPrice(today - timedelta(days=1), Decimal("1"), "USD")]}
     )
@@ -519,10 +519,10 @@ def test_sync_stock_prices_filters_to_transaction_symbols(seeded):
 
 
 @pytest.mark.django_db
-def test_stock_transaction_symbols_exclude_mutual_fund_scheme_codes(seeded):
+def test_stock_transaction_symbols_exclude_mutual_fund_scheme_codes(seeded, test_user):
     today = date.today()
-    _buy("AAPL", today - timedelta(days=2))
-    _mf_buy_with_detail(scheme_code="119062", nav_date=today - timedelta(days=3))
+    _buy(test_user, "AAPL", today - timedelta(days=2))
+    _mf_buy_with_detail(test_user, scheme_code="119062", nav_date=today - timedelta(days=3))
 
     symbols = stock_transaction_symbols()
     assert "AAPL" in symbols
@@ -530,10 +530,10 @@ def test_stock_transaction_symbols_exclude_mutual_fund_scheme_codes(seeded):
 
 
 @pytest.mark.django_db
-def test_sync_stock_prices_does_not_fetch_mutual_fund_scheme_codes(seeded):
+def test_sync_stock_prices_does_not_fetch_mutual_fund_scheme_codes(seeded, test_user):
     today = date.today()
-    _buy("AAPL", today - timedelta(days=2))
-    _mf_buy_with_detail(scheme_code="119062", nav_date=today - timedelta(days=3))
+    _buy(test_user, "AAPL", today - timedelta(days=2))
+    _mf_buy_with_detail(test_user, scheme_code="119062", nav_date=today - timedelta(days=3))
 
     provider = MockPriceProvider(
         {
@@ -549,10 +549,10 @@ def test_sync_stock_prices_does_not_fetch_mutual_fund_scheme_codes(seeded):
 
 
 @pytest.mark.django_db
-def test_sync_all_market_data_routes_symbols_to_correct_providers(seeded):
+def test_sync_all_market_data_routes_symbols_to_correct_providers(seeded, test_user):
     today = date.today()
-    _buy("AAPL", today - timedelta(days=2))
-    _mf_buy_with_detail(scheme_code="119062", nav_date=today - timedelta(days=3))
+    _buy(test_user, "AAPL", today - timedelta(days=2))
+    _mf_buy_with_detail(test_user, scheme_code="119062", nav_date=today - timedelta(days=3))
 
     stock_provider = MockPriceProvider(
         {"AAPL": [DailyPrice(today - timedelta(days=1), Decimal("150"), "USD")]}
@@ -590,12 +590,12 @@ def test_sync_all_market_data_routes_symbols_to_correct_providers(seeded):
 
 
 @pytest.mark.django_db
-def test_sync_all_market_data_incremental_with_warm_caches(seeded):
+def test_sync_all_market_data_incremental_with_warm_caches(seeded, test_user):
     today = date.today()
     txn_date = today - timedelta(days=10)
     cache_through = today - timedelta(days=3)
-    _buy("AAPL", txn_date)
-    _mf_buy_with_detail(scheme_code="119062", nav_date=today - timedelta(days=8))
+    _buy(test_user, "AAPL", txn_date)
+    _mf_buy_with_detail(test_user, scheme_code="119062", nav_date=today - timedelta(days=8))
 
     HistoricalPrice.objects.create(
         asset_symbol="AAPL",

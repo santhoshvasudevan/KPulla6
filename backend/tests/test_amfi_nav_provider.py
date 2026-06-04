@@ -149,11 +149,11 @@ class TestAmfiNavProvider:
 
 
 @pytest.mark.django_db
-def test_sync_stores_parsed_nav_rows_from_live_provider(seeded):
+def test_sync_stores_parsed_nav_rows_from_live_provider(seeded, test_user):
     today = date.today()
     asset = _mf_asset(scheme_code="120503")
     profile = _mf_profile(asset)
-    _mf_buy_with_detail(scheme_code="120503", nav_date=today - timedelta(days=5))
+    _mf_buy_with_detail(test_user, scheme_code="120503", nav_date=today - timedelta(days=5))
 
     def http_get(url, timeout):
         return _success_payload(
@@ -172,9 +172,9 @@ def test_sync_stores_parsed_nav_rows_from_live_provider(seeded):
 
 
 @pytest.mark.django_db
-def test_nav_refresh_api_with_mocked_live_provider(api_client, seeded):
+def test_nav_refresh_api_with_mocked_live_provider(api_client, seeded, test_user):
     today = date.today()
-    _mf_buy_with_detail(scheme_code="120503", nav_date=today - timedelta(days=3))
+    _mf_buy_with_detail(test_user, scheme_code="120503", nav_date=today - timedelta(days=3))
 
     def http_get(url, timeout):
         return _success_payload((f"{(today - timedelta(days=2)).strftime('%d-%m-%Y')}", "44.00"))
@@ -192,9 +192,9 @@ def test_nav_refresh_api_with_mocked_live_provider(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_holdings_read_does_not_call_live_provider(api_client, seeded):
+def test_holdings_read_does_not_call_live_provider(api_client, seeded, test_user):
     today = date.today()
-    _mf_buy_with_detail(scheme_code="120503", nav_date=today - timedelta(days=5))
+    _mf_buy_with_detail(test_user, scheme_code="120503", nav_date=today - timedelta(days=5))
     HistoricalPrice.objects.create(
         asset_symbol="120503",
         date=today - timedelta(days=1),

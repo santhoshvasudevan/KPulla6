@@ -28,9 +28,6 @@ def _parse_benchmark_query(benchmark: str | None, benchmarks: str | None) -> str
 
 
 class PortfolioPerformanceView(APIView):
-    authentication_classes = []
-    permission_classes = []
-
     def get(self, request):
         metric = (request.query_params.get("metric") or "value").strip().lower()
         if metric not in VALID_METRICS:
@@ -65,7 +62,7 @@ class PortfolioPerformanceView(APIView):
         if display_currency is None:
             from settings_app.services import get_settings
 
-            display_currency = get_settings().display_currency
+            display_currency = get_settings(request.user).display_currency
         try:
             display_currency = validate_display_currency(display_currency)
         except HoldingsValidationError as exc:
@@ -73,6 +70,7 @@ class PortfolioPerformanceView(APIView):
 
         try:
             scope = resolve_portfolio_scope(
+                request.user,
                 portfolio_scope=request.query_params.get("portfolio_scope"),
                 portfolio_id=portfolio_id,
             )

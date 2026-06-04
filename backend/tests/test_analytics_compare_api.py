@@ -446,9 +446,9 @@ def test_compare_split_warning_on_one_subject(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_compare_portfolio_id_scoping(api_client, seeded, today_patch):
-    p1 = ensure_default_portfolio()
-    p2 = Portfolio.objects.create(name="Scoped", base_currency="EUR", is_active=True)
+def test_compare_portfolio_id_scoping(api_client, seeded, today_patch, test_user):
+    p1 = ensure_default_portfolio(test_user)
+    p2 = Portfolio.objects.create(user=test_user, name="Scoped", base_currency="EUR", is_active=True)
     _buy(api_client, portfolio_id=p1.id, asset_symbol="AAPL", date="2026-01-01")
     _buy(api_client, portfolio_id=p2.id, asset_symbol="AAPL", date="2026-01-01")
     _buy_msft(api_client, portfolio_id=p2.id, date="2026-01-01")

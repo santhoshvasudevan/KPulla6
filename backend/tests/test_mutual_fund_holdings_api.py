@@ -59,8 +59,8 @@ def _nav(scheme: str, close: str, *, d: str = "2026-03-20"):
 
 
 @pytest.mark.django_db
-def test_mf_buy_appears_in_holdings_grouped_by_scheme_and_folio(api_client, seeded):
-    default = ensure_default_portfolio()
+def test_mf_buy_appears_in_holdings_grouped_by_scheme_and_folio(api_client, seeded, test_user):
+    default = ensure_default_portfolio(test_user)
     _mf_buy(api_client, portfolio_id=default.id)
     _nav("120503", "50.00")
     holdings = api_client.get("/api/v1/portfolio/holdings").json()["holdings"]
@@ -215,8 +215,8 @@ def test_asset_detail_no_external_nav_provider(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_stock_holdings_unchanged_shape(api_client, seeded):
-    default = ensure_default_portfolio()
+def test_stock_holdings_unchanged_shape(api_client, seeded, test_user):
+    default = ensure_default_portfolio(test_user)
     api_client.post(
         "/api/v1/transactions",
         {

@@ -1,9 +1,13 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import './Layout.css';
+import { useAuth } from '../authContext';
 import { usePortfolio } from '../portfolioContext';
-import { WarningBanner } from './ui';
+import { Button, WarningBanner } from './ui';
+import ThemeSelector from './ThemeSelector';
 
 function Layout() {
+  const { logout, user } = useAuth();
+  const navigate = useNavigate();
   const {
     selectorOptions,
     selectedPortfolioMode,
@@ -48,6 +52,16 @@ function Layout() {
       // If settings update fails, keep selection unchanged.
     }
   };
+
+  const onLogout = async () => {
+    try {
+      await logout();
+    } finally {
+      navigate('/login', { replace: true });
+    }
+  };
+
+  const accountLabel = user?.email || user?.username || 'Account';
 
   return (
     <div className="app-shell">
@@ -158,12 +172,25 @@ function Layout() {
           </NavLink>
         </nav>
 
-        <footer className="app-sidebar__footer">
-          <p className="app-sidebar__footer-text">Valuations use cached prices and FX from the database.</p>
-        </footer>
+        <p className="app-sidebar__footer-text">
+          Valuations use cached prices and FX from the database.
+        </p>
       </aside>
 
       <main className="app-main">
+        <header className="app-header" aria-label="Application header">
+          <div className="app-header__actions">
+            <ThemeSelector />
+            <div className="app-header__account">
+              <span className="app-header__user" title={accountLabel}>
+                {accountLabel}
+              </span>
+              <Button variant="secondary" className="app-header__logout" onClick={onLogout}>
+                Log out
+              </Button>
+            </div>
+          </div>
+        </header>
         <div className="app-main__inner">
           <Outlet />
         </div>

@@ -44,12 +44,12 @@ import {
   getSeriesColor,
   getBenchmarkLineColors,
   getComparisonBarFill,
-  chartGridProps,
-  chartAxisStroke,
-  chartAxisTick,
-  CHART_TOOLTIP_STYLE,
-  CHART_LEGEND_STYLE,
-  CHART_BAR_INVESTED,
+  getChartGridProps,
+  getChartAxisStroke,
+  getChartAxisTick,
+  getChartTooltipStyle,
+  getChartLegendStyle,
+  getChartBarInvestedColor,
 } from '../components/charts/chartTheme';
 import './Dashboard.css';
 
@@ -422,24 +422,24 @@ export default function Dashboard() {
           <div className="dashboard-chart-panel">
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={chartData}>
-                <CartesianGrid {...chartGridProps} />
+                <CartesianGrid {...getChartGridProps()} />
                 <XAxis
                   dataKey="date"
-                  stroke={chartAxisStroke}
-                  tick={chartAxisTick}
+                  stroke={getChartAxisStroke()}
+                  tick={getChartAxisTick()}
                   tickFormatter={axisDateFormatter}
                   interval="preserveStartEnd"
                   minTickGap={shortChartRange ? 8 : 24}
                 />
                 <YAxis
-                  stroke={chartAxisStroke}
-                  tick={chartAxisTick}
+                  stroke={getChartAxisStroke()}
+                  tick={getChartAxisTick()}
                   tickFormatter={(v) =>
                     isPercentMetric ? `${Number(v).toFixed(2)}%` : formatChartValue(v)
                   }
                 />
                 <Tooltip
-                  contentStyle={CHART_TOOLTIP_STYLE}
+                  contentStyle={getChartTooltipStyle()}
                   formatter={(value) => {
                     if (value == null) return 'N/A';
                     return isPercentMetric
@@ -449,7 +449,7 @@ export default function Dashboard() {
                   labelFormatter={(l) => axisDateFormatter(l)}
                 />
                 {lines.length > 1 ? (
-                  <Legend wrapperStyle={CHART_LEGEND_STYLE} />
+                  <Legend wrapperStyle={getChartLegendStyle()} />
                 ) : null}
                 {lines.map((ln) => (
                   <Line
@@ -531,22 +531,22 @@ export default function Dashboard() {
                 data={portfolioTotalsBarData}
                 margin={{ top: 8, right: 24, left: 72, bottom: 8 }}
               >
-                <CartesianGrid {...chartGridProps} horizontal={false} />
+                <CartesianGrid {...getChartGridProps()} horizontal={false} />
                 <XAxis
                   type="number"
-                  stroke={chartAxisStroke}
-                  tick={chartAxisTick}
+                  stroke={getChartAxisStroke()}
+                  tick={getChartAxisTick()}
                   tickFormatter={(v) => formatChartValue(v)}
                 />
                 <YAxis
                   type="category"
                   dataKey="label"
                   width={68}
-                  stroke={chartAxisStroke}
-                  tick={{ ...chartAxisTick, fontSize: 11 }}
+                  stroke={getChartAxisStroke()}
+                  tick={{ ...getChartAxisTick(), fontSize: 11 }}
                 />
                 <Tooltip
-                  contentStyle={CHART_TOOLTIP_STYLE}
+                  contentStyle={getChartTooltipStyle()}
                   formatter={(value, name) => [
                     formatCurrency(Number(value), displayCurrency),
                     name,
@@ -555,8 +555,8 @@ export default function Dashboard() {
                     `Δ ${plDiff >= 0 ? '+' : ''}${formatCurrency(plDiff, displayCurrency)}`
                   }
                 />
-                <Legend wrapperStyle={CHART_LEGEND_STYLE} />
-                <Bar dataKey="invested" name="Total Invested" fill={CHART_BAR_INVESTED} />
+                <Legend wrapperStyle={getChartLegendStyle()} />
+                <Bar dataKey="invested" name="Total Invested" fill={getChartBarInvestedColor()} />
                 <Bar dataKey="current" name="Current Value" fill={currentBarFill} />
               </BarChart>
             </ResponsiveContainer>

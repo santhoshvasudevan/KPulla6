@@ -63,9 +63,9 @@ def test_summary_defaults_to_scope_all(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_summary_scope_all_includes_active_portfolios(api_client, seeded):
-    p1 = ensure_default_portfolio()
-    p2 = Portfolio.objects.create(name="P2", base_currency="EUR", is_active=True)
+def test_summary_scope_all_includes_active_portfolios(api_client, seeded, test_user):
+    p1 = ensure_default_portfolio(test_user)
+    p2 = Portfolio.objects.create(user=test_user, name="P2", base_currency="EUR", is_active=True)
     _buy(api_client, asset_symbol="AAA", portfolio_id=p1.id)
     _buy(api_client, asset_symbol="BBB", portfolio_id=p2.id)
     _price("AAA", "2026-03-01", "10")
@@ -76,9 +76,9 @@ def test_summary_scope_all_includes_active_portfolios(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_summary_portfolio_id_filter(api_client, seeded):
-    p1 = ensure_default_portfolio()
-    p2 = Portfolio.objects.create(name="Scoped", base_currency="EUR", is_active=True)
+def test_summary_portfolio_id_filter(api_client, seeded, test_user):
+    p1 = ensure_default_portfolio(test_user)
+    p2 = Portfolio.objects.create(user=test_user, name="Scoped", base_currency="EUR", is_active=True)
     _buy(api_client, asset_symbol="AAA", portfolio_id=p1.id)
     _buy(api_client, asset_symbol="BBB", portfolio_id=p2.id)
     _price("AAA", "2026-03-01", "10")
@@ -90,8 +90,8 @@ def test_summary_portfolio_id_filter(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_summary_scope_all_and_portfolio_id_422(api_client, seeded):
-    p = ensure_default_portfolio()
+def test_summary_scope_all_and_portfolio_id_422(api_client, seeded, test_user):
+    p = ensure_default_portfolio(test_user)
     r = api_client.get(
         f"/api/v1/portfolio/summary?portfolio_scope=all&portfolio_id={p.id}"
     )
@@ -105,8 +105,8 @@ def test_summary_unknown_portfolio_id_404(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_summary_inactive_portfolio_id_404(api_client, seeded):
-    p = Portfolio.objects.create(name="Inactive", base_currency="EUR", is_active=False)
+def test_summary_inactive_portfolio_id_404(api_client, seeded, test_user):
+    p = Portfolio.objects.create(user=test_user, name="Inactive", base_currency="EUR", is_active=False)
     r = api_client.get(f"/api/v1/portfolio/summary?portfolio_id={p.id}")
     assert r.status_code == 404
 

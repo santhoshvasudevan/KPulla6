@@ -9,6 +9,25 @@ This document describes the **target** REST API (carried forward from KPulla5). 
 ### Health
 `GET /api/v1/health`
 
+Public; no authentication required.
+
+### Authentication (implemented)
+
+Session-based auth for the React SPA. See `docs/auth.md` for setup.
+
+| Method | Path | Auth |
+|--------|------|------|
+| GET | `/api/v1/auth/csrf` | Public |
+| GET | `/api/v1/auth/me` | Session |
+| POST | `/api/v1/auth/login` | Public |
+| POST | `/api/v1/auth/logout` | Session |
+| POST | `/api/v1/auth/register` | Public |
+| POST | `/api/v1/auth/password-reset` | Public |
+
+Google OAuth: `GET /accounts/google/login/` (django-allauth; redirects to `FRONTEND_URL` after success).
+
+All other `/api/v1/*` endpoints require an authenticated session (`401`/`403` when missing).
+
 **Response (200 OK)** — database reachable:
 ```json
 {

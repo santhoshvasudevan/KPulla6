@@ -34,8 +34,8 @@ def _mf_payload(**overrides):
 
 
 @pytest.mark.django_db
-def test_create_mf_buy_success(api_client, seeded):
-    default = ensure_default_portfolio()
+def test_create_mf_buy_success(api_client, seeded, test_user):
+    default = ensure_default_portfolio(test_user)
     response = api_client.post(
         "/api/v1/transactions",
         _mf_payload(portfolio_id=default.id),
@@ -256,9 +256,9 @@ def test_mf_nav_verification_uses_cached_db_only(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_put_portfolio_change_resolves_folio(api_client, seeded):
-    p1 = Portfolio.objects.create(name="MF-P1", base_currency="INR", is_active=True)
-    p2 = Portfolio.objects.create(name="MF-P2", base_currency="INR", is_active=True)
+def test_mf_put_portfolio_change_resolves_folio(api_client, seeded, test_user):
+    p1 = Portfolio.objects.create(user=test_user, name="MF-P1", base_currency="INR", is_active=True)
+    p2 = Portfolio.objects.create(user=test_user, name="MF-P2", base_currency="INR", is_active=True)
     created = api_client.post(
         "/api/v1/transactions",
         _mf_payload(portfolio_id=p1.id),

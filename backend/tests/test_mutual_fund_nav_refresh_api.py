@@ -29,8 +29,8 @@ def _nav_provider_with_history(scheme: str = "120503"):
 
 
 @pytest.mark.django_db
-def test_nav_refresh_syncs_cached_navs(api_client, seeded):
-    _mf_buy_with_detail(nav_date=date.today() - timedelta(days=3))
+def test_nav_refresh_syncs_cached_navs(api_client, seeded, test_user):
+    _mf_buy_with_detail(test_user, nav_date=date.today() - timedelta(days=3))
     provider = _nav_provider_with_history()
     with patch(
         "market_data.services.mutual_fund_nav_sync.default_mutual_fund_nav_provider",
@@ -47,8 +47,8 @@ def test_nav_refresh_syncs_cached_navs(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_nav_refresh_filters_scheme_codes(api_client, seeded):
-    _mf_buy_with_detail(nav_date=date.today() - timedelta(days=3))
+def test_nav_refresh_filters_scheme_codes(api_client, seeded, test_user):
+    _mf_buy_with_detail(test_user, nav_date=date.today() - timedelta(days=3))
     provider = _nav_provider_with_history()
     with patch(
         "market_data.services.mutual_fund_nav_sync.default_mutual_fund_nav_provider",
@@ -66,8 +66,8 @@ def test_nav_refresh_filters_scheme_codes(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_nav_refresh_handles_provider_failure_per_scheme(api_client, seeded):
-    _mf_buy_with_detail(nav_date=date.today() - timedelta(days=3))
+def test_nav_refresh_handles_provider_failure_per_scheme(api_client, seeded, test_user):
+    _mf_buy_with_detail(test_user, nav_date=date.today() - timedelta(days=3))
     provider = MockNavProvider(fail={"120503"})
     with patch(
         "market_data.services.mutual_fund_nav_sync.default_mutual_fund_nav_provider",
@@ -81,8 +81,8 @@ def test_nav_refresh_handles_provider_failure_per_scheme(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_sync_all_market_data_includes_mutual_funds(seeded):
-    _mf_buy_with_detail(nav_date=date.today() - timedelta(days=3))
+def test_sync_all_market_data_includes_mutual_funds(seeded, test_user):
+    _mf_buy_with_detail(test_user, nav_date=date.today() - timedelta(days=3))
     provider = _nav_provider_with_history()
     with patch("market_data.services.market_data_sync.sync_stock_prices") as mock_prices:
         mock_prices.return_value = type("R", (), {"success": True})()
@@ -173,8 +173,8 @@ def test_force_sync_still_works_and_includes_mutual_funds(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_holdings_read_does_not_call_nav_provider(api_client, seeded):
-    _mf_buy_with_detail(nav_date=date.today() - timedelta(days=5))
+def test_holdings_read_does_not_call_nav_provider(api_client, seeded, test_user):
+    _mf_buy_with_detail(test_user, nav_date=date.today() - timedelta(days=5))
     HistoricalPrice.objects.create(
         asset_symbol="120503",
         date=date.today() - timedelta(days=1),

@@ -164,8 +164,8 @@ def test_mf_csv_omitted_fees_uses_default(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_csv_assigns_portfolio_id(api_client, seeded):
-    target = Portfolio.objects.create(name="MF Target", base_currency="INR", is_active=True)
+def test_mf_csv_assigns_portfolio_id(api_client, seeded, test_user):
+    target = Portfolio.objects.create(user=test_user, name="MF Target", base_currency="INR", is_active=True)
     csv_text = MF_HEADER + _mf_row()
     response = _import(api_client, csv_text, portfolio_id=target.id)
     assert response.json()["success"] is True
@@ -181,8 +181,8 @@ def test_mf_csv_rejects_unknown_portfolio_id(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_csv_rejects_inactive_portfolio_id(api_client, seeded):
-    inactive = Portfolio.objects.create(name="Inactive MF", is_active=False)
+def test_mf_csv_rejects_inactive_portfolio_id(api_client, seeded, test_user):
+    inactive = Portfolio.objects.create(user=test_user, name="Inactive MF", is_active=False)
     csv_text = MF_HEADER + _mf_row()
     response = _import(api_client, csv_text, portfolio_id=inactive.id)
     assert response.status_code == 404

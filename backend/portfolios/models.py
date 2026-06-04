@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
@@ -8,6 +9,11 @@ from portfolios.constants import (
 
 
 class Portfolio(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="portfolios",
+    )
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     base_currency = models.CharField(max_length=3, default=DEFAULT_BASE_CURRENCY)
@@ -25,9 +31,9 @@ class Portfolio(models.Model):
         ]
         constraints = [
             models.UniqueConstraint(
-                fields=["is_default"],
+                fields=["user", "is_default"],
                 condition=models.Q(is_default=True),
-                name="uniq_portfolios_default",
+                name="uniq_portfolios_default_per_user",
             ),
         ]
 

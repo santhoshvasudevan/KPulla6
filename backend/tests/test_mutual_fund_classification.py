@@ -192,8 +192,8 @@ def test_create_does_not_override_explicit_class(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_stock_holdings_unchanged_without_classification(api_client, seeded):
-    default = ensure_default_portfolio()
+def test_stock_holdings_unchanged_without_classification(api_client, seeded, test_user):
+    default = ensure_default_portfolio(test_user)
     api_client.post(
         "/api/v1/transactions",
         {

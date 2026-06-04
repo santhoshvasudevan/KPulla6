@@ -1,0 +1,122 @@
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  background:
+    radial-gradient(circle at top right, var(--auth-gradient-accent), transparent 45%),
+    radial-gradient(circle at bottom left, var(--auth-gradient-teal), transparent 40%),
+    var(--bg-app);
+}
+
+.auth-shell {
+  width: min(440px, 100%);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-6);
+}
+
+.auth-shell__brand {
+  margin-bottom: var(--space-5);
+}
+
+.auth-shell__logo {
+  font-size: 1.25rem;
+  letter-spacing: 0.08em;
+  margin-bottom: var(--space-2);
+}
+
+.auth-shell__subtitle {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.auth-form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.auth-form__field {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.auth-form__label {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.auth-form__input {
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-raised);
+  color: var(--text-primary);
+}
+
+.auth-form__input:focus {
+  outline: 2px solid rgba(59, 130, 246, 0.35);
+  border-color: var(--accent);
+}
+
+.auth-form__error {
+  margin: 0;
+  color: var(--loss);
+  font-size: 0.9rem;
+}
+
+.auth-form__links {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: 0.9rem;
+}
+
+.auth-form__links a {
+  color: var(--accent);
+}
+
+.auth-form__links a:hover {
+  color: var(--text-primary);
+}
+
+.auth-form__divider {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.auth-form__divider::before,
+.auth-form__divider::after {
+  content: '';
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.auth-google-btn {
+  width: 100%;
+}
+
+.auth-shell__footer {
+  margin-top: var(--space-5);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.auth-shell__success {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}

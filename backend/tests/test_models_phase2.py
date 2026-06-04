@@ -26,18 +26,18 @@ def test_models_import():
 
 
 @pytest.mark.django_db
-def test_default_portfolio_seed_idempotent():
-    first = ensure_default_portfolio()
-    second = ensure_default_portfolio()
+def test_default_portfolio_seed_idempotent(test_user):
+    first = ensure_default_portfolio(test_user)
+    second = ensure_default_portfolio(test_user)
     assert first.id == second.id
     assert Portfolio.objects.filter(is_default=True).count() == 1
     assert Portfolio.objects.get(is_default=True).name == DEFAULT_PORTFOLIO_NAME
 
 
 @pytest.mark.django_db
-def test_app_settings_seed_idempotent():
-    first = ensure_app_settings()
-    second = ensure_app_settings()
+def test_app_settings_seed_idempotent(test_user):
+    first = ensure_app_settings(test_user)
+    second = ensure_app_settings(test_user)
     assert first.id == second.id
     assert AppSettings.objects.count() == 1
     assert first.display_currency == DisplayCurrency.EUR
@@ -91,8 +91,8 @@ def test_fx_rate_uniqueness():
 
 
 @pytest.mark.django_db
-def test_transaction_requires_portfolio():
-    portfolio = ensure_default_portfolio()
+def test_transaction_requires_portfolio(test_user):
+    portfolio = ensure_default_portfolio(test_user)
     txn = Transaction.objects.create(
         portfolio=portfolio,
         asset_symbol="AAPL",
@@ -119,8 +119,8 @@ def test_transaction_requires_portfolio():
 
 
 @pytest.mark.django_db
-def test_all_portfolios_not_stored():
-    ensure_default_portfolio()
+def test_all_portfolios_not_stored(test_user):
+    ensure_default_portfolio(test_user)
     assert_no_virtual_portfolio_rows()
     assert not Portfolio.objects.filter(name=VIRTUAL_ALL_PORTFOLIOS_NAME).exists()
 

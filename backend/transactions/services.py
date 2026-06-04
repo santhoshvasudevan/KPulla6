@@ -5,6 +5,7 @@ from datetime import date as date_type
 from decimal import Decimal
 from typing import Any
 
+from django.contrib.auth.models import AbstractBaseUser
 from django.db import transaction as db_transaction
 from django.db.models import Max, Min, QuerySet
 
@@ -14,7 +15,7 @@ from portfolios.scope import (
     resolve_portfolio_id_or_default,
     resolve_portfolio_scope,
 )
-from portfolios.services import PortfolioNotFoundError
+from portfolios.services import PortfolioNotFoundError, list_active_portfolios
 from transactions.models import Transaction, TransactionType
 
 
@@ -91,6 +92,7 @@ def _apply_transaction_filters(
 
 
 def list_transactions(
+    user: AbstractBaseUser,
     *,
     page: int = 1,
     page_size: int = 20,
@@ -106,6 +108,7 @@ def list_transactions(
 
     try:
         scope = resolve_portfolio_scope(
+            user,
             portfolio_scope=portfolio_scope,
             portfolio_id=portfolio_id,
         )
@@ -158,6 +161,7 @@ class TransactionFilterOptions:
 
 
 def get_transaction_filter_options(
+    user: AbstractBaseUser,
     *,
     portfolio_scope: str | None = None,
     portfolio_id: int | None = None,
@@ -167,6 +171,7 @@ def get_transaction_filter_options(
     portfolios so the dropdown can broaden the current scope."""
     try:
         scope = resolve_portfolio_scope(
+            user,
             portfolio_scope=portfolio_scope,
             portfolio_id=portfolio_id,
         )
@@ -193,7 +198,7 @@ def get_transaction_filter_options(
 
     portfolios = [
         {"id": p.id, "name": p.name}
-        for p in Portfolio.objects.filter(is_active=True).order_by("name", "id")
+        for p in list_active_portfolios(user)
     ]
 
     return TransactionFilterOptions(
@@ -205,39 +210,42 @@ def get_transaction_filter_options(
     )
 
 
-def get_transaction(transaction_id: int) -> Transaction:
+def get_transaction(user: AbstractBaseUser, transaction_id: int) -> Transaction:
     transaction = (
-        _base_queryset().filter(pk=transaction_id).first()
+        _base_queryset()
+        .filter(pk=transaction_id, portfolio__user=user)
+        .first()
     )
     if not transaction:
         raise TransactionNotFoundError("Transaction not found")
     return transaction
 
 
-def create_transaction(*, validated_data: dict[str, Any]) -> Transaction:
+def create_transaction(user: AbstractBaseUser, *, validated_data: dict[str, Any]) -> Transaction:
     portfolio_id = validated_data.pop("portfolio_id", None)
     try:
-        resolved_id = resolve_portfolio_id_or_default(portfolio_id)
+        resolved_id = resolve_portfolio_id_or_default(user, portfolio_id)
     except PortfolioNotFoundError:
         raise
 
     transaction = Transaction(portfolio_id=resolved_id, **validated_data)
     transaction.save()
-    return get_transaction(transaction.id)
+    return get_transaction(user, transaction.id)
 
 
 def update_transaction(
+    user: AbstractBaseUser,
     transaction_id: int,
     *,
     validated_data: dict[str, Any],
     update_portfolio: bool,
 ) -> Transaction:
-    transaction = get_transaction(transaction_id)
+    transaction = get_transaction(user, transaction_id)
 
     if update_portfolio:
         portfolio_id = validated_data.pop("portfolio_id", None)
         try:
-            transaction.portfolio_id = resolve_portfolio_id_or_default(portfolio_id)
+            transaction.portfolio_id = resolve_portfolio_id_or_default(user, portfolio_id)
         except PortfolioNotFoundError:
             raise
     else:
@@ -246,11 +254,11 @@ def update_transaction(
     for field, value in validated_data.items():
         setattr(transaction, field, value)
     transaction.save()
-    return get_transaction(transaction.id)
+    return get_transaction(user, transaction.id)
 
 
-def delete_transaction(transaction_id: int) -> None:
-    transaction = get_transaction(transaction_id)
+def delete_transaction(user: AbstractBaseUser, transaction_id: int) -> None:
+    transaction = get_transaction(user, transaction_id)
     transaction.delete()
 
 
@@ -267,6 +275,7 @@ class CsvImportResult:
 
 @db_transaction.atomic
 def import_transactions_from_csv(
+    user: AbstractBaseUser,
     *,
     csv_text: str,
     portfolio_id: int | None = None,
@@ -279,7 +288,7 @@ def import_transactions_from_csv(
         return CsvImportResult(success=False, imported_count=0, errors=parse_errors)
 
     try:
-        target_portfolio_id = resolve_portfolio_id_or_default(portfolio_id)
+        target_portfolio_id = resolve_portfolio_id_or_default(user, portfolio_id)
     except PortfolioNotFoundError:
         raise
 
@@ -300,6 +309,7 @@ def import_transactions_from_csv(
     elif csv_format == "mf":
         for data in payloads:
             create_mutual_fund_transaction(
+                user,
                 validated_data={**data, "portfolio_id": target_portfolio_id}
             )
     else:

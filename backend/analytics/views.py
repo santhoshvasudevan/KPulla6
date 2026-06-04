@@ -26,6 +26,7 @@ from portfolios.services import PortfolioNotFoundError
 
 def _parse_metrics_query(request):
     """Shared query parsing for portfolio and asset Metric Sheet endpoints."""
+    user = request.user
     range_param = request.query_params.get("range", "1Y")
     try:
         range_code = validate_performance_range(range_param)
@@ -47,7 +48,7 @@ def _parse_metrics_query(request):
     if display_currency is None:
         from settings_app.services import get_settings
 
-        display_currency = get_settings().display_currency
+        display_currency = get_settings(user).display_currency
     try:
         display_currency = validate_display_currency(display_currency)
     except HoldingsValidationError as exc:
@@ -59,6 +60,7 @@ def _parse_metrics_query(request):
 
     try:
         scope = resolve_portfolio_scope(
+            user,
             portfolio_scope=request.query_params.get("portfolio_scope"),
             portfolio_id=portfolio_id,
         )
@@ -81,9 +83,6 @@ def _parse_metrics_query(request):
 class PortfolioPerformanceMetricsView(APIView):
     """GET /api/v1/analytics/performance-metrics — portfolio Metric Sheet."""
 
-    authentication_classes = []
-    permission_classes = []
-
     def get(self, request):
         params, error_response = _parse_metrics_query(request)
         if error_response is not None:
@@ -104,9 +103,6 @@ class PortfolioPerformanceMetricsView(APIView):
 
 class AssetPerformanceMetricsView(APIView):
     """GET /api/v1/analytics/assets/{asset_symbol}/performance-metrics — asset Metric Sheet."""
-
-    authentication_classes = []
-    permission_classes = []
 
     def get(self, request, asset_symbol: str):
         params, error_response = _parse_metrics_query(request)
@@ -134,9 +130,6 @@ class AssetPerformanceMetricsView(APIView):
 
 class CompareAnalyticsView(APIView):
     """GET /api/v1/analytics/compare — side-by-side asset Metric Sheet comparison."""
-
-    authentication_classes = []
-    permission_classes = []
 
     def get(self, request):
         try:

@@ -6,8 +6,8 @@ from portfolios.seed import ensure_default_portfolio
 
 
 @pytest.mark.django_db
-def test_list_returns_active_real_portfolios(api_client, seeded):
-    inactive = Portfolio.objects.create(name="Inactive", is_active=False)
+def test_list_returns_active_real_portfolios(api_client, seeded, test_user):
+    inactive = Portfolio.objects.create(user=test_user, name="Inactive", is_active=False)
     response = api_client.get("/api/v1/portfolios")
     assert response.status_code == 200
     data = response.json()
@@ -24,8 +24,8 @@ def test_list_does_not_return_virtual_all_portfolios(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_default_portfolio_is_returned(api_client, seeded):
-    default = ensure_default_portfolio()
+def test_default_portfolio_is_returned(api_client, seeded, test_user):
+    default = ensure_default_portfolio(test_user)
     response = api_client.get("/api/v1/portfolios")
     match = [p for p in response.json() if p["id"] == default.id][0]
     assert match["name"] == DEFAULT_PORTFOLIO_NAME
@@ -121,8 +121,8 @@ def test_delete_soft_deactivates(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_delete_rejects_default_portfolio(api_client, seeded):
-    default = ensure_default_portfolio()
+def test_delete_rejects_default_portfolio(api_client, seeded, test_user):
+    default = ensure_default_portfolio(test_user)
     response = api_client.delete(f"/api/v1/portfolios/{default.id}")
     assert response.status_code == 400
     default.refresh_from_db()

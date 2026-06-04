@@ -1,5 +1,34 @@
 # Changelog — KPulla6
 
+## 2026-06-03 — FEAT: App shell theme selector (Light / Dark / System)
+
+- Header theme select (System / Light / Dark) with `localStorage` key `kpulla6.themePreference` (default system)
+- Early `theme-init.js` + `ThemeProvider` apply `data-theme` on `<html>`; light token overrides under `[data-theme='light']`
+- Recharts `chartTheme.js` reads CSS variables per resolved theme
+- Docs: `docs/frontend-design.md`, `docs/current-state.md`
+
+---
+
+## 2026-06-03 — FEAT: User authentication and per-user data scoping
+
+### Added
+- Session auth API: `/api/v1/auth/login`, `logout`, `register`, `me`, `password-reset`, `csrf`
+- Google OAuth via django-allauth (`/accounts/google/login/`)
+- `Portfolio.user` FK and `AppSettings.user` OneToOne (per-user settings)
+- Data migration assigning existing portfolios/settings to `santhoshkgvasudevan@gmail.com`
+- Management command: `set_user_password` (uses `INITIAL_USER_PASSWORD` env var)
+- Frontend login/register/forgot-password pages, auth context, protected routes, sidebar logout
+- Docs: `docs/auth.md`
+
+### Changed
+- All `/api/v1` portfolio/transaction/settings/analytics routes require authentication (`401`/`403` when unauthenticated)
+- DRF default: `SessionAuthentication` + `IsAuthenticated`; health + auth endpoints remain public
+- Frontend API client sends `credentials: 'include'` and CSRF token on mutating requests
+
+### Impact
+- Unauthenticated users land on `/login`; existing dashboard remains at `/` after sign-in
+- Transaction count unchanged after migration (verified via `make db-safety-check`)
+
 ## 2026-06-02 — FEAT: Metric Sheet visualization charts (Phase 13C)
 
 ### Added

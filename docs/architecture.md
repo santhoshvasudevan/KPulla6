@@ -5,6 +5,7 @@ Local-first portfolio tracker. **KPulla6** uses Django + DRF + PostgreSQL + Reac
 
 ## Backend
 - **Framework:** Django 5 + Django REST Framework
+- **Auth:** Django session auth + django-allauth (Google OAuth); see `docs/auth.md`
 - **Domain apps (Phase 2 models in place):**
   - `portfolios` — `Portfolio`
   - `transactions` — `Transaction` (FK to real portfolio only)

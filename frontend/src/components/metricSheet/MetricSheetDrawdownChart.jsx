@@ -11,11 +11,11 @@ import {
 } from 'recharts';
 import { ChartCard } from '../ui';
 import {
-  chartGridProps,
-  chartAxisStroke,
-  chartAxisTick,
-  CHART_TOOLTIP_STYLE,
-  CHART_LOSS,
+  getChartGridProps,
+  getChartAxisStroke,
+  getChartAxisTick,
+  getChartTooltipStyle,
+  getChartLossColor,
 } from '../charts/chartTheme';
 import { formatMetricPercentFraction } from '../../utils/metricFormatters';
 import {
@@ -78,13 +78,13 @@ export default function MetricSheetDrawdownChart({
         >
           <ResponsiveContainer width="100%" height={240}>
             <AreaChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
-              <CartesianGrid {...chartGridProps} />
+              <CartesianGrid {...getChartGridProps()} />
               {shadeRegions.map((region) => (
                 <ReferenceArea
                   key={region.key}
                   x1={region.start}
                   x2={region.end}
-                  fill={CHART_LOSS}
+                  fill={getChartLossColor()}
                   fillOpacity={region.opacity}
                   className={`metric-sheet-drawdown-chart__region metric-sheet-drawdown-chart__region--rank-${Math.min(region.rank, 10)}`}
                   ifOverflow="extendDomain"
@@ -92,20 +92,20 @@ export default function MetricSheetDrawdownChart({
               ))}
               <XAxis
                 dataKey="date"
-                stroke={chartAxisStroke}
-                tick={chartAxisTick}
+                stroke={getChartAxisStroke()}
+                tick={getChartAxisTick()}
                 tickFormatter={formatAxisMonthYear}
                 interval="preserveStartEnd"
                 minTickGap={24}
               />
               <YAxis
-                stroke={chartAxisStroke}
-                tick={chartAxisTick}
+                stroke={getChartAxisStroke()}
+                tick={getChartAxisTick()}
                 tickFormatter={formatPercentAxis}
                 domain={['dataMin', 0]}
               />
               <Tooltip
-                contentStyle={CHART_TOOLTIP_STYLE}
+                contentStyle={getChartTooltipStyle()}
                 formatter={(value) => [
                   formatMetricPercentFraction(value, { showSign: true }),
                   'Drawdown',
@@ -115,8 +115,8 @@ export default function MetricSheetDrawdownChart({
               <Area
                 type="monotone"
                 dataKey="drawdown"
-                stroke={CHART_LOSS}
-                fill={CHART_LOSS}
+                stroke={getChartLossColor()}
+                fill={getChartLossColor()}
                 fillOpacity={0.15}
                 strokeWidth={2}
                 isAnimationActive={false}

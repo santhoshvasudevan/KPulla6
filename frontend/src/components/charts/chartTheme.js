@@ -1,58 +1,113 @@
-/** Recharts presentation tokens — mirrors Institutional Slate CSS variables. */
+/** Recharts presentation tokens — read from CSS variables for theme support. */
 
-export const CHART_GRID_STROKE = '#2a3544';
-export const CHART_AXIS_STROKE = '#8b9cb3';
 export const CHART_FONT_FAMILY = 'Inter, system-ui, sans-serif';
 
-export const CHART_TOOLTIP_STYLE = {
-  backgroundColor: '#1a2332',
-  border: '1px solid #2a3544',
-  borderRadius: '6px',
-  color: '#e8edf4',
-  fontSize: '0.8125rem',
-  fontFamily: CHART_FONT_FAMILY,
+const FALLBACK = {
+  grid: '#2a3544',
+  axis: '#8b9cb3',
+  surface: '#1a2332',
+  border: '#2a3544',
+  text: '#e8edf4',
+  gain: '#22c55e',
+  loss: '#ef4444',
+  accent: '#3b82f6',
+  charts: ['#3b82f6', '#22c55e', '#14b8a6', '#8b5cf6', '#f59e0b', '#64748b'],
 };
 
-export const CHART_LEGEND_STYLE = {
-  fontFamily: CHART_FONT_FAMILY,
-  fontSize: 12,
-  color: '#8b9cb3',
-};
+function readCssVar(name, fallback) {
+  if (typeof document === 'undefined') {
+    return fallback;
+  }
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
 
-export const CHART_SERIES_PALETTE = [
-  '#3b82f6',
-  '#22c55e',
-  '#14b8a6',
-  '#8b5cf6',
-  '#f59e0b',
-  '#64748b',
-];
+export function getChartTooltipStyle() {
+  return {
+    backgroundColor: readCssVar('--bg-surface', FALLBACK.surface),
+    border: `1px solid ${readCssVar('--border-subtle', FALLBACK.border)}`,
+    borderRadius: '6px',
+    color: readCssVar('--text-primary', FALLBACK.text),
+    fontSize: '0.8125rem',
+    fontFamily: CHART_FONT_FAMILY,
+  };
+}
 
-export const CHART_GAIN = '#22c55e';
-export const CHART_LOSS = '#ef4444';
-export const CHART_BAR_INVESTED = '#3b82f6';
+export function getChartLegendStyle() {
+  return {
+    fontFamily: CHART_FONT_FAMILY,
+    fontSize: 12,
+    color: readCssVar('--text-secondary', FALLBACK.axis),
+  };
+}
+
+export function getChartGridProps() {
+  return {
+    strokeDasharray: '3 3',
+    stroke: readCssVar('--border-subtle', FALLBACK.grid),
+  };
+}
+
+export function getChartAxisTick() {
+  const stroke = readCssVar('--text-secondary', FALLBACK.axis);
+  return {
+    fontFamily: CHART_FONT_FAMILY,
+    fill: stroke,
+    fontSize: 12,
+  };
+}
+
+export function getChartAxisStroke() {
+  return readCssVar('--text-secondary', FALLBACK.axis);
+}
 
 export function getSeriesColor(index) {
-  return CHART_SERIES_PALETTE[index % CHART_SERIES_PALETTE.length];
+  const token = `--chart-${(index % 6) + 1}`;
+  return readCssVar(token, FALLBACK.charts[index % FALLBACK.charts.length]);
 }
 
 export function getBenchmarkLineColors() {
-  return [CHART_SERIES_PALETTE[0], CHART_SERIES_PALETTE[5]];
+  return [getSeriesColor(0), getSeriesColor(5)];
+}
+
+export function getChartGainColor() {
+  return readCssVar('--gain', FALLBACK.gain);
+}
+
+export function getChartLossColor() {
+  return readCssVar('--loss', FALLBACK.loss);
+}
+
+export function getChartBarInvestedColor() {
+  return readCssVar('--accent', FALLBACK.accent);
 }
 
 export function getComparisonBarFill(currentValue, investedValue) {
-  return Number(currentValue) >= Number(investedValue) ? CHART_GAIN : CHART_LOSS;
+  return Number(currentValue) >= Number(investedValue)
+    ? getChartGainColor()
+    : getChartLossColor();
 }
 
-export const chartGridProps = {
-  strokeDasharray: '3 3',
-  stroke: CHART_GRID_STROKE,
-};
+/** @deprecated Use getChartTooltipStyle() */
+export const CHART_TOOLTIP_STYLE = getChartTooltipStyle();
 
-export const chartAxisStroke = CHART_AXIS_STROKE;
+/** @deprecated Use getChartLegendStyle() */
+export const CHART_LEGEND_STYLE = getChartLegendStyle();
 
-export const chartAxisTick = {
-  fontFamily: CHART_FONT_FAMILY,
-  fill: CHART_AXIS_STROKE,
-  fontSize: 12,
-};
+/** @deprecated Use getChartGainColor() */
+export const CHART_GAIN = FALLBACK.gain;
+
+/** @deprecated Use getChartLossColor() */
+export const CHART_LOSS = FALLBACK.loss;
+
+/** @deprecated Use getChartBarInvestedColor() */
+export const CHART_BAR_INVESTED = FALLBACK.accent;
+
+/** @deprecated Use getChartGridProps() */
+export const chartGridProps = getChartGridProps();
+
+/** @deprecated Use getChartAxisStroke() */
+export const chartAxisStroke = FALLBACK.axis;
+
+/** @deprecated Use getChartAxisTick() */
+export const chartAxisTick = getChartAxisTick();

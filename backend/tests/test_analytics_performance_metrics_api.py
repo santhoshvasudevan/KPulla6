@@ -213,9 +213,9 @@ def test_analytics_no_yfinance_on_read(mock_ticker, api_client, seeded, today_pa
 
 
 @pytest.mark.django_db
-def test_analytics_scope_all(api_client, seeded, today_patch):
-    p1 = ensure_default_portfolio()
-    p2 = Portfolio.objects.create(name="P2", base_currency="EUR", is_active=True)
+def test_analytics_scope_all(api_client, seeded, today_patch, test_user):
+    p1 = ensure_default_portfolio(test_user)
+    p2 = Portfolio.objects.create(user=test_user, name="P2", base_currency="EUR", is_active=True)
     _buy(api_client, asset_symbol="AAA", portfolio_id=p1.id)
     _buy(api_client, asset_symbol="BBB", portfolio_id=p2.id)
     _price("AAA", "2026-03-15", "10")
@@ -227,14 +227,14 @@ def test_analytics_scope_all(api_client, seeded, today_patch):
 
 @pytest.mark.django_db
 def test_analytics_scope_all_pln_stock_uses_display_currency_series(
-    api_client, seeded, monkeypatch
+    api_client, seeded, monkeypatch, test_user
 ):
     """Metric Sheet all-scope must not use pooled INR-base value/flow path."""
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2024, 4, 15))
-    eur_portfolio = Portfolio.objects.create(
+    eur_portfolio = Portfolio.objects.create(user=test_user, 
         name="EUR PLN Analytics", base_currency="EUR", is_active=True
     )
-    inr_portfolio = Portfolio.objects.create(
+    inr_portfolio = Portfolio.objects.create(user=test_user, 
         name="INR MF Analytics", base_currency="INR", is_active=True
     )
     _buy(
@@ -298,9 +298,9 @@ def test_analytics_scope_all_pln_stock_uses_display_currency_series(
 
 
 @pytest.mark.django_db
-def test_analytics_portfolio_id_filter(api_client, seeded, today_patch):
-    p1 = ensure_default_portfolio()
-    p2 = Portfolio.objects.create(name="Scoped", base_currency="EUR", is_active=True)
+def test_analytics_portfolio_id_filter(api_client, seeded, today_patch, test_user):
+    p1 = ensure_default_portfolio(test_user)
+    p2 = Portfolio.objects.create(user=test_user, name="Scoped", base_currency="EUR", is_active=True)
     _buy(api_client, asset_symbol="AAA", portfolio_id=p1.id)
     _buy(api_client, asset_symbol="BBB", portfolio_id=p2.id)
     _price("AAA", "2026-03-15", "10")
@@ -311,8 +311,8 @@ def test_analytics_portfolio_id_filter(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_analytics_scope_all_and_portfolio_id_422(api_client, seeded):
-    p = ensure_default_portfolio()
+def test_analytics_scope_all_and_portfolio_id_422(api_client, seeded, test_user):
+    p = ensure_default_portfolio(test_user)
     r = api_client.get(
         _metrics_url(portfolio_scope="all", portfolio_id=str(p.id))
     )

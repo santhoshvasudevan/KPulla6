@@ -1,3 +1,5 @@
+from django.contrib.auth.models import AbstractBaseUser
+
 from portfolios.constants import (
     DEFAULT_BASE_CURRENCY,
     DEFAULT_PORTFOLIO_NAME,
@@ -6,15 +8,17 @@ from portfolios.constants import (
 from portfolios.models import Portfolio
 
 
-def ensure_default_portfolio() -> Portfolio:
-    portfolio, _ = Portfolio.objects.get_or_create(
+def ensure_default_portfolio(user: AbstractBaseUser) -> Portfolio:
+    portfolio = Portfolio.objects.filter(user=user, is_default=True).first()
+    if portfolio is not None:
+        return portfolio
+    portfolio = Portfolio.objects.create(
+        user=user,
+        name=DEFAULT_PORTFOLIO_NAME,
+        description=None,
+        base_currency=DEFAULT_BASE_CURRENCY,
         is_default=True,
-        defaults={
-            "name": DEFAULT_PORTFOLIO_NAME,
-            "description": None,
-            "base_currency": DEFAULT_BASE_CURRENCY,
-            "is_active": True,
-        },
+        is_active=True,
     )
     return portfolio
 

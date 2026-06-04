@@ -125,8 +125,8 @@ def test_mutual_fund_profile_links_to_asset():
 
 
 @pytest.mark.django_db
-def test_folio_uniqueness_per_portfolio_asset_and_number():
-    portfolio = ensure_default_portfolio()
+def test_folio_uniqueness_per_portfolio_asset_and_number(test_user):
+    portfolio = ensure_default_portfolio(test_user)
     asset = _mf_asset(scheme_code="120503")
     _folio(portfolio=portfolio, asset=asset, folio_number="FOLIO-001")
     with pytest.raises(IntegrityError):
@@ -135,8 +135,8 @@ def test_folio_uniqueness_per_portfolio_asset_and_number():
 
 
 @pytest.mark.django_db
-def test_folio_same_number_different_assets_allowed():
-    portfolio = ensure_default_portfolio()
+def test_folio_same_number_different_assets_allowed(test_user):
+    portfolio = ensure_default_portfolio(test_user)
     asset_a = _mf_asset(scheme_code="120503")
     asset_b = _mf_asset(scheme_code="120504")
     _folio(portfolio=portfolio, asset=asset_a, folio_number="SHARED-NUM")
@@ -145,9 +145,9 @@ def test_folio_same_number_different_assets_allowed():
 
 
 @pytest.mark.django_db
-def test_folio_required_for_mutual_fund_transaction_detail():
+def test_folio_required_for_mutual_fund_transaction_detail(test_user):
     """MF transaction detail must reference a Folio row (folio required concept)."""
-    portfolio = ensure_default_portfolio()
+    portfolio = ensure_default_portfolio(test_user)
     asset = _mf_asset(scheme_code="120503")
     folio = _folio(portfolio=portfolio, asset=asset)
     txn = Transaction.objects.create(
@@ -174,8 +174,8 @@ def test_folio_required_for_mutual_fund_transaction_detail():
 
 
 @pytest.mark.django_db
-def test_mutual_fund_transaction_detail_dates_and_amounts():
-    portfolio = ensure_default_portfolio()
+def test_mutual_fund_transaction_detail_dates_and_amounts(test_user):
+    portfolio = ensure_default_portfolio(test_user)
     asset = _mf_asset(scheme_code="120503")
     folio = _folio(portfolio=portfolio, asset=asset)
     txn = Transaction.objects.create(
@@ -210,8 +210,8 @@ def test_mutual_fund_transaction_detail_dates_and_amounts():
 
 
 @pytest.mark.django_db
-def test_mutual_fund_transaction_detail_one_to_one():
-    portfolio = ensure_default_portfolio()
+def test_mutual_fund_transaction_detail_one_to_one(test_user):
+    portfolio = ensure_default_portfolio(test_user)
     asset = _mf_asset(scheme_code="120503")
     folio = _folio(portfolio=portfolio, asset=asset)
     txn = Transaction.objects.create(

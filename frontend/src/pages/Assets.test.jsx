@@ -90,7 +90,9 @@ describe('Assets Page', () => {
       expect(screen.getByTestId('pie-chart')).toBeInTheDocument();
     });
 
-    expect(api.fetchHoldings).toHaveBeenCalledWith({ portfolio_scope: 'all', display_currency: 'EUR' });
+    await waitFor(() => {
+      expect(api.fetchHoldings).toHaveBeenCalledWith({ portfolio_scope: 'all', display_currency: 'EUR' });
+    });
 
     const rows = screen.getAllByRole('row');
     expect(rows[1]).toHaveTextContent('AAPL');

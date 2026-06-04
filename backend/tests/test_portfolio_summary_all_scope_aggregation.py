@@ -115,12 +115,12 @@ def _assert_all_matches_sum(api_client, portfolio_ids, display_currency="EUR"):
 
 
 @pytest.mark.django_db
-def test_all_scope_mixed_eur_stock_and_inr_mf(api_client, seeded, monkeypatch):
+def test_all_scope_mixed_eur_stock_and_inr_mf(api_client, seeded, monkeypatch, test_user):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
-    stock_portfolio = Portfolio.objects.create(
+    stock_portfolio = Portfolio.objects.create(user=test_user, 
         name="EUR Stocks", base_currency="EUR", is_active=True
     )
-    mf_portfolio = Portfolio.objects.create(
+    mf_portfolio = Portfolio.objects.create(user=test_user, 
         name="INR MF", base_currency="INR", is_active=True
     )
     _buy_stock(api_client, portfolio_id=stock_portfolio.id, asset_symbol="AAPL")
@@ -153,10 +153,10 @@ def test_all_scope_mixed_eur_stock_and_inr_mf(api_client, seeded, monkeypatch):
 
 
 @pytest.mark.django_db
-def test_all_scope_two_inr_mf_portfolios_same_scheme_folio(api_client, seeded, monkeypatch):
+def test_all_scope_two_inr_mf_portfolios_same_scheme_folio(api_client, seeded, monkeypatch, test_user):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
-    p1 = Portfolio.objects.create(name="MF One", base_currency="INR", is_active=True)
-    p2 = Portfolio.objects.create(name="MF Two", base_currency="INR", is_active=True)
+    p1 = Portfolio.objects.create(user=test_user, name="MF One", base_currency="INR", is_active=True)
+    p2 = Portfolio.objects.create(user=test_user, name="MF Two", base_currency="INR", is_active=True)
     _mf_buy(
         api_client,
         portfolio_id=p1.id,
@@ -187,12 +187,12 @@ def test_all_scope_two_inr_mf_portfolios_same_scheme_folio(api_client, seeded, m
 
 
 @pytest.mark.django_db
-def test_all_scope_display_currency_inr(api_client, seeded, monkeypatch):
+def test_all_scope_display_currency_inr(api_client, seeded, monkeypatch, test_user):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
-    stock_portfolio = Portfolio.objects.create(
+    stock_portfolio = Portfolio.objects.create(user=test_user, 
         name="EUR Stocks", base_currency="EUR", is_active=True
     )
-    mf_portfolio = Portfolio.objects.create(
+    mf_portfolio = Portfolio.objects.create(user=test_user, 
         name="INR MF", base_currency="INR", is_active=True
     )
     _buy_stock(api_client, portfolio_id=stock_portfolio.id)
@@ -211,9 +211,9 @@ def test_all_scope_display_currency_inr(api_client, seeded, monkeypatch):
 
 
 @pytest.mark.django_db
-def test_all_scope_excludes_inactive_portfolio(api_client, seeded):
-    active = Portfolio.objects.create(name="Active", base_currency="EUR", is_active=True)
-    inactive = Portfolio.objects.create(
+def test_all_scope_excludes_inactive_portfolio(api_client, seeded, test_user):
+    active = Portfolio.objects.create(user=test_user, name="Active", base_currency="EUR", is_active=True)
+    inactive = Portfolio.objects.create(user=test_user, 
         name="Inactive", base_currency="EUR", is_active=False
     )
     _buy_stock(api_client, portfolio_id=active.id, asset_symbol="AAA", quantity="1", price_per_share="100")
@@ -229,9 +229,9 @@ def test_all_scope_excludes_inactive_portfolio(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_all_scope_includes_default_portfolio_once(api_client, seeded):
-    default = ensure_default_portfolio()
-    extra = Portfolio.objects.create(name="Extra", base_currency="EUR", is_active=True)
+def test_all_scope_includes_default_portfolio_once(api_client, seeded, test_user):
+    default = ensure_default_portfolio(test_user)
+    extra = Portfolio.objects.create(user=test_user, name="Extra", base_currency="EUR", is_active=True)
     _buy_stock(api_client, portfolio_id=default.id, asset_symbol="AAA", quantity="1", price_per_share="10")
     _buy_stock(api_client, portfolio_id=extra.id, asset_symbol="BBB", quantity="1", price_per_share="20")
     _stock_price("AAA", "2026-03-01", "10")
@@ -241,10 +241,10 @@ def test_all_scope_includes_default_portfolio_once(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_all_scope_monetary_fields_equal_sum(api_client, seeded, monkeypatch):
+def test_all_scope_monetary_fields_equal_sum(api_client, seeded, monkeypatch, test_user):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
-    p1 = Portfolio.objects.create(name="P1", base_currency="EUR", is_active=True)
-    p2 = Portfolio.objects.create(name="P2", base_currency="INR", is_active=True)
+    p1 = Portfolio.objects.create(user=test_user, name="P1", base_currency="EUR", is_active=True)
+    p2 = Portfolio.objects.create(user=test_user, name="P2", base_currency="INR", is_active=True)
     _buy_stock(api_client, portfolio_id=p1.id, asset_symbol="MSFT", quantity="2", price_per_share="50")
     _mf_buy(api_client, portfolio_id=p2.id, folio_number="MF-P2")
     _stock_price("MSFT", "2026-03-20", "60")
@@ -266,15 +266,15 @@ def test_all_scope_monetary_fields_equal_sum(api_client, seeded, monkeypatch):
 
 
 @pytest.mark.django_db
-def test_all_scope_fx_status_worst_child(api_client, seeded):
-    ok_portfolio = Portfolio.objects.create(name="OK", base_currency="EUR", is_active=True)
+def test_all_scope_fx_status_worst_child(api_client, seeded, test_user):
+    ok_portfolio = Portfolio.objects.create(user=test_user, name="OK", base_currency="EUR", is_active=True)
     _buy_stock(api_client, portfolio_id=ok_portfolio.id, asset_symbol="AAA", quantity="1", price_per_share="100")
     _stock_price("AAA", "2026-03-01", "100")
 
     all_data = _summary(api_client, portfolio_scope="all", display_currency="EUR")
     assert all_data["fx_status"] == "ok"
 
-    bad_portfolio = Portfolio.objects.create(name="Bad FX", base_currency="EUR", is_active=True)
+    bad_portfolio = Portfolio.objects.create(user=test_user, name="Bad FX", base_currency="EUR", is_active=True)
     _buy_stock(api_client, portfolio_id=bad_portfolio.id, asset_symbol="BBB", quantity="1", price_per_share="100")
     _stock_price("BBB", "2026-03-01", "100", currency="USD")
 
@@ -283,9 +283,9 @@ def test_all_scope_fx_status_worst_child(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_all_scope_fx_status_filled_when_child_filled(api_client, seeded, monkeypatch):
+def test_all_scope_fx_status_filled_when_child_filled(api_client, seeded, monkeypatch, test_user):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
-    p = Portfolio.objects.create(name="Filled", base_currency="INR", is_active=True)
+    p = Portfolio.objects.create(user=test_user, name="Filled", base_currency="INR", is_active=True)
     _mf_buy(api_client, portfolio_id=p.id, investment_date="2026-03-01", nav_date="2026-03-10")
     _mf_nav("120503", "2026-03-20", "50.00")
     upsert_fx_rate(

@@ -91,9 +91,9 @@ def test_import_defaults_fees_to_zero(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_import_defaults_portfolio_to_default(api_client, seeded):
-    default = ensure_default_portfolio()
-    other = Portfolio.objects.create(name="Other", base_currency="EUR", is_active=True)
+def test_import_defaults_portfolio_to_default(api_client, seeded, test_user):
+    default = ensure_default_portfolio(test_user)
+    other = Portfolio.objects.create(user=test_user, name="Other", base_currency="EUR", is_active=True)
     csv_text = HEADER + "Buy,01/15/24,AAPL,10,150.00,0\n"
     _import(api_client, csv_text)
     assert Transaction.objects.get().portfolio_id == default.id
@@ -101,8 +101,8 @@ def test_import_defaults_portfolio_to_default(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_import_assigns_provided_portfolio_id(api_client, seeded):
-    other = Portfolio.objects.create(name="Target", base_currency="EUR", is_active=True)
+def test_import_assigns_provided_portfolio_id(api_client, seeded, test_user):
+    other = Portfolio.objects.create(user=test_user, name="Target", base_currency="EUR", is_active=True)
     csv_text = HEADER + "Buy,01/15/24,AAPL,10,150.00,0\n"
     response = _import(api_client, csv_text, portfolio_id=other.id)
     assert response.status_code == 200
@@ -198,8 +198,8 @@ def test_import_rejects_unknown_portfolio_id(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_import_rejects_inactive_portfolio_id(api_client, seeded):
-    inactive = Portfolio.objects.create(name="Inactive", is_active=False)
+def test_import_rejects_inactive_portfolio_id(api_client, seeded, test_user):
+    inactive = Portfolio.objects.create(user=test_user, name="Inactive", is_active=False)
     csv_text = HEADER + "Buy,01/15/24,AAPL,10,150.00,0\n"
     response = _import(api_client, csv_text, portfolio_id=inactive.id)
     assert response.status_code == 404

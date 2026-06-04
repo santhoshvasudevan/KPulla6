@@ -15,9 +15,6 @@ def _parse_bool(value: str | None, *, default: bool) -> bool:
 
 
 class PortfolioSummaryView(APIView):
-    authentication_classes = []
-    permission_classes = []
-
     def get(self, request):
         portfolio_id_param = request.query_params.get("portfolio_id")
         portfolio_id: int | None = None
@@ -34,7 +31,7 @@ class PortfolioSummaryView(APIView):
         if display_currency is None:
             from settings_app.services import get_settings
 
-            display_currency = get_settings().display_currency
+            display_currency = get_settings(request.user).display_currency
         try:
             display_currency = validate_display_currency(display_currency)
         except HoldingsValidationError as exc:
@@ -46,6 +43,7 @@ class PortfolioSummaryView(APIView):
 
         try:
             scope = resolve_portfolio_scope(
+                request.user,
                 portfolio_scope=request.query_params.get("portfolio_scope"),
                 portfolio_id=portfolio_id,
             )
@@ -58,6 +56,7 @@ class PortfolioSummaryView(APIView):
             scope=scope,
             include_timeseries=include_timeseries,
             display_currency=display_currency,
+            user=request.user,
         )
 
         payload = {

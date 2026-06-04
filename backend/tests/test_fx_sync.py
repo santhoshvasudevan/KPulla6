@@ -92,13 +92,13 @@ def test_sync_fx_rates_command_calls_service():
 
 
 @pytest.mark.django_db
-def test_sync_fx_rates_incremental(seeded):
+def test_sync_fx_rates_incremental(seeded, test_user):
     from market_data.models import AssetType, HistoricalPrice
     from portfolios.seed import ensure_default_portfolio
     from transactions.models import Transaction, TransactionType
 
     today = date.today()
-    portfolio = ensure_default_portfolio()
+    portfolio = ensure_default_portfolio(test_user)
     txn_day = today - timedelta(days=5)
     Transaction.objects.create(
         portfolio=portfolio,
@@ -132,14 +132,14 @@ def test_sync_fx_rates_incremental(seeded):
 
 
 @pytest.mark.django_db
-def test_sync_fx_backfills_when_required_predates_earliest_cached(seeded):
+def test_sync_fx_backfills_when_required_predates_earliest_cached(seeded, test_user):
     from market_data.models import AssetType, HistoricalPrice
     from portfolios.seed import ensure_default_portfolio
     from transactions.models import Transaction, TransactionType
 
     txn_date = date(2022, 5, 2)
     fx_start = date(2022, 12, 20)
-    portfolio = ensure_default_portfolio()
+    portfolio = ensure_default_portfolio(test_user)
     Transaction.objects.create(
         portfolio=portfolio,
         asset_symbol="GOOG",
@@ -180,13 +180,13 @@ def test_sync_fx_backfills_when_required_predates_earliest_cached(seeded):
 
 
 @pytest.mark.django_db
-def test_sync_fx_starts_from_earliest_required_when_no_cache(seeded):
+def test_sync_fx_starts_from_earliest_required_when_no_cache(seeded, test_user):
     from market_data.models import AssetType, HistoricalPrice
     from portfolios.seed import ensure_default_portfolio
     from transactions.models import Transaction, TransactionType
 
     txn_date = date(2022, 5, 2)
-    portfolio = ensure_default_portfolio()
+    portfolio = ensure_default_portfolio(test_user)
     Transaction.objects.create(
         portfolio=portfolio,
         asset_symbol="GOOG",
@@ -270,13 +270,13 @@ def test_resolve_fx_sync_start_date_rules():
 
 
 @pytest.mark.django_db
-def test_earliest_required_fx_date_usd_price_eur_holding(seeded):
+def test_earliest_required_fx_date_usd_price_eur_holding(seeded, test_user):
     from market_data.models import AssetType, HistoricalPrice
     from portfolios.seed import ensure_default_portfolio
     from transactions.models import Transaction, TransactionType
 
     txn_date = date(2022, 5, 2)
-    portfolio = ensure_default_portfolio()
+    portfolio = ensure_default_portfolio(test_user)
     Transaction.objects.create(
         portfolio=portfolio,
         asset_symbol="GOOG",
@@ -299,13 +299,13 @@ def test_earliest_required_fx_date_usd_price_eur_holding(seeded):
 
 
 @pytest.mark.django_db
-def test_summary_null_value_when_fx_missing_for_usd_price(api_client, seeded):
+def test_summary_null_value_when_fx_missing_for_usd_price(api_client, seeded, test_user):
     from market_data.models import AssetType, HistoricalPrice
     from portfolios.seed import ensure_default_portfolio
     from transactions.models import Transaction, TransactionType
 
     txn_date = date(2022, 5, 2)
-    portfolio = ensure_default_portfolio()
+    portfolio = ensure_default_portfolio(test_user)
     Transaction.objects.create(
         portfolio=portfolio,
         asset_symbol="GOOG",
@@ -333,13 +333,13 @@ def test_summary_null_value_when_fx_missing_for_usd_price(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_summary_value_after_fx_backfill(api_client, seeded):
+def test_summary_value_after_fx_backfill(api_client, seeded, test_user):
     from market_data.models import AssetType, HistoricalPrice
     from portfolios.seed import ensure_default_portfolio
     from transactions.models import Transaction, TransactionType
 
     txn_date = date(2022, 5, 2)
-    portfolio = ensure_default_portfolio()
+    portfolio = ensure_default_portfolio(test_user)
     Transaction.objects.create(
         portfolio=portfolio,
         asset_symbol="GOOG",
@@ -374,13 +374,13 @@ def test_summary_value_after_fx_backfill(api_client, seeded):
 
 @pytest.mark.django_db
 @patch("yfinance.Ticker")
-def test_summary_no_yfinance_when_fx_missing(mock_ticker, api_client, seeded):
+def test_summary_no_yfinance_when_fx_missing(mock_ticker, api_client, seeded, test_user):
     from market_data.models import AssetType, HistoricalPrice
     from portfolios.seed import ensure_default_portfolio
     from transactions.models import Transaction, TransactionType
 
     txn_date = date(2022, 5, 2)
-    portfolio = ensure_default_portfolio()
+    portfolio = ensure_default_portfolio(test_user)
     Transaction.objects.create(
         portfolio=portfolio,
         asset_symbol="GOOG",

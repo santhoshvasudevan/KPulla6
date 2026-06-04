@@ -33,8 +33,8 @@ make bootstrap  # db + migrate + seed
 
 ### Portfolio
 - Real portfolios only; **`All Portfolios` is virtual** and must not be stored (`Portfolio.clean()` rejects that name).
-- All Portfolios summary does **not** use a single stored base currency; headline totals aggregate per-portfolio summaries in the requested `display_currency`.
-- At most one row with `is_default=True` (partial unique constraint).
+- **`user` FK** (`auth.User`): each portfolio belongs to one user; transactions scope through portfolio ownership.
+- Default portfolio constraint: at most one `is_default=True` **per user** (partial unique constraint).
 - Seed: `python manage.py seed_initial_data` creates **Default Portfolio** (`EUR` base currency).
 
 ### Transaction
@@ -103,8 +103,9 @@ make bootstrap  # db + migrate + seed
 - Seeded defaults: `^GSPC`, `^IXIC`, `^DJI`, `^STOXX50E`, `^GDAXI`, `^NSEI` (Nifty 50), `^BSESN` (BSE Sensex).
 
 ### AppSettings
-- Singleton row (`pk=1` from seed): `tax_rate_percentage`, `display_currency` (`EUR` default).
+- **One row per user** (`OneToOneField` to `auth.User`): `tax_rate_percentage`, `display_currency` (`EUR` default).
 - Supported display currencies: `EUR`, `USD`, `INR`, `GBP`, `CHF`.
+- Legacy singleton row migrated to initial owner `santhoshkgvasudevan@gmail.com`.
 - `last_sync_timestamp` updated after successful full `sync_market_data` / stock sync.
 
 ## Caching strategy (unchanged intent)

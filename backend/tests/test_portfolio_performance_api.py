@@ -82,9 +82,9 @@ def test_performance_defaults_metric_value_range_1y(api_client, seeded, today_pa
 
 
 @pytest.mark.django_db
-def test_performance_scope_all(api_client, seeded, today_patch):
-    p1 = ensure_default_portfolio()
-    p2 = Portfolio.objects.create(name="P2", base_currency="EUR", is_active=True)
+def test_performance_scope_all(api_client, seeded, today_patch, test_user):
+    p1 = ensure_default_portfolio(test_user)
+    p2 = Portfolio.objects.create(user=test_user, name="P2", base_currency="EUR", is_active=True)
     _buy(api_client, asset_symbol="AAA", portfolio_id=p1.id)
     _buy(api_client, asset_symbol="BBB", portfolio_id=p2.id)
     _price("AAA", "2026-03-01", "10")
@@ -96,9 +96,9 @@ def test_performance_scope_all(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_performance_portfolio_id_filter(api_client, seeded, today_patch):
-    p1 = ensure_default_portfolio()
-    p2 = Portfolio.objects.create(name="Scoped", base_currency="EUR", is_active=True)
+def test_performance_portfolio_id_filter(api_client, seeded, today_patch, test_user):
+    p1 = ensure_default_portfolio(test_user)
+    p2 = Portfolio.objects.create(user=test_user, name="Scoped", base_currency="EUR", is_active=True)
     _buy(api_client, asset_symbol="AAA", portfolio_id=p1.id)
     _buy(api_client, asset_symbol="BBB", portfolio_id=p2.id)
     _price("AAA", "2026-03-01", "10")
@@ -111,8 +111,8 @@ def test_performance_portfolio_id_filter(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_performance_scope_all_and_portfolio_id_422(api_client, seeded):
-    p = ensure_default_portfolio()
+def test_performance_scope_all_and_portfolio_id_422(api_client, seeded, test_user):
+    p = ensure_default_portfolio(test_user)
     r = api_client.get(
         f"/api/v1/portfolio/performance?portfolio_scope=all&portfolio_id={p.id}"
     )
@@ -126,8 +126,8 @@ def test_performance_unknown_portfolio_id_404(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_performance_inactive_portfolio_id_404(api_client, seeded):
-    p = Portfolio.objects.create(name="Inactive", base_currency="EUR", is_active=False)
+def test_performance_inactive_portfolio_id_404(api_client, seeded, test_user):
+    p = Portfolio.objects.create(user=test_user, name="Inactive", base_currency="EUR", is_active=False)
     r = api_client.get(f"/api/v1/portfolio/performance?portfolio_id={p.id}")
     assert r.status_code == 404
 
@@ -300,9 +300,9 @@ def test_cumulative_return_with_sell(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_cumulative_return_null_no_contributions(api_client, seeded, today_patch):
+def test_cumulative_return_null_no_contributions(api_client, seeded, today_patch, test_user):
     Transaction.objects.create(
-        portfolio=ensure_default_portfolio(),
+        portfolio=ensure_default_portfolio(test_user),
         asset_symbol="AAPL",
         date=date(2026, 1, 2),
         type=TransactionType.SELL,
@@ -484,7 +484,7 @@ def test_benchmark_no_yfinance(mock_dl, api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_empty_portfolio_returns_empty_series(api_client, seeded, today_patch):
+def test_empty_portfolio_returns_empty_series(api_client, seeded, today_patch, test_user):
     r = api_client.get("/api/v1/portfolio/performance?metric=value&range=ALL")
     assert r.json() == []
 
@@ -548,12 +548,12 @@ def _largest_valid_gap_days(pts: list[dict]) -> int:
     return max_gap
 
 
-def _setup_pln_stock_inr_mf_all_scope(api_client, monkeypatch):
+def _setup_pln_stock_inr_mf_all_scope(api_client, monkeypatch, test_user):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2024, 4, 15))
-    eur_portfolio = Portfolio.objects.create(
+    eur_portfolio = Portfolio.objects.create(user=test_user, 
         name="EUR PLN Stock", base_currency="EUR", is_active=True
     )
-    inr_portfolio = Portfolio.objects.create(
+    inr_portfolio = Portfolio.objects.create(user=test_user, 
         name="INR MF Only", base_currency="INR", is_active=True
     )
     _buy(
@@ -600,14 +600,14 @@ def _setup_pln_stock_inr_mf_all_scope(api_client, monkeypatch):
 
 @pytest.mark.django_db
 def test_all_scope_summary_current_value_matches_performance_last_value(
-    api_client, seeded, monkeypatch
+    api_client, seeded, monkeypatch, test_user
 ):
     """Value History (pooled scope) must match summary KPI when display currency is EUR."""
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
-    stock_portfolio = Portfolio.objects.create(
+    stock_portfolio = Portfolio.objects.create(user=test_user, 
         name="EUR Stocks Perf", base_currency="EUR", is_active=True
     )
-    mf_portfolio = Portfolio.objects.create(
+    mf_portfolio = Portfolio.objects.create(user=test_user, 
         name="INR MF Perf", base_currency="INR", is_active=True
     )
     _buy(
@@ -646,10 +646,10 @@ def test_all_scope_summary_current_value_matches_performance_last_value(
 
 @pytest.mark.django_db
 def test_performance_all_scope_eur_value_history_no_gap_with_pln_stock(
-    api_client, seeded, monkeypatch
+    api_client, seeded, monkeypatch, test_user
 ):
     """All-scope value history must not break when a PLN stock lacks PLN->INR FX."""
-    _setup_pln_stock_inr_mf_all_scope(api_client, monkeypatch)
+    _setup_pln_stock_inr_mf_all_scope(api_client, monkeypatch, test_user)
 
     perf = api_client.get(
         "/api/v1/portfolio/performance?portfolio_scope=all&display_currency=EUR&metric=value&range=ALL"
@@ -668,9 +668,9 @@ def test_performance_all_scope_eur_value_history_no_gap_with_pln_stock(
 
 @pytest.mark.django_db
 def test_performance_all_scope_cumulative_return_no_gap_with_pln_stock_and_inr_mf(
-    api_client, seeded, monkeypatch
+    api_client, seeded, monkeypatch, test_user
 ):
-    _setup_pln_stock_inr_mf_all_scope(api_client, monkeypatch)
+    _setup_pln_stock_inr_mf_all_scope(api_client, monkeypatch, test_user)
 
     perf = api_client.get(
         "/api/v1/portfolio/performance?portfolio_scope=all&display_currency=EUR&metric=cumulative_return&range=ALL"
@@ -683,9 +683,9 @@ def test_performance_all_scope_cumulative_return_no_gap_with_pln_stock_and_inr_m
 
 @pytest.mark.django_db
 def test_performance_all_scope_twror_no_gap_with_pln_stock_and_inr_mf(
-    api_client, seeded, monkeypatch
+    api_client, seeded, monkeypatch, test_user
 ):
-    _setup_pln_stock_inr_mf_all_scope(api_client, monkeypatch)
+    _setup_pln_stock_inr_mf_all_scope(api_client, monkeypatch, test_user)
 
     perf = api_client.get(
         "/api/v1/portfolio/performance?portfolio_scope=all&display_currency=EUR&metric=twror&range=ALL"
@@ -698,9 +698,9 @@ def test_performance_all_scope_twror_no_gap_with_pln_stock_and_inr_mf(
 
 @pytest.mark.django_db
 def test_performance_all_scope_value_cumulative_twror_share_valid_calendar(
-    api_client, seeded, monkeypatch
+    api_client, seeded, monkeypatch, test_user
 ):
-    _setup_pln_stock_inr_mf_all_scope(api_client, monkeypatch)
+    _setup_pln_stock_inr_mf_all_scope(api_client, monkeypatch, test_user)
 
     base = "/api/v1/portfolio/performance?portfolio_scope=all&display_currency=EUR&range=ALL"
     value_pts = api_client.get(f"{base}&metric=value").json()
@@ -719,7 +719,7 @@ def test_performance_all_scope_value_cumulative_twror_share_valid_calendar(
 
 @pytest.mark.django_db
 def test_performance_all_scope_value_history_uses_bulk_fx_lookup(
-    api_client, seeded, monkeypatch
+    api_client, seeded, monkeypatch, test_user
 ):
     """All-scope display conversion must bulk-load FX, not query per calendar day."""
     from django.db import connection, reset_queries
@@ -728,8 +728,8 @@ def test_performance_all_scope_value_history_uses_bulk_fx_lookup(
     from portfolios.performance_service import build_portfolio_performance
     from portfolios.scope import resolve_portfolio_scope
 
-    _setup_pln_stock_inr_mf_all_scope(api_client, monkeypatch)
-    scope = resolve_portfolio_scope(portfolio_scope="all")
+    _setup_pln_stock_inr_mf_all_scope(api_client, monkeypatch, test_user)
+    scope = resolve_portfolio_scope(test_user, portfolio_scope="all")
 
     reset_queries()
     with CaptureQueriesContext(connection) as ctx:

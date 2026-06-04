@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
@@ -11,6 +12,11 @@ class DisplayCurrency(models.TextChoices):
 
 
 class AppSettings(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="app_settings",
+    )
     tax_rate_percentage = models.DecimalField(
         max_digits=5,
         decimal_places=2,

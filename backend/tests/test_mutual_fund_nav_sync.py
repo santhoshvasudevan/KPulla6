@@ -80,12 +80,13 @@ def _mf_profile(asset: Asset, **kwargs) -> MutualFundProfile:
 
 
 def _mf_buy_with_detail(
+    test_user,
     *,
     scheme_code: str = "120503",
     nav_date: date,
     investment_date: date | None = None,
 ):
-    portfolio = ensure_default_portfolio()
+    portfolio = ensure_default_portfolio(test_user)
     asset = Asset.objects.filter(
         asset_type=AssetType.MUTUAL_FUND,
         symbol=scheme_code,
@@ -128,11 +129,11 @@ def test_normalize_scheme_code_strips_only():
 
 
 @pytest.mark.django_db
-def test_sync_creates_mutual_fund_historical_price_rows(seeded):
+def test_sync_creates_mutual_fund_historical_price_rows(seeded, test_user):
     today = date.today()
     asset = _mf_asset(scheme_code="120503")
     profile = _mf_profile(asset)
-    _mf_buy_with_detail(scheme_code="120503", nav_date=today - timedelta(days=5))
+    _mf_buy_with_detail(test_user, scheme_code="120503", nav_date=today - timedelta(days=5))
 
     provider = MockNavProvider(
         {
@@ -156,11 +157,11 @@ def test_sync_creates_mutual_fund_historical_price_rows(seeded):
 
 
 @pytest.mark.django_db
-def test_sync_incremental_from_latest_cached_plus_one(seeded):
+def test_sync_incremental_from_latest_cached_plus_one(seeded, test_user):
     today = date.today()
     asset = _mf_asset(scheme_code="120503")
     profile = _mf_profile(asset)
-    _mf_buy_with_detail(scheme_code="120503", nav_date=today - timedelta(days=10))
+    _mf_buy_with_detail(test_user, scheme_code="120503", nav_date=today - timedelta(days=10))
     HistoricalPrice.objects.create(
         asset_symbol="120503",
         date=today - timedelta(days=6),
@@ -184,11 +185,11 @@ def test_sync_incremental_from_latest_cached_plus_one(seeded):
 
 
 @pytest.mark.django_db
-def test_sync_idempotent(seeded):
+def test_sync_idempotent(seeded, test_user):
     today = date.today()
     asset = _mf_asset(scheme_code="120503")
     profile = _mf_profile(asset)
-    _mf_buy_with_detail(scheme_code="120503", nav_date=today - timedelta(days=5))
+    _mf_buy_with_detail(test_user, scheme_code="120503", nav_date=today - timedelta(days=5))
     d = today - timedelta(days=3)
     provider = MockNavProvider({"120503": [NavPoint(d, Decimal("44.00"), "INR")]})
     sync_one_mutual_fund(profile, provider)
@@ -208,15 +209,15 @@ def test_sync_skips_profile_without_transaction_or_cached_nav(seeded):
 
 
 @pytest.mark.django_db
-def test_sync_provider_failure_for_one_fund_does_not_fail_others(seeded):
+def test_sync_provider_failure_for_one_fund_does_not_fail_others(seeded, test_user):
     today = date.today()
     asset_a = _mf_asset(scheme_code="120503")
     profile_a = _mf_profile(asset_a)
-    _mf_buy_with_detail(scheme_code="120503", nav_date=today - timedelta(days=5))
+    _mf_buy_with_detail(test_user, scheme_code="120503", nav_date=today - timedelta(days=5))
 
     asset_b = _mf_asset(scheme_code="120504")
     profile_b = _mf_profile(asset_b)
-    _mf_buy_with_detail(scheme_code="120504", nav_date=today - timedelta(days=5))
+    _mf_buy_with_detail(test_user, scheme_code="120504", nav_date=today - timedelta(days=5))
 
     provider = MockNavProvider(
         {
@@ -322,9 +323,9 @@ def test_stock_latest_price_unaffected_by_mutual_fund_rows(seeded):
 
 
 @pytest.mark.django_db
-def test_sync_mutual_fund_navs_command(seeded):
+def test_sync_mutual_fund_navs_command(seeded, test_user):
     today = date.today()
-    _mf_buy_with_detail(scheme_code="120503", nav_date=today - timedelta(days=3))
+    _mf_buy_with_detail(test_user, scheme_code="120503", nav_date=today - timedelta(days=3))
     provider = MockNavProvider(
         {"120503": [NavPoint(today - timedelta(days=2), Decimal("43"), "INR")]}
     )
@@ -338,10 +339,10 @@ def test_sync_mutual_fund_navs_command(seeded):
 
 
 @pytest.mark.django_db
-def test_sync_filters_by_scheme_code(seeded):
+def test_sync_filters_by_scheme_code(seeded, test_user):
     today = date.today()
-    _mf_buy_with_detail(scheme_code="120503", nav_date=today - timedelta(days=3))
-    _mf_buy_with_detail(scheme_code="120504", nav_date=today - timedelta(days=3))
+    _mf_buy_with_detail(test_user, scheme_code="120503", nav_date=today - timedelta(days=3))
+    _mf_buy_with_detail(test_user, scheme_code="120504", nav_date=today - timedelta(days=3))
     provider = MockNavProvider(
         {
             "120503": [NavPoint(today - timedelta(days=2), Decimal("43"), "INR")],

@@ -96,9 +96,9 @@ def test_summary_single_mf_buy_with_cached_nav(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_summary_stock_plus_mf_mixed(api_client, seeded, monkeypatch):
+def test_summary_stock_plus_mf_mixed(api_client, seeded, monkeypatch, test_user):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
-    default = ensure_default_portfolio()
+    default = ensure_default_portfolio(test_user)
     _buy_stock(api_client, portfolio_id=default.id)
     _mf_buy(api_client, portfolio_id=default.id)
     _stock_price("AAPL", "2026-03-20", "120")

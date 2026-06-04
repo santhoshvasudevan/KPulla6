@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as api from './api';
 
+const defaultFetchOptions = { credentials: 'include' };
+
 describe('API Service', () => {
   beforeEach(() => {
     global.fetch = vi.fn();
     api.invalidateDashboardSummaryCache();
+    api.setUnauthorizedHandler(null);
   });
 
   it('fetchTransactions calls the correct endpoint', async () => {
@@ -17,7 +20,7 @@ describe('API Service', () => {
     const data = await api.fetchTransactions(1, 20);
     expect(global.fetch).toHaveBeenCalledWith(
       '/api/v1/transactions?page=1&page_size=20&portfolio_scope=all&display_currency=EUR',
-      {}
+      expect.objectContaining(defaultFetchOptions)
     );
     expect(data).toEqual(mockResponse);
   });
@@ -30,7 +33,7 @@ describe('API Service', () => {
     });
 
     const data = await api.fetchDashboardSummary({ portfolio_scope: 'all', display_currency: 'INR' });
-    expect(global.fetch).toHaveBeenCalledWith('/api/v1/portfolio/summary?portfolio_scope=all&display_currency=INR', {});
+    expect(global.fetch).toHaveBeenCalledWith('/api/v1/portfolio/summary?portfolio_scope=all&display_currency=INR', expect.objectContaining(defaultFetchOptions));
     expect(data).toEqual(mockResponse);
   });
 
@@ -43,7 +46,7 @@ describe('API Service', () => {
     await api.fetchPortfolioPerformance('value', null, '1Y', { portfolio_scope: 'all', display_currency: 'INR' });
     expect(global.fetch).toHaveBeenCalledWith(
       '/api/v1/portfolio/performance?metric=value&range=1Y&portfolio_scope=all&display_currency=INR',
-      {}
+      expect.objectContaining(defaultFetchOptions)
     );
   });
 
@@ -55,7 +58,7 @@ describe('API Service', () => {
     });
 
     const data = await api.fetchDashboardSummary();
-    expect(global.fetch).toHaveBeenCalledWith('/api/v1/portfolio/summary?portfolio_scope=all&display_currency=EUR', {});
+    expect(global.fetch).toHaveBeenCalledWith('/api/v1/portfolio/summary?portfolio_scope=all&display_currency=EUR', expect.objectContaining(defaultFetchOptions));
     expect(data).toEqual(mockResponse);
   });
 
@@ -127,7 +130,7 @@ describe('API Service', () => {
     });
 
     const data = await api.fetchHoldings();
-    expect(global.fetch).toHaveBeenCalledWith('/api/v1/portfolio/holdings?portfolio_scope=all&display_currency=EUR', {});
+    expect(global.fetch).toHaveBeenCalledWith('/api/v1/portfolio/holdings?portfolio_scope=all&display_currency=EUR', expect.objectContaining(defaultFetchOptions));
     expect(data).toEqual(mockResponse);
   });
 

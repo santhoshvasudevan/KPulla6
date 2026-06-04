@@ -45,9 +45,9 @@ def _mf_payload(**overrides):
 
 
 @pytest.mark.django_db
-def test_filter_by_portfolio_id(api_client, seeded):
-    default = ensure_default_portfolio()
-    other = Portfolio.objects.create(name="Other", base_currency="EUR", is_active=True)
+def test_filter_by_portfolio_id(api_client, seeded, test_user):
+    default = ensure_default_portfolio(test_user)
+    other = Portfolio.objects.create(user=test_user, name="Other", base_currency="EUR", is_active=True)
     _stock(default, "AAPL", "2026-01-01")
     _stock(other, "MSFT", "2026-01-02")
 
@@ -58,8 +58,8 @@ def test_filter_by_portfolio_id(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_filter_by_asset_symbol_case_insensitive(api_client, seeded):
-    default = ensure_default_portfolio()
+def test_filter_by_asset_symbol_case_insensitive(api_client, seeded, test_user):
+    default = ensure_default_portfolio(test_user)
     _stock(default, "AAPL", "2026-01-01")
     _stock(default, "MSFT", "2026-01-02")
 
@@ -69,8 +69,8 @@ def test_filter_by_asset_symbol_case_insensitive(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_filter_by_symbols_multi_select(api_client, seeded):
-    default = ensure_default_portfolio()
+def test_filter_by_symbols_multi_select(api_client, seeded, test_user):
+    default = ensure_default_portfolio(test_user)
     _stock(default, "AAPL", "2026-01-01")
     _stock(default, "MSFT", "2026-01-02")
     _stock(default, "GOOG", "2026-01-03")
@@ -81,8 +81,8 @@ def test_filter_by_symbols_multi_select(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_filter_date_from(api_client, seeded):
-    default = ensure_default_portfolio()
+def test_filter_date_from(api_client, seeded, test_user):
+    default = ensure_default_portfolio(test_user)
     _stock(default, "AAPL", "2026-01-01")
     _stock(default, "MSFT", "2026-06-01")
 
@@ -92,8 +92,8 @@ def test_filter_date_from(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_filter_date_to(api_client, seeded):
-    default = ensure_default_portfolio()
+def test_filter_date_to(api_client, seeded, test_user):
+    default = ensure_default_portfolio(test_user)
     _stock(default, "AAPL", "2026-01-01")
     _stock(default, "MSFT", "2026-06-01")
 
@@ -103,8 +103,8 @@ def test_filter_date_to(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_filter_date_between(api_client, seeded):
-    default = ensure_default_portfolio()
+def test_filter_date_between(api_client, seeded, test_user):
+    default = ensure_default_portfolio(test_user)
     _stock(default, "AAPL", "2026-01-01")
     _stock(default, "MSFT", "2026-03-15")
     _stock(default, "GOOG", "2026-06-01")
@@ -117,8 +117,8 @@ def test_filter_date_between(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_date_after_before_aliases(api_client, seeded):
-    default = ensure_default_portfolio()
+def test_date_after_before_aliases(api_client, seeded, test_user):
+    default = ensure_default_portfolio(test_user)
     _stock(default, "AAPL", "2026-01-01")
     _stock(default, "MSFT", "2026-06-01")
 
@@ -130,8 +130,8 @@ def test_date_after_before_aliases(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_filters_applied_before_pagination(api_client, seeded):
-    default = ensure_default_portfolio()
+def test_filters_applied_before_pagination(api_client, seeded, test_user):
+    default = ensure_default_portfolio(test_user)
     for i in range(5):
         _stock(default, "AAPL", f"2026-01-0{i + 1}")
     for i in range(3):
@@ -160,8 +160,8 @@ def test_date_from_after_date_to_returns_400(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_filter_mutual_fund_scheme_code(api_client, seeded):
-    default = ensure_default_portfolio()
+def test_filter_mutual_fund_scheme_code(api_client, seeded, test_user):
+    default = ensure_default_portfolio(test_user)
     _stock(default, "AAPL", "2026-01-01")
     create = api_client.post(
         "/api/v1/transactions",
@@ -178,8 +178,8 @@ def test_filter_mutual_fund_scheme_code(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_no_filters_returns_all_in_scope(api_client, seeded):
-    default = ensure_default_portfolio()
+def test_no_filters_returns_all_in_scope(api_client, seeded, test_user):
+    default = ensure_default_portfolio(test_user)
     _stock(default, "AAPL", "2026-01-01")
     _stock(default, "MSFT", "2026-02-01")
 
@@ -189,9 +189,9 @@ def test_no_filters_returns_all_in_scope(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_filter_options_returns_scope_distinct_values(api_client, seeded):
-    default = ensure_default_portfolio()
-    other = Portfolio.objects.create(name="Aaa Other", base_currency="EUR", is_active=True)
+def test_filter_options_returns_scope_distinct_values(api_client, seeded, test_user):
+    default = ensure_default_portfolio(test_user)
+    other = Portfolio.objects.create(user=test_user, name="Aaa Other", base_currency="EUR", is_active=True)
     _stock(default, "AAPL", "2026-01-01")
     _stock(default, "AAPL", "2026-02-01")  # duplicate symbol across rows
     _stock(default, "MSFT", "2026-06-01")
@@ -213,9 +213,9 @@ def test_filter_options_returns_scope_distinct_values(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_filter_options_scoped_to_portfolio(api_client, seeded):
-    default = ensure_default_portfolio()
-    other = Portfolio.objects.create(name="Other", base_currency="EUR", is_active=True)
+def test_filter_options_scoped_to_portfolio(api_client, seeded, test_user):
+    default = ensure_default_portfolio(test_user)
+    other = Portfolio.objects.create(user=test_user, name="Other", base_currency="EUR", is_active=True)
     _stock(default, "AAPL", "2026-01-01")
     _stock(other, "GOOG", "2026-03-01")
 
@@ -231,9 +231,9 @@ def test_filter_options_scoped_to_portfolio(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_filter_options_excludes_inactive_portfolios(api_client, seeded):
-    ensure_default_portfolio()
-    Portfolio.objects.create(name="Inactive", is_active=False)
+def test_filter_options_excludes_inactive_portfolios(api_client, seeded, test_user):
+    ensure_default_portfolio(test_user)
+    Portfolio.objects.create(user=test_user, name="Inactive", is_active=False)
     response = api_client.get("/api/v1/transactions/filter-options?portfolio_scope=all")
     names = [p["name"] for p in response.json()["portfolios"]]
     assert "Inactive" not in names

@@ -21,6 +21,17 @@ Visual direction: institutional wealth analytics, not a terminal toy or casual b
 
 Phase 0 establishes CSS custom properties in `frontend/src/index.css`. Use only the canonical tokens below — legacy aliases were removed in Phase 8B.
 
+### Appearance preference (Light / Dark / System)
+
+- **UI:** Header theme select in the app shell (`ThemeSelector` in `Layout.jsx`) — options **System**, **Light**, **Dark**.
+- **Storage:** `localStorage` key `kpulla6.themePreference` (default **`system`** when unset).
+- **Resolution:** `system` follows `prefers-color-scheme`; `light` / `dark` force that mode.
+- **Application:** `document.documentElement.dataset.theme` is set to `light` or `dark`; `color-scheme` is updated for native controls.
+- **Flash prevention:** `frontend/public/theme-init.js` runs in `index.html` before the React bundle loads.
+- **React:** `ThemeProvider` / `useTheme()` in `frontend/src/themeContext.jsx`; preference helpers in `frontend/src/theme/themeStorage.js`.
+- **Tokens:** Dark mode preserves Institutional Slate (`:root` and `[data-theme='dark']`); light overrides live under `[data-theme='light']`.
+- **Charts:** `chartTheme.js` reads computed CSS variables at render time so Recharts stays readable in both modes.
+
 ### Colors
 
 | Token | Purpose |
@@ -35,7 +46,7 @@ Phase 0 establishes CSS custom properties in `frontend/src/index.css`. Use only 
 | `--gain` / `--loss` / `--warn` | P/L and data-quality semantics only |
 | `--chart-1` … `--chart-6` | Chart series (non-semantic) |
 
-Recharts uses hex mirrors in `chartTheme.js` — not CSS variables.
+Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`, etc. in `chartTheme.js` (computed from CSS variables).
 
 ### Typography
 
@@ -58,6 +69,7 @@ Recharts uses hex mirrors in `chartTheme.js` — not CSS variables.
 ### App shell
 
 - Fixed sidebar (~260px): brand, portfolio/currency selectors directly below brand, main navigation, optional data note in footer
+- Top header (main column): theme selector, signed-in user label, log out — always visible without scrolling the sidebar
 - Main content: `--bg-app` background, inner padding (`--space-5` / `--space-6`), max-width ~1400px
 - Active nav: left accent border + raised surface (not inverted high-contrast)
 - Selectors: raised surface, strong border, accent focus ring

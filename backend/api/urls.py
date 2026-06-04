@@ -20,6 +20,7 @@ from transactions.views import (
 )
 
 urlpatterns = [
+    path("auth/", include("accounts.urls")),
     path("analytics/", include("analytics.urls")),
     path("health", HealthView.as_view(), name="health"),
     path("settings", SettingsView.as_view(), name="settings"),

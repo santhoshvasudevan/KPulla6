@@ -18,8 +18,8 @@ import {
 } from '../components/ui';
 import {
   getSeriesColor,
-  CHART_TOOLTIP_STYLE,
-  CHART_LEGEND_STYLE,
+  getChartTooltipStyle,
+  getChartLegendStyle,
 } from '../components/charts/chartTheme';
 import { holdingRowKey, holdingSymbolLabel } from '../utils/transactionDisplay';
 import './Assets.css';
@@ -349,7 +349,7 @@ export default function Assets() {
                       ))}
                     </Pie>
                     <Tooltip
-                      contentStyle={CHART_TOOLTIP_STYLE}
+                      contentStyle={getChartTooltipStyle()}
                       formatter={(value, _name, payload) => {
                         const pct = chartTotal > 0 ? Number(value) / chartTotal : 0;
                         const sym = payload?.payload?.asset_symbol || '';
@@ -359,7 +359,7 @@ export default function Assets() {
                         ];
                       }}
                     />
-                    <Legend wrapperStyle={CHART_LEGEND_STYLE} iconType="circle" />
+                    <Legend wrapperStyle={getChartLegendStyle()} iconType="circle" />
                   </PieChart>
                 </ResponsiveContainer>
               </div>

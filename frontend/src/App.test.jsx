@@ -1,6 +1,31 @@
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('react-router-dom', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    BrowserRouter: ({ children }) => children,
+  };
+});
+
 import App from './App';
+
+const mockAuth = {
+  user: null,
+  loading: false,
+  isAuthenticated: false,
+  login: vi.fn(),
+  logout: vi.fn(),
+  register: vi.fn(),
+  refreshUser: vi.fn(),
+};
+
+vi.mock('./authContext', () => ({
+  AuthProvider: ({ children }) => children,
+  useAuth: () => mockAuth,
+}));
 
 vi.mock('./api', () => ({
   fetchPortfolios: vi.fn().mockResolvedValue([]),
@@ -28,14 +53,71 @@ vi.mock('./api', () => ({
     },
     warnings: [],
   }),
+  setUnauthorizedHandler: vi.fn(),
+  ensureCsrfCookie: vi.fn(),
 }));
 
-describe('App', () => {
-  it('renders layout navigation', async () => {
-    render(<App />);
-    expect(screen.getByText('Portfolio Insight')).toBeTruthy();
+describe('App auth routing', () => {
+  beforeEach(() => {
+    localStorage.removeItem('kpulla6.themePreference');
+    document.documentElement.dataset.theme = 'dark';
+    mockAuth.user = null;
+    mockAuth.loading = false;
+    mockAuth.isAuthenticated = false;
+    mockAuth.logout.mockReset();
+  });
+
+  it('shows login page for unauthenticated root redirect to login flow', async () => {
+    render(
+      <MemoryRouter initialEntries={['/login']}>
+        <App />
+      </MemoryRouter>
+    );
+    expect(await screen.findByLabelText(/username or email/i)).toBeTruthy();
+    expect(screen.getByLabelText(/^password$/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /sign in with google/i })).toBeTruthy();
+    expect(screen.getByText(/forgot password/i)).toBeTruthy();
+    expect(screen.getAllByText(/register first/i).length).toBeGreaterThan(0);
+  });
+
+  it('authenticated user sees dashboard at root', async () => {
+    mockAuth.user = { id: 1, username: 'demo', email: 'demo@example.com' };
+    mockAuth.isAuthenticated = true;
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>
+    );
     expect(await screen.findByText('Dashboard')).toBeTruthy();
     expect(screen.getByText('Transactions')).toBeTruthy();
-    expect(screen.getByText('Assets')).toBeTruthy();
+  });
+
+  it('protected route redirects to login when unauthenticated', async () => {
+    render(
+      <MemoryRouter initialEntries={['/transactions']}>
+        <App />
+      </MemoryRouter>
+    );
+    expect(await screen.findByLabelText(/username or email/i)).toBeTruthy();
+  });
+
+  it('logout returns user to login', async () => {
+    mockAuth.user = { id: 1, username: 'demo', email: 'demo@example.com' };
+    mockAuth.isAuthenticated = true;
+    mockAuth.logout.mockImplementation(async () => {
+      mockAuth.user = null;
+      mockAuth.isAuthenticated = false;
+    });
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>
+    );
+    await screen.findByLabelText('Theme preference');
+    const logoutBtn = screen.getByRole('button', { name: /log out/i });
+    fireEvent.click(logoutBtn);
+    await waitFor(() => {
+      expect(mockAuth.logout).toHaveBeenCalled();
+    });
   });
 });

@@ -2,6 +2,34 @@ const API_ROOT = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 const BASE_URL = `${API_ROOT}/api/v1`;
 
 let _dashboardSummaryCacheByScope = new Map();
+let _onUnauthorized = null;
+
+export function setUnauthorizedHandler(handler) {
+  _onUnauthorized = handler;
+}
+
+function getCookie(name) {
+  if (typeof document === 'undefined') return '';
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
+function defaultFetchOptions(options = {}) {
+  const headers = new Headers(options.headers || {});
+  const method = (options.method || 'GET').toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+    const csrf = getCookie('csrftoken');
+    if (csrf) headers.set('X-CSRFToken', csrf);
+  }
+  if (!headers.has('Content-Type') && options.body && !(options.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json');
+  }
+  return {
+    credentials: 'include',
+    ...options,
+    headers,
+  };
+}
 
 function buildUrl(path, params) {
   const qs = params ? `?${params.toString()}` : '';
@@ -9,7 +37,10 @@ function buildUrl(path, params) {
 }
 
 export async function fetchWithHandling(path, options = {}) {
-  const response = await fetch(buildUrl(path), options);
+  const response = await fetch(buildUrl(path), defaultFetchOptions(options));
+  if (response.status === 401 && !path.startsWith('/auth/') && _onUnauthorized) {
+    _onUnauthorized();
+  }
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     const detail = errorData.detail;
@@ -60,6 +91,39 @@ export function withScopeParams(params, scopeParams) {
 
 export async function fetchHealth() {
   return fetchWithHandling('/health');
+}
+
+export async function ensureCsrfCookie() {
+  return fetchWithHandling('/auth/csrf');
+}
+
+export async function fetchCurrentUser() {
+  return fetchWithHandling('/auth/me');
+}
+
+export async function login(usernameOrEmail, password) {
+  return fetchWithHandling('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username_or_email: usernameOrEmail, password }),
+  });
+}
+
+export async function logout() {
+  return fetchWithHandling('/auth/logout', { method: 'POST' });
+}
+
+export async function register(payload) {
+  return fetchWithHandling('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function requestPasswordReset(email) {
+  return fetchWithHandling('/auth/password-reset', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
 }
 
 export async function fetchPortfolios() {
@@ -194,10 +258,10 @@ export async function importTransactionsCsv(file, portfolioId = null) {
   const formData = new FormData();
   formData.append('file', file);
   const qs = portfolioId != null ? `?portfolio_id=${encodeURIComponent(String(portfolioId))}` : '';
-  const response = await fetch(buildUrl(`/transactions/import-csv${qs}`), {
+  const response = await fetch(buildUrl(`/transactions/import-csv${qs}`), defaultFetchOptions({
     method: 'POST',
     body: formData,
-  });
+  }));
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(data.detail || data.message || 'Import failed');

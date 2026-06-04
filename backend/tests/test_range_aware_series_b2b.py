@@ -151,13 +151,13 @@ def _assert_points_match(actual: dict[str, float | None], expected: dict[str, fl
 
 
 @pytest.fixture
-def pln_mf_scope(api_client, seeded, monkeypatch):
+def pln_mf_scope(api_client, seeded, monkeypatch, test_user):
     """Mixed EUR PLN stock + INR MF all-scope (from performance gap tests)."""
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2024, 4, 15))
-    eur_portfolio = Portfolio.objects.create(
+    eur_portfolio = Portfolio.objects.create(user=test_user, 
         name="EUR PLN Stock", base_currency="EUR", is_active=True
     )
-    inr_portfolio = Portfolio.objects.create(
+    inr_portfolio = Portfolio.objects.create(user=test_user, 
         name="INR MF Only", base_currency="INR", is_active=True
     )
     api_client.post(
@@ -203,7 +203,7 @@ def pln_mf_scope(api_client, seeded, monkeypatch):
             row_date=d,
             rate=Decimal("0.011"),
         )
-    return resolve_portfolio_scope(portfolio_scope="all")
+    return resolve_portfolio_scope(test_user, portfolio_scope="all")
 
 
 @pytest.mark.django_db
@@ -228,10 +228,10 @@ def test_range_aware_parity_vs_full_build_slice(pln_mf_scope, metric, range_code
 
 
 @pytest.mark.django_db
-def test_range_aware_opening_holdings_before_range_start(api_client, seeded, monkeypatch):
+def test_range_aware_opening_holdings_before_range_start(api_client, seeded, monkeypatch, test_user):
     """Asset bought before range_start still contributes to in-range value."""
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
-    p = Portfolio.objects.create(name="Holdings", base_currency="EUR", is_active=True)
+    p = Portfolio.objects.create(user=test_user, name="Holdings", base_currency="EUR", is_active=True)
     api_client.post(
         "/api/v1/transactions",
         {
@@ -262,7 +262,7 @@ def test_range_aware_opening_holdings_before_range_start(api_client, seeded, mon
         source="test",
         asset_type=AssetType.STOCK,
     )
-    scope = resolve_portfolio_scope(portfolio_scope="all")
+    scope = resolve_portfolio_scope(test_user, portfolio_scope="all")
     pts = performance_list_payload(
         build_portfolio_performance(
             scope=scope,
@@ -276,10 +276,10 @@ def test_range_aware_opening_holdings_before_range_start(api_client, seeded, mon
 
 
 @pytest.mark.django_db
-def test_range_aware_mf_nav_forward_fill(api_client, seeded, monkeypatch):
+def test_range_aware_mf_nav_forward_fill(api_client, seeded, monkeypatch, test_user):
     """NAV before range_start forward-fills until a newer NAV appears."""
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 10))
-    p = Portfolio.objects.create(name="MF Nav", base_currency="INR", is_active=True)
+    p = Portfolio.objects.create(user=test_user, name="MF Nav", base_currency="INR", is_active=True)
     _mf_buy(
         api_client,
         portfolio_id=p.id,
@@ -305,7 +305,7 @@ def test_range_aware_mf_nav_forward_fill(api_client, seeded, monkeypatch):
         row_date=date(2026, 3, 10),
         rate=Decimal("0.01"),
     )
-    scope = resolve_portfolio_scope(portfolio_scope="all")
+    scope = resolve_portfolio_scope(test_user, portfolio_scope="all")
     ref = _reference_value_series(scope, "EUR", "30D", date(2026, 3, 10))
     aware = build_all_scope_portfolio_value_timeseries(
         scope,
@@ -320,10 +320,10 @@ def test_range_aware_mf_nav_forward_fill(api_client, seeded, monkeypatch):
 
 
 @pytest.mark.django_db
-def test_range_aware_fx_seven_day_lookback(api_client, seeded, monkeypatch):
+def test_range_aware_fx_seven_day_lookback(api_client, seeded, monkeypatch, test_user):
     """FX rate within 7 days before range_start is used via fill semantics."""
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
-    p = Portfolio.objects.create(name="FX Lookback", base_currency="EUR", is_active=True)
+    p = Portfolio.objects.create(user=test_user, name="FX Lookback", base_currency="EUR", is_active=True)
     api_client.post(
         "/api/v1/transactions",
         {
@@ -361,7 +361,7 @@ def test_range_aware_fx_seven_day_lookback(api_client, seeded, monkeypatch):
         row_date=range_start - timedelta(days=3),
         rate=Decimal("0.90"),
     )
-    scope = resolve_portfolio_scope(portfolio_scope="all")
+    scope = resolve_portfolio_scope(test_user, portfolio_scope="all")
     ref = _reference_value_series(scope, "EUR", "30D", date(2026, 3, 20))
     aware = build_all_scope_portfolio_value_timeseries(
         scope, "EUR", emit_start_date=range_start
@@ -375,10 +375,10 @@ def test_range_aware_fx_seven_day_lookback(api_client, seeded, monkeypatch):
 
 
 @pytest.mark.django_db
-def test_range_aware_stock_split(api_client, seeded, monkeypatch):
+def test_range_aware_stock_split(api_client, seeded, monkeypatch, test_user):
     """Split-adjusted quantity/value remains correct when split precedes range."""
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
-    p = Portfolio.objects.create(name="Split", base_currency="EUR", is_active=True)
+    p = Portfolio.objects.create(user=test_user, name="Split", base_currency="EUR", is_active=True)
     api_client.post(
         "/api/v1/transactions",
         {
@@ -412,7 +412,7 @@ def test_range_aware_stock_split(api_client, seeded, monkeypatch):
     _price("SPLT", "2026-01-01", "100")
     _price("SPLT", "2026-02-01", "50")
     _price("SPLT", "2026-03-20", "55")
-    scope = resolve_portfolio_scope(portfolio_scope="all")
+    scope = resolve_portfolio_scope(test_user, portfolio_scope="all")
     ref = _reference_performance_points(scope, "value", "30D", "EUR", date(2026, 3, 20))
     pts = performance_list_payload(
         build_portfolio_performance(

@@ -1,10 +1,10 @@
 # Current State — KPulla6 (Portfolio Insight)
 
 ## Last Updated
-2026-05-31 (Phase B2B: range-aware value series builder for non-ALL ranges)
+2026-06-03 (Authentication + per-user portfolio scoping)
 
 ## Stack
-- **Backend:** Django 5 + Django REST Framework
+- **Backend:** Django 5 + Django REST Framework + django-allauth (session auth, Google OAuth)
 - **Frontend:** React 19 + Vite 6 (Dashboard, Assets, Transactions, Settings, portfolio/currency selectors)
 - **Database:** PostgreSQL 16 (Docker Compose)
 - **Reference:** KPulla5 (read-only)
@@ -62,6 +62,8 @@
   - **Phase B2B:** non-ALL `range` builds bootstrap opening holdings/prices/NAV/FX at range start and emit only the window (~366 days for 1Y vs ~2,426 for ALL); XIRR remains full-scope
   - Read path: no external market-data calls
 - `GET /api/v1/health`
+- **Auth (session):** `GET /api/v1/auth/me`, `POST /api/v1/auth/login|logout|register|password-reset`, `GET /api/v1/auth/csrf` — see `docs/auth.md`
+- Google OAuth: `GET /accounts/google/login/` (django-allauth; redirect after login to `FRONTEND_URL`)
 - Services: `transactions/services.py`, `portfolios/scope.py`, `portfolios/holdings_service.py`
 - **Mutual fund schema foundation** (Phase MF-1):
   - `market_data.models`: `Asset`, `MutualFundProfile`, `PrimaryAssetClass`; `AssetType.MUTUAL_FUND`; nullable `HistoricalPrice.asset` FK
@@ -141,6 +143,7 @@
 - **Bulk transaction assignment (Transactions):** row selection + assign selected rows to a real portfolio via full PUT payloads (stock, MF, STOCK_SPLIT)
 - Display currency from settings (sidebar + Settings page); **`portfolioContext` waits for `GET /settings` before exposing `apiQuery`**; Dashboard summary/performance fetches use request-sequence guards so stale responses cannot overwrite newer currency scope
 - **Sidebar layout (Phase 13A):** Portfolio View and Display Currency selectors sit directly below the brand header, above navigation links, so primary context controls are visible without scrolling
+- **App shell header:** Theme selector (Light / Dark / System, persisted in `localStorage`), signed-in user label, and Log out — top-right of the main column, always visible without scrolling the sidebar
 - Dashboard: summary cards via `GET /portfolio/summary?include_timeseries=false` (headline metrics only; chart uses performance API), performance chart (value / cumulative return / TWROR), range pills, benchmark overlay
 - Assets: holdings table, allocation chart, closed/oversold/price_missing states
 - Asset detail: FIFO metrics + transaction history (scoped)
@@ -251,8 +254,8 @@ Design doc: [mutual-funds.md](./mutual-funds.md). **MF-1 schema, MF-2 NAV sync, 
 - All sync tests mock providers — no real network calls
 
 ## Test Status
-- Backend: `make test-backend` — 409 pytest tests
-- Frontend: `make test-frontend` — vitest tests; `npm run build` passes
+- Backend: `make test-backend` — 612 pytest tests
+- Frontend: `make test-frontend` — 266 vitest tests; `npm run build` passes
 
 ## Phase 4 contracts (verified in tests)
 - `portfolio_scope=all` + `portfolio_id` → **422**
