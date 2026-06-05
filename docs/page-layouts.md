@@ -116,11 +116,12 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 | Section | Layout |
 |---------|--------|
 | **Header** | `PageHeader` — record count subtitle; actions: hidden file input + Import CSV + Add Transaction |
+| **Cash-aware** | `CashAwarePortfolioStatus` (Cash-4A.2) — status + enable when one portfolio selected; per-portfolio note in All Portfolios scope |
 | **Import info** | Info `WarningBanner` (target portfolio, stock split/SWAP rules); expandable “Supported CSV formats” (stock + MF columns, rules, MF example, sample MF download) |
 | **Import feedback** | Success/warning banner; error block with row-level list |
 | **Table** | Checkbox, Portfolio, Symbol, Date, Type (`.ui-txn-type`), Qty, Price, Fees, Total, Actions (edit/delete icon buttons) |
 | **Bulk actions** | Toolbar when rows selected: portfolio dropdown (active real only), Apply, Clear; partial failure banner |
-| **Modal** | `TransactionModal` — add/edit; STOCK_SPLIT field swap; Cancel/Save `Button`s |
+| **Modal** | `TransactionModal` — add: **Record type** Cash / Stock / Mutual Fund; cash → `POST /cash/deposits` or `/cash/withdrawals` (not `/transactions`); stock/MF unchanged; edit asset rows only (cash edit on `/cash`); success banner + link to Cash page after cash add |
 
 **States:** `LoadingState` · `ErrorState` · table `EmptyState`.
 
@@ -138,7 +139,7 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 |---------|--------|
 | **Header** | `PageHeader` “Settings” |
 | **Display & tax** | `SectionCard` — tax rate input, display currency select, hint linking to sidebar selector, Save `Button` |
-| **Portfolios** | `SectionCard` + `PortfolioManagement` — active portfolio table, create form, edit modal, deactivate (non-default); backend errors surfaced via `WarningBanner` |
+| **Portfolios** | `SectionCard` + `PortfolioManagement` — table with Cash-aware On/Off, **Enable cash-aware** for legacy rows, create form, edit modal, deactivate (non-default) |
 | **Feedback** | Success / error `WarningBanner` after save |
 
 **States:** `LoadingState` · `ErrorState` on initial load failure.
@@ -187,10 +188,102 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 | `/assets` | `pages/Assets.jsx` | `Assets.css` | PageHeader, ChartCard, SectionCard, StatusBadge, CurrencyValue, PercentValue | holdings | **Implemented** |
 | `/assets/:assetSymbol` | `pages/AssetDetail.jsx` | `AssetDetail.css` | PageHeader, MetricCard, SectionCard, StatusBadge, `.ui-txn-type` | asset detail | **Implemented** |
 | `/transactions` | `pages/Transactions.jsx` | `Transactions.css` | PageHeader, Button, WarningBanner, TransactionModal, `.ui-txn-type` | transactions CRUD, CSV import, bulk assign | **Implemented** |
+| `/cash` | `pages/Cash.jsx` | `Cash.css` | PageHeader, SectionCard, Button, EmptyState, CurrencyValue, deposit/withdrawal modals | cash balances, ledger, deposits, withdrawals | **Implemented** |
 | `/settings` | `pages/Settings.jsx` | `Settings.css` | PageHeader, SectionCard, PortfolioManagement, Button, WarningBanner | settings GET/PUT, portfolio CRUD | **Implemented** |
 | (shell) | `components/Layout.jsx` | `Layout.css` | WarningBanner, nav, selectors | portfolios, settings (context) | **Implemented** |
 
 **Shared:** `components/ui/*` · `components/charts/chartTheme.js` · `portfolioContext.jsx`
+
+---
+
+## 12. Cash page (`/cash`) — **Implemented** (Cash-3B)
+
+| Field | Value |
+|-------|--------|
+| Route | `/cash` |
+| Component | `pages/Cash.jsx` |
+| Styles | `pages/Cash.css` |
+| Primitives | `PageHeader`, `SectionCard`, `Button`, `EmptyState`, `LoadingState`, `ErrorState`, `WarningBanner`, `CurrencyValue` |
+| APIs | `GET /cash/balances`, `GET /cash/ledger`, `POST /cash/deposits`, `POST /cash/withdrawals` |
+
+Design: [cash-ledger.md](./cash-ledger.md).
+
+| Section | Layout |
+|---------|--------|
+| **Header** | `PageHeader` — title **Cash**; subtitle: native balances by portfolio and currency (no display-currency conversion on this page) |
+| **Cash-aware** | `CashAwarePortfolioStatus` — status + enable for selected portfolio; All Portfolios note only |
+| **Actions** | **Add Deposit** (primary), **Add Withdrawal** (secondary), **Backfill Cash** (secondary); deposit/withdrawal modals; **CashBackfillWizard** for legacy backfill |
+| **Balances** | `SectionCard` — table: Portfolio (all scope), Currency, Balance; optional **Totals by currency** list from API |
+| **Ledger** | `SectionCard` — filters: currency, entry type, date from/to; table: Date, Portfolio (all scope), Type, Currency, Amount, Source, Note, **Actions**; backend pagination |
+| **Ledger actions** | Manual deposit/withdrawal only: Edit (modal) / Delete (confirm). System/linked rows show em dash with tooltip |
+| **Edit modal** | Reuses deposit/withdrawal modal — **Edit Deposit** / **Edit Withdrawal**; portfolio read-only; `PUT /cash/ledger/{id}` |
+| **Delete** | Confirm: “Delete this cash entry? This will update cash balances.” → `DELETE /cash/ledger/{id}` |
+| **Future impact (Cash-4D)** | **409** shows `CashFutureImpactDisplay`: earliest negative date, lowest balance, affected entries (incl. linked `asset_symbol`); helper to fix manually — no cascade delete |
+| **Empty states** | No balances / no ledger entries |
+| **Success / errors** | `WarningBanner` success after write/edit/delete; modal errors; insufficient withdrawal / future-impact rejection from API |
+
+**Not on this page:** transfers (Cash-8), display-currency cash totals, portfolio change on edit.
+
+### Backfill wizard (`CashBackfillWizard` — Cash-7C) **Implemented**
+
+Modal from **Backfill Cash** on `/cash`. React displays API preview/apply only — no backfill calculation.
+
+| Step | Content |
+|------|---------|
+| 1 **Configure** | Portfolio (required when All Portfolios; preselected for single portfolio); optional start/end dates; mode `shortfall` (read-only); **Preview backfill** → `POST /cash/backfill-preview` |
+| 2 **Review** | Summary counts, proposed deposits table, shortfalls table, warnings/`row_errors`; amounts read-only; **Apply backfill deposits** or Cancel |
+| 3 **Result** | `created_count`, `skipped_existing_count`, created deposits, totals; refresh balances + ledger when `created_count > 0`; optional **Enable cash-aware mode** (`PUT /portfolios/{id}`) with confirmation — not auto-enabled |
+
+### Planned — Cash balances on Dashboard / Settings (Cash-6+)
+
+### CSV import cash preview (Cash-5) **Implemented**
+
+Embedded in **Transactions** import flow after file select:
+
+| Section | Layout |
+|---------|--------|
+| **Preview API** | `POST /transactions/import-csv/preview-cash` — simulation; no writes |
+| **Modal** | “This import requires additional cash.” — totals by currency, proposed deposits table, shortfall details |
+| **Primary action** | **Add required cash deposits and import all rows** — `create_cash_deposits` + `cash_preview_confirmed` |
+| **Secondary** | **Cancel import** — no deposits, no transactions |
+| **Legacy** | `cash_aware=false` — preview passes through; import unchanged |
+| **No silent path** | Cash-aware shortfall without confirm → **409**; frontend shows modal |
+
+### Transaction modal — insufficient cash (Cash-4B / Cash-4E) **Implemented**
+
+On stock or mutual fund **BUY** when `POST`/`PUT /transactions` returns **400** with shortfall fields (cash-aware portfolio):
+
+| Element | Behavior |
+|---------|----------|
+| Error banner | **Insufficient cash balance for purchase.** |
+| Shortfall panel | `CashShortfallDisplay` — Required / Available / Shortfall via `CurrencyValue` (backend values only) |
+| Same-currency guidance | Purchases require cash in the transaction currency; add or edit `{currency}` cash in this portfolio, then retry. Another currency is **not** used automatically (no FX conversion in this phase). |
+| Helper | Link to `/cash` — **Open Cash page** |
+| Scope | BUY only; not SELL, `STOCK_SPLIT`, or generic validation errors |
+
+Cash record type: withdrawal shortfall unchanged (`CashApiError` in `CashEntryFormFields`) — amounts only, no purchase wording.
+
+### Transaction modal — add missing cash and continue (Cash-4C) **Implemented**
+
+After stock/MF **BUY** shortfall (cash-aware portfolio):
+
+| Element | Behavior |
+|---------|----------|
+| Shortfall panel | `CashShortfallDisplay` + same-currency purchase guidance (Cash-4E) |
+| **Recommended action** | Title + copy: add missing `{currency}` deposit and continue |
+| Fields | Source of funds (text), Note (optional) |
+| Primary action | **Add missing cash and continue** — `POST /cash/deposits` with backend `shortfall` / `currency`; stock date = transaction date; MF date = `investment_date`; then retry original BUY |
+| Loading | Disables Save + action button; status **Adding cash and recording purchase…** |
+| Success | Close modal; banner **Cash deposit added and purchase recorded.**; refresh transactions |
+| Partial success | Deposit created; modal stays open; warning if retry fails (deposit not reversed) |
+| Excluded | SELL, withdrawal shortfall, errors without shortfall fields |
+
+### Dashboard / Assets impact (Cash-6)
+
+- **Dashboard KPI row:** optional “Cash” `MetricCard` when API includes cash in `current_value` breakdown.
+- **Assets allocation chart:** additional slices `Cash {currency}` — labels from API only.
+
+**Approval status:** Proposed (Cash-0 documentation only).
 
 ---
 

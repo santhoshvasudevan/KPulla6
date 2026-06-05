@@ -82,7 +82,7 @@ def _metrics_url(**params: str) -> str:
 
 
 @pytest.mark.django_db
-def test_analytics_basic_portfolio_metrics_fractions(api_client, seeded, today_patch):
+def test_analytics_basic_portfolio_metrics_fractions(api_client, legacy_seeded, today_patch):
     _buy(api_client)
     _price("AAPL", "2026-01-01", "100")
     _price("AAPL", "2026-01-02", "110")
@@ -102,7 +102,7 @@ def test_analytics_basic_portfolio_metrics_fractions(api_client, seeded, today_p
 
 
 def test_analytics_service_uses_public_xirr_helper():
-    """Analytics must not import private _compute_scope_xirr from summary_service."""
+    """Analytics must use portfolios.xirr_service, not private summary XIRR helpers."""
     services_path = (
         Path(__file__).resolve().parents[1] / "analytics" / "services.py"
     )
@@ -111,16 +111,118 @@ def test_analytics_service_uses_public_xirr_helper():
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module == "portfolios.summary_service":
             for alias in node.names:
-                if alias.name == "_compute_scope_xirr":
+                if alias.name.startswith("_") and "xirr" in alias.name.lower():
                     imported_private.append(alias.name)
     assert imported_private == []
     source = services_path.read_text(encoding="utf-8")
-    assert "compute_scope_xirr" in source
+    assert "compute_scope_xirr_detail" in source
     assert "_compute_scope_xirr" not in source
 
 
 @pytest.mark.django_db
-def test_analytics_xirr_scope_full_scope_even_for_range_slice(api_client, seeded, today_patch):
+def test_metric_sheet_cumulative_return_aligns_with_performance_cash_aware(
+    api_client, seeded, test_user, today_patch
+):
+    from cash.models import CashEntryType, CashLedgerEntry
+
+    portfolio = ensure_default_portfolio(test_user)
+    portfolio.cash_aware_enabled = True
+    portfolio.save(update_fields=["cash_aware_enabled", "updated_at"])
+    CashLedgerEntry.objects.create(
+        portfolio=portfolio,
+        date=date(2026, 1, 1),
+        currency="EUR",
+        entry_type=CashEntryType.CASH_DEPOSIT,
+        amount=Decimal("1000"),
+    )
+    _buy(api_client, date="2026-01-01", quantity="10", price_per_share="100")
+    _price("AAPL", "2026-01-01", "100")
+    _price("AAPL", "2026-03-15", "110")
+    perf_pts = api_client.get(
+        "/api/v1/portfolio/performance?metric=cumulative_return&range=ALL&display_currency=EUR"
+    ).json()
+    if isinstance(perf_pts, dict):
+        perf_pts = perf_pts["points"]
+    perf_cum = perf_pts[-1]["value"]
+    metrics = api_client.get(_metrics_url(range="ALL", display_currency="EUR")).json()
+    sheet_cum = metrics["metrics"]["return"]["cumulative_return"]
+    assert perf_cum is not None and sheet_cum is not None
+    assert abs(float(sheet_cum) * 100 - perf_cum) < 0.5
+
+
+def test_metric_sheet_xirr_aligns_with_summary_cash_aware(
+    api_client, seeded, test_user, today_patch
+):
+    from cash.models import CashEntryType, CashLedgerEntry
+
+    portfolio = ensure_default_portfolio(test_user)
+    portfolio.cash_aware_enabled = True
+    portfolio.save(update_fields=["cash_aware_enabled", "updated_at"])
+    CashLedgerEntry.objects.create(
+        portfolio=portfolio,
+        date=date(2026, 1, 1),
+        currency="EUR",
+        entry_type=CashEntryType.CASH_DEPOSIT,
+        amount=Decimal("1000"),
+    )
+    _buy(api_client, date="2026-01-02", quantity="10", price_per_share="100")
+    _price("AAPL", "2026-03-15", "110")
+    summary = api_client.get(
+        "/api/v1/portfolio/summary?include_timeseries=false&display_currency=EUR"
+    ).json()
+    metrics = api_client.get(_metrics_url(range="ALL", display_currency="EUR")).json()
+    assert summary["xirr"] == metrics["metrics"]["return"]["xirr"]
+
+
+@pytest.mark.django_db
+def test_metric_sheet_return_metrics_near_zero_deposit_only_cash_aware(
+    api_client, seeded, test_user, today_patch
+):
+    from cash.models import CashEntryType, CashLedgerEntry
+
+    portfolio = ensure_default_portfolio(test_user)
+    portfolio.cash_aware_enabled = True
+    portfolio.save(update_fields=["cash_aware_enabled", "updated_at"])
+    CashLedgerEntry.objects.create(
+        portfolio=portfolio,
+        date=date(2026, 1, 1),
+        currency="EUR",
+        entry_type=CashEntryType.CASH_DEPOSIT,
+        amount=Decimal("1000"),
+    )
+    metrics = api_client.get(_metrics_url(range="ALL", display_currency="EUR")).json()
+    ret = metrics["metrics"]["return"]
+    assert ret["cumulative_return"] is not None
+    assert abs(float(ret["cumulative_return"])) < 0.02
+    assert ret["xirr"] is not None
+    assert abs(float(ret["xirr"])) < 0.02
+
+
+@pytest.mark.django_db
+def test_metric_sheet_cumulative_near_zero_cash_only_usd_display(
+    api_client, seeded, test_user, today_patch
+):
+    from cash.models import CashEntryType, CashLedgerEntry
+
+    portfolio = ensure_default_portfolio(test_user)
+    portfolio.cash_aware_enabled = True
+    portfolio.save(update_fields=["cash_aware_enabled", "updated_at"])
+    CashLedgerEntry.objects.create(
+        portfolio=portfolio,
+        date=date(2026, 1, 1),
+        currency="USD",
+        entry_type=CashEntryType.CASH_DEPOSIT,
+        amount=Decimal("1000"),
+    )
+    metrics = api_client.get(
+        _metrics_url(range="ALL", display_currency="USD")
+    ).json()
+    cum = metrics["metrics"]["return"]["cumulative_return"]
+    assert cum is not None
+    assert abs(float(cum)) < 0.02
+
+
+def test_analytics_xirr_scope_full_scope_even_for_range_slice(api_client, legacy_seeded, today_patch):
     _buy(api_client, date="2026-01-01")
     _price("AAPL", "2026-01-01", "100")
     _price("AAPL", "2026-01-15", "105")
@@ -131,7 +233,7 @@ def test_analytics_xirr_scope_full_scope_even_for_range_slice(api_client, seeded
 
 
 @pytest.mark.django_db
-def test_analytics_buy_contribution_neutrality(api_client, seeded, today_patch):
+def test_analytics_buy_contribution_neutrality(api_client, legacy_seeded, today_patch):
     _buy(api_client, date="2026-01-01", quantity="1", price_per_share="100")
     _buy(api_client, date="2026-01-02", quantity="1", price_per_share="100")
     _price("AAPL", "2026-01-01", "100")
@@ -143,7 +245,7 @@ def test_analytics_buy_contribution_neutrality(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_analytics_range_all_and_30d(api_client, seeded, today_patch):
+def test_analytics_range_all_and_30d(api_client, legacy_seeded, today_patch):
     _buy(api_client, date="2026-01-01")
     _price("AAPL", "2026-01-01", "100")
     _price("AAPL", "2026-01-15", "105")
@@ -158,7 +260,7 @@ def test_analytics_range_all_and_30d(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_analytics_benchmark_metrics(api_client, seeded, today_patch):
+def test_analytics_benchmark_metrics(api_client, legacy_seeded, today_patch):
     BenchmarkIndexConfig.objects.get_or_create(
         symbol="^GSPC",
         defaults={"display_name": "S&P 500", "enabled": True},
@@ -180,7 +282,7 @@ def test_analytics_benchmark_metrics(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_analytics_unknown_benchmark_422(api_client, seeded, today_patch):
+def test_analytics_unknown_benchmark_422(api_client, legacy_seeded, today_patch):
     _buy(api_client)
     _price("AAPL", "2026-03-15", "100")
     r = api_client.get(_metrics_url(benchmark="NOPE"))
@@ -188,7 +290,7 @@ def test_analytics_unknown_benchmark_422(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_analytics_benchmark_missing_prices_warning(api_client, seeded, today_patch):
+def test_analytics_benchmark_missing_prices_warning(api_client, legacy_seeded, today_patch):
     BenchmarkIndexConfig.objects.get_or_create(
         symbol="^GSPC",
         defaults={"display_name": "S&P 500", "enabled": True},
@@ -204,7 +306,7 @@ def test_analytics_benchmark_missing_prices_warning(api_client, seeded, today_pa
 
 @pytest.mark.django_db
 @patch("yfinance.Ticker")
-def test_analytics_no_yfinance_on_read(mock_ticker, api_client, seeded, today_patch):
+def test_analytics_no_yfinance_on_read(mock_ticker, api_client, legacy_seeded, today_patch):
     _buy(api_client)
     _price("AAPL", "2026-03-15", "100")
     r = api_client.get(_metrics_url(range="ALL"))
@@ -213,7 +315,7 @@ def test_analytics_no_yfinance_on_read(mock_ticker, api_client, seeded, today_pa
 
 
 @pytest.mark.django_db
-def test_analytics_scope_all(api_client, seeded, today_patch, test_user):
+def test_analytics_scope_all(api_client, legacy_seeded, today_patch, test_user):
     p1 = ensure_default_portfolio(test_user)
     p2 = Portfolio.objects.create(user=test_user, name="P2", base_currency="EUR", is_active=True)
     _buy(api_client, asset_symbol="AAA", portfolio_id=p1.id)
@@ -227,7 +329,7 @@ def test_analytics_scope_all(api_client, seeded, today_patch, test_user):
 
 @pytest.mark.django_db
 def test_analytics_scope_all_pln_stock_uses_display_currency_series(
-    api_client, seeded, monkeypatch, test_user
+    api_client, legacy_seeded, monkeypatch, test_user
 ):
     """Metric Sheet all-scope must not use pooled INR-base value/flow path."""
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2024, 4, 15))
@@ -298,7 +400,7 @@ def test_analytics_scope_all_pln_stock_uses_display_currency_series(
 
 
 @pytest.mark.django_db
-def test_analytics_portfolio_id_filter(api_client, seeded, today_patch, test_user):
+def test_analytics_portfolio_id_filter(api_client, legacy_seeded, today_patch, test_user):
     p1 = ensure_default_portfolio(test_user)
     p2 = Portfolio.objects.create(user=test_user, name="Scoped", base_currency="EUR", is_active=True)
     _buy(api_client, asset_symbol="AAA", portfolio_id=p1.id)
@@ -311,7 +413,7 @@ def test_analytics_portfolio_id_filter(api_client, seeded, today_patch, test_use
 
 
 @pytest.mark.django_db
-def test_analytics_scope_all_and_portfolio_id_422(api_client, seeded, test_user):
+def test_analytics_scope_all_and_portfolio_id_422(api_client, legacy_seeded, test_user):
     p = ensure_default_portfolio(test_user)
     r = api_client.get(
         _metrics_url(portfolio_scope="all", portfolio_id=str(p.id))
@@ -321,7 +423,7 @@ def test_analytics_scope_all_and_portfolio_id_422(api_client, seeded, test_user)
 
 @pytest.mark.django_db
 def test_analytics_portfolio_includes_periodic_returns_and_drawdown_periods(
-    api_client, seeded, today_patch
+    api_client, legacy_seeded, today_patch
 ):
     _buy(api_client)
     _price("AAPL", "2026-01-01", "100")
@@ -355,7 +457,7 @@ def test_analytics_portfolio_includes_periodic_returns_and_drawdown_periods(
 
 @pytest.mark.django_db
 def test_analytics_portfolio_includes_drawdown_series(
-    api_client, seeded, today_patch
+    api_client, legacy_seeded, today_patch
 ):
     _buy(api_client)
     _price("AAPL", "2026-01-01", "100")
@@ -376,7 +478,7 @@ def test_analytics_portfolio_includes_drawdown_series(
 
 @pytest.mark.django_db
 def test_analytics_portfolio_yearly_returns_are_calendar_year_twror_compounded(
-    api_client, seeded, today_patch
+    api_client, legacy_seeded, today_patch
 ):
     _buy(api_client, date="2026-01-01", quantity="10", price_per_share="100")
     _buy(api_client, date="2026-02-01", quantity="10", price_per_share="150")
@@ -395,7 +497,7 @@ def test_analytics_portfolio_yearly_returns_are_calendar_year_twror_compounded(
 
 @pytest.mark.django_db
 def test_analytics_portfolio_empty_data_returns_empty_periodic_and_drawdown_blocks(
-    api_client, seeded, today_patch
+    api_client, legacy_seeded, today_patch
 ):
     data = api_client.get(_metrics_url(range="ALL")).json()
     assert data["periodic_returns"] == {"monthly": [], "yearly": []}
@@ -404,7 +506,7 @@ def test_analytics_portfolio_empty_data_returns_empty_periodic_and_drawdown_bloc
 
 
 @pytest.mark.django_db
-def test_metric_sheet_cumulative_return_matches_performance_api(api_client, seeded, today_patch):
+def test_metric_sheet_cumulative_return_matches_performance_api(api_client, legacy_seeded, today_patch):
     """Metric Sheet cumulative return must match performance chart terminal point."""
     _buy(api_client, date="2026-01-01", quantity="10", price_per_share="100")
     _buy(api_client, date="2026-02-01", quantity="10", price_per_share="150")
@@ -422,7 +524,7 @@ def test_metric_sheet_cumulative_return_matches_performance_api(api_client, seed
 
 @pytest.mark.django_db
 def test_metric_sheet_cumulative_return_differs_from_twror_with_staggered_buys(
-    api_client, seeded, today_patch
+    api_client, legacy_seeded, today_patch
 ):
     """Regression: Metric Sheet must not reuse TWROR for cumulative return or CAGR."""
     _buy(api_client, date="2026-01-01", quantity="10", price_per_share="100")

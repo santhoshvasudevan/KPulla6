@@ -46,6 +46,99 @@ def test_post_creates_portfolio(api_client, seeded):
     assert data["base_currency"] == "EUR"
     assert data["is_default"] is False
     assert data["is_active"] is True
+    assert data["cash_aware_enabled"] is True
+
+
+@pytest.mark.django_db
+def test_post_defaults_cash_aware_enabled_true_when_omitted(api_client, seeded):
+    response = api_client.post("/api/v1/portfolios", {"name": "Cash Aware New"}, format="json")
+    assert response.status_code == 201
+    assert response.json()["cash_aware_enabled"] is True
+
+
+@pytest.mark.django_db
+def test_post_respects_explicit_cash_aware_false(api_client, seeded):
+    response = api_client.post(
+        "/api/v1/portfolios",
+        {"name": "Legacy Mode", "cash_aware_enabled": False},
+        format="json",
+    )
+    assert response.status_code == 201
+    assert response.json()["cash_aware_enabled"] is False
+
+
+@pytest.mark.django_db
+def test_put_enable_cash_aware_blocks_buy_without_cash(api_client, legacy_seeded, test_user):
+    from cash.models import CashEntryType, CashLedgerEntry
+    from portfolios.seed import ensure_default_portfolio
+    from transactions.models import Transaction
+
+    portfolio = ensure_default_portfolio(test_user)
+    assert portfolio.cash_aware_enabled is False
+
+    enable = api_client.put(
+        f"/api/v1/portfolios/{portfolio.id}",
+        {
+            "name": portfolio.name,
+            "description": portfolio.description,
+            "base_currency": portfolio.base_currency,
+            "is_active": True,
+            "cash_aware_enabled": True,
+        },
+        format="json",
+    )
+    assert enable.status_code == 200
+    assert enable.json()["cash_aware_enabled"] is True
+
+    buy = api_client.post(
+        "/api/v1/transactions",
+        {
+            "asset_symbol": "AAPL",
+            "date": "2026-06-01",
+            "type": "BUY",
+            "quantity": "10",
+            "price_per_share": "100",
+            "currency": "EUR",
+            "fees": "5",
+            "portfolio_id": portfolio.id,
+        },
+        format="json",
+    )
+    assert buy.status_code == 400
+    assert buy.json()["detail"] == "Insufficient cash balance for purchase."
+    assert Transaction.objects.filter(asset_symbol="AAPL").count() == 0
+    assert CashLedgerEntry.objects.filter(entry_type=CashEntryType.BUY_SETTLEMENT).count() == 0
+
+
+@pytest.mark.django_db
+def test_put_sets_cash_aware_enabled_true(api_client, seeded):
+    created = api_client.post(
+        "/api/v1/portfolios",
+        {"name": "Repair Me", "cash_aware_enabled": False},
+        format="json",
+    ).json()
+    response = api_client.put(
+        f"/api/v1/portfolios/{created['id']}",
+        {"cash_aware_enabled": True},
+        format="json",
+    )
+    assert response.status_code == 200
+    assert response.json()["cash_aware_enabled"] is True
+
+
+@pytest.mark.django_db
+def test_existing_portfolio_stays_legacy_on_re_ensure(test_user):
+    portfolio = Portfolio.objects.create(
+        user=test_user,
+        name="Legacy Default",
+        is_default=True,
+        is_active=True,
+        cash_aware_enabled=False,
+    )
+    again = ensure_default_portfolio(test_user)
+    assert again.id == portfolio.id
+    again.refresh_from_db()
+    assert again.cash_aware_enabled is False
 
 
 @pytest.mark.django_db

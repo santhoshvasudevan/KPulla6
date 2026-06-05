@@ -27,6 +27,13 @@ class TransactionValidationError(Exception):
     pass
 
 
+from transactions.cash_settlement import (  # noqa: E402 — after exception classes
+    delete_linked_settlement_before_transaction,
+    save_transaction_with_stock_settlement,
+    sync_stock_settlement,
+)
+
+
 @dataclass
 class PaginatedTransactions:
     items: list[Transaction]
@@ -221,6 +228,7 @@ def get_transaction(user: AbstractBaseUser, transaction_id: int) -> Transaction:
     return transaction
 
 
+@db_transaction.atomic
 def create_transaction(user: AbstractBaseUser, *, validated_data: dict[str, Any]) -> Transaction:
     portfolio_id = validated_data.pop("portfolio_id", None)
     try:
@@ -229,10 +237,11 @@ def create_transaction(user: AbstractBaseUser, *, validated_data: dict[str, Any]
         raise
 
     transaction = Transaction(portfolio_id=resolved_id, **validated_data)
-    transaction.save()
+    save_transaction_with_stock_settlement(transaction)
     return get_transaction(user, transaction.id)
 
 
+@db_transaction.atomic
 def update_transaction(
     user: AbstractBaseUser,
     transaction_id: int,
@@ -254,11 +263,14 @@ def update_transaction(
     for field, value in validated_data.items():
         setattr(transaction, field, value)
     transaction.save()
+    sync_stock_settlement(transaction)
     return get_transaction(user, transaction.id)
 
 
+@db_transaction.atomic
 def delete_transaction(user: AbstractBaseUser, transaction_id: int) -> None:
     transaction = get_transaction(user, transaction_id)
+    delete_linked_settlement_before_transaction(transaction)
     transaction.delete()
 
 
@@ -273,13 +285,55 @@ class CsvImportResult:
     errors: list[dict[str, Any]]
 
 
+def preview_csv_cash_for_import(
+    user: AbstractBaseUser,
+    *,
+    csv_text: str,
+    portfolio_id: int | None = None,
+):
+    """Parse CSV and return cash shortfall preview for cash-aware portfolios."""
+    from transactions.csv_cash_preview import (
+        CsvCashPreviewResult,
+        simulate_csv_cash_preview,
+    )
+    from transactions.csv_import import parse_import_csv
+
+    csv_format, payloads, parse_errors = parse_import_csv(csv_text)
+    if parse_errors:
+        return CsvCashPreviewResult(
+            cash_aware=False,
+            can_import_without_deposits=False,
+            row_errors=parse_errors,
+        )
+
+    try:
+        target_portfolio_id = resolve_portfolio_id_or_default(user, portfolio_id)
+    except PortfolioNotFoundError:
+        raise
+
+    portfolio = Portfolio.objects.get(pk=target_portfolio_id)
+    preview = simulate_csv_cash_preview(
+        portfolio, csv_format=csv_format or "stock", payloads=payloads
+    )
+    if parse_errors:
+        preview.row_errors = parse_errors
+    return preview
+
+
 @db_transaction.atomic
 def import_transactions_from_csv(
     user: AbstractBaseUser,
     *,
     csv_text: str,
     portfolio_id: int | None = None,
+    create_cash_deposits: bool = False,
+    cash_preview_confirmed: bool = False,
 ) -> CsvImportResult:
+    from cash.services import create_cash_deposit
+    from transactions.csv_cash_preview import (
+        CsvImportCashPreviewRequired,
+        simulate_csv_cash_preview,
+    )
     from transactions.csv_import import parse_import_csv
     from transactions.mutual_fund_services import create_mutual_fund_transaction
 
@@ -291,6 +345,26 @@ def import_transactions_from_csv(
         target_portfolio_id = resolve_portfolio_id_or_default(user, portfolio_id)
     except PortfolioNotFoundError:
         raise
+
+    portfolio = Portfolio.objects.get(pk=target_portfolio_id)
+
+    if portfolio.cash_aware_enabled:
+        preview = simulate_csv_cash_preview(
+            portfolio, csv_format=csv_format or "stock", payloads=payloads
+        )
+        if not preview.can_import_without_deposits:
+            if not (create_cash_deposits and cash_preview_confirmed):
+                raise CsvImportCashPreviewRequired(preview)
+            for dep in preview.proposed_deposits:
+                create_cash_deposit(
+                    user,
+                    portfolio_id=dep.portfolio_id,
+                    entry_date=dep.date,
+                    currency=dep.currency,
+                    amount=dep.amount,
+                    source_of_funds=dep.source_of_funds,
+                    note=dep.note,
+                )
 
     if csv_format == "stock":
         for data in payloads:
@@ -305,7 +379,10 @@ def import_transactions_from_csv(
                 split_from=data.get("split_from"),
                 split_to=data.get("split_to"),
             )
-            Transaction.objects.create(portfolio_id=target_portfolio_id, **validated)
+            create_transaction(
+                user,
+                validated_data={**validated, "portfolio_id": target_portfolio_id},
+            )
     elif csv_format == "mf":
         for data in payloads:
             create_mutual_fund_transaction(

@@ -257,6 +257,51 @@ describe('Assets Page', () => {
     });
   });
 
+  it('renders Cash EUR allocation slice when backend provides it', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });
+    api.fetchHoldings.mockResolvedValue({
+      fx_status: 'ok',
+      holdings: [
+        {
+          asset_symbol: 'AAPL',
+          quantity: 10,
+          currency: 'EUR',
+          invested: 1500,
+          current_price: 175.5,
+          current_value: 1755,
+          unrealized_pl: 255,
+          price_status: 'ok',
+          holding_status: 'ok',
+        },
+      ],
+      allocation: [
+        {
+          asset_symbol: 'AAPL',
+          quantity: 10,
+          currency: 'EUR',
+          current_value: 1755,
+          holding_status: 'ok',
+        },
+        {
+          asset_type: 'CASH',
+          asset_symbol: 'Cash EUR',
+          primary_asset_class: 'CASH',
+          currency: 'EUR',
+          current_value: 1200,
+          is_cash: true,
+          holding_status: 'ok',
+        },
+      ],
+    });
+    renderAssets();
+    await waitFor(() => {
+      expect(screen.getByText('AAPL')).toBeInTheDocument();
+      expect(screen.queryByText('Cash EUR')).not.toBeInTheDocument();
+      expect(screen.getByTestId('pie-chart')).toBeInTheDocument();
+    });
+  });
+
   it('shows empty state when no assets', async () => {
     api.fetchPortfolios.mockResolvedValueOnce([]);
     api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });

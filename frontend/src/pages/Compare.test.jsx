@@ -212,6 +212,28 @@ describe('Compare page', () => {
     expect(screen.getAllByText('1.05').length).toBeGreaterThan(0);
   });
 
+  it('does not include cash rows in compare pickers', async () => {
+    api.fetchHoldings.mockResolvedValueOnce({
+      holdings: [
+        { asset_symbol: 'AAPL', asset_type: 'STOCK', quantity: 10, current_value: 1000 },
+        {
+          asset_symbol: 'Cash EUR',
+          asset_type: 'CASH',
+          is_cash: true,
+          quantity: 0,
+          current_value: 500,
+        },
+        { asset_symbol: 'MSFT', asset_type: 'STOCK', quantity: 5, current_value: 500 },
+      ],
+    });
+    renderCompare();
+    await waitFor(() => {
+      expect(screen.getByLabelText('compare-asset-a')).toHaveTextContent('AAPL');
+      expect(screen.getByLabelText('compare-asset-b')).toHaveTextContent('MSFT');
+    });
+    expect(screen.getByLabelText('compare-asset-a')).not.toHaveTextContent('Cash EUR');
+  });
+
   it('shows empty state when fewer than two holdings', async () => {
     api.fetchHoldings.mockResolvedValueOnce(holdingsOne);
     renderCompare();

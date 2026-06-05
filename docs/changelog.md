@@ -1,5 +1,391 @@
 # Changelog — KPulla6
 
+## 2026-06-04 — FEAT: Cash backfill wizard UI (Cash-7C)
+
+### Added
+- `/cash` — **Backfill Cash** button; `CashBackfillWizard` modal (configure → preview → review → apply → optional enable)
+- `previewCashBackfill` / `applyCashBackfill` in `frontend/src/api.js`
+- Vitest: `Cash.test.jsx` backfill flow; `api.test.js` backfill client
+
+### Behavior
+- React displays backend preview/apply only; proposed amounts not editable; `confirmed: true` on apply; double-submit guarded
+- After apply with creates: refreshes balances + ledger; optional `PUT /portfolios/{id}` to enable cash-aware (user confirmation)
+
+### Next
+- Cash-8 — portfolio transfers / FX conversion APIs + UI
+
+---
+
+## 2026-06-04 — FEAT: Cash backfill apply API (Cash-7B)
+
+### Added
+- `POST /api/v1/cash/backfill-apply` — user-confirmed, atomic creation of proposed `CASH_DEPOSIT` rows from server-side preview recompute
+- `cash/backfill_apply.py` — duplicate skip for identical backfill deposits; amounts quantized to ledger precision
+- `tests/test_cash_backfill_apply_api.py` — confirmation, apply, idempotency, MF/FX/same-currency, no settlement/transaction mutation
+
+### Unchanged
+- No `cash_aware_enabled` auto-enable; no `BUY_SETTLEMENT` / `SELL_SETTLEMENT` for historical transactions; no transaction mutation
+- No implicit FX; backend remains source of truth (frontend must not compute backfill)
+
+---
+
+## 2026-06-04 — FEAT: Cash backfill preview API (Cash-7A)
+
+### Added
+- `POST /api/v1/cash/backfill-preview` — read-only shortfall simulation for legacy → cash-aware migration
+- `cash/backfill_preview.py` — chronological ledger + transaction simulation; same-currency BUY sufficiency; merged proposed deposits
+- `tests/test_cash_backfill_preview_api.py` — stock/MF/SELL/split/cash-aware/404/400/read-only cases
+
+### Unchanged
+- No `CashLedgerEntry` writes; no `cash_aware_enabled` toggle (Cash-7B/C)
+- No implicit FX; no display-currency logic in preview
+
+### Next
+- Cash-7C — backfill wizard UI
+
+---
+
+## 2026-06-04 — DOC/TEST: Cash-only multi-currency FX return behavior
+
+### Documented
+- Cash-only portfolios with cash in a currency ≠ `display_currency` may show non-zero XIRR/TWROR/cumulative return from cached FX (`docs/cash-ledger.md`, `docs/api-design.md`). Tester portfolio (USD+EUR cash, EUR display) reproduces ~9% XIRR — expected, not stale settlements.
+
+### Added
+- Regression tests: same-currency cash-only ~0 returns; USD cash + EUR display FX-driven non-zero; delete BUY restores cash-only returns.
+
+---
+
+## 2026-06-04 — QA: Cash-aware return validation (Cash-6D)
+
+### Added
+- `backend/scripts/diagnose_cash_aware_returns.py` — read-only diagnostic (summary, performance metrics, cash balances, external flows)
+- Cash-6D regression tests in `test_portfolio_performance_api.py` and `test_analytics_performance_metrics_api.py` (seven validation scenarios)
+
+### Verified (no formula changes)
+- Deposit-only, deposit+BUY flat, growth ~10%, sell-to-cash continuity, withdrawal vs TWROR, mixed all-scope, same-currency BUY (existing Cash-4E tests)
+
+### Next
+- Cash-7 — transfers, backfill
+
+---
+
+## 2026-06-04 — FEAT: Cash-aware TWROR and cumulative return (Cash-6C.2)
+
+### Added
+- `portfolios/cash_ledger_flows.py` — shared ledger external-flow classification (TWROR vs XIRR sign)
+- `portfolios/external_flows_service.py` — legacy transaction flows + cash-aware ledger flows; mixed all-scope
+- `portfolios/performance_service.build_return_value_timeseries` — cash-inclusive values for cash-aware portfolios
+- Portfolio Metric Sheet daily returns use cash-inclusive values + cash-aware flows (CAGR, volatility, Sharpe, drawdowns, etc.)
+- Performance API `twror` / `cumulative_return` warnings when FX missing on external flows
+
+### Unchanged
+- Asset-level Metric Sheet, Compare, asset-level XIRR
+- Legacy portfolio TWROR/cumulative return (investment-only)
+- `finance/twror.py` period-return formula
+
+### Next
+- Cash-7 — transfers, backfill, all-scope transfer neutralization
+
+---
+
+## 2026-06-04 — FEAT: Cash-aware portfolio-level XIRR (Cash-6C.1)
+
+### Added
+- `portfolios/xirr_service.py` — `compute_scope_xirr_detail` / `compute_scope_xirr` with legacy vs cash-aware modes
+- Cash-aware XIRR: `CASH_DEPOSIT` / `CASH_WITHDRAWAL` / unlinked `ADJUSTMENT` as external flows; terminal = holdings + cash
+- All Portfolios: per-portfolio rules, flows merged in `display_currency` (mixed cash-aware + legacy)
+- Summary + Metric Sheet share the same helper; XIRR FX warnings in `warnings`
+- `finance/xirr.solve_xirr`, `finance/mutual_fund_cashflows.build_legacy_portfolio_xirr_flows`
+- Backend tests: cash-aware growth/deposit-only/withdrawal/FX/mixed-scope; unit tests for ledger flow selection
+
+### Unchanged
+- Asset-level XIRR, Compare, TWROR, cumulative_return, performance daily risk metrics
+- No migrations; React does not compute XIRR
+
+### Next
+- Cash-6C.2 — cash-aware TWROR / cumulative_return
+
+---
+
+## 2026-06-04 — FEAT: Cash in portfolio value history (Cash-6B)
+
+### Added
+- Daily cash balance timeseries from `CashLedgerEntry` (`build_cash_value_timeseries`, `merge_cash_into_value_timeseries`)
+- `GET /portfolio/performance?metric=value` and summary `timeseries` include cash converted to `display_currency`
+- Last `metric=value` point aligns with summary `current_value` when FX is available
+- Optional performance response `{"points", "warnings"}` when cash FX is partial
+- Dashboard Value History reads backend series (supports `points` + warnings wrapper)
+
+### Unchanged
+- `metric=cumulative_return` and `metric=twror` use investment-only daily values
+- XIRR, Metric Sheet, Compare, holdings table — no cash
+- Cached FX only; ledger balances count regardless of `cash_aware_enabled`
+
+### Next
+- Cash-6C — cash in TWROR / XIRR
+
+---
+
+## 2026-06-04 — FEAT: Cash in summary current value and allocation (Cash-6A)
+
+### Added
+- `GET /api/v1/portfolio/summary` — `current_value` includes native cash balances converted to `display_currency`; optional `cash_summary` block
+- `GET /api/v1/portfolio/holdings` — `allocation` array with investment slices + `Cash {currency}` rows (`asset_type=CASH`, `is_cash=true`); `holdings` remains stocks/MF only
+- `cash/services.py` — `build_cash_display_summary`, `cash_allocation_rows`, `cash_summary_payload`
+- Assets allocation chart reads backend `allocation`; Compare picker excludes cash rows
+- Backend/frontend tests for EUR/INR cash conversion, all-scope aggregation, missing FX warnings, legacy portfolios with ledger entries
+
+### Unchanged
+- Performance timeseries, TWROR, XIRR, Metric Sheet — investment-only (Cash-6B/6C)
+- No fake `Asset` rows; cached FX only; no external API calls on read
+
+### Next
+- Cash-6B — cash in performance value history / daily timeseries
+- Cash-6C — cash in TWROR / XIRR
+
+---
+
+## 2026-06-04 — FEAT: CSV import cash shortfall preview (Cash-5)
+
+### Added
+- `POST /api/v1/transactions/import-csv/preview-cash` — chronological cash simulation; `shortfalls`, `proposed_deposits`, `summary`
+- `POST /api/v1/transactions/import-csv` — query `create_cash_deposits=true` + `cash_preview_confirmed=true` creates same-currency deposits then imports (atomic)
+- Cash-aware import without confirmation → **409** with preview payload; legacy portfolios unchanged
+- `CsvImportCashPreviewModal` on Transactions page — user must confirm before deposits are created
+
+### Unchanged
+- No silent deposits; no FX conversion; summary/performance/TWROR/XIRR
+
+### Next
+- Cash-6 — integrate cash into summary/performance/allocation
+
+---
+
+## 2026-06-04 — FEAT: Add missing cash and continue purchase (Cash-4C)
+
+### Added
+- `TransactionModal` — **Recommended action** panel on stock/MF BUY shortfall: user-confirmed `POST /cash/deposits` using backend `shortfall` + `currency`, then retries original BUY
+- `PurchaseShortfallAction.jsx`, `purchaseShortfallHelpers.js` — deposit date (stock `date`, MF `investment_date`); partial-success warning when deposit succeeds but retry fails
+- Transactions page success banner: **Cash deposit added and purchase recorded.**
+
+### Unchanged
+- No FX conversion; no CSV preview; no summary/performance integration; backend unchanged
+
+### Next
+- Cash-5 — CSV import cash shortfall preview
+
+---
+
+## 2026-06-04 — FEAT: Same-currency cash enforcement verification (Cash-4E)
+
+### Added
+- Backend tests: EUR BUY ignores USD-only or partial EUR with USD present; sufficient EUR BUY leaves USD unchanged
+- `CashShortfallDisplay` `variant="purchase"` — same-currency guidance for stock/MF BUY; withdrawal path unchanged
+- `TransactionModal` — **Open Cash page** link; no copy suggesting automatic FX conversion
+
+### Documented
+- Same-currency funding required for cash-aware BUY; implicit FX and Cash FX conversion deferred (Cash-8)
+
+### Unchanged
+- No FX conversion APIs/UI; no Cash-4C auto-deposit; summary/performance/allocation; TWROR/XIRR
+
+### Next
+- Cash-4C — confirm + auto-deposit on BUY shortfall
+
+---
+
+## 2026-06-04 — FEAT: Cash ledger edit/delete with future impact validation (Cash-4D)
+
+### Added
+- `PUT` / `DELETE /api/v1/cash/ledger/{id}` — manual `CASH_DEPOSIT` / `CASH_WITHDRAWAL` only; rejects linked/system rows with **409**
+- Future-impact simulation: **409** with `earliest_negative_date`, `lowest_balance`, `affected_entries` (up to 10, includes `asset_symbol` when linked)
+- `/cash` UI: edit/delete actions, `CashFutureImpactDisplay` on rejection; no cascade delete of asset transactions
+
+### Unchanged
+- Summary/performance/TWROR/XIRR; no CSV preview; no auto-deposit (Cash-4C)
+
+---
+
+## 2026-06-04 — FEAT: Cash-aware status and enable UI (Cash-4A.2)
+
+### Added
+- `CashAwarePortfolioStatus` on Cash and Transactions pages (sidebar-selected portfolio)
+- Settings portfolio table: Cash-aware On/Off column + **Enable cash-aware** per legacy portfolio
+- `PUT /api/v1/portfolios/{id}` enable flow documented for tester repair (e.g. portfolio id 5)
+
+### Unchanged
+- No bulk auto-enable; no user deletion; no Cash-4C auto-deposit
+
+---
+
+## 2026-06-04 — FEAT: New portfolios cash-aware by default (Cash-4A.1)
+
+### Changed
+- `POST /api/v1/portfolios` — `cash_aware_enabled` defaults to **true** when omitted; explicit `false` allowed for legacy mode
+- Registration / `ensure_default_portfolio` — new default portfolios created with `cash_aware_enabled=true`
+- Model DB default remains `false` — **no data migration**; existing rows unchanged
+
+### Tester repair
+- `PUT /api/v1/portfolios/{id}` with `"cash_aware_enabled": true` (documented; no bulk auto-enable)
+
+### Unchanged
+- Summary/performance/allocation/TWROR/XIRR; no auto-deposit; no CSV preview; portfolio `id` remains globally unique
+
+---
+
+## 2026-06-04 — FEAT: Transaction modal BUY shortfall UX (Cash-4B)
+
+### Added
+- `TransactionApiError` / `ApiError` — structured transaction write errors; JSON parsed once per response
+- `CashShortfallDisplay.jsx` — shared required / available / shortfall panel (`CurrencyValue`)
+- `TransactionModal` — stock/MF **BUY** shows purchase shortfall + link to `/cash`; cash withdrawal shortfall unchanged
+
+### Unchanged
+- No auto-deposit, no shortfall confirmation step, no CSV preview, no summary/performance integration, no React cash balance math
+
+### Next
+- Cash-5 CSV cash preview; or Cash-4C confirm + auto-deposit on BUY shortfall
+
+---
+
+## 2026-06-04 — FEAT: Cash-aware BUY/SELL settlements (Cash-4A)
+
+### Added
+- When `portfolio.cash_aware_enabled=true`, stock/MF `POST/PUT/DELETE /api/v1/transactions` create/update/delete linked `BUY_SETTLEMENT` / `SELL_SETTLEMENT` rows
+- `transactions/cash_settlement.py` — settlement sync; `finance/cash.py` settlement amount helpers
+- `assert_sufficient_cash_for_purchase` in `cash/services.py` (purchase shortfall payload)
+- Stock BUY: required = qty×price+fees; SELL: proceeds = qty×price−fees; ledger date = `transaction.date`
+- MF BUY: required = `paid_value`; MF SELL: `paid_value` if &gt; 0 else units×NAV−fees; ledger date = **`investment_date`**
+- Insufficient BUY → **400** with `detail`, `required`, `available`, `shortfall`, `currency`
+- Tests: `tests/test_cash_aware_transactions_api.py` (16 cases)
+
+### Unchanged
+- Legacy portfolios (`cash_aware_enabled=false`); no backfill; no summary/performance/TWROR/XIRR; no CSV preview; no auto-enable flag
+
+### Next
+- Cash-4B: frontend `CashApiError`-style UX on stock/MF `TransactionModal`
+
+---
+
+## 2026-06-04 — FEAT: Unified Add Transaction modal (Cash-3G)
+
+### Added
+- `/transactions` **Add Transaction** modal: **Record type** Cash / Stock / Mutual Fund
+- Cash branch: Deposit / Withdrawal → `POST /cash/deposits` or `POST /cash/withdrawals` (not `/transactions`)
+- `CashEntryFormFields.jsx` — shared cash form fields; insufficient-withdrawal shortfall display
+- Success banner on Transactions after cash record + link to `/cash` ledger; asset table not refetched
+
+### Rules
+- Cash ledger edit/delete remains on `/cash` only
+- No unified activity list, no BUY/SELL enforcement, no summary/performance changes
+
+### Next
+- Cash-4: cash-aware BUY/SELL enforcement on stock/MF transaction path.
+
+---
+
+## 2026-06-04 — FEAT: Cash ledger edit/delete (Cash-3D)
+
+### Added
+- `PUT /api/v1/cash/ledger/{id}` — update manual deposit/withdrawal (date, currency, amount, source, note)
+- `DELETE /api/v1/cash/ledger/{id}` — delete manual entries when running balance stays non-negative
+- `validate_non_negative_cash_after_change` in `cash/services.py`
+- `/cash` ledger Actions: Edit / Delete for manual rows only
+- API client: `updateCashLedgerEntry`, `deleteCashLedgerEntry`
+
+### Rules
+- Only `CASH_DEPOSIT` / `CASH_WITHDRAWAL` without `linked_transaction` or `transfer_group`
+- Linked/system entries return **409**; portfolio change not allowed on edit
+
+### Next
+- Cash-4: cash-aware BUY/SELL enforcement.
+
+---
+
+## 2026-06-04 — FEAT: Cash page UI (Cash-3B)
+
+### Added
+- Route `/cash` and sidebar **Cash** nav (after Transactions)
+- `frontend/src/pages/Cash.jsx` — native balances table, paginated ledger, deposit/withdrawal modals
+- API client: `fetchCashBalances`, `fetchCashLedger`, `createCashDeposit`, `createCashWithdrawal` (`CashApiError` for insufficient-cash payloads)
+- `frontend/src/constants/cashCurrencies.js` (20 supported currencies)
+- Tests: `Cash.test.jsx`, `api.test.js`, `Layout.test.jsx`
+
+### Notes
+- React displays backend balances/ledger only — no client-side cash math or display-currency totals.
+- Portfolio scope from sidebar; All Portfolios requires portfolio pick for writes.
+- Not integrated into Dashboard, Metric Sheet, or performance APIs.
+
+### Next
+- Cash-4: cash-aware BUY/SELL enforcement on manual transactions.
+
+---
+
+## 2026-06-04 — FEAT: Cash deposit and withdrawal write APIs (Cash-3A)
+
+### Added
+- `POST /api/v1/cash/deposits` — creates `CASH_DEPOSIT` (positive signed amount); `201` + ledger item body
+- `POST /api/v1/cash/withdrawals` — creates `CASH_WITHDRAWAL` (negative signed amount); blocks insufficient cash with `required` / `available` / `shortfall`
+- `create_cash_deposit`, `create_cash_withdrawal` in `cash/services.py` (atomic; uses `finance/cash` balance helpers)
+- Tests: deposit/withdrawal cases in `test_cash_api.py`, service tests in `test_cash_services.py`
+
+### Impact
+- No migrations. No transaction rows created/modified. No summary/performance/TWROR changes.
+- Deposits allowed when `cash_aware_enabled=false`. Next: Cash-3B UI or Cash-4 BUY/SELL enforcement.
+
+---
+
+## 2026-06-04 — FEAT: Cash read APIs (Cash-2)
+
+### Added
+- `GET /api/v1/cash/balances` — native-currency balances by portfolio/currency; `as_of_date`, `currency` filters
+- `GET /api/v1/cash/ledger` — paginated ledger (`date` desc, `id` desc); scope/filters aligned with holdings
+- `cash/views.py`, `cash/serializers.py`, `cash/urls.py`; service helpers in `cash/services.py`
+- `Portfolio.cash_aware_enabled` exposed on portfolio CRUD (editable via PUT; no runtime effect yet)
+- Tests: `backend/tests/test_cash_api.py`
+
+### Impact
+- Read-only; no summary/performance/allocation or BUY/SELL enforcement changes.
+- Next: Cash-3 deposit/withdrawal write APIs.
+
+---
+
+## 2026-06-04 — FEAT: Cash Ledger schema foundation (Cash-1)
+
+### Added
+- Django app `cash`: `CashLedgerEntry`, `CashTransferGroup`, `cash/constants.py` (20 supported currencies)
+- `Portfolio.cash_aware_enabled` (default `false`)
+- `finance/cash.py` — pure balance/shortfall/timeseries helpers
+- `cash/services.py` — ORM ledger listing and balance computation (no HTTP)
+- Migrations: `portfolios/0003_portfolio_cash_aware_enabled`, `cash/0001_initial`
+- Tests: `test_cash_ledger_models.py`, `test_finance_cash.py`, `test_cash_services.py`
+
+### Impact
+- No change to summary, performance, transactions, or CSV import while `cash_aware_enabled` is false (all existing portfolios).
+- Dev DB: transaction count unchanged after migrate (67); backup `backups/kpulla6_20260604_131711.sql` taken before migrate.
+- Next: Cash-2 read APIs.
+
+---
+
+## 2026-06-04 — DOCS: Cash Ledger architecture and migration design (Cash-0)
+
+### Added
+- `docs/cash-ledger.md` — product model, `CashLedgerEntry` / `CashTransferGroup` schema, currencies, TWROR/XIRR impact, manual/CSV UX, backfill (Scalablefolio / IndianMF), transfers, portfolio value integration, API roadmap, phases Cash-0–Cash-8, open questions
+
+### Changed
+- `docs/architecture.md` — Cash Ledger architecture reference
+- `docs/database.md` — planned cash tables (not implemented)
+- `docs/api-design.md` — planned `/api/v1/cash/*` endpoints (not implemented)
+- `docs/current-state.md` — Cash Ledger planned status
+- `docs/frontend-design.md` — future Cash UI surfaces
+- `docs/page-layouts.md` — planned Cash / backfill / import preview layouts
+- `docs/decisions.md` — cash mental model and TWROR/XIRR decisions
+
+### Impact
+- Documentation only; no code, migrations, or data changes. Next phase: **Cash-1** schema foundation.
+
+---
+
 ## 2026-06-03 — FEAT: App shell theme selector (Light / Dark / System)
 
 - Header theme select (System / Light / Dark) with `localStorage` key `kpulla6.themePreference` (default system)

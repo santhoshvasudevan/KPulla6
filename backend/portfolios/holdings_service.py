@@ -8,6 +8,7 @@ from typing import Optional
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import QuerySet
 
+from cash.services import build_cash_display_summary, cash_allocation_rows
 from finance.fifo import calculate_fifo_cost_basis_metrics
 from finance.oversell import detect_oversell
 from finance.types import TransactionType
@@ -339,7 +340,9 @@ def _build_mf_holding_item(
 class HoldingsResult:
     fx_status: str
     holdings: list[dict] = field(default_factory=list)
+    allocation: list[dict] = field(default_factory=list)
     display_currency: str = "EUR"
+    warnings: list[str] = field(default_factory=list)
 
 
 def build_holdings(
@@ -385,10 +388,29 @@ def build_holdings(
         holdings.append(item)
 
     fx_status = "fx_unavailable" if any_fx_missing else "ok"
+
+    cash_display = build_cash_display_summary(scope, display_currency)
+    cash_rows = cash_allocation_rows(cash_display)
+    if cash_display.fx_status == "fx_unavailable":
+        fx_status = "fx_unavailable"
+    elif cash_display.fx_status == "filled" and fx_status == "ok":
+        fx_status = "filled"
+
+    allocation: list[dict] = []
+    for item in holdings:
+        qty = Decimal(str(item.get("quantity") or 0))
+        cv = Decimal(str(item.get("current_value") or 0))
+        if item.get("holding_status") == "closed" or qty <= 0 or cv <= 0:
+            continue
+        allocation.append({k: v for k, v in item.items() if not k.startswith("_")})
+    allocation.extend(cash_rows)
+
     return HoldingsResult(
         fx_status=fx_status,
         holdings=holdings,
+        allocation=allocation,
         display_currency=display_currency,
+        warnings=list(cash_display.warnings),
     )
 
 

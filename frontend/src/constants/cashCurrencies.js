@@ -1,0 +1,23 @@
+/** Native cash currencies validated by backend (`cash/constants.py`). */
+export const SUPPORTED_CASH_CURRENCIES = [
+  'EUR',
+  'USD',
+  'INR',
+  'GBP',
+  'CHF',
+  'JPY',
+  'CNY',
+  'CAD',
+  'AUD',
+  'HKD',
+  'SGD',
+  'KRW',
+  'BRL',
+  'MXN',
+  'ZAR',
+  'SEK',
+  'NOK',
+  'DKK',
+  'PLN',
+  'AED',
+];

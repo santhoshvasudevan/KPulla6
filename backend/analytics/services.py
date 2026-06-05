@@ -86,9 +86,12 @@ from market_data.price_repository import list_index_prices_in_range, list_stock_
 from portfolios import dates as portfolio_dates
 from portfolios.holdings_service import AssetDetailValidationError, AssetNotFoundError
 from portfolios.models import Portfolio
+from portfolios.external_flows_service import portfolio_external_flows_for_scope
 from portfolios.performance_service import (
     BenchmarkConfigError,
+    RETURN_FLOWS_FX_WARNING,
     build_all_scope_external_flows,
+    build_return_value_timeseries,
     portfolio_external_flows,
     portfolio_flows_known_on_date,
 )
@@ -97,13 +100,13 @@ from portfolios.summary_service import (
     MF_BASE_CURRENCY,
     build_all_scope_portfolio_value_timeseries,
     build_portfolio_value_timeseries,
-    compute_scope_xirr,
     fifo_eligible_queryset,
     norm_display_currency,
     portfolio_base_currency,
     transactions_by_mf_holding,
     transactions_by_symbol,
 )
+from portfolios.xirr_service import compute_scope_xirr_detail
 from transactions.finance_adapter import transaction_to_finance_dto
 from transactions.models import Transaction as TransactionModel
 
@@ -1438,40 +1441,49 @@ def build_portfolio_performance_metrics(
     today = today or portfolio_dates.current_date()
     warnings: list[str] = []
 
+    from cash.services import cash_ledger_inception_date, scope_has_cash_ledger_entries
+
     queryset = fifo_eligible_queryset(scope.portfolio_ids)
     all_txns = list(queryset)
-    if not all_txns:
-        warnings.append("No transactions in portfolio scope.")
-        return PerformanceMetricsResult(
-            payload=_empty_payload(
-                scope,
-                display_currency=display_currency,
-                range_code=range_code,
-                today=today,
-                warnings=warnings,
-                benchmark_symbol=benchmark_symbol,
-            )
-        )
-
-    by_symbol = transactions_by_symbol(queryset)
-    by_mf = transactions_by_mf_holding(queryset)
+    by_symbol = transactions_by_symbol(queryset) if all_txns else {}
+    by_mf = transactions_by_mf_holding(queryset) if all_txns else {}
     disp_ccy = norm_display_currency(display_currency)
-    inception = min(t.date for t in all_txns)
+
+    if not all_txns:
+        if not scope_has_cash_ledger_entries(scope):
+            warnings.append("No transactions in portfolio scope.")
+            return PerformanceMetricsResult(
+                payload=_empty_payload(
+                    scope,
+                    display_currency=display_currency,
+                    range_code=range_code,
+                    today=today,
+                    warnings=warnings,
+                    benchmark_symbol=benchmark_symbol,
+                )
+            )
+        inception = cash_ledger_inception_date(scope) or today
+    else:
+        inception = min(t.date for t in all_txns)
+
     emit_start = (
         None
         if range_code == "ALL"
         else resolve_performance_range_start(range_code, today, inception)
     )
-    if scope.kind == "all_active":
-        base_currency = disp_ccy
-        timeseries_full = build_all_scope_portfolio_value_timeseries(
-            scope, disp_ccy, emit_start_date=emit_start
-        )
-    else:
-        base_currency = portfolio_base_currency(all_txns)
-        timeseries_full = build_portfolio_value_timeseries(
-            all_txns, by_symbol, by_mf, emit_start_date=emit_start
-        )
+    base_currency = disp_ccy if scope.kind == "all_active" else (
+        portfolio_base_currency(all_txns) if all_txns else disp_ccy
+    )
+    timeseries_full, ts_warnings = build_return_value_timeseries(
+        scope=scope,
+        all_txns=all_txns,
+        by_symbol=by_symbol,
+        by_mf=by_mf,
+        disp_ccy=disp_ccy,
+        emit_start=emit_start,
+        today=today,
+    )
+    warnings.extend(ts_warnings)
     if not timeseries_full:
         warnings.append("No portfolio value history available.")
         return PerformanceMetricsResult(
@@ -1513,12 +1525,12 @@ def build_portfolio_performance_metrics(
     flows_by_date, flows_unknown_from = (
         build_all_scope_external_flows(scope, disp_ccy)
         if scope.kind == "all_active"
-        else portfolio_external_flows(all_txns, base_currency)
+        else portfolio_external_flows_for_scope(
+            scope, all_txns=all_txns, calculation_currency=disp_ccy
+        )
     )
     if flows_unknown_from is not None:
-        warnings.append(
-            "FX rates are missing for some external cash flows; returns may be incomplete."
-        )
+        warnings.append(RETURN_FLOWS_FX_WARNING)
 
     value_points = _timeseries_to_value_points(
         ts_use, flows_unknown_from=flows_unknown_from
@@ -1530,7 +1542,9 @@ def build_portfolio_performance_metrics(
     if valid_count < 2:
         warnings.append("Insufficient daily returns to compute risk metrics.")
 
-    xirr_val = compute_scope_xirr(scope)
+    xirr_detail = compute_scope_xirr_detail(scope, display_currency=display_currency)
+    xirr_val = xirr_detail.value
+    warnings.extend(xirr_detail.warnings)
 
     metrics_block, benchmark_block = build_metric_sheet_from_daily_returns(
         daily_pts=daily_pts,

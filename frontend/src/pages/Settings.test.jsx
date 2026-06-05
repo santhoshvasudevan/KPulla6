@@ -21,6 +21,7 @@ const defaultPortfolio = {
   base_currency: 'EUR',
   is_default: true,
   is_active: true,
+  cash_aware_enabled: false,
 };
 
 function renderSettings(portfolioProps = {}) {
@@ -139,6 +140,30 @@ describe('Settings Page', () => {
         expect.objectContaining({ name: 'Renamed Default' })
       );
       expect(api.fetchPortfolios).toHaveBeenCalled();
+    });
+  });
+
+  it('enables cash-aware mode from portfolio table', async () => {
+    api.getSettings.mockResolvedValueOnce({ tax_rate_percentage: 15.0, display_currency: 'EUR' });
+    api.updatePortfolio.mockResolvedValueOnce({ ...defaultPortfolio, cash_aware_enabled: true });
+    api.fetchPortfolios.mockResolvedValueOnce([
+      { ...defaultPortfolio, cash_aware_enabled: true },
+    ]);
+
+    renderSettings();
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /enable cash-aware/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /enable cash-aware/i }));
+
+    await waitFor(() => {
+      expect(api.updatePortfolio).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ cash_aware_enabled: true })
+      );
+      expect(screen.getByText(/cash-aware mode enabled/i)).toBeInTheDocument();
     });
   });
 

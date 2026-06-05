@@ -4,6 +4,7 @@ from django.contrib.auth.models import AbstractBaseUser
 
 from portfolios.constants import (
     DEFAULT_BASE_CURRENCY,
+    DEFAULT_CASH_AWARE_ENABLED_FOR_NEW,
     MAX_ACTIVE_PORTFOLIOS,
     VIRTUAL_ALL_PORTFOLIOS_NAME,
 )
@@ -62,6 +63,7 @@ def create_portfolio(
     name: str,
     description: str | None = None,
     base_currency: str | None = None,
+    cash_aware_enabled: bool = DEFAULT_CASH_AWARE_ENABLED_FOR_NEW,
 ) -> Portfolio:
     ensure_default_portfolio(user)
     nm = _normalize_name(name)
@@ -82,6 +84,7 @@ def create_portfolio(
         base_currency=bc,
         is_default=False,
         is_active=True,
+        cash_aware_enabled=bool(cash_aware_enabled),
     )
     portfolio.save()
     return portfolio
@@ -95,6 +98,7 @@ def update_portfolio(
     description: str | None = None,
     base_currency: str | None = None,
     is_active: bool | None = None,
+    cash_aware_enabled: bool | None = None,
 ) -> Portfolio:
     portfolio = get_portfolio(user, portfolio_id)
 
@@ -119,6 +123,9 @@ def update_portfolio(
                 f"Max active portfolios is {MAX_ACTIVE_PORTFOLIOS}"
             )
         portfolio.is_active = bool(is_active)
+
+    if cash_aware_enabled is not None:
+        portfolio.cash_aware_enabled = bool(cash_aware_enabled)
 
     portfolio.save()
     return portfolio

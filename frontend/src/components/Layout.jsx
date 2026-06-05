@@ -147,6 +147,14 @@ function Layout() {
             Transactions
           </NavLink>
           <NavLink
+            to="/cash"
+            className={({ isActive }) =>
+              `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
+            }
+          >
+            Cash
+          </NavLink>
+          <NavLink
             to="/assets"
             className={({ isActive }) =>
               `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`

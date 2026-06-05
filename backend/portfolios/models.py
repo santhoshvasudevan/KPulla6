@@ -19,6 +19,14 @@ class Portfolio(models.Model):
     base_currency = models.CharField(max_length=3, default=DEFAULT_BASE_CURRENCY)
     is_default = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
+    cash_aware_enabled = models.BooleanField(
+        default=False,
+        help_text=(
+            "When true, cash-aware BUY/SELL settlements apply. "
+            "DB default false preserves existing rows; new portfolios are "
+            "created with true via application services unless explicitly false."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

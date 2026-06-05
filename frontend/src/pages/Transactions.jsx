@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState, useRef, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import {
   fetchTransactions,
   fetchTransactionFilterOptions,
   deleteTransaction,
   importTransactionsCsv,
+  previewCsvImportCash,
   updateTransaction,
 } from '../api';
 import TransactionModal from '../components/TransactionModal';
+import CsvImportCashPreviewModal from '../components/CsvImportCashPreviewModal';
 import {
   PageHeader,
   Button,
@@ -28,6 +31,7 @@ import {
 } from '../utils/transactionDisplay';
 import { buildTransactionUpdatePayload } from '../utils/transactionPayload';
 import { Plus, Edit2, Trash2 } from 'lucide-react';
+import CashAwarePortfolioStatus from '../components/CashAwarePortfolioStatus';
 import TransactionFilterBar from '../components/TransactionFilterBar';
 import {
   STOCK_CSV_COLUMNS,
@@ -69,6 +73,10 @@ export default function Transactions() {
   const [importStatus, setImportStatus] = useState('');
   const [importErrors, setImportErrors] = useState([]);
   const [importing, setImporting] = useState(false);
+  const [csvCashPreview, setCsvCashPreview] = useState(null);
+  const [csvCashPreviewFile, setCsvCashPreviewFile] = useState(null);
+  const [csvCashConfirming, setCsvCashConfirming] = useState(false);
+  const [cashEntryStatus, setCashEntryStatus] = useState('');
   const fileInputRef = useRef(null);
 
   const [selectedIds, setSelectedIds] = useState(() => new Set());
@@ -335,7 +343,18 @@ export default function Transactions() {
     }
   };
 
-  const handleModalSuccess = () => {
+  const handleModalSuccess = (result) => {
+    if (result?.kind === 'cash') {
+      setCashEntryStatus(result.message || 'Cash entry recorded.');
+      return;
+    }
+    if (result?.kind === 'asset') {
+      refreshAfterMutation();
+      if (result.message) {
+        setCashEntryStatus(result.message);
+      }
+      return;
+    }
     refreshAfterMutation();
   };
 
@@ -343,6 +362,20 @@ export default function Transactions() {
     setImportStatus('');
     setImportErrors([]);
     fileInputRef.current?.click();
+  };
+
+  const applyCsvImportResult = async (result) => {
+    if (result.success) {
+      setImportStatus(`Imported ${result.imported_count} transactions`);
+      if (page !== 1) {
+        setPage(1);
+      } else {
+        await loadData(1, pageSize);
+      }
+    } else {
+      setImportErrors(result.errors || []);
+      setImportStatus('Import failed — fix errors and try again');
+    }
   };
 
   const handleFileChange = async (e) => {
@@ -356,24 +389,63 @@ export default function Transactions() {
     setImporting(true);
     setImportStatus('');
     setImportErrors([]);
+    setCsvCashPreview(null);
+    setCsvCashPreviewFile(null);
     try {
       const portfolioId = apiQuery?.portfolio_id ?? null;
-      const result = await importTransactionsCsv(file, portfolioId);
-      if (result.success) {
-        setImportStatus(`Imported ${result.imported_count} transactions`);
-        if (page !== 1) {
-          setPage(1);
-        } else {
-          await loadData(1, pageSize);
-        }
-      } else {
-        setImportErrors(result.errors || []);
+      const preview = await previewCsvImportCash(file, portfolioId);
+      if (preview.row_errors?.length) {
+        setImportErrors(preview.row_errors);
         setImportStatus('Import failed — fix errors and try again');
+        return;
       }
+      if (
+        preview.cash_aware &&
+        !preview.can_import_without_deposits &&
+        (preview.proposed_deposits?.length || preview.shortfalls?.length)
+      ) {
+        setCsvCashPreview(preview);
+        setCsvCashPreviewFile(file);
+        return;
+      }
+      const result = await importTransactionsCsv(file, portfolioId);
+      await applyCsvImportResult(result);
     } catch (err) {
+      if (err.code === 'csv_cash_preview_required' && err.preview) {
+        setCsvCashPreview(err.preview);
+        setCsvCashPreviewFile(file);
+        return;
+      }
       setImportStatus(err.message || 'Import failed');
     } finally {
       setImporting(false);
+    }
+  };
+
+  const handleCancelCsvCashPreview = () => {
+    setCsvCashPreview(null);
+    setCsvCashPreviewFile(null);
+    setCsvCashConfirming(false);
+  };
+
+  const handleConfirmCsvCashImport = async () => {
+    if (!csvCashPreviewFile) return;
+    setCsvCashConfirming(true);
+    setImportStatus('');
+    setImportErrors([]);
+    try {
+      const portfolioId = apiQuery?.portfolio_id ?? null;
+      const result = await importTransactionsCsv(csvCashPreviewFile, portfolioId, {
+        createCashDeposits: true,
+        cashPreviewConfirmed: true,
+      });
+      setCsvCashPreview(null);
+      setCsvCashPreviewFile(null);
+      await applyCsvImportResult(result);
+    } catch (err) {
+      setImportStatus(err.message || 'Import failed');
+    } finally {
+      setCsvCashConfirming(false);
     }
   };
 
@@ -415,6 +487,8 @@ export default function Transactions() {
           </>
         }
       />
+
+      <CashAwarePortfolioStatus className="transactions-page__cash-aware" />
 
       <WarningBanner
         severity="info"
@@ -507,6 +581,21 @@ export default function Transactions() {
         <WarningBanner
           severity={bulkStatus.includes('failed') ? 'warning' : 'success'}
           message={bulkStatus}
+          className="transactions-page__banner"
+        />
+      ) : null}
+
+      {cashEntryStatus ? (
+        <WarningBanner
+          severity="success"
+          message={
+            <>
+              {cashEntryStatus}{' '}
+              <Link to="/cash" className="transactions-page__cash-link">
+                View cash ledger on Cash page
+              </Link>
+            </>
+          }
           className="transactions-page__banner"
         />
       ) : null}
@@ -766,6 +855,14 @@ export default function Transactions() {
         onClose={() => setIsModalOpen(false)}
         onSuccess={handleModalSuccess}
         initialData={editingTransaction}
+      />
+
+      <CsvImportCashPreviewModal
+        isOpen={!!csvCashPreview}
+        preview={csvCashPreview}
+        confirming={csvCashConfirming}
+        onConfirm={handleConfirmCsvCashImport}
+        onCancel={handleCancelCsvCashPreview}
       />
     </div>
   );

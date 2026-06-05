@@ -85,13 +85,20 @@ class PortfolioPerformanceView(APIView):
         )
 
         if metric == "value":
-            points = build_portfolio_performance(
+            result = build_portfolio_performance(
                 scope=scope,
                 metric="value",
                 range_code=range_code,
                 display_currency=display_currency,
             )
-            return Response(performance_list_payload(points))
+            if result.warnings:
+                return Response(
+                    {
+                        "points": performance_list_payload(result.points),
+                        "warnings": result.warnings,
+                    }
+                )
+            return Response(performance_list_payload(result.points))
 
         if bench:
             try:
@@ -109,10 +116,17 @@ class PortfolioPerformanceView(APIView):
                 payload["metric"] = result.metric
             return Response(payload)
 
-        points = build_portfolio_performance(
+        result = build_portfolio_performance(
             scope=scope,
             metric=metric,  # type: ignore[arg-type]
             range_code=range_code,
             display_currency=display_currency,
         )
-        return Response(performance_list_payload(points))
+        if result.warnings:
+            return Response(
+                {
+                    "points": performance_list_payload(result.points),
+                    "warnings": result.warnings,
+                }
+            )
+        return Response(performance_list_payload(result.points))

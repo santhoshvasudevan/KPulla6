@@ -7,7 +7,8 @@ Local-first portfolio tracker. **KPulla6** uses Django + DRF + PostgreSQL + Reac
 - **Framework:** Django 5 + Django REST Framework
 - **Auth:** Django session auth + django-allauth (Google OAuth); see `docs/auth.md`
 - **Domain apps (Phase 2 models in place):**
-  - `portfolios` — `Portfolio`
+  - `portfolios` — `Portfolio` (`cash_aware_enabled`, default false)
+  - `cash` — `CashLedgerEntry`, `CashTransferGroup` (Cash-1 schema; APIs Cash-2+)
   - `transactions` — `Transaction` (FK to real portfolio only)
   - `market_data` — `HistoricalPrice`, `BenchmarkIndexConfig`
   - `fx` — `FXRate`
@@ -169,6 +170,19 @@ Never call yfinance, MFAPI, or other external providers during analytics **read*
 - Metrics are **calculated on query** from persisted source data (transactions, prices, FX, NAVs, benchmark prices).
 - **Optional future cache/snapshot table** may be added only after formulas and API contracts stabilize.
 - If caching is introduced later, invalidation must run on changes to transactions, prices, FX, NAVs, or benchmark rows affecting the subject; cache keys must include **subject** (portfolio/asset), **range**, **display_currency**, **benchmark**, and an **input hash** (e.g. latest transaction id + max price date per symbol).
+
+## Cash Ledger (Cash-1 foundation)
+
+Schema and pure balance helpers are in place; read APIs and cash-aware performance logic are **Cash-2+**. Full specification: [cash-ledger.md](./cash-ledger.md).
+
+- **App:** `cash` — `CashLedgerEntry`, `CashTransferGroup`; `Portfolio.cash_aware_enabled` (default `false`).
+
+- **Cash** = portfolio balance component (per portfolio, per currency); included in current value, value history, allocation, and buying-power checks.
+- **Stocks / MFs** = investment assets; cash excluded from Asset Metric Sheet, Compare, and investment-style performance analytics.
+- **Ledger:** proposed `CashLedgerEntry` (+ later `CashTransferGroup`) — settlements link to `Transaction`; deposits/withdrawals are external flows for TWROR/XIRR in cash-aware mode; BUY/SELL become internal after backfill.
+- **Legacy mode:** existing BUY/SELL external-flow behavior until portfolio cash-aware mode is enabled and backfilled.
+- **Finance:** balance and flow rules in `backend/finance/` (framework-independent); Django services orchestrate ORM + existing summary/performance builders.
+- **APIs:** additive `/api/v1/cash/*` (planned); preserve existing contracts.
 
 ## Constraints
 - Do not modify KPulla5

@@ -1,0 +1,26 @@
+.cash-aware-status {
+  margin-bottom: var(--space-4);
+}
+
+.cash-aware-status__banner {
+  margin-bottom: var(--space-3);
+}
+
+.cash-aware-status__panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.cash-aware-status__message {
+  margin: 0;
+  flex: 1 1 16rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}

@@ -29,7 +29,7 @@ def _import(api_client, csv_text, portfolio_id=None):
 
 
 @pytest.mark.django_db
-def test_import_buy_rows(api_client, seeded):
+def test_import_buy_rows(api_client, legacy_seeded):
     csv_text = HEADER + "Buy,01/15/24,AAPL,10,150.00,\n"
     response = _import(api_client, csv_text)
     assert response.status_code == 200
@@ -43,7 +43,7 @@ def test_import_buy_rows(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_import_sell_rows(api_client, seeded):
+def test_import_sell_rows(api_client, legacy_seeded):
     csv_text = HEADER + "Sell,01/15/24,MSFT,5,100.00,0\n"
     response = _import(api_client, csv_text)
     assert response.status_code == 200
@@ -52,7 +52,7 @@ def test_import_sell_rows(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_import_dividend_rows(api_client, seeded):
+def test_import_dividend_rows(api_client, legacy_seeded):
     csv_text = HEADER + "Dividend,01/15/24,AAPL,10,0,0\n"
     response = _import(api_client, csv_text)
     assert response.status_code == 200
@@ -62,7 +62,7 @@ def test_import_dividend_rows(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_import_direct_stock_split_rows(api_client, seeded):
+def test_import_direct_stock_split_rows(api_client, legacy_seeded):
     csv_text = HEADER + "STOCK_SPLIT,01/15/24,AAPL,1,20,0\n"
     response = _import(api_client, csv_text)
     assert response.status_code == 200
@@ -76,7 +76,7 @@ def test_import_direct_stock_split_rows(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_direct_stock_split_rejects_currency_in_price_share(api_client, seeded):
+def test_direct_stock_split_rejects_currency_in_price_share(api_client, legacy_seeded):
     csv_text = HEADER + "STOCK_SPLIT,01/15/24,AAPL,1,20 €,0\n"
     data = _import(api_client, csv_text).json()
     assert data["success"] is False
@@ -84,14 +84,14 @@ def test_direct_stock_split_rejects_currency_in_price_share(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_import_defaults_fees_to_zero(api_client, seeded):
+def test_import_defaults_fees_to_zero(api_client, legacy_seeded):
     csv_text = HEADER + "Buy,01/15/24,AAPL,10,150.00,\n"
     _import(api_client, csv_text)
     assert Transaction.objects.get().fees == Decimal("0")
 
 
 @pytest.mark.django_db
-def test_import_defaults_portfolio_to_default(api_client, seeded, test_user):
+def test_import_defaults_portfolio_to_default(api_client, legacy_seeded, test_user):
     default = ensure_default_portfolio(test_user)
     other = Portfolio.objects.create(user=test_user, name="Other", base_currency="EUR", is_active=True)
     csv_text = HEADER + "Buy,01/15/24,AAPL,10,150.00,0\n"
@@ -101,7 +101,7 @@ def test_import_defaults_portfolio_to_default(api_client, seeded, test_user):
 
 
 @pytest.mark.django_db
-def test_import_assigns_provided_portfolio_id(api_client, seeded, test_user):
+def test_import_assigns_provided_portfolio_id(api_client, legacy_seeded, test_user):
     other = Portfolio.objects.create(user=test_user, name="Target", base_currency="EUR", is_active=True)
     csv_text = HEADER + "Buy,01/15/24,AAPL,10,150.00,0\n"
     response = _import(api_client, csv_text, portfolio_id=other.id)
@@ -110,14 +110,14 @@ def test_import_assigns_provided_portfolio_id(api_client, seeded, test_user):
 
 
 @pytest.mark.django_db
-def test_import_normalizes_asset_symbols(api_client, seeded):
+def test_import_normalizes_asset_symbols(api_client, legacy_seeded):
     csv_text = HEADER + "Buy,01/15/24,aapl,10,150.00,0\n"
     _import(api_client, csv_text)
     assert Transaction.objects.get().asset_symbol == "AAPL"
 
 
 @pytest.mark.django_db
-def test_import_rejects_missing_file(api_client, seeded):
+def test_import_rejects_missing_file(api_client, legacy_seeded):
     response = api_client.post("/api/v1/transactions/import-csv", {}, format="multipart")
     assert response.status_code == 200
     data = response.json()
@@ -127,7 +127,7 @@ def test_import_rejects_missing_file(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_import_rejects_non_utf8(api_client, seeded):
+def test_import_rejects_non_utf8(api_client, legacy_seeded):
     response = api_client.post(
         "/api/v1/transactions/import-csv",
         {"file": io.BytesIO(b"\xff\xfe")},
@@ -139,7 +139,7 @@ def test_import_rejects_non_utf8(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_import_rejects_missing_columns(api_client, seeded):
+def test_import_rejects_missing_columns(api_client, legacy_seeded):
     csv_text = "Action,Date\nBuy,01/15/24\n"
     response = _import(api_client, csv_text)
     data = response.json()
@@ -148,7 +148,7 @@ def test_import_rejects_missing_columns(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_import_rejects_invalid_date(api_client, seeded):
+def test_import_rejects_invalid_date(api_client, legacy_seeded):
     csv_text = HEADER + "Buy,99/99/24,AAPL,10,150.00,0\n"
     data = _import(api_client, csv_text).json()
     assert data["success"] is False
@@ -156,7 +156,7 @@ def test_import_rejects_invalid_date(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_import_rejects_empty_qty_for_buy_sell(api_client, seeded):
+def test_import_rejects_empty_qty_for_buy_sell(api_client, legacy_seeded):
     csv_text = HEADER + "Buy,01/15/24,AAPL,,150.00,0\n"
     data = _import(api_client, csv_text).json()
     assert data["success"] is False
@@ -164,7 +164,7 @@ def test_import_rejects_empty_qty_for_buy_sell(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_import_rejects_non_numeric_qty(api_client, seeded):
+def test_import_rejects_non_numeric_qty(api_client, legacy_seeded):
     csv_text = HEADER + "Buy,01/15/24,AAPL,abc,150.00,0\n"
     data = _import(api_client, csv_text).json()
     assert data["success"] is False
@@ -172,7 +172,7 @@ def test_import_rejects_non_numeric_qty(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_import_rejects_negative_price(api_client, seeded):
+def test_import_rejects_negative_price(api_client, legacy_seeded):
     csv_text = HEADER + "Buy,01/15/24,AAPL,10,-5.00,0\n"
     data = _import(api_client, csv_text).json()
     assert data["success"] is False
@@ -180,7 +180,7 @@ def test_import_rejects_negative_price(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_import_rejects_invalid_action(api_client, seeded):
+def test_import_rejects_invalid_action(api_client, legacy_seeded):
     csv_text = HEADER + "HOLD,01/15/24,AAPL,10,150.00,0\n"
     data = _import(api_client, csv_text).json()
     assert data["success"] is False
@@ -188,7 +188,7 @@ def test_import_rejects_invalid_action(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_import_rejects_unknown_portfolio_id(api_client, seeded):
+def test_import_rejects_unknown_portfolio_id(api_client, legacy_seeded):
     csv_text = HEADER + "Buy,01/15/24,AAPL,10,150.00,0\n"
     response = _import(api_client, csv_text, portfolio_id=999999)
     assert response.status_code == 404
@@ -198,7 +198,7 @@ def test_import_rejects_unknown_portfolio_id(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_import_rejects_inactive_portfolio_id(api_client, seeded, test_user):
+def test_import_rejects_inactive_portfolio_id(api_client, legacy_seeded, test_user):
     inactive = Portfolio.objects.create(user=test_user, name="Inactive", is_active=False)
     csv_text = HEADER + "Buy,01/15/24,AAPL,10,150.00,0\n"
     response = _import(api_client, csv_text, portfolio_id=inactive.id)
@@ -206,7 +206,7 @@ def test_import_rejects_inactive_portfolio_id(api_client, seeded, test_user):
 
 
 @pytest.mark.django_db
-def test_import_rejects_invalid_stock_split_split_from(api_client, seeded):
+def test_import_rejects_invalid_stock_split_split_from(api_client, legacy_seeded):
     csv_text = HEADER + "STOCK_SPLIT,01/15/24,AAPL,0,20,0\n"
     data = _import(api_client, csv_text).json()
     assert data["success"] is False
@@ -214,7 +214,7 @@ def test_import_rejects_invalid_stock_split_split_from(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_import_rejects_invalid_stock_split_split_to(api_client, seeded):
+def test_import_rejects_invalid_stock_split_split_to(api_client, legacy_seeded):
     csv_text = HEADER + "STOCK_SPLIT,01/15/24,AAPL,1,0,0\n"
     data = _import(api_client, csv_text).json()
     assert data["success"] is False
@@ -222,7 +222,7 @@ def test_import_rejects_invalid_stock_split_split_to(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_import_returns_row_level_errors(api_client, seeded):
+def test_import_returns_row_level_errors(api_client, legacy_seeded):
     csv_text = HEADER + "Buy,01/15/24,AAPL,-1,150.00,0\n"
     data = _import(api_client, csv_text).json()
     assert data["success"] is False
@@ -233,7 +233,7 @@ def test_import_returns_row_level_errors(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_import_all_or_nothing(api_client, seeded):
+def test_import_all_or_nothing(api_client, legacy_seeded):
     before = _count_txns()
     csv_text = (
         HEADER
@@ -247,7 +247,7 @@ def test_import_all_or_nothing(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_swap_two_rows_create_stock_split(api_client, seeded):
+def test_swap_two_rows_create_stock_split(api_client, legacy_seeded):
     csv_text = (
         HEADER
         + "Swap,12/3/24,ANET,-35,393.70 €,0\n"
@@ -270,7 +270,7 @@ def test_swap_two_rows_create_stock_split(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_swap_incomplete_pair_rejected(api_client, seeded):
+def test_swap_incomplete_pair_rejected(api_client, legacy_seeded):
     csv_text = HEADER + "Swap,12/3/24,ANET,-35,100.00,0\n"
     data = _import(api_client, csv_text).json()
     assert data["success"] is False
@@ -278,7 +278,7 @@ def test_swap_incomplete_pair_rejected(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_swap_ambiguous_same_sign_rejected(api_client, seeded):
+def test_swap_ambiguous_same_sign_rejected(api_client, legacy_seeded):
     csv_text = (
         HEADER
         + "Swap,12/3/24,ANET,35,100.00,0\n"

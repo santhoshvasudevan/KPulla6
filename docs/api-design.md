@@ -208,6 +208,56 @@ Distinct filter values for the current portfolio scope (same `portfolio_scope` /
 | Encoding | UTF-8 required (`utf-8-sig`); invalid bytes → row-level `file` error in import response |
 | File type | MIME type and file extension are **not** validated yet |
 | Format detection | Stock vs mutual fund CSV is chosen from headers — see MF CSV below; **mixed stock + MF columns in one file → row 1 header error** |
+| Cash-aware (Cash-5) | Without `create_cash_deposits=true` + `cash_preview_confirmed=true`, import with cash shortfalls → **409** + preview body; legacy `cash_aware_enabled=false` unchanged |
+| Confirmed import | Backend **recomputes** preview from CSV; creates `CASH_DEPOSIT` rows then transactions atomically; same-currency only; no FX |
+
+#### CSV cash preview (Cash-5)
+
+`POST /api/v1/transactions/import-csv/preview-cash`
+
+- Same multipart `file` and optional `portfolio_id` as import.
+- **200:** simulation only (no writes). Parse errors → `success`-style `row_errors` in preview response (HTTP 200).
+
+```json
+{
+  "cash_aware": true,
+  "can_import_without_deposits": false,
+  "shortfalls": [
+    {
+      "portfolio_id": 5,
+      "portfolio_name": "Default Portfolio",
+      "date": "2026-06-04",
+      "currency": "EUR",
+      "required": 1005.0,
+      "available_before": 0.0,
+      "shortfall": 1005.0,
+      "reason": "BUY AAPL"
+    }
+  ],
+  "proposed_deposits": [
+    {
+      "portfolio_id": 5,
+      "portfolio_name": "Default Portfolio",
+      "date": "2026-06-04",
+      "currency": "EUR",
+      "amount": 1005.0,
+      "source_of_funds": "CSV import cash deposit",
+      "note": "Auto-proposed before CSV import"
+    }
+  ],
+  "row_errors": [],
+  "summary": {
+    "rows": 10,
+    "cash_aware_rows": 10,
+    "proposed_deposit_count": 1,
+    "total_shortfall_by_currency": [{ "currency": "EUR", "amount": 1005.0 }]
+  }
+}
+```
+
+Simulation: rows in chronological order; existing ledger + simulated deposits/settlements; BUY uses transaction currency only; MF BUY uses `paid_value` / `investment_date`; SELL credits proceeds; `STOCK_SPLIT` / `DIVIDEND` no cash effect.
+
+**Import with confirmation:** `POST /api/v1/transactions/import-csv?create_cash_deposits=true&cash_preview_confirmed=true` — deposits from fresh preview, then import (all-or-nothing).
 
 #### Mutual fund CSV import (MF-11a)
 
@@ -420,11 +470,38 @@ Validation: `portfolio_scope=all` + `portfolio_id` → **422**; unknown/inactive
 
 **Data sources:** DB-cached prices and FX only (no sync on read).
 
-**Metrics:** FIFO remaining cost basis (`total_invested`), latest cached prices for `current_value`, `realized_pl` / `unrealized_pl` / `total_pl`, optional portfolio `xirr` (Phase 6 helper, fees in cashflows). Timeseries: daily holdings from transactions, forward-filled stock prices, same-date FX with up to 7-day backfill for gaps (`fx_status`: `ok` / `filled` / `fx_unavailable`). Missing FX → `portfolio_value: null` on affected points.
+**Metrics:** FIFO remaining cost basis (`total_invested`), latest cached prices for `current_value`, `realized_pl` / `unrealized_pl` / `total_pl`, optional portfolio `xirr` (full-scope). **`current_value` includes cash** (Cash-6A). **Performance `value` / `twror` / `cumulative_return`** use cash-inclusive daily values and cash-aware external flows when `cash_aware_enabled=true` (Cash-6C.2); legacy portfolios keep investment-only TWROR/cumulative return.
 
-**All Portfolios aggregation (`portfolio_scope=all`):** Headline monetary fields (`total_invested`, `current_value`, `realized_pl`, `unrealized_pl`, `total_pl`) are the **sum of each active real portfolio’s summary** after conversion to the requested `display_currency`. Inactive portfolios are excluded; Default Portfolio is included once. Response `base_currency` equals `display_currency` for this virtual scope. `fx_status` is the worst status across child portfolios (`fx_unavailable` > `filled` > `ok`). `warnings` are prefixed with portfolio name. `xirr` is still computed from merged cashflows across all active portfolios (not summed). When `include_timeseries=true`, daily series points are summed by date from child portfolio series in `display_currency`.
+**Portfolio `xirr` (Cash-6C.1):**
 
-**Response (200 OK)** — see KPulla5 shape: `total_invested`, `current_value`, `realized_pl`, `unrealized_pl`, `total_pl`, `xirr`, `base_currency`, `display_currency`, `fx_status`, `timeseries[]`; optional `warnings` (e.g. oversell).
+| Mode | External flows | Terminal value |
+|------|----------------|----------------|
+| `cash_aware_enabled=false` (legacy) | Stock/MF BUY/SELL (unchanged) | Holdings only (no cash in terminal) |
+| `cash_aware_enabled=true` | `CASH_DEPOSIT`, `CASH_WITHDRAWAL`, unlinked `ADJUSTMENT`; settlements/transfers excluded | Holdings + cash in calculation currency |
+
+Sign convention: deposits **negative**, withdrawals and terminal **positive** (investor perspective). Missing FX for a required cash-flow conversion → `xirr: null` and a warning (same pattern as cash in `current_value`).
+
+**All Portfolios aggregation (`portfolio_scope=all`):** Headline monetary fields are summed per portfolio in `display_currency`. **`xirr`:** per-portfolio rules above; external flows converted to `display_currency` and **merged by date** (not summed); terminal = combined holdings + cash in `display_currency`. **Mixed mode:** cash-aware portfolios use ledger deposits/withdrawals; legacy portfolios use transaction BUY/SELL flows in the same merged series. `warnings` may include XIRR FX unavailability. When `include_timeseries=true`, daily series points are summed by date from child portfolio series in `display_currency`.
+
+**Response (200 OK)** — see KPulla5 shape: `total_invested`, `current_value`, `realized_pl`, `unrealized_pl`, `total_pl`, `xirr`, `base_currency`, `display_currency`, `fx_status`, `timeseries[]`; optional `warnings` (e.g. oversell, cash FX partial); optional **`cash_summary`** (Cash-6A):
+
+```json
+"cash_summary": {
+  "display_currency": "EUR",
+  "total_display_value": 1200.0,
+  "balances": [
+    {
+      "portfolio_id": 1,
+      "portfolio_name": "Scalablefolio",
+      "currency": "EUR",
+      "native_balance": 1200.0,
+      "display_value": 1200.0
+    }
+  ]
+}
+```
+
+Cash balances are included in `current_value` regardless of `cash_aware_enabled` when ledger rows exist. Missing FX for a cash currency excludes that balance from the converted total and adds: `FX unavailable for one or more cash balances; portfolio value may be partial.`
 
 ---
 
@@ -449,7 +526,8 @@ Validation: invalid `metric` / `range` / `display_currency` → **400**; `portfo
 **Data sources:** Reuses Phase 9 value timeseries (`portfolios/summary_service.build_portfolio_value_timeseries`). Cached `HistoricalPrice` (stocks + `asset_type=INDEX` for benchmarks) and `FXRate` only — **no external calls on read**.
 
 **Metrics:**
-- `value` — daily portfolio value in `display_currency` (same-date FX + 7-day fill, matching summary).
+- `value` — daily portfolio value in `display_currency` (investment + cash, Cash-6B).
+- `twror` / `cumulative_return` — cash-inclusive daily values and cash-aware external flows when `cash_aware_enabled=true` (Cash-6C.2); legacy mode unchanged. Optional `warnings` (e.g. missing FX on external flows) may wrap `points` in `{"points", "warnings"}` like `metric=value`.
 - `cumulative_return` — `((value + withdrawals - contributions) / contributions - 1) * 100`; `null` when contributions ≤ 0 or flows/FX unknown.
 - `twror` — chain-linked period returns from Phase 6 `compute_twror_series`; `null` on first day or zero prior value. For `range != ALL`, TWROR is recomputed on the sliced window only (not rebased from full history).
 
@@ -471,13 +549,17 @@ Read paths use **cached DB data only** (same as summary/performance). Metrics ar
 - `cumulative_return` — terminal money-weighted return for the selected `range`, same formula as `GET /portfolio/performance?metric=cumulative_return` (fraction; UI × 100).
 - `cagr` — compound annual growth rate from that terminal cumulative return and calendar span (`range.start` → `range.end`); not TWROR.
 - `twror` — terminal chain-linked TWROR for the range (matches `GET /portfolio/performance?metric=twror`).
-- `xirr` — full-scope money-weighted IRR from summary (`xirr_scope: "full_scope"`).
+- `xirr` — full-scope money-weighted IRR from `portfolios/xirr_service` (same as summary; `xirr_scope: "full_scope"`).
 
 Risk/drawdown/period stats still use TWROR-style daily returns from values and external flows.
 
-**All Portfolios value series:** `GET /portfolio/performance` with `portfolio_scope=all` and `metric=value` builds per-portfolio daily value series (each in its own portfolio base), converts each to `display_currency`, then aggregates — matching `GET /portfolio/summary` all-scope aggregation. The last valid `metric=value` point should equal `current_value` when display currency is set.
+**All Portfolios value series:** `GET /portfolio/performance` with `portfolio_scope=all` and `metric=value` builds per-portfolio daily value series (each in its own portfolio base), converts each to `display_currency`, adds scope cash converted per day, then aggregates — matching `GET /portfolio/summary` all-scope aggregation. The last valid `metric=value` point should equal `current_value` when display currency is set.
+
+When cash FX is partial, `metric=value` may return `{"points": [...], "warnings": ["FX unavailable for one or more cash balances; value history may be partial."]}` instead of a bare array.
 
 **All Portfolios return metrics:** For `portfolio_scope=all`, `metric=cumulative_return` and `metric=twror` use the same aggregated display-currency value series. External cash flows are built per portfolio in portfolio base, converted to `display_currency` on each flow date (7-day FX fill), then aggregated by date. **All-scope TWROR** is computed from this aggregated display-currency value and external cash-flow series. Single-portfolio scopes still use portfolio-base value/flow series.
+
+**Cash-only + display currency:** When there are no investments, returns are ~0 only if native cash currencies match `display_currency` (or FX to display is flat). Multi-currency cash with `display_currency` different from a cash currency shows non-zero TWROR/cumulative return/XIRR from cached FX movement on the cash leg — expected; see `docs/cash-ledger.md` § Cash-aware TWROR.
 
 **Range vs XIRR:** Most metrics are computed over the selected `range` window (daily returns sliced from `range.start`). **XIRR** is an exception: it is always **full-scope** (inception through today), matching `GET /portfolio/summary`. The response includes `metrics.return.xirr_scope: "full_scope"` so clients can distinguish range-based stats from money-weighted IRR.
 
@@ -649,6 +731,293 @@ When `common_point_count < 2`, subject metrics are null, `periodic_returns` / `d
 
 ---
 
+## Cash Ledger
+
+Full design: [cash-ledger.md](./cash-ledger.md) · agent rules: [.cursor/rules/320-cash-ledger.mdc](../.cursor/rules/320-cash-ledger.mdc). **Auth:** authenticated session; data limited to the current user’s active portfolios. Scope rules match holdings/summary (`portfolio_scope=all` default; cannot combine with `portfolio_id` → **422**; unknown/inactive/not-owned `portfolio_id` → **404**).
+
+### Cash API surface (implemented vs planned)
+
+| Method | Path | Notes |
+|--------|------|--------|
+| GET | `/api/v1/cash/balances` | Native currency balances; no display-currency conversion in read path |
+| GET | `/api/v1/cash/ledger` | Paginated ledger items |
+| POST | `/api/v1/cash/deposits` | Manual `CASH_DEPOSIT` |
+| POST | `/api/v1/cash/withdrawals` | Manual `CASH_WITHDRAWAL`; 400 shortfall if insufficient |
+| PUT | `/api/v1/cash/ledger/{id}` | Manual rows only; 409 if linked/system or future-impact violation |
+| DELETE | `/api/v1/cash/ledger/{id}` | Manual rows only; same protections as PUT |
+| POST | `/api/v1/cash/transfers` | **Planned** (Cash-8) — not implemented |
+| POST | `/api/v1/cash/backfill-preview` | **Done** (Cash-7A) — read-only shortfall simulation |
+| POST | `/api/v1/cash/backfill-apply` | **Done** (Cash-7B) |
+| POST | `/api/v1/transactions/import-csv/preview-cash` | **Done** (Cash-5) — CSV cash simulation; no writes |
+
+**Settlement rows** (`BUY_SETTLEMENT`, `SELL_SETTLEMENT`, transfers, FX legs) are **system-protected** — created/updated/deleted only via `/api/v1/transactions` (or future transfer APIs), not via manual cash ledger edit.
+
+**No implicit FX:** BUY sufficiency and withdrawal checks use **same-currency** ledger cash only. No `FX_CONVERSION_*` write endpoint in current phase.
+
+**Cash-aware transactions:** When `portfolio.cash_aware_enabled=true`, stock/MF `POST`/`PUT`/`DELETE` on `/api/v1/transactions` maintain linked settlements atomically (see Cash-4A below).
+
+### Implemented (Cash-2) — read APIs
+
+#### `GET /api/v1/cash/balances`
+
+Query: `portfolio_scope`, `portfolio_id`, optional `as_of_date` (YYYY-MM-DD; default today), optional `currency` (native filter; unsupported → **400**).
+
+**All scope (200):**
+```json
+{
+  "portfolio_scope": "all",
+  "as_of_date": "2026-06-04",
+  "balances": [
+    {
+      "portfolio_id": 1,
+      "portfolio_name": "Scalablefolio",
+      "currency": "EUR",
+      "balance": 12500.0
+    }
+  ],
+  "totals_by_currency": [{ "currency": "EUR", "balance": 12500.0 }]
+}
+```
+
+**Single portfolio (200):**
+```json
+{
+  "portfolio_id": 1,
+  "portfolio_name": "Scalablefolio",
+  "as_of_date": "2026-06-04",
+  "balances": [{ "currency": "EUR", "balance": 12500.0 }]
+}
+```
+
+- Native currency only (no display-currency conversion in Cash-2).
+- Omits `(portfolio, currency)` pairs with **no ledger rows** in scope; zero balance included when rows exist.
+- No ledger rows → empty `balances` / `totals_by_currency` (not an error).
+- `as_of_date` includes entries with `date <= as_of_date`.
+
+#### `GET /api/v1/cash/ledger`
+
+Query: `portfolio_scope`, `portfolio_id`, `currency`, `entry_type`, `date_from`, `date_to`, `page` (default 1), `page_size` (default 20).
+
+- Ordered by `date` desc, `id` desc.
+- `date_from > date_to` → **400**; unsupported `currency` / `entry_type` → **400**.
+- Response: `{ "items", "total", "page", "page_size", "pages" }` — each item includes `portfolio_id`, `portfolio_name`, `amount` (signed float), `linked_transaction_id`, `transfer_group_id`, timestamps.
+
+#### Portfolios — `cash_aware_enabled` (Cash-2, Cash-4A.1)
+
+`GET/POST/PUT/DELETE /api/v1/portfolios` responses include `cash_aware_enabled` (boolean).
+
+| Context | Default / behavior |
+|---------|------------------|
+| **Existing DB rows** | Unchanged (`false` unless previously set `true`) |
+| **`POST` omitted field** | **`true`** (Cash-4A.1) |
+| **`POST` explicit `false`** | Allowed — legacy-mode portfolio |
+| **Registration default portfolio** | Created with `true` |
+| **`PUT`** | May set `cash_aware_enabled` (e.g. enable tester portfolio without bulk migration) |
+
+When `true`, Cash-4A BUY/SELL settlement rules apply. Portfolio-level XIRR uses cash ledger external flows (Cash-6C.1). TWROR/cumulative_return cash integration is Cash-6C.2+.
+
+**Portfolio `id`:** globally unique internal primary key (FK target for transactions, cash ledger, etc.). Not per-user sequential `id=1`. Optional future UI: user-facing `portfolio_number` / `display_order` — not in Cash-4A.1.
+
+### Implemented (Cash-3A) — manual deposit / withdrawal
+
+#### `POST /api/v1/cash/deposits` — **201 Created**
+
+**Request (JSON):**
+```json
+{
+  "portfolio_id": 1,
+  "date": "2026-06-04",
+  "currency": "EUR",
+  "amount": 1000.00,
+  "source_of_funds": "Bank transfer",
+  "note": "Monthly contribution"
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| `portfolio_id` | Yes | Active portfolio owned by current user |
+| `date` | Yes | `YYYY-MM-DD` |
+| `currency` | Yes | Must be in `SUPPORTED_CASH_CURRENCIES` (20 codes) |
+| `amount` | Yes | Strictly positive in request; stored signed **positive** |
+| `source_of_funds` | No | Optional string |
+| `note` | No | Optional string |
+
+- `entry_type = CASH_DEPOSIT`; no `linked_transaction` / `transfer_group`.
+- Allowed when `cash_aware_enabled` is `false`.
+- Native currency only (no display-currency conversion).
+
+**Response:** single ledger item (same shape as `GET /cash/ledger` items).
+
+**Errors:** `400` validation (zero/negative amount, unsupported currency, invalid date); `404` unknown/inactive/not-owned portfolio; `401`/`403` unauthenticated.
+
+#### `POST /api/v1/cash/withdrawals` — **201 Created**
+
+**Request (JSON):**
+```json
+{
+  "portfolio_id": 1,
+  "date": "2026-06-04",
+  "currency": "EUR",
+  "amount": 500.00,
+  "note": "Withdrawal to bank"
+}
+```
+
+- Request `amount` strictly positive; stored signed **negative** (`CASH_WITHDRAWAL`).
+- **Insufficient cash (400):** balance for `(portfolio, currency)` as of `date` (entries with `date <= withdrawal date`) must cover withdrawal. Response:
+```json
+{
+  "detail": "Insufficient cash balance for withdrawal.",
+  "required": 500.0,
+  "available": 100.0,
+  "shortfall": 400.0,
+  "currency": "EUR"
+}
+```
+- No FX conversion for sufficiency checks (same currency only).
+
+### Implemented (Cash-3D / Cash-4D) — edit / delete manual ledger entries
+
+#### `PUT /api/v1/cash/ledger/{id}` — **200 OK**
+
+**Allowed only** for manual entries: `CASH_DEPOSIT` or `CASH_WITHDRAWAL` with `linked_transaction_id` and `transfer_group_id` both null. Portfolio cannot change in this phase.
+
+**Request (JSON):** same editable fields as deposit/withdrawal writes (no `portfolio_id`):
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| `date` | Yes | `YYYY-MM-DD` |
+| `currency` | Yes | Supported cash currency |
+| `amount` | Yes | Strictly positive in request; stored signed by `entry_type` |
+| `source_of_funds` | No | Optional |
+| `note` | No | Optional |
+
+- `entry_type` is immutable.
+- Withdrawal updates validate sufficiency excluding the row being edited.
+- **Future impact (Cash-4D):** simulates running balance from the earliest affected date; rejects if any later day would be negative in the affected currency stream(s). Currency change validates **both** old and new currency ledgers.
+
+**Response:** updated ledger item (ledger item shape).
+
+**Errors:** `400` validation / insufficient cash on withdrawal edit; `404` not found or not owned; `409` linked/system entry **or** future negative balance (see below); `401`/`403` unauthenticated.
+
+#### `DELETE /api/v1/cash/ledger/{id}` — **204 No Content**
+
+Same manual-entry rules as `PUT`. Blocked when any later ledger date would have negative balance in that portfolio/currency. **No cascade delete** of linked asset transactions or settlements.
+
+**Errors:** `404` not found; `409` protected entry or future negative balance.
+
+#### Future impact error (Cash-4D) — **409 Conflict**
+
+When edit/delete would make a later running balance negative:
+
+```json
+{
+  "detail": "This cash change would make future cash balance negative.",
+  "currency": "EUR",
+  "earliest_negative_date": "2026-06-05",
+  "lowest_balance": -500.0,
+  "affected_entries": [
+    {
+      "id": 123,
+      "date": "2026-06-05",
+      "entry_type": "BUY_SETTLEMENT",
+      "amount": -1000.0,
+      "linked_transaction_id": 456,
+      "asset_symbol": "AAPL"
+    }
+  ]
+}
+```
+
+Up to **10** `affected_entries` from `earliest_negative_date` onward. Client must not recompute balances; user resolves manually (add deposit, edit/delete later transactions). Cascade delete deferred.
+
+**Protected entry detail:** `"Linked or system-generated cash entries cannot be edited directly."`
+
+### Implemented (Cash-7A) — `POST /api/v1/cash/backfill-preview`
+
+Read-only simulation for legacy → cash-aware migration. **No writes.**
+
+**Request:** `portfolio_id` (required), optional `start_date` / `end_date`, `mode` (`"shortfall"` only). No `portfolio_scope=all`. Invalid date range → **400**.
+
+**Simulation:** Existing ledger + historical transactions in chronological order; skip cash effects when linked `BUY_SETTLEMENT` / `SELL_SETTLEMENT` already exist. Same-currency BUY sufficiency only (no implicit FX). Proposes merged `CASH_DEPOSIT` rows (`source_of_funds`: `Backfill deposit`) for exact shortfalls before BUYs in the window.
+
+**Response:** `proposed_deposits`, `shortfalls`, `summary`, `can_enable_cash_aware_after_apply`, `warnings` (informational when already cash-aware).
+
+**Apply / enable:** Cash-7B (`backfill-apply`) **done**; Cash-7C (wizard UI) — not in this phase.
+
+### Implemented (Cash-7B) — `POST /api/v1/cash/backfill-apply`
+
+User-confirmed apply for legacy → cash-aware migration deposits. **Writes `CASH_DEPOSIT` only.**
+
+**Request:** `portfolio_id` (required), optional `start_date` / `end_date`, `mode` (`"shortfall"` only), `confirmed: true` (required). Extra client fields (e.g. `proposed_deposits`) are ignored. No `portfolio_scope=all`. Invalid date range → **400**. Unknown/inactive/not-owned portfolio → **404**.
+
+**Confirmation:** `confirmed` missing or not `true` → **400** `Backfill apply requires explicit confirmation.`
+
+**Behavior:**
+
+1. Recompute preview server-side (same logic as Cash-7A); do not trust frontend proposal amounts.
+2. If preview has `row_errors` or `BLOCKING:` warnings → **400**, no writes.
+3. Create proposed deposits inside `transaction.atomic()`; amounts quantized to 4 decimal places.
+4. Skip duplicate identical backfill rows (same portfolio/date/currency/amount/`Backfill deposit`/note).
+5. Do **not** set `cash_aware_enabled`; response includes `cash_aware_enablement` message to enable separately.
+6. No `BUY_SETTLEMENT` / `SELL_SETTLEMENT` for historical transactions; no transaction mutation.
+
+**Response (200):** `created_count`, `skipped_existing_count`, `created_deposits`, `summary.total_created_by_currency`, `cash_aware_enabled` (unchanged), `cash_aware_enablement`.
+
+### Planned — Cash write / integration
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/api/v1/cash/transfers` | Portfolio transfer (same or cross currency; `CashTransferGroup`) |
+| POST | `/api/v1/transactions/import-csv/preview-cash` | **Done** (Cash-5) |
+
+### Implemented (Cash-4A) — cash-aware BUY/SELL settlements
+
+When `portfolio.cash_aware_enabled` is **true**, `POST` / `PUT` / `DELETE` `/api/v1/transactions` (stock and mutual fund) enforce cash and maintain linked ledger rows. Legacy portfolios (`cash_aware_enabled=false`) are unchanged.
+
+**Stock / ETF**
+
+| Type | Settlement | Cash check |
+|------|------------|------------|
+| `BUY` | `BUY_SETTLEMENT` (negative) = `quantity × price_per_share + fees` on `transaction.date` | Required cash in `transaction.currency` as of transaction date |
+| `SELL` | `SELL_SETTLEMENT` (positive) = `quantity × price_per_share − fees` | Reject if proceeds ≤ 0 |
+| `STOCK_SPLIT` | None | None |
+| `DIVIDEND` | None (deferred) | None |
+
+**Mutual fund**
+
+| Type | Settlement amount | Ledger `date` |
+|------|-------------------|---------------|
+| `BUY` | `paid_value` (not qty × NAV) | `investment_date` |
+| `SELL` | `paid_value` when &gt; 0; else `units_allotted × nav − fees` | `investment_date` |
+
+**Insufficient cash on BUY (400):**
+
+```json
+{
+  "detail": "Insufficient cash balance for purchase.",
+  "required": 1005.0,
+  "available": 500.0,
+  "shortfall": 505.0,
+  "currency": "EUR"
+}
+```
+
+- Atomic: transaction and settlement succeed or fail together.
+- `DELETE` removes linked settlement first (then transaction). Deleting a `SELL_SETTLEMENT` is blocked if later balances would go negative.
+- Linked settlements are not editable via `PUT/DELETE /cash/ledger/{id}` (**409**).
+
+**Same-currency funding (Cash-4E):** `available` and `shortfall` reflect **only** ledger cash in `currency` (the transaction currency). Other currencies are ignored for sufficiency — e.g. USD deposits do not fund a EUR BUY. No implicit FX conversion; no `FX_CONVERSION_*` APIs in this phase.
+
+**Not in Cash-4A:** CSV cash preview, summary/performance/allocation, transfers, bulk auto-enable of existing portfolios.
+
+**Cash-4A.1:** New portfolios and registration defaults use `cash_aware_enabled=true`; existing rows are not migrated.
+
+**Summary/performance/allocation (Cash-6):** Cash-6A implemented on summary `current_value` and holdings `allocation`; performance/value history/TWROR/XIRR deferred to Cash-6B/6C. No breaking changes to stock/MF fields.
+
+---
+
 ## Planned (KPulla5 contract — not yet implemented in KPulla6)
 
 ### Common error response (target)
@@ -725,6 +1094,8 @@ Structural invalid input (missing fields, non-positive nav/units, negative value
 
 ### Holdings (`GET /api/v1/portfolio/holdings`) — MF-4 implemented
 
+Response includes **`holdings`** (investment rows only — stocks/MF) and **`allocation`** (Cash-6A: active investment slices plus cash rows). Optional **`warnings`** when cash FX conversion is partial.
+
 Mutual fund positions appear as additional holding rows (stock rows unchanged — no `asset_type` on stock rows):
 
 | Field | Notes |
@@ -742,6 +1113,21 @@ Mutual fund positions appear as additional holding rows (stock rows unchanged �
 | `primary_asset_class` | `EQUITY`, `DEBT`, `HYBRID`, `LIQUID`, `COMMODITY`, `OTHER`, `UNKNOWN` (MF-7) |
 | `classification_source` | `EXPLICIT`, `INFERRED`, `UNKNOWN` (MF-7) |
 | `classification_notes` | Optional inference note (MF-7) |
+
+**Cash allocation rows (Cash-6A)** — in `allocation` only, not in `holdings`:
+
+| Field | Notes |
+|-------|-------|
+| `asset_type` | `CASH` |
+| `asset_symbol` | `Cash EUR`, `Cash INR`, etc. |
+| `primary_asset_class` | `CASH` |
+| `is_cash` | `true` |
+| `native_currency` | Ledger currency |
+| `native_balance` | Sum in native currency for scope |
+| `current_value` | Display-currency value (backend-computed) |
+| `currency` | Requested `display_currency` |
+
+Compare and Asset Metric Sheet must exclude cash rows (`is_cash` / `asset_type=CASH`).
 
 **Grouping (MVP):** one row per `(scheme_code, folio_number)` within resolved portfolio scope. FIFO and oversell per folio group. Valuation: `current_value = remaining units × latest cached NAV` (`HistoricalPrice`, `asset_type=MUTUAL_FUND`). No external NAV provider on read.
 
@@ -763,7 +1149,7 @@ No new endpoints. `GET /api/v1/portfolio/summary` and `GET /api/v1/portfolio/per
 |------|----------|
 | Totals | MF `current_value` = units × latest cached NAV; FIFO invested/realized/unrealized merged into portfolio totals |
 | Timeseries | Daily MF value from units × forward-filled historical NAV (`list_mutual_fund_navs_for_schemes`); merged with stock series |
-| XIRR | Stock flows unchanged; MF BUY/SELL use `investment_date` and `paid_value` (`merge_portfolio_xirr`) |
+| XIRR | Portfolio: `compute_scope_xirr` (legacy BUY/SELL or cash-aware ledger per `cash_aware_enabled`). Asset-level: stock/MF BUY/SELL unchanged (`calculate_xirr` / `merge_portfolio_xirr`) |
 | Performance flows | `cumulative_return` / `twror` external flows use MF `paid_value` on `investment_date` |
 | FX | INR MF amounts converted to `portfolio_base` / `display_currency` via cached `FXRate` (7-day fill) |
 | Warnings | `Latest cached NAV missing for mutual fund {scheme}` when NAV absent |

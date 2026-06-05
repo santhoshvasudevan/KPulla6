@@ -1,0 +1,36 @@
+.cash-future-impact {
+  padding: var(--space-3);
+  background: color-mix(in srgb, var(--loss) 8%, var(--bg-surface));
+  border: 1px solid color-mix(in srgb, var(--loss) 30%, var(--border-subtle));
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+}
+
+.cash-future-impact p {
+  margin: 0 0 var(--space-2);
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.cash-future-impact__detail {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.cash-future-impact__list-title {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.cash-future-impact__list {
+  margin: 0 0 var(--space-2);
+  padding-left: 1.25rem;
+}
+
+.cash-future-impact__list li {
+  margin-bottom: var(--space-1);
+}
+
+.cash-future-impact__helper {
+  margin-bottom: 0 !important;
+}

@@ -1,0 +1,107 @@
+---
+description: Cash Ledger mental model, cash-aware mode, settlements, API/frontend guardrails
+globs: backend/cash/**,backend/finance/cash.py,backend/transactions/**,backend/portfolios/**,frontend/src/pages/Cash.*,frontend/src/components/Cash*,frontend/src/components/TransactionModal.*
+alwaysApply: false
+---
+
+# Cash Ledger — KPulla6
+
+**Canonical docs:** `docs/cash-ledger.md` · `docs/api-design.md` (Cash Ledger) · `docs/decisions.md` (Cash-* entries) · `docs/frontend-design.md` (Cash sections)
+
+General safety: `AGENTS.md`, `docs/data-safety.md`, `docs/workflows.md`.
+
+## Cash Ledger mental model
+
+- **Cash** is a portfolio **balance component**, not an investment asset.
+- **Stock / MF** are investment assets (FIFO, Metric Sheet, Compare).
+- Cash may appear in portfolio value, allocation, balances, and ledger (when phase implements each surface).
+- Cash must **not** appear as a stock/MF-style **Metric Sheet** asset.
+- Cash must **not** be a Compare page subject (not like AAPL/MSFT).
+- No Sharpe, beta, alpha, or drawdown analytics for cash as a standalone investment asset.
+
+## Native-currency rule
+
+- Cash balances are per **portfolio** and **native currency**.
+- Do **not** collapse ledger balances into display currency internally.
+- Display-currency conversion is **presentation/reporting only** (cached `FXRate`; no live FX on read paths).
+- **BUY** must be funded by **same-currency** cash as the transaction.
+- Do **not** implicitly use USD cash for a EUR purchase (or any cross-currency purchase).
+- Do **not** add automatic FX conversion unless explicitly implementing the future Cash FX conversion feature (`FX_CONVERSION_*`, `POST /cash/transfers`).
+- No external FX/provider calls from read paths.
+
+## Cash-aware mode
+
+| `cash_aware_enabled` | Behavior |
+|----------------------|----------|
+| `false` | **Legacy** — existing portfolios; BUY/SELL without cash settlement enforcement. |
+| `true` | **Cash-aware** — BUY/SELL create linked settlements; BUY sufficiency enforced. |
+
+- **Existing portfolios:** do **not** auto-enable without explicit user action (Settings enable, `PUT /portfolios/{id}`, or future backfill wizard).
+- **New portfolios** and **registration default portfolio:** `cash_aware_enabled=true` by default (`POST` omits field → true).
+- Mode is **per portfolio**; All Portfolios scope is informational only for enable UX.
+
+## Settlement rules
+
+- **BUY** → negative `BUY_SETTLEMENT` linked to transaction.
+- **SELL** → positive `SELL_SETTLEMENT` linked to transaction.
+- **STOCK_SPLIT** → no cash movement.
+- **MF:** BUY uses `paid_value`; ledger **`date` = `investment_date`** (not `nav_date`).
+- Settlements must link to the asset transaction (`linked_transaction`).
+- Create / update / delete settlement **atomically** with the asset transaction.
+
+## Protected cash rows
+
+**Editable/deletable (manual, when safe):** `CASH_DEPOSIT`, `CASH_WITHDRAWAL` — only via `PUT`/`DELETE /cash/ledger/{id}` when unlinked and future-impact validation passes.
+
+**Not directly editable/deletable:** `BUY_SETTLEMENT`, `SELL_SETTLEMENT`, `TRANSFER_IN`, `TRANSFER_OUT`, `FX_CONVERSION_IN`, `FX_CONVERSION_OUT`, any row with `linked_transaction_id` or `transfer_group_id`. Change via asset transaction APIs or future transfer APIs.
+
+## Future-impact validation
+
+- Editing/deleting manual cash entries must validate **future running balance** (backend).
+- If later cash-aware activity would become impossible → **409** with structured `affected_entries` (and related fields).
+- React displays backend impact only — **no** future cash balance simulation in the client.
+
+## Frontend rules
+
+- React displays backend cash balances and ledger rows only; format values, do not compute balances.
+- **TransactionModal** unified entry UX: Cash | Stock | MF.
+  - Cash → `POST /api/v1/cash/deposits` or `/cash/withdrawals`.
+  - Stock/MF → `POST`/`PUT /api/v1/transactions`.
+- Do **not** post cash as `asset_type=CASH` to `/transactions`.
+- Do **not** merge cash and asset transaction tables client-side with fake pagination.
+- Future unified Activity table → backend `GET /activity` (or equivalent), not client-side joins.
+- **`/cash`** = balance + ledger management; **`/transactions`** = asset table + unified add/edit (cash add only, not cash ledger edit).
+- Cash shortfall UX: show API `required` / `available` / `shortfall` / `currency`; guide user to add **same-currency** cash on `/cash` (no implicit FX).
+
+## Performance / analytics (phase gates)
+
+- **Until Cash-6:** do **not** include cash in portfolio valuation, allocation, summary, or performance read APIs unless that phase is explicitly in scope.
+- **Cash-6+ (when implemented):**
+  - Portfolio value = investment assets + cash (display conversion at API layer).
+  - Portfolio TWROR external flows = deposits/withdrawals (not BUY/SELL when cash-aware).
+  - BUY/SELL = internal movements once cash-aware.
+  - Asset-level XIRR may still use asset BUY/SELL.
+  - Portfolio-level XIRR uses external cash flows + terminal total portfolio value (including cash).
+
+## CSV import
+
+- Do **not** silently create cash deposits during CSV import.
+- Preview cash shortfalls first; optional “auto-create required deposits” only **after user confirmation** (Cash-5+).
+
+## Data safety
+
+- Do **not** delete users, profiles, or portfolios as part of cash work.
+- Do **not** bulk-flip existing portfolios to `cash_aware_enabled=true`.
+- Migration / backfill / enforcement changes: `make backup-db`, `make db-safety-check`, explicit user approval before destructive steps.
+- No `flush`, `TRUNCATE`, bulk `Transaction.objects.delete()`, or `make db-reset` on live dev DB.
+
+## Backend placement
+
+- Ledger ORM: `backend/cash/` · pure math: `backend/finance/cash.py`.
+- Settlement side effects: `transactions` services — keep atomic with transaction writes.
+- Tests: `backend/tests/test_cash*.py`, transaction cash-aware tests.
+
+## Terminology
+
+- Use **Metric Sheet** (not tearsheet / tear sheet).
+- Use **Quantitative Statistics** where referring to that analytics family (not QuantStats).

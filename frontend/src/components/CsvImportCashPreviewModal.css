@@ -1,0 +1,70 @@
+.csv-import-cash-preview {
+  max-width: 560px;
+}
+
+.csv-import-cash-preview__lead {
+  margin: 0 0 var(--space-3);
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.csv-import-cash-preview__totals h4,
+.csv-import-cash-preview__deposits h4 {
+  margin: 0 0 var(--space-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.csv-import-cash-preview__totals ul {
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-4);
+}
+
+.csv-import-cash-preview__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  margin-bottom: var(--space-3);
+}
+
+.csv-import-cash-preview__table th,
+.csv-import-cash-preview__table td {
+  text-align: left;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.csv-import-cash-preview__shortfalls {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-3);
+}
+
+.csv-import-cash-preview__shortfalls ul {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+}
+
+.csv-import-cash-preview__status {
+  margin: 0 0 var(--space-3);
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.csv-import-cash-preview__hint {
+  margin: 0 0 var(--space-4);
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.csv-import-cash-preview__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}

@@ -13,7 +13,8 @@ Closer to institutional wealth analytics than a terminal UI or casual expense tr
 ## Architecture Constraints (non-negotiable)
 
 - React is API-driven — render values from `/api/v1` only.
-- Do NOT implement finance calculations in React: no FIFO, XIRR, TWROR, FX conversion, benchmark normalization, or valuation logic.
+- Do NOT implement finance calculations in React: no FIFO, XIRR, TWROR, FX conversion, benchmark normalization, valuation logic, or **cash balance / future-impact** math.
+- Cash Ledger UI: see `.cursor/rules/320-cash-ledger.mdc` — `/cash` for ledger; cash writes via `/cash/*`; do not merge cash + transactions client-side.
 - Display formatting (currency, percent, axis labels, pie tooltip %) is allowed.
 - Preserve existing API contracts unless explicitly requested.
 - Do not modify backend or KPulla5.

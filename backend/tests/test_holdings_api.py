@@ -4,6 +4,8 @@ from unittest.mock import patch
 
 import pytest
 
+from cash.models import CashEntryType, CashLedgerEntry
+from fx.services import upsert_fx_rate
 from market_data.models import AssetType, HistoricalPrice
 from portfolios.models import Portfolio
 from portfolios.seed import ensure_default_portfolio
@@ -452,3 +454,59 @@ def test_stock_split_sell_not_false_oversold(api_client, seeded, test_user):
     assert h["quantity"] == 20.0
     assert h["holding_status"] == "ok"
     assert h["holding_status"] != "oversold"
+
+
+def _cash_deposit(portfolio, *, amount: str, currency: str = "EUR"):
+    CashLedgerEntry.objects.create(
+        portfolio=portfolio,
+        date=date(2026, 6, 1),
+        currency=currency,
+        entry_type=CashEntryType.CASH_DEPOSIT,
+        amount=Decimal(amount),
+    )
+
+
+@pytest.mark.django_db
+def test_holdings_allocation_includes_cash_row(api_client, seeded, test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    portfolio.cash_aware_enabled = False
+    portfolio.save(update_fields=["cash_aware_enabled"])
+    _buy(api_client)
+    _price("AAPL", "110")
+    _cash_deposit(portfolio, amount="1200", currency="EUR")
+    data = api_client.get("/api/v1/portfolio/holdings?display_currency=EUR").json()
+    cash_rows = [r for r in data["allocation"] if r.get("asset_type") == "CASH"]
+    assert len(cash_rows) == 1
+    assert cash_rows[0]["asset_symbol"] == "Cash EUR"
+    assert cash_rows[0]["primary_asset_class"] == "CASH"
+    assert cash_rows[0]["current_value"] == 1200.0
+    assert all(h.get("asset_type") != "CASH" for h in data["holdings"])
+
+
+@pytest.mark.django_db
+def test_holdings_allocation_cash_converted_to_display_currency(
+    api_client, seeded, test_user
+):
+    portfolio = ensure_default_portfolio(test_user)
+    _cash_deposit(portfolio, amount="80000", currency="INR")
+    upsert_fx_rate(
+        from_currency="INR",
+        to_currency="EUR",
+        row_date=date.today(),
+        rate=Decimal("0.01"),
+    )
+    data = api_client.get("/api/v1/portfolio/holdings?display_currency=EUR").json()
+    cash = next(r for r in data["allocation"] if r["asset_symbol"] == "Cash INR")
+    assert cash["current_value"] == 800.0
+    assert cash["currency"] == "EUR"
+
+
+@pytest.mark.django_db
+def test_holdings_allocation_missing_fx_excludes_cash_with_warning(
+    api_client, seeded, test_user
+):
+    portfolio = ensure_default_portfolio(test_user)
+    _cash_deposit(portfolio, amount="50000", currency="INR")
+    data = api_client.get("/api/v1/portfolio/holdings?display_currency=EUR").json()
+    assert not any(r.get("asset_type") == "CASH" for r in data["allocation"])
+    assert any("cash balance" in w.lower() for w in data.get("warnings", []))

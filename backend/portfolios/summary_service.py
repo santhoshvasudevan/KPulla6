@@ -8,8 +8,14 @@ from typing import Optional
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import QuerySet
 
+from cash.services import (
+    build_cash_display_summary,
+    cash_ledger_inception_date,
+    cash_summary_payload,
+    merge_cash_into_value_timeseries,
+)
 from finance.fifo import build_split_adjusted_lot_snapshots, calculate_fifo_cost_basis_metrics
-from finance.mutual_fund_cashflows import MutualFundCashflowEvent, merge_portfolio_xirr
+from finance.mutual_fund_cashflows import MutualFundCashflowEvent
 from finance.oversell import detect_oversell
 from finance.splits import apply_stock_split_adjustments
 from finance.types import TransactionType
@@ -670,6 +676,7 @@ class PortfolioSummaryResult:
     fx_status: str
     timeseries: list[dict]
     warnings: list[str]
+    cash_summary: dict | None = None
 
 
 def _float(v: Decimal) -> float:
@@ -684,39 +691,22 @@ def _combine_fx_status(statuses: list[str]) -> str:
     return "ok"
 
 
-def compute_scope_xirr(scope: ResolvedPortfolioScope) -> Optional[float]:
+def compute_scope_xirr(
+    scope: ResolvedPortfolioScope,
+    *,
+    display_currency: str | None = None,
+) -> Optional[float]:
     """Money-weighted XIRR for the full portfolio scope (inception through today).
 
-    Uses all BUY/SELL cash flows and current holdings value; not sliced by
-    performance ``range``. Shared by summary aggregation and analytics Metric Sheet.
+    Legacy: BUY/SELL external flows and holdings-only terminal.
+    Cash-aware: cash ledger deposits/withdrawals and terminal including cash.
+    Not sliced by performance ``range``. Shared by summary and analytics Metric Sheet.
     """
-    return _compute_scope_xirr(scope)
+    from portfolios.xirr_service import compute_scope_xirr_detail
 
-
-def _compute_scope_xirr(scope: ResolvedPortfolioScope) -> Optional[float]:
-    queryset = _fifo_eligible_queryset(scope.portfolio_ids)
-    all_txns = list(queryset)
-    if not all_txns:
-        return None
-    by_symbol = _transactions_by_symbol(queryset)
-    by_mf = transactions_by_mf_holding(queryset)
-    portfolio_base = _portfolio_base_currency(all_txns)
-    stock_holdings = _calculate_holdings(by_symbol)
-    mf_holdings = _calculate_mf_holdings(by_mf, portfolio_base=portfolio_base)
-    holdings_res = _merge_holdings_results(stock_holdings, mf_holdings)
-
-    stock_cashflow_txns = []
-    for txns in by_symbol.values():
-        stock_cashflow_txns.extend(
-            apply_stock_split_adjustments(_to_fifo_dtos(txns))
-        )
-    mf_events = _mf_cashflow_events(all_txns)
-    return merge_portfolio_xirr(
-        stock_cashflow_txns,
-        mf_events,
-        terminal_value=holdings_res.current_value,
-        include_fees_in_cashflows=True,
-    )
+    return compute_scope_xirr_detail(
+        scope, display_currency=display_currency
+    ).value
 
 
 def _aggregate_timeseries_lists(series_list: list[list[dict]]) -> list[dict]:
@@ -808,6 +798,7 @@ def _build_single_portfolio_summary(
     scope: ResolvedPortfolioScope,
     include_timeseries: bool = True,
     disp_ccy: str,
+    include_cash: bool = True,
 ) -> PortfolioSummaryResult:
     queryset = _fifo_eligible_queryset(scope.portfolio_ids)
     all_txns = list(queryset)
@@ -821,22 +812,32 @@ def _build_single_portfolio_summary(
 
     timeseries: list[dict] = []
     if include_timeseries:
-        timeseries = _build_portfolio_value_timeseries(all_txns, by_symbol, by_mf)
-
-    xirr: Optional[float] = None
-    if all_txns:
-        stock_cashflow_txns = []
-        for txns in by_symbol.values():
-            stock_cashflow_txns.extend(
-                apply_stock_split_adjustments(_to_fifo_dtos(txns))
+        raw_ts = _build_portfolio_value_timeseries(all_txns, by_symbol, by_mf)
+        if raw_ts:
+            ts_start = date.fromisoformat(raw_ts[0]["date"])
+            ts_end = date.fromisoformat(raw_ts[-1]["date"])
+            timeseries, _ = merge_cash_into_value_timeseries(
+                raw_ts,
+                scope=scope,
+                display_currency=disp_ccy,
+                start_date=ts_start,
+                end_date=ts_end,
             )
-        mf_events = _mf_cashflow_events(all_txns)
-        xirr = merge_portfolio_xirr(
-            stock_cashflow_txns,
-            mf_events,
-            terminal_value=holdings_res.current_value,
-            include_fees_in_cashflows=True,
-        )
+        else:
+            today = portfolio_dates.current_date()
+            cash_start = cash_ledger_inception_date(scope) or today
+            timeseries, _ = merge_cash_into_value_timeseries(
+                [],
+                scope=scope,
+                display_currency=disp_ccy,
+                start_date=cash_start,
+                end_date=today,
+            )
+
+    from portfolios.xirr_service import compute_scope_xirr_detail
+
+    xirr_result = compute_scope_xirr_detail(scope, display_currency=disp_ccy)
+    xirr: Optional[float] = xirr_result.value
 
     needs_display_conv = portfolio_base != disp_ccy
     fx_status = "fx_unavailable" if holdings_res.any_fx_missing else "ok"
@@ -865,6 +866,28 @@ def _build_single_portfolio_summary(
     unrealized_pl = _conv_monetary(holdings_res.unrealized_pl, today)
     total_pl = _conv_monetary(holdings_res.total_pl, today)
 
+    cash_display = (
+        build_cash_display_summary(scope, disp_ccy, as_of_date=today)
+        if include_cash
+        else None
+    )
+    if cash_display is not None:
+        current_value = _float(
+            Decimal(str(current_value)) + cash_display.total_display_value
+        )
+        fx_status = _combine_fx_status([fx_status, cash_display.fx_status])
+        summary_warnings = list(holdings_res.warnings) + list(cash_display.warnings)
+        cash_summary = (
+            cash_summary_payload(cash_display)
+            if cash_display.balances or cash_display.total_display_value
+            else None
+        )
+    else:
+        summary_warnings = list(holdings_res.warnings)
+        cash_summary = None
+
+    summary_warnings = list(dict.fromkeys(summary_warnings + xirr_result.warnings))
+
     converted_timeseries: list[dict] = []
     for p in timeseries:
         pp = dict(p)
@@ -888,7 +911,8 @@ def _build_single_portfolio_summary(
         display_currency=disp_ccy,
         fx_status=fx_status,
         timeseries=converted_timeseries,
-        warnings=holdings_res.warnings,
+        warnings=summary_warnings,
+        cash_summary=cash_summary,
     )
 
 
@@ -911,22 +935,29 @@ def _build_all_active_portfolio_summary(
                 scope=child_scope,
                 include_timeseries=include_timeseries,
                 disp_ccy=disp_ccy,
+                include_cash=False,
             )
         )
 
     if not child_summaries:
+        empty_cash = build_cash_display_summary(scope, disp_ccy)
         return PortfolioSummaryResult(
             total_invested=0.0,
-            current_value=0.0,
+            current_value=_float(empty_cash.total_display_value),
             realized_pl=0.0,
             unrealized_pl=0.0,
             total_pl=0.0,
             xirr=None,
             base_currency=disp_ccy,
             display_currency=disp_ccy,
-            fx_status="ok",
+            fx_status=empty_cash.fx_status,
             timeseries=[],
-            warnings=[],
+            warnings=empty_cash.warnings,
+            cash_summary=(
+                cash_summary_payload(empty_cash)
+                if empty_cash.balances or empty_cash.total_display_value
+                else None
+            ),
         )
 
     total_invested = sum(c.total_invested for c in child_summaries)
@@ -934,6 +965,9 @@ def _build_all_active_portfolio_summary(
     realized_pl = sum(c.realized_pl for c in child_summaries)
     unrealized_pl = sum(c.unrealized_pl for c in child_summaries)
     total_pl = sum(c.total_pl for c in child_summaries)
+
+    all_cash = build_cash_display_summary(scope, disp_ccy)
+    current_value += _float(all_cash.total_display_value)
 
     warnings: list[str] = []
     for portfolio_id, child in zip(scope.portfolio_ids, child_summaries):
@@ -945,18 +979,33 @@ def _build_all_active_portfolio_summary(
     if include_timeseries:
         timeseries = _aggregate_timeseries_from_children(child_summaries)
 
+    cash_summary = (
+        cash_summary_payload(all_cash)
+        if all_cash.balances or all_cash.total_display_value
+        else None
+    )
+
+    from portfolios.xirr_service import compute_scope_xirr_detail
+
+    xirr_result = compute_scope_xirr_detail(scope, display_currency=disp_ccy)
+
     return PortfolioSummaryResult(
         total_invested=total_invested,
         current_value=current_value,
         realized_pl=realized_pl,
         unrealized_pl=unrealized_pl,
         total_pl=total_pl,
-        xirr=compute_scope_xirr(scope),
+        xirr=xirr_result.value,
         base_currency=disp_ccy,
         display_currency=disp_ccy,
-        fx_status=_combine_fx_status([c.fx_status for c in child_summaries]),
+        fx_status=_combine_fx_status(
+            [c.fx_status for c in child_summaries] + [all_cash.fx_status]
+        ),
         timeseries=timeseries,
-        warnings=warnings,
+        warnings=list(
+            dict.fromkeys(warnings + all_cash.warnings + xirr_result.warnings)
+        ),
+        cash_summary=cash_summary,
     )
 
 

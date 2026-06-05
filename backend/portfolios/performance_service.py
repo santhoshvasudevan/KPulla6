@@ -1,29 +1,40 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from typing import Literal, Optional
 
 import pandas as pd
 
+from cash.services import (
+    cash_ledger_inception_date,
+    merge_cash_into_value_timeseries,
+    scope_has_cash_ledger_entries,
+)
 from finance.benchmarks import PerformancePoint, merge_performance_and_benchmarks
 from finance.performance_range import resolve_performance_range_start
 from finance.performance_stats import contributions_and_withdrawals_through
 from finance.twror import compute_twror_series
-from finance.types import TransactionType
 from fx.lookup import (
     convert_amount_with_fill,
     convert_amount_with_fill_from_maps,
-    fx_lookup_from_maps,
     load_fx_rate_maps,
 )
 from market_data.models import BenchmarkIndexConfig
 from market_data.price_repository import list_index_prices_in_range
 from portfolios import dates as portfolio_dates
+from portfolios.external_flows_service import (
+    build_all_scope_external_flows,
+    portfolio_external_flows,
+    portfolio_external_flows_for_scope,
+    portfolio_flows_known_on_date,
+)
+from portfolios.models import Portfolio
 from portfolios.scope import ResolvedPortfolioScope
 from portfolios.summary_service import (
-    MF_BASE_CURRENCY,
+    _aggregate_timeseries_lists,
+    _data_load_start,
     build_all_scope_portfolio_value_timeseries,
     build_portfolio_value_timeseries,
     fifo_eligible_queryset,
@@ -33,6 +44,10 @@ from portfolios.summary_service import (
     transactions_by_symbol,
 )
 from transactions.models import Transaction as TransactionModel
+
+RETURN_FLOWS_FX_WARNING = (
+    "FX rates are missing for some external cash flows; returns may be incomplete."
+)
 
 MetricCode = Literal["value", "cumulative_return", "twror"]
 
@@ -47,172 +62,173 @@ class PerformanceListResult:
 
 
 @dataclass(frozen=True)
+class PerformanceSeriesResult:
+    points: list[PerformancePoint]
+    warnings: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class PerformanceComparisonResult:
     metric: str
     series: list[dict]
     warnings: list[str]
 
 
-def _is_mutual_fund_transaction(txn: TransactionModel) -> bool:
-    from django.core.exceptions import ObjectDoesNotExist
-
-    try:
-        txn.mutual_fund_detail
-    except ObjectDoesNotExist:
-        return False
-    return True
+def _single_portfolio_cash_aware_returns(scope: ResolvedPortfolioScope) -> bool:
+    portfolio = Portfolio.objects.filter(pk=scope.portfolio_ids[0]).only(
+        "cash_aware_enabled"
+    ).first()
+    return portfolio is not None and portfolio.cash_aware_enabled
 
 
-def _build_external_flows(
-    all_txns: list[TransactionModel],
-    base_currency: str,
-) -> tuple[dict[date, Decimal], Optional[date]]:
-    flows_by_date: dict[date, Decimal] = {}
-    flows_unknown_from: Optional[date] = None
-
-    fx_pairs: set[tuple[str, str]] = set()
-    flow_dates: list[date] = []
-    for t in all_txns:
-        if t.type not in {TransactionType.BUY.value, TransactionType.SELL.value}:
-            continue
-        if _is_mutual_fund_transaction(t):
-            flow_dates.append(t.mutual_fund_detail.investment_date)
-            if MF_BASE_CURRENCY != base_currency:
-                fx_pairs.add((MF_BASE_CURRENCY, base_currency))
-            continue
-        if t.price_per_share is None or t.quantity is None:
-            continue
-        fc = norm_display_currency(t.currency)
-        if fc != base_currency:
-            fx_pairs.add((fc, base_currency))
-        flow_dates.append(t.date)
-
-    if not flow_dates:
-        return flows_by_date, flows_unknown_from
-
-    fx_maps = load_fx_rate_maps(fx_pairs, min(flow_dates), max(flow_dates))
-
-    for t in all_txns:
-        if t.type not in {TransactionType.BUY.value, TransactionType.SELL.value}:
-            continue
-
-        if _is_mutual_fund_transaction(t):
-            detail = t.mutual_fund_detail
-            cash = Decimal(detail.paid_value)
-            flow_date = detail.investment_date
-            if MF_BASE_CURRENCY != base_currency:
-                fx_rate, _ = fx_lookup_from_maps(
-                    fx_maps, MF_BASE_CURRENCY, base_currency, flow_date
-                )
-                if fx_rate is None:
-                    flows_unknown_from = (
-                        min(flows_unknown_from, flow_date)
-                        if flows_unknown_from
-                        else flow_date
-                    )
-                    continue
-                cash = cash * fx_rate
-            if t.type == TransactionType.BUY.value:
-                flows_by_date[flow_date] = (
-                    flows_by_date.get(flow_date, Decimal("0")) + cash
-                )
-            else:
-                flows_by_date[flow_date] = (
-                    flows_by_date.get(flow_date, Decimal("0")) - cash
-                )
-            continue
-
-        if t.price_per_share is None or t.quantity is None:
-            continue
-        amt = Decimal(t.quantity) * Decimal(t.price_per_share)
-        fees = Decimal(t.fees or 0)
-        if t.type == TransactionType.BUY.value:
-            cash = amt + fees
-        else:
-            cash = amt - fees
-
-        fc = norm_display_currency(t.currency)
-        if fc != base_currency:
-            fx_rate, _ = fx_lookup_from_maps(fx_maps, fc, base_currency, t.date)
-            if fx_rate is None:
-                flows_unknown_from = (
-                    min(flows_unknown_from, t.date) if flows_unknown_from else t.date
-                )
-                continue
-            cash = cash * fx_rate
-
-        if t.type == TransactionType.BUY.value:
-            flows_by_date[t.date] = flows_by_date.get(t.date, Decimal("0")) + cash
-        else:
-            flows_by_date[t.date] = flows_by_date.get(t.date, Decimal("0")) - cash
-
-    return flows_by_date, flows_unknown_from
+def _convert_investment_ts_to_display(
+    raw_ts: list[dict],
+    *,
+    portfolio_base: str,
+    disp_ccy: str,
+    emit_start: date | None,
+) -> list[dict]:
+    if not raw_ts or portfolio_base == disp_ccy:
+        return raw_ts
+    series_start = date.fromisoformat(raw_ts[0]["date"])
+    end = date.fromisoformat(raw_ts[-1]["date"])
+    fx_start = _data_load_start(emit_start, series_start)
+    fx_maps = load_fx_rate_maps({(portfolio_base, disp_ccy)}, fx_start, end)
+    converted: list[dict] = []
+    for p in raw_ts:
+        pp = dict(p)
+        pt_date = date.fromisoformat(pp["date"])
+        if pp.get("portfolio_value") is not None:
+            cv, _ = convert_amount_with_fill_from_maps(
+                Decimal(str(pp["portfolio_value"])),
+                portfolio_base,
+                disp_ccy,
+                pt_date,
+                fx_maps,
+            )
+            pp["portfolio_value"] = float(cv) if cv is not None else None
+        converted.append(pp)
+    return converted
 
 
-def _flows_known(flows_unknown_from: Optional[date], d: date) -> bool:
-    return flows_unknown_from is None or d < flows_unknown_from
-
-
-def portfolio_external_flows(
-    all_txns: list[TransactionModel],
-    base_currency: str,
-) -> tuple[dict[date, Decimal], Optional[date]]:
-    """Net external flows by date in portfolio base currency (for analytics / TWROR)."""
-    return _build_external_flows(all_txns, base_currency)
-
-
-def _merge_flow_maps(
-    parts: list[tuple[dict[date, Decimal], Optional[date]]],
-) -> tuple[dict[date, Decimal], Optional[date]]:
-    merged: dict[date, Decimal] = {}
-    unknown_from: Optional[date] = None
-    for flows, ufrom in parts:
-        for d, amt in flows.items():
-            merged[d] = merged.get(d, Decimal("0")) + amt
-        if ufrom is not None:
-            unknown_from = min(unknown_from, ufrom) if unknown_from else ufrom
-    return merged, unknown_from
-
-
-def build_all_scope_external_flows(
+def build_return_value_timeseries(
+    *,
     scope: ResolvedPortfolioScope,
-    display_currency: str,
-) -> tuple[dict[date, Decimal], Optional[date]]:
-    """Per-portfolio external flows converted to display currency, aggregated by date."""
-    disp_ccy = norm_display_currency(display_currency)
-    parts: list[tuple[dict[date, Decimal], Optional[date]]] = []
-    for portfolio_id in scope.portfolio_ids:
-        child_scope = ResolvedPortfolioScope(kind="single", portfolio_ids=[portfolio_id])
-        queryset = fifo_eligible_queryset(child_scope.portfolio_ids)
-        txns = list(queryset)
-        if not txns:
-            continue
-        portfolio_base = portfolio_base_currency(txns)
-        raw_flows, raw_unknown = _build_external_flows(txns, portfolio_base)
-        converted: dict[date, Decimal] = {}
-        unknown_from = raw_unknown
-        if portfolio_base == disp_ccy:
-            converted = dict(raw_flows)
-        elif raw_flows:
-            flow_start = min(raw_flows.keys())
-            flow_end = max(raw_flows.keys())
-            fx_maps = load_fx_rate_maps({(portfolio_base, disp_ccy)}, flow_start, flow_end)
-            for flow_date, amount in raw_flows.items():
-                cv, _ = convert_amount_with_fill_from_maps(
-                    amount, portfolio_base, disp_ccy, flow_date, fx_maps
-                )
-                if cv is None:
-                    unknown_from = (
-                        min(unknown_from, flow_date) if unknown_from else flow_date
+    all_txns: list[TransactionModel],
+    by_symbol: dict,
+    by_mf: dict,
+    disp_ccy: str,
+    emit_start: date | None,
+    today: date,
+) -> tuple[list[dict], list[str]]:
+    """
+    Daily portfolio values for TWROR / cumulative_return.
+
+    Cash-aware portfolios: investment + cash (display currency).
+    Legacy portfolios: investment-only (unchanged).
+    All Portfolios: per-portfolio rules, then summed in display currency.
+    """
+    warnings: list[str] = []
+
+    if scope.kind == "all_active":
+        portfolios = {
+            p.id: p
+            for p in Portfolio.objects.filter(pk__in=scope.portfolio_ids).only(
+                "id", "cash_aware_enabled"
+            )
+        }
+        child_series: list[list[dict]] = []
+        for portfolio_id in scope.portfolio_ids:
+            portfolio = portfolios.get(portfolio_id)
+            if portfolio is None:
+                continue
+            child_scope = ResolvedPortfolioScope(
+                kind="single", portfolio_ids=[portfolio_id]
+            )
+            queryset = fifo_eligible_queryset(child_scope.portfolio_ids)
+            child_txns = list(queryset)
+            if portfolio.cash_aware_enabled:
+                if child_txns:
+                    raw_ts = build_portfolio_value_timeseries(
+                        child_txns,
+                        transactions_by_symbol(queryset),
+                        transactions_by_mf_holding(queryset),
+                        emit_start_date=emit_start,
                     )
-                    continue
-                converted[flow_date] = converted.get(flow_date, Decimal("0")) + cv
-        parts.append((converted, unknown_from))
-    return _merge_flow_maps(parts)
+                else:
+                    raw_ts = []
+                cash_start = cash_ledger_inception_date(child_scope) or today
+                loop_start = emit_start if emit_start is not None else cash_start
+                merged, cash_warnings = merge_cash_into_value_timeseries(
+                    raw_ts,
+                    scope=child_scope,
+                    display_currency=disp_ccy,
+                    start_date=loop_start,
+                    end_date=today,
+                )
+                warnings.extend(cash_warnings)
+                child_series.append(merged)
+                continue
 
+            if not child_txns:
+                continue
+            portfolio_base = portfolio_base_currency(child_txns)
+            raw_ts = build_portfolio_value_timeseries(
+                child_txns,
+                transactions_by_symbol(queryset),
+                transactions_by_mf_holding(queryset),
+                emit_start_date=emit_start,
+            )
+            if not raw_ts:
+                continue
+            child_series.append(
+                _convert_investment_ts_to_display(
+                    raw_ts,
+                    portfolio_base=portfolio_base,
+                    disp_ccy=disp_ccy,
+                    emit_start=emit_start,
+                )
+            )
+        return _aggregate_timeseries_lists(child_series), warnings
 
-def portfolio_flows_known_on_date(flows_unknown_from: Optional[date], d: date) -> bool:
-    return _flows_known(flows_unknown_from, d)
+    portfolio = Portfolio.objects.filter(pk=scope.portfolio_ids[0]).first()
+    if portfolio is None:
+        return [], warnings
+
+    if portfolio.cash_aware_enabled:
+        if all_txns:
+            raw_ts = build_portfolio_value_timeseries(
+                all_txns, by_symbol, by_mf, emit_start_date=emit_start
+            )
+        else:
+            raw_ts = []
+        cash_start = cash_ledger_inception_date(scope) or today
+        loop_start = emit_start if emit_start is not None else cash_start
+        merged, cash_warnings = merge_cash_into_value_timeseries(
+            raw_ts,
+            scope=scope,
+            display_currency=disp_ccy,
+            start_date=loop_start,
+            end_date=today,
+        )
+        warnings.extend(cash_warnings)
+        return merged, warnings
+
+    if not all_txns:
+        return [], warnings
+    raw_ts = build_portfolio_value_timeseries(
+        all_txns, by_symbol, by_mf, emit_start_date=emit_start
+    )
+    portfolio_base = portfolio_base_currency(all_txns)
+    return (
+        _convert_investment_ts_to_display(
+            raw_ts,
+            portfolio_base=portfolio_base,
+            disp_ccy=disp_ccy,
+            emit_start=emit_start,
+        ),
+        warnings,
+    )
 
 
 def _to_response_point(pt: PerformancePoint, *, label: str | None = None) -> dict:
@@ -244,6 +260,53 @@ def _load_benchmark_series(symbol: str, start: date, end: date) -> pd.Series | N
     return pd.Series([float(r.close_price) for r in rows], index=idx)
 
 
+def _cumulative_return_points(
+    timeseries_full: list[dict],
+    flows_by_date: dict[date, Decimal],
+    flows_unknown_from: Optional[date],
+    *,
+    range_start_iso: str,
+    metric_currency: str,
+) -> list[PerformancePoint]:
+    out: list[PerformancePoint] = []
+    for p in timeseries_full:
+        d = date.fromisoformat(p["date"])
+        if p["date"] < range_start_iso:
+            continue
+        pv = p.get("portfolio_value")
+        if pv is None or not portfolio_flows_known_on_date(flows_unknown_from, d):
+            out.append(
+                PerformancePoint(
+                    date=p["date"],
+                    value=None,
+                    metric="cumulative_return",
+                    currency=metric_currency,
+                )
+            )
+            continue
+        contrib, withdraw = contributions_and_withdrawals_through(flows_by_date, d)
+        if contrib <= 0:
+            out.append(
+                PerformancePoint(
+                    date=p["date"],
+                    value=None,
+                    metric="cumulative_return",
+                    currency=metric_currency,
+                )
+            )
+            continue
+        val = ((Decimal(str(pv)) + withdraw - contrib) / contrib) * Decimal("100")
+        out.append(
+            PerformancePoint(
+                date=p["date"],
+                value=float(val),
+                metric="cumulative_return",
+                currency=metric_currency,
+            )
+        )
+    return out
+
+
 def build_portfolio_performance(
     *,
     scope: ResolvedPortfolioScope,
@@ -251,36 +314,152 @@ def build_portfolio_performance(
     range_code: str,
     display_currency: str,
     today: date | None = None,
-) -> list[PerformancePoint]:
+) -> PerformanceSeriesResult:
     today = today or portfolio_dates.current_date()
     queryset = fifo_eligible_queryset(scope.portfolio_ids)
     all_txns = list(queryset)
+    disp_ccy = norm_display_currency(display_currency)
+    use_all_scope_display = scope.kind == "all_active"
+
     if not all_txns:
-        return []
+        has_cash = scope_has_cash_ledger_entries(scope)
+        cash_aware_only = (
+            scope.kind == "all_active" or _single_portfolio_cash_aware_returns(scope)
+        )
+        if metric == "value" and has_cash:
+            cash_inception = cash_ledger_inception_date(scope) or today
+            range_start = resolve_performance_range_start(
+                range_code, today, cash_inception
+            )
+            emit_start = None if range_code == "ALL" else range_start
+            loop_start = emit_start if emit_start is not None else cash_inception
+            timeseries_full, value_warnings = merge_cash_into_value_timeseries(
+                [],
+                scope=scope,
+                display_currency=disp_ccy,
+                start_date=loop_start,
+                end_date=today,
+            )
+            if not timeseries_full:
+                return PerformanceSeriesResult(points=[])
+            range_start_iso = range_start.isoformat()
+            out: list[PerformancePoint] = []
+            for p in timeseries_full:
+                if p["date"] < range_start_iso:
+                    continue
+                pv = p.get("portfolio_value")
+                out.append(
+                    PerformancePoint(
+                        date=p["date"],
+                        value=float(pv) if pv is not None else None,
+                        metric="value",
+                        currency=disp_ccy,
+                    )
+                )
+            return PerformanceSeriesResult(points=out, warnings=value_warnings)
+        if metric in {"twror", "cumulative_return"} and has_cash and cash_aware_only:
+            cash_inception = cash_ledger_inception_date(scope) or today
+            range_start = resolve_performance_range_start(
+                range_code, today, cash_inception
+            )
+            emit_start = None if range_code == "ALL" else range_start
+            timeseries_full, return_warnings = build_return_value_timeseries(
+                scope=scope,
+                all_txns=all_txns,
+                by_symbol={},
+                by_mf={},
+                disp_ccy=disp_ccy,
+                emit_start=emit_start,
+                today=today,
+            )
+            if not timeseries_full:
+                return PerformanceSeriesResult(points=[], warnings=return_warnings)
+            range_start_iso = range_start.isoformat()
+            if use_all_scope_display:
+                flows_by_date, flows_unknown_from = build_all_scope_external_flows(
+                    scope, disp_ccy
+                )
+            else:
+                flows_by_date, flows_unknown_from = portfolio_external_flows_for_scope(
+                    scope, all_txns=all_txns, calculation_currency=disp_ccy
+                )
+            metric_warnings = list(return_warnings)
+            if flows_unknown_from is not None:
+                metric_warnings.append(RETURN_FLOWS_FX_WARNING)
+            if metric == "cumulative_return":
+                out = _cumulative_return_points(
+                    timeseries_full,
+                    flows_by_date,
+                    flows_unknown_from,
+                    range_start_iso=range_start_iso,
+                    metric_currency=disp_ccy,
+                )
+                return PerformanceSeriesResult(points=out, warnings=metric_warnings)
+            ts_use = (
+                timeseries_full
+                if range_code == "ALL"
+                else [p for p in timeseries_full if p["date"] >= range_start_iso]
+            )
+            twror_pts = compute_twror_series(
+                ts_use, flows_by_date, flows_unknown_from=flows_unknown_from
+            )
+            return PerformanceSeriesResult(
+                points=[
+                    PerformancePoint(
+                        date=p.date.isoformat(),
+                        value=float(p.value) if p.value is not None else None,
+                        metric="twror",
+                        currency=disp_ccy,
+                    )
+                    for p in twror_pts
+                ],
+                warnings=metric_warnings,
+            )
+        return PerformanceSeriesResult(points=[])
 
     by_symbol = transactions_by_symbol(queryset)
     by_mf = transactions_by_mf_holding(queryset)
     base_currency = portfolio_base_currency(all_txns)
-    disp_ccy = norm_display_currency(display_currency)
-    use_all_scope_display = scope.kind == "all_active"
 
     inception = min(t.date for t in all_txns)
     range_start = resolve_performance_range_start(range_code, today, inception)
     range_start_iso = range_start.isoformat()
     emit_start = None if range_code == "ALL" else range_start
+    value_warnings: list[str] = []
 
     if use_all_scope_display:
-        timeseries_full = build_all_scope_portfolio_value_timeseries(
+        inv_ts = build_all_scope_portfolio_value_timeseries(
             scope, disp_ccy, emit_start_date=emit_start
         )
     else:
-        timeseries_full = build_portfolio_value_timeseries(
+        inv_ts = build_portfolio_value_timeseries(
             all_txns, by_symbol, by_mf, emit_start_date=emit_start
         )
-    if not timeseries_full:
-        return []
 
     if metric == "value":
+        if inv_ts:
+            ts_start = date.fromisoformat(inv_ts[0]["date"])
+            ts_end = date.fromisoformat(inv_ts[-1]["date"])
+            timeseries_full, value_warnings = merge_cash_into_value_timeseries(
+                inv_ts,
+                scope=scope,
+                display_currency=disp_ccy,
+                start_date=ts_start,
+                end_date=ts_end,
+            )
+        else:
+            cash_start = cash_ledger_inception_date(scope) or today
+            loop_start = emit_start if emit_start is not None else cash_start
+            timeseries_full, value_warnings = merge_cash_into_value_timeseries(
+                [],
+                scope=scope,
+                display_currency=disp_ccy,
+                start_date=loop_start,
+                end_date=today,
+            )
+        if not timeseries_full:
+            return PerformanceSeriesResult(points=[])
+
         needs_display_conv = (
             not use_all_scope_display
             and norm_display_currency(base_currency) != disp_ccy
@@ -311,57 +490,52 @@ def build_portfolio_performance(
                     date=p["date"], value=cv, metric="value", currency=disp_ccy
                 )
             )
-        return out
+        return PerformanceSeriesResult(points=out, warnings=value_warnings)
 
-    if use_all_scope_display:
-        flows_by_date, flows_unknown_from = build_all_scope_external_flows(scope, disp_ccy)
+    timeseries_full, return_warnings = build_return_value_timeseries(
+        scope=scope,
+        all_txns=all_txns,
+        by_symbol=by_symbol,
+        by_mf=by_mf,
+        disp_ccy=disp_ccy,
+        emit_start=emit_start,
+        today=today,
+    )
+    if not timeseries_full:
+        return PerformanceSeriesResult(points=[], warnings=return_warnings)
+
+    cash_aware_returns = (
+        scope.kind == "all_active"
+        or _single_portfolio_cash_aware_returns(scope)
+    )
+    if use_all_scope_display or cash_aware_returns:
+        flows_by_date, flows_unknown_from = build_all_scope_external_flows(
+            scope, disp_ccy
+        ) if use_all_scope_display else portfolio_external_flows_for_scope(
+            scope, all_txns=all_txns, calculation_currency=disp_ccy
+        )
         metric_currency = disp_ccy
     else:
-        flows_by_date, flows_unknown_from = _build_external_flows(all_txns, base_currency)
+        flows_by_date, flows_unknown_from = portfolio_external_flows_for_scope(
+            scope, all_txns=all_txns, calculation_currency=base_currency
+        )
         metric_currency = base_currency
 
+    metric_warnings = list(return_warnings)
+    if flows_unknown_from is not None:
+        metric_warnings.append(RETURN_FLOWS_FX_WARNING)
+
     if metric == "cumulative_return":
-        out: list[PerformancePoint] = []
-        for p in timeseries_full:
-            d = date.fromisoformat(p["date"])
-            if p["date"] < range_start_iso:
-                continue
-            pv = p.get("portfolio_value")
-            if pv is None or not _flows_known(flows_unknown_from, d):
-                out.append(
-                    PerformancePoint(
-                        date=p["date"],
-                        value=None,
-                        metric="cumulative_return",
-                        currency=metric_currency,
-                    )
-                )
-                continue
-            contrib, withdraw = contributions_and_withdrawals_through(
-                flows_by_date, d
-            )
-            if contrib <= 0:
-                out.append(
-                    PerformancePoint(
-                        date=p["date"],
-                        value=None,
-                        metric="cumulative_return",
-                        currency=metric_currency,
-                    )
-                )
-                continue
-            val = (
-                (Decimal(str(pv)) + withdraw - contrib) / contrib
-            ) * Decimal("100")
-            out.append(
-                PerformancePoint(
-                    date=p["date"],
-                    value=float(val),
-                    metric="cumulative_return",
-                    currency=metric_currency,
-                )
-            )
-        return out
+        return PerformanceSeriesResult(
+            points=_cumulative_return_points(
+                timeseries_full,
+                flows_by_date,
+                flows_unknown_from,
+                range_start_iso=range_start_iso,
+                metric_currency=metric_currency,
+            ),
+            warnings=metric_warnings,
+        )
 
     ts_use = timeseries_full if range_code == "ALL" else [
         p for p in timeseries_full if p["date"] >= range_start_iso
@@ -370,15 +544,18 @@ def build_portfolio_performance(
     twror_pts = compute_twror_series(
         ts_use, flows_by_date, flows_unknown_from=flows_unknown_from
     )
-    return [
-        PerformancePoint(
-            date=p.date.isoformat(),
-            value=float(p.value) if p.value is not None else None,
-            metric="twror",
-            currency=metric_currency,
-        )
-        for p in twror_pts
-    ]
+    return PerformanceSeriesResult(
+        points=[
+            PerformancePoint(
+                date=p.date.isoformat(),
+                value=float(p.value) if p.value is not None else None,
+                metric="twror",
+                currency=metric_currency,
+            )
+            for p in twror_pts
+        ],
+        warnings=metric_warnings,
+    )
 
 
 def build_portfolio_performance_with_benchmarks(
@@ -396,13 +573,14 @@ def build_portfolio_performance_with_benchmarks(
             f"Unknown or disabled benchmark symbol: {benchmark_symbol!r}"
         )
 
-    pts = build_portfolio_performance(
+    result = build_portfolio_performance(
         scope=scope,
         metric=metric,
         range_code=range_code,
         display_currency=display_currency,
         today=today,
     )
+    pts = result.points
 
     if not pts:
         raw = merge_performance_and_benchmarks(

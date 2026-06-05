@@ -7,6 +7,7 @@ import Layout from './components/Layout';
 import { ProtectedRoute, PublicOnlyRoute } from './components/auth/ProtectedRoute';
 import Dashboard from './pages/Dashboard';
 import Transactions from './pages/Transactions';
+import Cash from './pages/Cash';
 import Assets from './pages/Assets';
 import Settings from './pages/Settings';
 import AssetDetail from './pages/AssetDetail';
@@ -47,6 +48,7 @@ function AppRoutes() {
             <Route index element={<Dashboard />} />
             <Route path="dashboard" element={<Navigate to="/" replace />} />
             <Route path="transactions" element={<Transactions />} />
+            <Route path="cash" element={<Cash />} />
             <Route path="assets" element={<Assets />} />
             <Route path="assets/:assetSymbol" element={<AssetDetail />} />
             <Route path="compare" element={<Compare />} />

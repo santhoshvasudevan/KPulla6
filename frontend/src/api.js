@@ -228,22 +228,116 @@ export async function fetchAssetDetails(assetSymbol, scopeParams = null) {
   return fetchWithHandling(`/portfolio/assets/${sym}?${params.toString()}`);
 }
 
+const RESERVED_API_ERROR_KEYS = [
+  'detail',
+  'message',
+  'required',
+  'available',
+  'shortfall',
+  'currency',
+  'earliest_negative_date',
+  'lowest_balance',
+  'affected_entries',
+];
+
+function extractFieldErrors(errorData) {
+  if (!errorData || typeof errorData !== 'object') return {};
+  return Object.fromEntries(
+    Object.entries(errorData).filter(([key]) => !RESERVED_API_ERROR_KEYS.includes(key))
+  );
+}
+
+function buildApiErrorMessage(errorData, status) {
+  if (!errorData || typeof errorData !== 'object') {
+    return `Request failed (${status})`;
+  }
+  const detail = errorData.detail;
+  let message =
+    typeof detail === 'string'
+      ? detail
+      : Array.isArray(detail)
+        ? detail.map((d) => d.msg || JSON.stringify(d)).join('; ')
+        : errorData.message || '';
+  if (!message && typeof errorData === 'object') {
+    const fieldMsgs = Object.entries(errorData)
+      .filter(([key]) => !RESERVED_API_ERROR_KEYS.includes(key))
+      .map(([key, val]) => {
+        const text = Array.isArray(val) ? val.join(', ') : String(val);
+        return `${key}: ${text}`;
+      });
+    if (fieldMsgs.length) message = fieldMsgs.join('; ');
+  }
+  if (!message) message = `Request failed (${status})`;
+  return message;
+}
+
+/** Structured API errors (detail, shortfall fields, field validation). */
+export class ApiError extends Error {
+  constructor(message, extras = {}) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = extras.status;
+    this.detail = extras.detail;
+    this.required = extras.required;
+    this.available = extras.available;
+    this.shortfall = extras.shortfall;
+    this.currency = extras.currency;
+    this.data = extras.data ?? null;
+    this.fieldErrors = extras.fieldErrors ?? extractFieldErrors(this.data ?? {});
+    this.earliest_negative_date = extras.earliest_negative_date;
+    this.lowest_balance = extras.lowest_balance;
+    this.affected_entries = extras.affected_entries ?? null;
+  }
+}
+
+/** Transaction write errors may include insufficient-cash fields from the backend. */
+export class TransactionApiError extends ApiError {
+  constructor(message, extras = {}) {
+    super(message, extras);
+    this.name = 'TransactionApiError';
+  }
+}
+
+async function transactionRequestWithHandling(path, { method = 'POST', body } = {}) {
+  const hasJsonBody = body != null && method !== 'GET' && method !== 'DELETE';
+  const response = await fetch(
+    buildUrl(path),
+    defaultFetchOptions({
+      method,
+      headers: hasJsonBody ? { 'Content-Type': 'application/json' } : undefined,
+      body: hasJsonBody ? JSON.stringify(body) : undefined,
+    })
+  );
+  if (response.status === 401 && !path.startsWith('/auth/') && _onUnauthorized) {
+    _onUnauthorized();
+  }
+
+  const payload =
+    response.status === 204 ? null : await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const errorData = payload && typeof payload === 'object' ? payload : {};
+    throw new TransactionApiError(buildApiErrorMessage(errorData, response.status), {
+      status: response.status,
+      detail: errorData.detail,
+      required: errorData.required,
+      available: errorData.available,
+      shortfall: errorData.shortfall,
+      currency: errorData.currency,
+      data: errorData,
+    });
+  }
+  return payload;
+}
+
 export async function createTransaction(data) {
-  const res = await fetchWithHandling('/transactions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
+  const res = await transactionRequestWithHandling('/transactions', { method: 'POST', body: data });
   invalidateDashboardSummaryCache();
   return res;
 }
 
 export async function updateTransaction(id, data) {
-  const res = await fetchWithHandling(`/transactions/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
+  const res = await transactionRequestWithHandling(`/transactions/${id}`, { method: 'PUT', body: data });
   invalidateDashboardSummaryCache();
   return res;
 }
@@ -254,15 +348,55 @@ export async function deleteTransaction(id) {
   return res;
 }
 
-export async function importTransactionsCsv(file, portfolioId = null) {
+function _csvImportQuery(portfolioId, options = {}) {
+  const params = new URLSearchParams();
+  if (portfolioId != null) {
+    params.set('portfolio_id', String(portfolioId));
+  }
+  if (options.createCashDeposits) {
+    params.set('create_cash_deposits', 'true');
+  }
+  if (options.cashPreviewConfirmed) {
+    params.set('cash_preview_confirmed', 'true');
+  }
+  const qs = params.toString();
+  return qs ? `?${qs}` : '';
+}
+
+export async function previewCsvImportCash(file, portfolioId = null) {
   const formData = new FormData();
   formData.append('file', file);
-  const qs = portfolioId != null ? `?portfolio_id=${encodeURIComponent(String(portfolioId))}` : '';
-  const response = await fetch(buildUrl(`/transactions/import-csv${qs}`), defaultFetchOptions({
-    method: 'POST',
-    body: formData,
-  }));
+  const response = await fetch(
+    buildUrl(`/transactions/import-csv/preview-cash${_csvImportQuery(portfolioId)}`),
+    defaultFetchOptions({
+      method: 'POST',
+      body: formData,
+    })
+  );
   const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.detail || data.message || 'Cash preview failed');
+  }
+  return data;
+}
+
+export async function importTransactionsCsv(file, portfolioId = null, options = {}) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await fetch(
+    buildUrl(`/transactions/import-csv${_csvImportQuery(portfolioId, options)}`),
+    defaultFetchOptions({
+      method: 'POST',
+      body: formData,
+    })
+  );
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 409) {
+    const err = new Error(data.detail || 'CSV import requires cash deposit confirmation');
+    err.code = 'csv_cash_preview_required';
+    err.preview = data;
+    throw err;
+  }
   if (!response.ok) {
     throw new Error(data.detail || data.message || 'Import failed');
   }
@@ -350,4 +484,172 @@ export async function getCompareMetricSheet(params = {}) {
   }
   const qs = buildMetricSheetQueryParams(params);
   return fetchWithHandling(`/analytics/compare?${qs.toString()}`);
+}
+
+/** Cash API errors may include insufficient-cash fields from the backend. */
+export class CashApiError extends ApiError {
+  constructor(message, extras = {}) {
+    super(message, extras);
+    this.name = 'CashApiError';
+    this.row_errors = extras.row_errors ?? null;
+    this.blocking_warnings = extras.blocking_warnings ?? null;
+  }
+}
+
+export function withCashScopeParams(params, scopeParams) {
+  const out = new URLSearchParams(params || {});
+  if (scopeParams?.portfolio_id != null) {
+    out.set('portfolio_id', String(scopeParams.portfolio_id));
+  } else {
+    out.set('portfolio_scope', scopeParams?.portfolio_scope ?? 'all');
+  }
+  return out;
+}
+
+function cashScopeFromPortfolioContext(scopeParams) {
+  if (!scopeParams) return null;
+  if (scopeParams.portfolio_id != null) {
+    return { portfolio_id: scopeParams.portfolio_id };
+  }
+  return { portfolio_scope: scopeParams.portfolio_scope ?? 'all' };
+}
+
+function appendCashQueryParams(qs, extra = {}) {
+  if (extra.as_of_date) qs.set('as_of_date', extra.as_of_date);
+  if (extra.currency) qs.set('currency', extra.currency);
+  if (extra.entry_type) qs.set('entry_type', extra.entry_type);
+  if (extra.date_from) qs.set('date_from', extra.date_from);
+  if (extra.date_to) qs.set('date_to', extra.date_to);
+  if (extra.page != null) qs.set('page', String(extra.page));
+  if (extra.page_size != null) qs.set('page_size', String(extra.page_size));
+  return qs;
+}
+
+
+async function cashRequestWithHandling(path, { method = 'POST', body } = {}) {
+  const hasJsonBody = body != null && method !== 'GET' && method !== 'DELETE';
+  const response = await fetch(
+    buildUrl(path),
+    defaultFetchOptions({
+      method,
+      headers: hasJsonBody ? { 'Content-Type': 'application/json' } : undefined,
+      body: hasJsonBody ? JSON.stringify(body) : undefined,
+    })
+  );
+  if (response.status === 401 && !path.startsWith('/auth/') && _onUnauthorized) {
+    _onUnauthorized();
+  }
+
+  const payload =
+    response.status === 204 ? null : await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const errorData = payload && typeof payload === 'object' ? payload : {};
+    throw new CashApiError(buildApiErrorMessage(errorData, response.status), {
+      status: response.status,
+      detail: errorData.detail,
+      required: errorData.required,
+      available: errorData.available,
+      shortfall: errorData.shortfall,
+      currency: errorData.currency,
+      earliest_negative_date: errorData.earliest_negative_date,
+      lowest_balance: errorData.lowest_balance,
+      affected_entries: errorData.affected_entries,
+      row_errors: errorData.row_errors,
+      blocking_warnings: errorData.blocking_warnings,
+      data: errorData,
+    });
+  }
+  return payload;
+}
+
+async function postCashWithHandling(path, body) {
+  return cashRequestWithHandling(path, { method: 'POST', body });
+}
+
+/** GET /api/v1/cash/balances — native balances; no display-currency conversion. */
+export async function fetchCashBalances(params = {}) {
+  const {
+    portfolio_scope,
+    portfolio_id,
+    as_of_date,
+    currency,
+    display_currency: _displayCurrency,
+    ...rest
+  } = params;
+  const scope = cashScopeFromPortfolioContext({ portfolio_scope, portfolio_id });
+  const qs = appendCashQueryParams(withCashScopeParams(rest, scope), {
+    as_of_date,
+    currency,
+  });
+  return fetchWithHandling(`/cash/balances?${qs.toString()}`);
+}
+
+/** GET /api/v1/cash/ledger — paginated ledger entries. */
+export async function fetchCashLedger(params = {}) {
+  const {
+    portfolio_scope,
+    portfolio_id,
+    currency,
+    entry_type,
+    date_from,
+    date_to,
+    page = 1,
+    page_size = 20,
+    display_currency: _displayCurrency,
+    ...rest
+  } = params;
+  const scope = cashScopeFromPortfolioContext({ portfolio_scope, portfolio_id });
+  const qs = appendCashQueryParams(withCashScopeParams(rest, scope), {
+    currency,
+    entry_type,
+    date_from,
+    date_to,
+    page,
+    page_size,
+  });
+  return fetchWithHandling(`/cash/ledger?${qs.toString()}`);
+}
+
+/** POST /api/v1/cash/deposits */
+export async function createCashDeposit(payload) {
+  return postCashWithHandling('/cash/deposits', payload);
+}
+
+/** POST /api/v1/cash/withdrawals */
+export async function createCashWithdrawal(payload) {
+  return postCashWithHandling('/cash/withdrawals', payload);
+}
+
+/** PUT /api/v1/cash/ledger/{id} — manual deposit/withdrawal only. */
+export async function updateCashLedgerEntry(id, payload) {
+  return cashRequestWithHandling(`/cash/ledger/${id}`, { method: 'PUT', body: payload });
+}
+
+/** DELETE /api/v1/cash/ledger/{id} — manual deposit/withdrawal only. */
+export async function deleteCashLedgerEntry(id) {
+  return cashRequestWithHandling(`/cash/ledger/${id}`, { method: 'DELETE' });
+}
+
+function buildCashBackfillRequestBody(payload = {}) {
+  const body = {
+    portfolio_id: payload.portfolio_id,
+    mode: payload.mode || 'shortfall',
+  };
+  if (payload.start_date) body.start_date = payload.start_date;
+  if (payload.end_date) body.end_date = payload.end_date;
+  return body;
+}
+
+/** POST /api/v1/cash/backfill-preview — read-only legacy cash backfill simulation. */
+export async function previewCashBackfill(payload) {
+  return postCashWithHandling('/cash/backfill-preview', buildCashBackfillRequestBody(payload));
+}
+
+/** POST /api/v1/cash/backfill-apply — confirmed; server recomputes preview before writes. */
+export async function applyCashBackfill(payload) {
+  return postCashWithHandling('/cash/backfill-apply', {
+    ...buildCashBackfillRequestBody(payload),
+    confirmed: true,
+  });
 }

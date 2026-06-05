@@ -11,7 +11,8 @@ General project rules: `.cursor/rules/project-core.mdc`. Graphify: `.cursor/rule
 **If unsure about Django/DRF behavior, consult official Django and DRF docs — do not guess.**
 
 ## Django structure
-- Domain-focused apps: `portfolios`, `transactions`, `market_data`, `fx`, `settings_app`, `api`.
+- Domain-focused apps: `portfolios`, `transactions`, `cash`, `market_data`, `fx`, `settings_app`, `api`.
+- Cash Ledger: see `.cursor/rules/320-cash-ledger.mdc` when editing `cash/`, settlement logic, or `finance/cash.py`.
 - Models = persistence only. Use-cases in `*_service.py` / `services.py` (e.g. `holdings_service`, `summary_service`, `performance_service`, `transactions/services.py`).
 - Reusable finance in `backend/finance/` (pure Python). ORM → DTO via `transactions/finance_adapter.py`.
 - Thin DRF views (`APIView` pattern used project-wide); delegate to services.

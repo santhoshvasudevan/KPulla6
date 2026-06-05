@@ -31,6 +31,7 @@ alwaysApply: true
 
 ## Docs
 - API → `docs/api-design.md` · schema/data → `docs/database.md` · architecture → `docs/architecture.md`
+- Cash Ledger → `docs/cash-ledger.md` · `.cursor/rules/320-cash-ledger.mdc`
 - Completed work → `docs/current-state.md` + `docs/changelog.md`
 
 ## Graphify

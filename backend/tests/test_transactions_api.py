@@ -36,7 +36,7 @@ def _split_payload(**overrides):
 
 
 @pytest.mark.django_db
-def test_list_returns_paginated_response(api_client, seeded):
+def test_list_returns_paginated_response(api_client, legacy_seeded):
     api_client.post("/api/v1/transactions", _payload(), format="json")
     response = api_client.get("/api/v1/transactions")
     assert response.status_code == 200
@@ -49,7 +49,7 @@ def test_list_returns_paginated_response(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_list_default_is_portfolio_scope_all(api_client, seeded, test_user):
+def test_list_default_is_portfolio_scope_all(api_client, legacy_seeded, test_user):
     default = ensure_default_portfolio(test_user)
     other = Portfolio.objects.create(user=test_user, name="Other", base_currency="EUR", is_active=True)
     api_client.post("/api/v1/transactions", _payload(portfolio_id=default.id), format="json")
@@ -64,7 +64,7 @@ def test_list_default_is_portfolio_scope_all(api_client, seeded, test_user):
 
 
 @pytest.mark.django_db
-def test_list_portfolio_scope_all_active_portfolios(api_client, seeded, test_user):
+def test_list_portfolio_scope_all_active_portfolios(api_client, legacy_seeded, test_user):
     default = ensure_default_portfolio(test_user)
     inactive = Portfolio.objects.create(user=test_user, name="Inactive", is_active=False)
     api_client.post("/api/v1/transactions", _payload(portfolio_id=default.id), format="json")
@@ -85,7 +85,7 @@ def test_list_portfolio_scope_all_active_portfolios(api_client, seeded, test_use
 
 
 @pytest.mark.django_db
-def test_list_portfolio_id_filter(api_client, seeded, test_user):
+def test_list_portfolio_id_filter(api_client, legacy_seeded, test_user):
     default = ensure_default_portfolio(test_user)
     other = Portfolio.objects.create(user=test_user, name="Scoped", base_currency="EUR", is_active=True)
     api_client.post("/api/v1/transactions", _payload(portfolio_id=default.id), format="json")
@@ -103,26 +103,26 @@ def test_list_portfolio_id_filter(api_client, seeded, test_user):
 
 
 @pytest.mark.django_db
-def test_list_rejects_scope_and_portfolio_id(api_client, seeded):
+def test_list_rejects_scope_and_portfolio_id(api_client, legacy_seeded):
     response = api_client.get("/api/v1/transactions?portfolio_scope=all&portfolio_id=1")
     assert response.status_code == 422
 
 
 @pytest.mark.django_db
-def test_list_unknown_portfolio_id_returns_404(api_client, seeded):
+def test_list_unknown_portfolio_id_returns_404(api_client, legacy_seeded):
     response = api_client.get("/api/v1/transactions?portfolio_id=999999")
     assert response.status_code == 404
 
 
 @pytest.mark.django_db
-def test_list_inactive_portfolio_id_returns_404(api_client, seeded, test_user):
+def test_list_inactive_portfolio_id_returns_404(api_client, legacy_seeded, test_user):
     inactive = Portfolio.objects.create(user=test_user, name="Inactive", is_active=False)
     response = api_client.get(f"/api/v1/transactions?portfolio_id={inactive.id}")
     assert response.status_code == 404
 
 
 @pytest.mark.django_db
-def test_list_asset_symbol_filter_case_insensitive(api_client, seeded):
+def test_list_asset_symbol_filter_case_insensitive(api_client, legacy_seeded):
     api_client.post("/api/v1/transactions", _payload(asset_symbol="aapl"), format="json")
     api_client.post(
         "/api/v1/transactions",
@@ -135,7 +135,7 @@ def test_list_asset_symbol_filter_case_insensitive(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_post_creates_buy(api_client, seeded, test_user):
+def test_post_creates_buy(api_client, legacy_seeded, test_user):
     default = ensure_default_portfolio(test_user)
     response = api_client.post(
         "/api/v1/transactions",
@@ -151,7 +151,7 @@ def test_post_creates_buy(api_client, seeded, test_user):
 
 
 @pytest.mark.django_db
-def test_post_creates_sell(api_client, seeded):
+def test_post_creates_sell(api_client, legacy_seeded):
     response = api_client.post(
         "/api/v1/transactions",
         _payload(type="SELL"),
@@ -162,7 +162,7 @@ def test_post_creates_sell(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_post_creates_dividend(api_client, seeded):
+def test_post_creates_dividend(api_client, legacy_seeded):
     response = api_client.post(
         "/api/v1/transactions",
         _payload(type="DIVIDEND", quantity="5", price_per_share="0"),
@@ -173,7 +173,7 @@ def test_post_creates_dividend(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_post_creates_stock_split(api_client, seeded, test_user):
+def test_post_creates_stock_split(api_client, legacy_seeded, test_user):
     default = ensure_default_portfolio(test_user)
     response = api_client.post(
         "/api/v1/transactions",
@@ -189,7 +189,7 @@ def test_post_creates_stock_split(api_client, seeded, test_user):
 
 
 @pytest.mark.django_db
-def test_post_without_portfolio_id_assigns_default(api_client, seeded, test_user):
+def test_post_without_portfolio_id_assigns_default(api_client, legacy_seeded, test_user):
     default = ensure_default_portfolio(test_user)
     response = api_client.post("/api/v1/transactions", _payload(), format="json")
     assert response.status_code == 201
@@ -197,7 +197,7 @@ def test_post_without_portfolio_id_assigns_default(api_client, seeded, test_user
 
 
 @pytest.mark.django_db
-def test_post_with_active_portfolio(api_client, seeded, test_user):
+def test_post_with_active_portfolio(api_client, legacy_seeded, test_user):
     portfolio = Portfolio.objects.create(user=test_user, name="Active", base_currency="EUR", is_active=True)
     response = api_client.post(
         "/api/v1/transactions",
@@ -209,7 +209,7 @@ def test_post_with_active_portfolio(api_client, seeded, test_user):
 
 
 @pytest.mark.django_db
-def test_post_rejects_unknown_or_inactive_portfolio(api_client, seeded, test_user):
+def test_post_rejects_unknown_or_inactive_portfolio(api_client, legacy_seeded, test_user):
     inactive = Portfolio.objects.create(user=test_user, name="Inactive", is_active=False)
     r1 = api_client.post(
         "/api/v1/transactions",
@@ -227,7 +227,7 @@ def test_post_rejects_unknown_or_inactive_portfolio(api_client, seeded, test_use
 
 
 @pytest.mark.django_db
-def test_post_rejects_missing_asset_symbol(api_client, seeded):
+def test_post_rejects_missing_asset_symbol(api_client, legacy_seeded):
     payload = _payload()
     del payload["asset_symbol"]
     response = api_client.post("/api/v1/transactions", payload, format="json")
@@ -235,7 +235,7 @@ def test_post_rejects_missing_asset_symbol(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_post_rejects_invalid_date(api_client, seeded):
+def test_post_rejects_invalid_date(api_client, legacy_seeded):
     response = api_client.post(
         "/api/v1/transactions",
         _payload(date="not-a-date"),
@@ -245,7 +245,7 @@ def test_post_rejects_invalid_date(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_post_rejects_non_positive_quantity(api_client, seeded):
+def test_post_rejects_non_positive_quantity(api_client, legacy_seeded):
     response = api_client.post(
         "/api/v1/transactions",
         _payload(quantity="0"),
@@ -255,7 +255,7 @@ def test_post_rejects_non_positive_quantity(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_post_rejects_negative_price(api_client, seeded):
+def test_post_rejects_negative_price(api_client, legacy_seeded):
     response = api_client.post(
         "/api/v1/transactions",
         _payload(price_per_share="-1"),
@@ -265,7 +265,7 @@ def test_post_rejects_negative_price(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_post_defaults_fees_and_currency(api_client, seeded):
+def test_post_defaults_fees_and_currency(api_client, legacy_seeded):
     payload = {
         "asset_symbol": "AAPL",
         "date": "2026-05-01",
@@ -281,7 +281,7 @@ def test_post_defaults_fees_and_currency(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_post_normalizes_asset_symbol(api_client, seeded):
+def test_post_normalizes_asset_symbol(api_client, legacy_seeded):
     response = api_client.post(
         "/api/v1/transactions",
         _payload(asset_symbol="msft"),
@@ -292,7 +292,7 @@ def test_post_normalizes_asset_symbol(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_post_rejects_invalid_stock_split(api_client, seeded):
+def test_post_rejects_invalid_stock_split(api_client, legacy_seeded):
     r1 = api_client.post(
         "/api/v1/transactions",
         _split_payload(split_from="0"),
@@ -309,7 +309,7 @@ def test_post_rejects_invalid_stock_split(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_put_updates_fields(api_client, seeded):
+def test_put_updates_fields(api_client, legacy_seeded):
     created = api_client.post("/api/v1/transactions", _payload(), format="json").json()
     response = api_client.put(
         f"/api/v1/transactions/{created['id']}",
@@ -324,7 +324,7 @@ def test_put_updates_fields(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_put_omits_portfolio_id_preserves_assignment(api_client, seeded, test_user):
+def test_put_omits_portfolio_id_preserves_assignment(api_client, legacy_seeded, test_user):
     p1 = Portfolio.objects.create(user=test_user, name="Keep", base_currency="EUR", is_active=True)
     p2 = Portfolio.objects.create(user=test_user, name="Other", base_currency="EUR", is_active=True)
     created = api_client.post(
@@ -345,7 +345,7 @@ def test_put_omits_portfolio_id_preserves_assignment(api_client, seeded, test_us
 
 
 @pytest.mark.django_db
-def test_put_moves_to_another_active_portfolio(api_client, seeded, test_user):
+def test_put_moves_to_another_active_portfolio(api_client, legacy_seeded, test_user):
     p1 = Portfolio.objects.create(user=test_user, name="P1", base_currency="EUR", is_active=True)
     p2 = Portfolio.objects.create(user=test_user, name="P2", base_currency="EUR", is_active=True)
     created = api_client.post(
@@ -363,7 +363,7 @@ def test_put_moves_to_another_active_portfolio(api_client, seeded, test_user):
 
 
 @pytest.mark.django_db
-def test_put_rejects_unknown_or_inactive_portfolio(api_client, seeded, test_user):
+def test_put_rejects_unknown_or_inactive_portfolio(api_client, legacy_seeded, test_user):
     created = api_client.post("/api/v1/transactions", _payload(), format="json").json()
     inactive = Portfolio.objects.create(user=test_user, name="Inactive", is_active=False)
 
@@ -383,7 +383,7 @@ def test_put_rejects_unknown_or_inactive_portfolio(api_client, seeded, test_user
 
 
 @pytest.mark.django_db
-def test_put_validates_stock_split(api_client, seeded):
+def test_put_validates_stock_split(api_client, legacy_seeded):
     created = api_client.post(
         "/api/v1/transactions",
         _split_payload(),
@@ -398,7 +398,7 @@ def test_put_validates_stock_split(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_put_unknown_transaction_returns_404(api_client, seeded):
+def test_put_unknown_transaction_returns_404(api_client, legacy_seeded):
     response = api_client.put(
         "/api/v1/transactions/999999",
         _payload(),
@@ -408,7 +408,7 @@ def test_put_unknown_transaction_returns_404(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_transaction_delete_hard_vs_portfolio_delete_soft(api_client, seeded, test_user):
+def test_transaction_delete_hard_vs_portfolio_delete_soft(api_client, legacy_seeded, test_user):
     portfolio = Portfolio.objects.create(user=test_user, name="SoftDel", base_currency="EUR", is_active=True)
     created = api_client.post(
         "/api/v1/transactions",
@@ -427,7 +427,7 @@ def test_transaction_delete_hard_vs_portfolio_delete_soft(api_client, seeded, te
 
 
 @pytest.mark.django_db
-def test_delete_removes_transaction(api_client, seeded, test_user):
+def test_delete_removes_transaction(api_client, legacy_seeded, test_user):
     default = ensure_default_portfolio(test_user)
     created = api_client.post("/api/v1/transactions", _payload(), format="json").json()
     response = api_client.delete(f"/api/v1/transactions/{created['id']}")
@@ -437,13 +437,13 @@ def test_delete_removes_transaction(api_client, seeded, test_user):
 
 
 @pytest.mark.django_db
-def test_delete_unknown_returns_404(api_client, seeded):
+def test_delete_unknown_returns_404(api_client, legacy_seeded):
     response = api_client.delete("/api/v1/transactions/999999")
     assert response.status_code == 404
 
 
 @pytest.mark.django_db
-def test_delete_does_not_remove_other_transactions(api_client, seeded):
+def test_delete_does_not_remove_other_transactions(api_client, legacy_seeded):
     first = api_client.post("/api/v1/transactions", _payload(), format="json").json()
     second = api_client.post(
         "/api/v1/transactions",

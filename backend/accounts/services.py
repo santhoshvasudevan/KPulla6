@@ -4,10 +4,13 @@ from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
+from django.db import transaction
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
+from portfolios.models import Portfolio
 from portfolios.seed import ensure_default_portfolio
+from settings_app.models import AppSettings
 from settings_app.seed import ensure_app_settings
 
 User = get_user_model()
@@ -45,15 +48,43 @@ def authenticate_username_or_email(*, username_or_email: str, password: str):
     return authenticate(username=matched.username, password=password)
 
 
+def is_registration_incomplete(user: User) -> bool:
+    if not AppSettings.objects.filter(user=user).exists():
+        return True
+    if not Portfolio.objects.filter(user=user, is_default=True).exists():
+        return True
+    return False
+
+
 def register_user(*, username: str, email: str, password: str) -> User:
-    user = User.objects.create_user(
-        username=username.strip(),
-        email=email.strip().lower(),
-        password=password,
-    )
-    ensure_default_portfolio(user)
-    ensure_app_settings(user)
-    return user
+    username = username.strip()
+    email = email.strip().lower()
+
+    with transaction.atomic():
+        existing = User.objects.filter(username__iexact=username).first()
+        email_user = User.objects.filter(email__iexact=email).first()
+        if existing and email_user and existing.pk != email_user.pk:
+            raise ValueError("Username and email belong to different accounts.")
+        incomplete = existing or email_user
+        if incomplete:
+            if not is_registration_incomplete(incomplete):
+                raise ValueError("Account already exists.")
+            if incomplete.username.lower() != username.lower() or incomplete.email.lower() != email.lower():
+                raise ValueError("Incomplete account credentials do not match.")
+            incomplete.set_password(password)
+            incomplete.save(update_fields=["password"])
+            ensure_default_portfolio(incomplete)
+            ensure_app_settings(incomplete)
+            return incomplete
+
+        user = User.objects.create_user(
+            username=username,
+            email=email,
+            password=password,
+        )
+        ensure_default_portfolio(user)
+        ensure_app_settings(user)
+        return user
 
 
 def request_password_reset(*, email: str) -> dict:

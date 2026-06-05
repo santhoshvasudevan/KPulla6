@@ -1,22 +1,31 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Transactions from './Transactions';
 import * as api from '../api';
+import { TransactionApiError } from '../api';
 import { PortfolioProvider, usePortfolio } from '../portfolioContext';
 import * as csvGuidance from '../utils/csvImportGuidance';
 
-vi.mock('../api', () => ({
-  fetchTransactions: vi.fn(),
-  fetchTransactionFilterOptions: vi.fn(),
-  createTransaction: vi.fn(),
-  updateTransaction: vi.fn(),
-  deleteTransaction: vi.fn(),
-  importTransactionsCsv: vi.fn(),
-  fetchPortfolios: vi.fn(),
-  getSettings: vi.fn(),
-  updateSettings: vi.fn(),
-  invalidateDashboardSummaryCache: vi.fn(),
-}));
+vi.mock('../api', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    fetchTransactions: vi.fn(),
+    fetchTransactionFilterOptions: vi.fn(),
+    createTransaction: vi.fn(),
+    updateTransaction: vi.fn(),
+    deleteTransaction: vi.fn(),
+    importTransactionsCsv: vi.fn(),
+    previewCsvImportCash: vi.fn(),
+    createCashDeposit: vi.fn(),
+    createCashWithdrawal: vi.fn(),
+    fetchPortfolios: vi.fn(),
+    getSettings: vi.fn(),
+    updateSettings: vi.fn(),
+    invalidateDashboardSummaryCache: vi.fn(),
+  };
+});
 
 const NO_FILTERS = { symbols: [], date_from: null, date_to: null };
 
@@ -86,6 +95,52 @@ describe('Transactions Page', () => {
         NO_FILTERS
       );
     });
+  });
+
+  it('shows cash-aware off status when a legacy portfolio is selected', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });
+    api.fetchTransactions.mockResolvedValue(mockTransactions);
+    render(
+      <PortfolioProvider
+        initialPortfolios={[
+          {
+            id: 5,
+            name: 'Default Portfolio',
+            base_currency: 'USD',
+            is_default: true,
+            is_active: true,
+            cash_aware_enabled: false,
+          },
+        ]}
+        initialSelection={{ mode: 'portfolio', id: 5, name: 'Default Portfolio' }}
+        disableFetch
+      >
+        <Transactions />
+      </PortfolioProvider>
+    );
+    await waitFor(() => {
+      expect(
+        screen.getByText(/cash-aware mode is off/i)
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('shows per-portfolio note in All Portfolios scope', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });
+    api.fetchTransactions.mockResolvedValue(mockTransactions);
+    render(
+      <PortfolioProvider disableFetch initialSelection={{ mode: 'all' }}>
+        <Transactions />
+      </PortfolioProvider>
+    );
+    await waitFor(() => {
+      expect(
+        screen.getByText(/configured per portfolio/i)
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('button', { name: /enable cash-aware mode/i })).not.toBeInTheDocument();
   });
 
   it('opens add transaction modal on button click', async () => {
@@ -310,6 +365,14 @@ describe('Transactions Page', () => {
     api.fetchPortfolios.mockResolvedValueOnce([]);
     api.getSettings.mockResolvedValueOnce({ display_currency: 'USD' });
     api.fetchTransactions.mockResolvedValue(mockTransactions);
+    api.previewCsvImportCash.mockResolvedValueOnce({
+      cash_aware: false,
+      can_import_without_deposits: true,
+      shortfalls: [],
+      proposed_deposits: [],
+      row_errors: [],
+      summary: {},
+    });
     api.importTransactionsCsv.mockResolvedValue({ success: true, imported_count: 3, errors: [] });
     render(
       <PortfolioProvider>
@@ -336,6 +399,14 @@ describe('Transactions Page', () => {
     api.fetchPortfolios.mockResolvedValueOnce([]);
     api.getSettings.mockResolvedValueOnce({ display_currency: 'USD' });
     api.fetchTransactions.mockResolvedValue(mockTransactions);
+    api.previewCsvImportCash.mockResolvedValueOnce({
+      cash_aware: false,
+      can_import_without_deposits: true,
+      row_errors: [{ row: 2, field: 'Qty', message: 'Quantity must be positive' }],
+      shortfalls: [],
+      proposed_deposits: [],
+      summary: {},
+    });
     api.importTransactionsCsv.mockResolvedValue({
       success: false,
       imported_count: 0,
@@ -355,7 +426,7 @@ describe('Transactions Page', () => {
       expect(screen.getByText(/Row 2/)).toBeInTheDocument();
       expect(screen.getByText(/Quantity must be positive/)).toBeInTheDocument();
     });
-    expect(api.importTransactionsCsv).toHaveBeenCalledWith(file, null);
+    expect(api.importTransactionsCsv).not.toHaveBeenCalled();
   });
 
   it('CSV import uses selected real portfolio id when filtered', async () => {
@@ -364,6 +435,14 @@ describe('Transactions Page', () => {
       { id: 2, name: 'P2', is_default: false, is_active: true, base_currency: 'EUR' },
     ]);
     api.fetchTransactions.mockResolvedValue(mockTransactions);
+    api.previewCsvImportCash.mockResolvedValueOnce({
+      cash_aware: false,
+      can_import_without_deposits: true,
+      shortfalls: [],
+      proposed_deposits: [],
+      row_errors: [],
+      summary: {},
+    });
     api.importTransactionsCsv.mockResolvedValue({ success: true, imported_count: 1, errors: [] });
     api.getSettings.mockResolvedValueOnce({ display_currency: 'USD' });
 
@@ -803,5 +882,281 @@ describe('Transactions Page', () => {
         expect(screen.getByLabelText('Remove symbol MSFT')).toBeInTheDocument();
       });
     });
+  });
+});
+
+describe('Transactions cash entry from Add Transaction modal', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    api.fetchTransactionFilterOptions.mockResolvedValue({ portfolios: [], symbols: [] });
+    api.fetchTransactions.mockResolvedValue(mockTransactions);
+    api.getSettings.mockResolvedValue({ display_currency: 'EUR' });
+    api.fetchPortfolios.mockResolvedValue([]);
+  });
+
+  it('shows cash preview modal when preview reports shortfalls', async () => {
+    const file = new File(['csv'], 'rows.csv', { type: 'text/csv' });
+    api.previewCsvImportCash.mockResolvedValueOnce({
+      cash_aware: true,
+      can_import_without_deposits: false,
+      shortfalls: [
+        {
+          portfolio_id: 1,
+          portfolio_name: 'Default Portfolio',
+          date: '2026-06-04',
+          currency: 'EUR',
+          required: 1005,
+          available_before: 0,
+          shortfall: 1005,
+          reason: 'BUY AAPL',
+        },
+      ],
+      proposed_deposits: [
+        {
+          portfolio_id: 1,
+          portfolio_name: 'Default Portfolio',
+          date: '2026-06-04',
+          currency: 'EUR',
+          amount: 1005,
+        },
+      ],
+      row_errors: [],
+      summary: {
+        rows: 1,
+        cash_aware_rows: 1,
+        proposed_deposit_count: 1,
+        total_shortfall_by_currency: [{ currency: 'EUR', amount: 1005 }],
+      },
+    });
+
+    render(
+      <MemoryRouter>
+        <PortfolioProvider
+          initialPortfolios={[
+            { id: 1, name: 'Default Portfolio', is_default: true, is_active: true, base_currency: 'EUR', cash_aware_enabled: true },
+          ]}
+          initialSelection={{ mode: 'portfolio', id: 1, name: 'Default Portfolio' }}
+          disableFetch
+        >
+          <Transactions />
+        </PortfolioProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText('AAPL')).toBeInTheDocument());
+    const input = document.querySelector('.transactions-page__file-input');
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText('This import requires additional cash')).toBeInTheDocument();
+      expect(screen.getByText(/Add required cash deposits and import all rows/)).toBeInTheDocument();
+      expect(api.importTransactionsCsv).not.toHaveBeenCalled();
+    });
+  });
+
+  it('confirmed CSV import sends cash confirmation flags', async () => {
+    const file = new File(['csv'], 'rows.csv', { type: 'text/csv' });
+    api.previewCsvImportCash.mockResolvedValueOnce({
+      cash_aware: true,
+      can_import_without_deposits: false,
+      proposed_deposits: [{ portfolio_id: 1, date: '2026-06-04', currency: 'EUR', amount: 1005 }],
+      shortfalls: [],
+      row_errors: [],
+      summary: { rows: 1, cash_aware_rows: 1, proposed_deposit_count: 1, total_shortfall_by_currency: [] },
+    });
+    api.importTransactionsCsv.mockResolvedValueOnce({ success: true, imported_count: 1, errors: [] });
+
+    render(
+      <MemoryRouter>
+        <PortfolioProvider
+          initialPortfolios={[
+            { id: 1, name: 'Default Portfolio', is_default: true, is_active: true, base_currency: 'EUR' },
+          ]}
+          initialSelection={{ mode: 'portfolio', id: 1, name: 'Default Portfolio' }}
+          disableFetch
+        >
+          <Transactions />
+        </PortfolioProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText('AAPL')).toBeInTheDocument());
+    fireEvent.change(document.querySelector('.transactions-page__file-input'), {
+      target: { files: [file] },
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Add required cash deposits and import all rows/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Add required cash deposits and import all rows/i }));
+
+    await waitFor(() => {
+      expect(api.importTransactionsCsv).toHaveBeenCalledWith(file, 1, {
+        createCashDeposits: true,
+        cashPreviewConfirmed: true,
+      });
+      expect(screen.getByText(/Imported 1 transactions/)).toBeInTheDocument();
+    });
+  });
+
+  it('legacy cash preview allows direct import without modal', async () => {
+    const file = new File(['csv'], 'rows.csv', { type: 'text/csv' });
+    api.previewCsvImportCash.mockResolvedValueOnce({
+      cash_aware: false,
+      can_import_without_deposits: true,
+      shortfalls: [],
+      proposed_deposits: [],
+      row_errors: [],
+      summary: { rows: 1, cash_aware_rows: 0, proposed_deposit_count: 0, total_shortfall_by_currency: [] },
+    });
+    api.importTransactionsCsv.mockResolvedValueOnce({ success: true, imported_count: 1, errors: [] });
+
+    render(
+      <MemoryRouter>
+        <PortfolioProvider
+          initialPortfolios={[
+            { id: 1, name: 'Default Portfolio', is_default: true, is_active: true, base_currency: 'EUR', cash_aware_enabled: false },
+          ]}
+          initialSelection={{ mode: 'portfolio', id: 1, name: 'Default Portfolio' }}
+          disableFetch
+        >
+          <Transactions />
+        </PortfolioProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText('AAPL')).toBeInTheDocument());
+    fireEvent.change(document.querySelector('.transactions-page__file-input'), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => {
+      expect(api.importTransactionsCsv).toHaveBeenCalledWith(file, 1);
+      expect(screen.queryByText('This import requires additional cash')).not.toBeInTheDocument();
+    });
+  });
+
+  it('records cash deposit without refetching asset transactions', async () => {
+    api.createCashDeposit.mockResolvedValueOnce({});
+    const fetchCountBefore = 0;
+
+    render(
+      <MemoryRouter>
+        <PortfolioProvider
+          initialPortfolios={[
+            { id: 1, name: 'Default Portfolio', is_default: true, is_active: true, base_currency: 'EUR' },
+          ]}
+          initialSelection={{ mode: 'portfolio', id: 1, name: 'Default Portfolio' }}
+          disableFetch
+        >
+          <Transactions />
+        </PortfolioProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText('AAPL')).toBeInTheDocument());
+    const callsAfterLoad = api.fetchTransactions.mock.calls.length;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Transaction' }));
+    fireEvent.change(screen.getByLabelText('record type'), { target: { value: 'CASH' } });
+    fireEvent.change(document.getElementById('txn-modal-cash-amount'), { target: { value: '500' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Record deposit' }));
+
+    await waitFor(() => {
+      expect(api.createCashDeposit).toHaveBeenCalled();
+      expect(screen.getByText(/Deposit recorded/)).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /View cash ledger on Cash page/i })).toHaveAttribute(
+        'href',
+        '/cash'
+      );
+    });
+    expect(api.fetchTransactions.mock.calls.length).toBe(callsAfterLoad);
+    expect(fetchCountBefore).toBe(0);
+  });
+
+  it('shows success banner after add-and-continue purchase', async () => {
+    const purchaseShortfallError = new TransactionApiError(
+      'Insufficient cash balance for purchase.',
+      { required: 1005, available: 500, shortfall: 505, currency: 'EUR' }
+    );
+    api.createTransaction
+      .mockRejectedValueOnce(purchaseShortfallError)
+      .mockResolvedValueOnce({ id: 10 });
+    api.createCashDeposit.mockResolvedValueOnce({});
+
+    render(
+      <MemoryRouter>
+        <PortfolioProvider
+          initialPortfolios={[
+            { id: 1, name: 'Default Portfolio', is_default: true, is_active: true, base_currency: 'EUR' },
+          ]}
+          initialSelection={{ mode: 'portfolio', id: 1, name: 'Default Portfolio' }}
+          disableFetch
+        >
+          <Transactions />
+        </PortfolioProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText('AAPL')).toBeInTheDocument());
+    const callsAfterLoad = api.fetchTransactions.mock.calls.length;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Transaction' }));
+    const symbolInput = document.querySelector('.modal-content input[name="asset_symbol"]');
+    fireEvent.change(symbolInput, { target: { value: 'MSFT' } });
+    fireEvent.change(document.querySelector('.modal-content input[name="quantity"]'), {
+      target: { value: '5' },
+    });
+    fireEvent.change(document.querySelector('.modal-content input[name="price_per_share"]'), {
+      target: { value: '100' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Add missing cash and continue' })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add missing cash and continue' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Cash deposit added and purchase recorded.')).toBeInTheDocument();
+      expect(api.fetchTransactions.mock.calls.length).toBeGreaterThan(callsAfterLoad);
+    });
+  });
+
+  it('normal asset save still refreshes transactions without cash banner message', async () => {
+    api.createTransaction.mockResolvedValueOnce({ id: 11 });
+
+    render(
+      <MemoryRouter>
+        <PortfolioProvider
+          initialPortfolios={[
+            { id: 1, name: 'Default Portfolio', is_default: true, is_active: true, base_currency: 'EUR' },
+          ]}
+          initialSelection={{ mode: 'portfolio', id: 1, name: 'Default Portfolio' }}
+          disableFetch
+        >
+          <Transactions />
+        </PortfolioProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => expect(screen.getByText('AAPL')).toBeInTheDocument());
+    const callsAfterLoad = api.fetchTransactions.mock.calls.length;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Transaction' }));
+    fireEvent.change(document.querySelector('.modal-content input[name="asset_symbol"]'), {
+      target: { value: 'TSLA' },
+    });
+    fireEvent.change(document.querySelector('.modal-content input[name="quantity"]'), {
+      target: { value: '1' },
+    });
+    fireEvent.change(document.querySelector('.modal-content input[name="price_per_share"]'), {
+      target: { value: '10' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(api.fetchTransactions.mock.calls.length).toBeGreaterThan(callsAfterLoad);
+    });
+    expect(screen.queryByText('Cash deposit added and purchase recorded.')).not.toBeInTheDocument();
   });
 });

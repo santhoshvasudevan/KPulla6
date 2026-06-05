@@ -15,6 +15,10 @@
 - Transactions remain source of truth; historical prices and FX rates are cached in DB.
 - No live yfinance or external market-data calls during dashboard rendering.
 
+## Cash Ledger
+
+For cash-related work, follow `docs/cash-ledger.md` and `.cursor/rules/320-cash-ledger.mdc` (mental model, native currency, cash-aware mode, settlements, frontend/API guardrails, data safety).
+
 ## Data safety (mandatory)
 
 Local Postgres (`portfolio_insight_kpulla6`) holds real dev portfolio data. Treat it as production-like.

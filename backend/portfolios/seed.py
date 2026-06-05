@@ -2,6 +2,7 @@ from django.contrib.auth.models import AbstractBaseUser
 
 from portfolios.constants import (
     DEFAULT_BASE_CURRENCY,
+    DEFAULT_CASH_AWARE_ENABLED_FOR_NEW,
     DEFAULT_PORTFOLIO_NAME,
     VIRTUAL_ALL_PORTFOLIOS_NAME,
 )
@@ -19,6 +20,7 @@ def ensure_default_portfolio(user: AbstractBaseUser) -> Portfolio:
         base_currency=DEFAULT_BASE_CURRENCY,
         is_default=True,
         is_active=True,
+        cash_aware_enabled=DEFAULT_CASH_AWARE_ENABLED_FOR_NEW,
     )
     return portfolio
 

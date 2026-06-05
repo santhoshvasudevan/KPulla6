@@ -5,13 +5,16 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from cash.services import CashValidationError, InsufficientCashError
 from portfolios.services import PortfolioNotFoundError
 from transactions.models import MutualFundTransactionDetail
 from transactions.mutual_fund_services import (
     create_mutual_fund_transaction,
     update_mutual_fund_transaction,
 )
+from transactions.csv_cash_preview import CsvImportCashPreviewRequired, preview_to_response_dict
 from transactions.serializers import (
+    CsvCashPreviewResponseSerializer,
     CsvImportResponseSerializer,
     MutualFundTransactionWriteSerializer,
     TransactionListSerializer,
@@ -27,6 +30,7 @@ from transactions.services import (
     get_transaction_filter_options,
     import_transactions_from_csv,
     list_transactions,
+    preview_csv_cash_for_import,
     update_transaction,
 )
 
@@ -38,6 +42,31 @@ def _parse_date_param(value: str | None) -> date | None:
         return datetime.strptime(value, "%Y-%m-%d").date()
     except (TypeError, ValueError):
         raise ValueError(f"Invalid date '{value}'. Use YYYY-MM-DD.")
+
+
+def _insufficient_cash_response(exc: InsufficientCashError) -> Response:
+    return Response(
+        {
+            "detail": str(exc),
+            "required": float(exc.required),
+            "available": float(exc.available),
+            "shortfall": float(exc.shortfall),
+            "currency": exc.currency,
+        },
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+def _transaction_write_error_response(exc: Exception) -> Response | None:
+    if isinstance(exc, PortfolioNotFoundError):
+        return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+    if isinstance(exc, InsufficientCashError):
+        return _insufficient_cash_response(exc)
+    if isinstance(exc, TransactionValidationError):
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    if isinstance(exc, CashValidationError):
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    return None
 
 
 def _parse_symbols_param(request) -> list[str] | None:
@@ -128,10 +157,11 @@ class TransactionListCreateView(APIView):
                 request.user,
                 validated_data={**data, "portfolio_id": portfolio_id},
             )
-        except PortfolioNotFoundError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
-        except TransactionValidationError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            err = _transaction_write_error_response(exc)
+            if err is not None:
+                return err
+            raise
 
         return Response(
             TransactionSerializer(transaction).data,
@@ -148,11 +178,10 @@ class TransactionListCreateView(APIView):
                 request.user,
                 validated_data=serializer.validated_data,
             )
-        except PortfolioNotFoundError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
-        except TransactionValidationError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as exc:
+            err = _transaction_write_error_response(exc)
+            if err is not None:
+                return err
             return Response(
                 {"detail": str(exc) or "Failed to save mutual fund transaction"},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -236,10 +265,11 @@ class TransactionDetailView(APIView):
                 {"detail": "Transaction not found"},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        except PortfolioNotFoundError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
-        except TransactionValidationError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            err = _transaction_write_error_response(exc)
+            if err is not None:
+                return err
+            raise
 
         return Response(TransactionSerializer(transaction).data)
 
@@ -264,11 +294,10 @@ class TransactionDetailView(APIView):
                 {"detail": "Transaction not found"},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        except PortfolioNotFoundError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
-        except TransactionValidationError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as exc:
+            err = _transaction_write_error_response(exc)
+            if err is not None:
+                return err
             return Response(
                 {"detail": str(exc) or "Failed to update mutual fund transaction"},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -284,60 +313,130 @@ class TransactionDetailView(APIView):
                 {"detail": "Transaction not found"},
                 status=status.HTTP_404_NOT_FOUND,
             )
+        except Exception as exc:
+            err = _transaction_write_error_response(exc)
+            if err is not None:
+                return err
+            raise
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class TransactionCsvImportView(APIView):
+def _read_csv_upload(request) -> tuple[str | None, Response | None]:
+    upload = request.FILES.get("file")
+    if upload is None:
+        payload = {
+            "success": False,
+            "imported_count": 0,
+            "errors": [{"row": 1, "field": "file", "message": "File is required"}],
+        }
+        return None, Response(
+            CsvImportResponseSerializer(payload).data,
+            status=status.HTTP_200_OK,
+        )
+
+    raw = upload.read()
+    try:
+        return raw.decode("utf-8-sig"), None
+    except UnicodeDecodeError:
+        payload = {
+            "success": False,
+            "imported_count": 0,
+            "errors": [
+                {"row": 1, "field": "file", "message": "File must be UTF-8 text"}
+            ],
+        }
+        return None, Response(
+            CsvImportResponseSerializer(payload).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+def _parse_portfolio_id_param(request) -> tuple[int | None, Response | None]:
+    portfolio_id_param = request.query_params.get("portfolio_id")
+    if portfolio_id_param is None:
+        return None, None
+    try:
+        return int(portfolio_id_param), None
+    except (TypeError, ValueError):
+        return None, Response(
+            {"detail": "portfolio_id must be an integer"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+class TransactionCsvImportCashPreviewView(APIView):
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request):
-        upload = request.FILES.get("file")
-        if upload is None:
-            payload = {
-                "success": False,
-                "imported_count": 0,
-                "errors": [{"row": 1, "field": "file", "message": "File is required"}],
-            }
-            return Response(
-                CsvImportResponseSerializer(payload).data,
-                status=status.HTTP_200_OK,
-            )
+        text, err_response = _read_csv_upload(request)
+        if err_response is not None:
+            return err_response
 
-        raw = upload.read()
-        try:
-            text = raw.decode("utf-8-sig")
-        except UnicodeDecodeError:
-            payload = {
-                "success": False,
-                "imported_count": 0,
-                "errors": [
-                    {"row": 1, "field": "file", "message": "File must be UTF-8 text"}
-                ],
-            }
-            return Response(
-                CsvImportResponseSerializer(payload).data,
-                status=status.HTTP_200_OK,
-            )
-
-        portfolio_id_param = request.query_params.get("portfolio_id")
-        portfolio_id: int | None = None
-        if portfolio_id_param is not None:
-            try:
-                portfolio_id = int(portfolio_id_param)
-            except (TypeError, ValueError):
-                return Response(
-                    {"detail": "portfolio_id must be an integer"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+        portfolio_id, bad = _parse_portfolio_id_param(request)
+        if bad is not None:
+            return bad
 
         try:
-            result = import_transactions_from_csv(
+            preview = preview_csv_cash_for_import(
                 request.user,
                 csv_text=text,
                 portfolio_id=portfolio_id,
             )
         except PortfolioNotFoundError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+
+        if preview.row_errors:
+            return Response(
+                CsvImportResponseSerializer(
+                    {
+                        "success": False,
+                        "imported_count": 0,
+                        "errors": preview.row_errors,
+                    }
+                ).data,
+                status=status.HTTP_200_OK,
+            )
+
+        return Response(
+            CsvCashPreviewResponseSerializer(preview_to_response_dict(preview)).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+class TransactionCsvImportView(APIView):
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        text, err_response = _read_csv_upload(request)
+        if err_response is not None:
+            return err_response
+
+        portfolio_id, bad = _parse_portfolio_id_param(request)
+        if bad is not None:
+            return bad
+
+        create_cash_deposits = (
+            request.query_params.get("create_cash_deposits", "").lower() == "true"
+        )
+        cash_preview_confirmed = (
+            request.query_params.get("cash_preview_confirmed", "").lower() == "true"
+        )
+
+        try:
+            result = import_transactions_from_csv(
+                request.user,
+                csv_text=text,
+                portfolio_id=portfolio_id,
+                create_cash_deposits=create_cash_deposits,
+                cash_preview_confirmed=cash_preview_confirmed,
+            )
+        except PortfolioNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except CsvImportCashPreviewRequired as exc:
+            return Response(
+                preview_to_response_dict(exc.preview),
+                status=status.HTTP_409_CONFLICT,
+            )
 
         return Response(
             CsvImportResponseSerializer(

@@ -42,7 +42,7 @@ FRONTEND_URL=http://localhost:5173
 
 Use **`localhost` consistently** for the backend OAuth callback (not `127.0.0.1` on one step and `localhost` on another). A mismatch makes Google return an authorization code, but Django/allauth then fails token exchange and shows **Third-Party Login Failure** (HTTP 401).
 
-4. `DJANGO_SITE_DOMAIN` / `DJANGO_SITE_NAME` update Django `Site` id=1 on startup (replaces the default `example.com` from initial migrate).
+4. `DJANGO_SITE_DOMAIN` / `DJANGO_SITE_NAME` update Django `Site` id=1 after `manage.py migrate` (replaces the default `example.com` from initial migrate). Re-run migrate after changing these env vars.
 5. Use **Sign in with Google** on the login page (proxied via Vite `/accounts` → Django). With `SOCIALACCOUNT_LOGIN_ON_GET = True`, a GET to `/accounts/google/login/?process=login` redirects straight to Google (no intermediate allauth HTML page). After success, allauth redirects to `FRONTEND_URL/` (see `LOGIN_REDIRECT_URL` in `backend/config/settings.py`), not an allauth signup template.
 
 ### Linking Google to the existing owner account

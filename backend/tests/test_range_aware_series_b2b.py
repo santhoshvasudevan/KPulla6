@@ -219,7 +219,7 @@ def test_range_aware_parity_vs_full_build_slice(pln_mf_scope, metric, range_code
             range_code=range_code,
             display_currency="EUR",
             today=today,
-        )
+        ).points
     )
     ref = _reference_performance_points(scope, metric, range_code, "EUR", today)
     _assert_points_match(_points_by_date(pts), _points_by_date(ref))
@@ -269,7 +269,7 @@ def test_range_aware_opening_holdings_before_range_start(api_client, seeded, mon
             metric="value",
             range_code="30D",
             display_currency="EUR",
-        )
+        ).points
     )
     last = [p for p in pts if p["date"] == "2026-03-20"][0]
     assert last["value"] == pytest.approx(1200.0)
@@ -420,7 +420,7 @@ def test_range_aware_stock_split(api_client, seeded, monkeypatch, test_user):
             metric="value",
             range_code="30D",
             display_currency="EUR",
-        )
+        ).points
     )
     assert _points_by_date(pts) == _points_by_date(ref)
 
@@ -435,7 +435,7 @@ def test_range_aware_twror_first_point_null(pln_mf_scope):
             range_code="30D",
             display_currency="EUR",
             today=date(2024, 4, 15),
-        )
+        ).points
     )
     assert pts[0]["value"] is None
     assert any(p["value"] is not None for p in pts[1:])

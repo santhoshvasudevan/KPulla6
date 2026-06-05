@@ -73,4 +73,6 @@ class PortfolioSummaryView(APIView):
         }
         if result.warnings:
             payload["warnings"] = result.warnings
+        if result.cash_summary is not None:
+            payload["cash_summary"] = result.cash_summary
         return Response(payload)

@@ -1,5 +1,4 @@
 import os
-import sys
 
 from django.apps import AppConfig
 from django.db.models.signals import post_migrate
@@ -29,10 +28,10 @@ class AccountsConfig(AppConfig):
 
     def ready(self) -> None:
         post_migrate.connect(
-            self._on_post_migrate, sender=self, dispatch_uid="accounts.sync_site"
+            _sync_site_after_migrate,
+            dispatch_uid="accounts.sync_site",
         )
-        if "pytest" not in sys.modules:
-            sync_site_from_env()
 
-    def _on_post_migrate(self, sender, **kwargs) -> None:
-        sync_site_from_env()
+
+def _sync_site_after_migrate(sender, **kwargs) -> None:
+    sync_site_from_env()

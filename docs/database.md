@@ -30,6 +30,8 @@ make bootstrap  # db + migrate + seed
 | `mutual_fund_profiles` | `MutualFundProfile` | `market_data` (MF-1) |
 | `folios` | `Folio` | `transactions` (MF-1) |
 | `mutual_fund_transaction_details` | `MutualFundTransactionDetail` | `transactions` (MF-1) |
+| `cash_ledger_entries` | `CashLedgerEntry` | `cash` (Cash-1) |
+| `cash_transfer_groups` | `CashTransferGroup` | `cash` (Cash-1) |
 
 ### Portfolio
 - Real portfolios only; **`All Portfolios` is virtual** and must not be stored (`Portfolio.clean()` rejects that name).
@@ -201,3 +203,74 @@ Nullable FK from `Transaction` → `Asset` for MF rows — not added in MF-1. St
 |-------|---------|
 | `mutual_fund_exposure` | Optional equity/debt/other % breakdown per scheme |
 | Tax classification fields | Separate from `primary_asset_class`; MF tax phase TBD |
+
+---
+
+## Cash Ledger (Cash-1 schema — implemented)
+
+Full design: [cash-ledger.md](./cash-ledger.md). HTTP APIs and summary/performance integration remain **Cash-2+**.
+
+### `portfolios` extension
+
+| Column | Notes |
+|--------|--------|
+| `cash_aware_enabled` | `BooleanField`, DB default `false` — preserves existing rows; **new** portfolios created `true` in services (Cash-4A.1) unless explicitly `false` |
+
+Migration: `portfolios/migrations/0003_portfolio_cash_aware_enabled.py` (no Cash-4A.1 data migration)
+
+**`portfolios.id`:** globally unique surrogate PK across all users. Related tables (`transactions`, `cash_ledger_entries`, …) use `portfolio_id` FK. Do not assign per-user `id=1` defaults. Optional future UI-only fields: `portfolio_number` or `display_order` per user if raw IDs are shown in the product.
+
+### Django app: `cash`
+
+| Table | Model |
+|-------|--------|
+| `cash_ledger_entries` | `CashLedgerEntry` |
+| `cash_transfer_groups` | `CashTransferGroup` |
+
+Migration: `cash/migrations/0001_initial.py`
+
+### `cash_ledger_entries` — `CashLedgerEntry`
+
+| Column | Type / notes |
+|--------|----------------|
+| `id` | PK |
+| `portfolio_id` | FK → `portfolios` (`PROTECT`) |
+| `date` | `DateField` |
+| `currency` | `CharField(3)` — must be in `SUPPORTED_CASH_CURRENCIES` (20 codes) |
+| `entry_type` | `CashEntryType` choices |
+| `amount` | `DecimalField` — signed: positive increases cash, negative decreases |
+| `source_of_funds` | Optional string |
+| `linked_transaction_id` | Nullable FK → `transactions` (`PROTECT`) |
+| `transfer_group_id` | Nullable FK → `cash_transfer_groups` (`PROTECT`) |
+| `note` | Optional text |
+| `created_at` / `updated_at` | Timestamps |
+
+**Indexes:** `(portfolio_id, currency, date)`, `(portfolio_id, date)`, `(linked_transaction_id)`.
+
+User scoping: via `portfolio.user`.
+
+### `cash_transfer_groups` — `CashTransferGroup`
+
+| Column | Notes |
+|--------|--------|
+| `source_portfolio_id` / `target_portfolio_id` | FK → `portfolios`; must differ; same `user` |
+| `source_currency` / `target_currency` | Supported cash codes |
+| `source_amount` / `target_amount` | Positive decimals |
+| `user_rate` | Optional |
+| `fees` / `fee_currency` | Optional fee metadata |
+| `date` | Transfer date |
+| `note` | Optional |
+
+HTTP transfer write APIs: **Cash-8**.
+
+### Supported cash currencies (20)
+
+`EUR`, `USD`, `INR`, `GBP`, `CHF`, `JPY`, `CNY`, `CAD`, `AUD`, `HKD`, `SGD`, `KRW`, `BRL`, `MXN`, `ZAR`, `SEK`, `NOK`, `DKK`, `PLN`, `AED` — `cash.constants.SUPPORTED_CASH_CURRENCIES`.
+
+Ledger stores **native currency balances**; display conversion uses cached `fx_rates` only (no collapse into display currency in storage).
+
+**Pure finance:** `finance/cash.py` — balance helpers (no Django). **ORM service:** `cash/services.py` (no HTTP in Cash-1).
+
+**`linked_transaction`:** `PROTECT` on `transactions.Transaction`.
+
+**Signed `amount`:** positive increases cash; `clean()` validates sign by `entry_type`.

@@ -1,4 +1,5 @@
 from django.contrib.auth import login, logout
+from django.db import IntegrityError
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import status
@@ -68,11 +69,19 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        user = register_user(
-            username=serializer.validated_data["username"],
-            email=serializer.validated_data["email"],
-            password=serializer.validated_data["password"],
-        )
+        try:
+            user = register_user(
+                username=serializer.validated_data["username"],
+                email=serializer.validated_data["email"],
+                password=serializer.validated_data["password"],
+            )
+        except IntegrityError:
+            return Response(
+                {"detail": "Unable to create account. The username or email may already be in use."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         login(request, user, backend="django.contrib.auth.backends.ModelBackend")
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
 

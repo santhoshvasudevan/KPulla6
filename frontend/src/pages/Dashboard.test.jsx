@@ -91,6 +91,36 @@ describe('Dashboard Component', () => {
     api.getSettings?.mockResolvedValue?.({ display_currency: 'EUR' });
   });
 
+  it('renders summary current value including cash from backend fixture', async () => {
+    api.fetchDashboardSummary.mockResolvedValueOnce({
+      ...mockSummary,
+      current_value: 19700,
+      cash_summary: {
+        display_currency: 'EUR',
+        total_display_value: 1200,
+        balances: [
+          {
+            portfolio_id: 1,
+            portfolio_name: 'Default',
+            currency: 'EUR',
+            native_balance: 1200,
+            display_value: 1200,
+          },
+        ],
+      },
+    });
+    api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+    render(
+      <PortfolioProvider>
+        <Dashboard />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/€19,700\.00/)).toBeInTheDocument();
+    });
+  });
+
   it('shows a loading state initially', () => {
     api.fetchDashboardSummary.mockReturnValueOnce(new Promise(() => {})); // never resolves
     api.fetchPortfolioPerformance.mockReturnValueOnce(new Promise(() => {}));

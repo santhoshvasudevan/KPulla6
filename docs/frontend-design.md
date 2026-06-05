@@ -302,6 +302,84 @@ Pages are wired on **Dashboard** (Phase 8B) and **Asset Detail** (Phase 8C). **C
 | **13B** | Metric Sheet drawdown series + Calendar-Year Return API contract (done) |
 | **13C** | Metric Sheet charts: Calendar-Year Return bar, Drawdown area, monthly heatmap scale (done) |
 
+## Cash Ledger — frontend guardrails
+
+These rules apply to all Cash phases (see [cash-ledger.md](./cash-ledger.md), `.cursor/rules/320-cash-ledger.mdc`):
+
+| Rule | Requirement |
+|------|-------------|
+| **Balances** | React **does not compute** cash balances, running totals, or future-impact simulation. Display `GET /cash/balances` and ledger API fields only. |
+| **Shortfall** | Use API `required`, `available`, `shortfall`, `currency` (and `affected_entries` on 409). Guide user to add or edit **same-currency** cash on `/cash` — no implicit FX in the UI. |
+| **`/transactions`** | Asset transaction table + unified **Add/Edit** modal (Stock, MF, Cash deposit/withdrawal). **Not** a merged client-side ledger; no fake pagination across cash + asset rows. |
+| **`/cash`** | Cash balance table, ledger, manual edit/delete, cash-aware status. Primary place to manage ledger rows after a cash deposit from Transactions. |
+| **API routing** | Cash branch → `/api/v1/cash/*`. Stock/MF → `/api/v1/transactions`. Never `asset_type=CASH` on `/transactions`. |
+| **Analytics surfaces** | Cash must not appear on Compare or Asset Metric Sheet. Dashboard `current_value` and Assets allocation chart use backend `allocation` / summary (Cash-6A). |
+| **Future Activity** | If a unified timeline is needed, use a backend activity endpoint — do not join cash + transactions in the client. |
+
+## Transactions — unified Add modal (Cash-3G) — **Implemented**
+
+Route `/transactions` — primary entry for recording activity:
+
+| Record type | Submit API | Edit from this modal |
+|-------------|----------|----------------------|
+| **Cash** | `POST /cash/deposits` or `POST /cash/withdrawals` | No — edit on `/cash` |
+| **Stock** | `POST/PUT /transactions` | Yes |
+| **Mutual Fund** | `POST/PUT /transactions` (`asset_type: MUTUAL_FUND`) | Yes |
+
+- Default record type: **Stock** (existing flow).
+- Cash: Action (Deposit / Withdrawal), portfolio (required when All Portfolios scope), date, currency (20 codes), amount, source of funds, note.
+- Insufficient withdrawal: `CashApiError` shortfall display (required / available / shortfall).
+- Stock / MF **BUY** on cash-aware portfolios: `TransactionApiError` with shortfall panel; **Recommended action** (Cash-4C): **Add missing cash and continue** — `POST /cash/deposits` with backend `shortfall` amount and `currency` (same-currency only), then retries original BUY; partial-success warning if deposit succeeds but retry fails; link **Open Cash page** → `/cash`.
+- `CashShortfallDisplay.jsx` — shared shortfall panel for cash withdrawal (amounts only) and asset BUY (`purchase` guidance).
+- `ApiError` / `TransactionApiError` / `CashApiError` — structured errors; transaction create/update parse response JSON once.
+- After cash success: success banner on Transactions page; asset table **not** refetched; link to `/cash` ledger.
+- React does not compute cash balances; no unified activity list in this phase.
+
+Component: `CashEntryFormFields.jsx` (shared cash form fields); `TransactionModal.jsx`.
+
+## Cash-aware portfolio status (Cash-4A.2) — **Implemented**
+
+`CashAwarePortfolioStatus.jsx` — shown on **Cash** and **Transactions** when a single portfolio is selected in the sidebar:
+
+| State | Copy | Actions |
+|-------|------|---------|
+| **On** | “Cash-aware mode is on. Purchases require available cash.” | None |
+| **Off** | “Cash-aware mode is off. Purchases can be recorded without cash balance checks.” | **Enable cash-aware mode** (confirm → `PUT /portfolios/{id}`) |
+| **All Portfolios** | “Cash-aware mode is configured per portfolio. Select a single portfolio to enable it.” | No enable button |
+
+**Settings** → Portfolios: table column **Cash-aware** (On/Off) + **Enable cash-aware** per legacy row (`PortfolioManagement.jsx`).
+
+Existing portfolios stay legacy until enabled; new portfolios default on (Cash-4A.1). No disable button in UI.
+
+## Cash page (`/cash`) — **Implemented** (Cash-3B)
+
+Route: `pages/Cash.jsx` · `pages/Cash.css` · sidebar nav **Cash** (after Transactions).
+
+Backend supplies balances and ledger rows. React **displays only** — no cash balance math or display-currency totals on this page. `CurrencyValue` formats native amounts.
+
+| Section | Behavior |
+|---------|----------|
+| **Balances** | `GET /cash/balances` with `portfolioContext.apiQuery`; table + `totals_by_currency` for all scope |
+| **Ledger** | `GET /cash/ledger` with filters and backend pagination |
+| **Cash-aware status** | `CashAwarePortfolioStatus` below header (Cash-4A.2) |
+| **Deposit / withdrawal** | Modals → `POST /cash/deposits`, `POST /cash/withdrawals`; insufficient withdrawal shows API shortfall fields |
+| **Edit / delete** | Manual rows only → `PUT`/`DELETE /cash/ledger/{id}`; edit reuses modal; delete confirm; **Cash-4D** future-impact panel (`CashFutureImpactDisplay`) with `affected_entries` — no cascade delete |
+| **Backfill wizard (Cash-7C)** | **Backfill Cash** → `CashBackfillWizard` modal: configure dates → `previewCashBackfill` → review API tables (read-only amounts) → `applyCashBackfill` (`confirmed: true`) → optional **Enable cash-aware** via `PUT /portfolios/{id}`; refreshes balances/ledger after apply; no React backfill math |
+
+Page layout: [page-layouts.md](./page-layouts.md) §12. Design: [cash-ledger.md](./cash-ledger.md).
+
+## Future — Cash Ledger UI (remaining phases)
+
+| Surface | Phase | Behavior |
+|---------|-------|----------|
+| **Cash on Dashboard / allocation** | Cash-6A **done** | Dashboard KPI `current_value` from summary; Assets donut from `allocation` (`Cash EUR`, etc.); no React cash math |
+| **Manual BUY add missing cash + continue** | Cash-4C | **Done** — `PurchaseShortfallAction` on `TransactionModal` |
+| **CSV import cash preview** | Cash-5 | **Done** — `previewCsvImportCash` + `CsvImportCashPreviewModal`; confirmed import only |
+| **Backfill wizard** | Cash-7C **done** | `CashBackfillWizard` on `/cash`; preview/apply APIs only; explicit enable |
+| **Transfers** | Cash-8 | Cross-portfolio / FX transfer form → `POST /cash/transfers` |
+
+Cash must **not** appear on Compare or Asset Metric Sheet as an investment subject.
+
 ## Implementation Constraints
 
 - Preserve `/api/v1` contracts; no backend changes for design work

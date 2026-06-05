@@ -194,3 +194,40 @@ class CsvImportResponseSerializer(serializers.Serializer):
     success = serializers.BooleanField()
     imported_count = serializers.IntegerField()
     errors = CsvImportErrorSerializer(many=True)
+
+
+class CsvCashShortfallSerializer(serializers.Serializer):
+    portfolio_id = serializers.IntegerField()
+    portfolio_name = serializers.CharField()
+    date = serializers.DateField()
+    currency = serializers.CharField()
+    required = serializers.FloatField()
+    available_before = serializers.FloatField()
+    shortfall = serializers.FloatField()
+    reason = serializers.CharField()
+
+
+class CsvProposedDepositSerializer(serializers.Serializer):
+    portfolio_id = serializers.IntegerField()
+    portfolio_name = serializers.CharField(required=False, allow_blank=True)
+    date = serializers.DateField()
+    currency = serializers.CharField()
+    amount = serializers.FloatField()
+    source_of_funds = serializers.CharField()
+    note = serializers.CharField()
+
+
+class CsvCashPreviewSummarySerializer(serializers.Serializer):
+    rows = serializers.IntegerField()
+    cash_aware_rows = serializers.IntegerField()
+    proposed_deposit_count = serializers.IntegerField()
+    total_shortfall_by_currency = serializers.ListField(child=serializers.DictField())
+
+
+class CsvCashPreviewResponseSerializer(serializers.Serializer):
+    cash_aware = serializers.BooleanField()
+    can_import_without_deposits = serializers.BooleanField()
+    shortfalls = CsvCashShortfallSerializer(many=True)
+    proposed_deposits = CsvProposedDepositSerializer(many=True)
+    row_errors = CsvImportErrorSerializer(many=True)
+    summary = CsvCashPreviewSummarySerializer()

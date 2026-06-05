@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { createPortfolio, updatePortfolio, deletePortfolio } from '../api';
 import { usePortfolio } from '../portfolioContext';
+import {
+  buildCashAwareEnablePayload,
+  CASH_AWARE_ENABLE_CONFIRM,
+  CASH_AWARE_OFF_MESSAGE,
+  CASH_AWARE_ON_MESSAGE,
+} from '../utils/portfolioCashAware';
 import { Button, WarningBanner } from './ui';
 
 const CURRENCIES = ['EUR', 'USD', 'INR', 'GBP', 'CHF'];
@@ -25,6 +31,7 @@ export default function PortfolioManagement() {
 
   const [status, setStatus] = useState('');
   const [deactivatingId, setDeactivatingId] = useState(null);
+  const [enablingCashAwareId, setEnablingCashAwareId] = useState(null);
 
   const atMax = activePortfolios.length >= MAX_ACTIVE_PORTFOLIOS;
 
@@ -106,6 +113,23 @@ export default function PortfolioManagement() {
       setEditError(err.message || 'Failed to update portfolio.');
     } finally {
       setEditSubmitting(false);
+    }
+  };
+
+  const handleEnableCashAware = async (portfolio) => {
+    if (!window.confirm(CASH_AWARE_ENABLE_CONFIRM)) return;
+    setStatus('');
+    setCreateError('');
+    setEditError('');
+    setEnablingCashAwareId(portfolio.id);
+    try {
+      await updatePortfolio(portfolio.id, buildCashAwareEnablePayload(portfolio));
+      await reloadPortfolios();
+      setStatus(`Cash-aware mode enabled for "${portfolio.name}".`);
+    } catch (err) {
+      setCreateError(err.message || 'Failed to enable cash-aware mode.');
+    } finally {
+      setEnablingCashAwareId(null);
     }
   };
 
@@ -199,13 +223,14 @@ export default function PortfolioManagement() {
               <th>Name</th>
               <th>Base currency</th>
               <th>Default</th>
+              <th>Cash-aware</th>
               <th className="portfolio-management__actions-col">Actions</th>
             </tr>
           </thead>
           <tbody>
             {activePortfolios.length === 0 ? (
               <tr>
-                <td colSpan={4}>No active portfolios.</td>
+                <td colSpan={5}>No active portfolios.</td>
               </tr>
             ) : (
               activePortfolios.map((p) => (
@@ -213,8 +238,28 @@ export default function PortfolioManagement() {
                   <td>{p.name}</td>
                   <td>{p.base_currency || 'EUR'}</td>
                   <td>{p.is_default ? 'Yes' : '—'}</td>
+                  <td>
+                    <span
+                      className="portfolio-management__cash-aware-label"
+                      title={
+                        p.cash_aware_enabled ? CASH_AWARE_ON_MESSAGE : CASH_AWARE_OFF_MESSAGE
+                      }
+                    >
+                      {p.cash_aware_enabled ? 'On' : 'Off'}
+                    </span>
+                  </td>
                   <td className="portfolio-management__actions-col">
                     <div className="portfolio-management__actions">
+                      {!p.cash_aware_enabled ? (
+                        <Button
+                          variant="secondary"
+                          type="button"
+                          disabled={enablingCashAwareId === p.id}
+                          onClick={() => handleEnableCashAware(p)}
+                        >
+                          {enablingCashAwareId === p.id ? 'Enabling…' : 'Enable cash-aware'}
+                        </Button>
+                      ) : null}
                       <Button variant="ghost" type="button" onClick={() => startEdit(p)}>
                         Edit
                       </Button>

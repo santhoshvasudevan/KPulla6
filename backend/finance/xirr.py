@@ -9,6 +9,21 @@ import pyxirr
 from finance.splits import apply_stock_split_adjustments
 from finance.types import Transaction, TransactionType
 
+# Investor-perspective sign convention for money-weighted XIRR:
+#   contributions (BUY, deposits)     -> negative amounts (cash leaves investor)
+#   withdrawals (SELL, cash withdrawal) -> positive amounts (cash returns to investor)
+#   terminal portfolio value          -> positive amount on valuation date
+
+
+def solve_xirr(dates: list[date], amounts: list[float]) -> Optional[float]:
+    """Return annualized XIRR or None when inputs are empty or pyxirr cannot solve."""
+    if not dates:
+        return None
+    try:
+        return pyxirr.xirr(dates, amounts)
+    except Exception:
+        return None
+
 
 def build_xirr_cashflows(
     transactions: Iterable[Transaction],
@@ -93,12 +108,7 @@ def calculate_portfolio_xirr(
         dates.append(current_date)
         amounts.append(float(terminal_value))
 
-    if not dates:
-        return None
-    try:
-        return pyxirr.xirr(dates, amounts)
-    except Exception:
-        return None
+    return solve_xirr(dates, amounts)
 
 
 def calculate_xirr(
@@ -115,9 +125,4 @@ def calculate_xirr(
         current_date=current_date,
         include_fees_in_cashflows=include_fees_in_cashflows,
     )
-    if not dates:
-        return None
-    try:
-        return pyxirr.xirr(dates, amounts)
-    except Exception:
-        return None
+    return solve_xirr(dates, amounts)

@@ -204,6 +204,10 @@ export default function Dashboard() {
       typeof performanceData === 'object' &&
       !Array.isArray(performanceData) &&
       Array.isArray(performanceData.series);
+    const isValueWithWarnings =
+      typeof performanceData === 'object' &&
+      !Array.isArray(performanceData) &&
+      Array.isArray(performanceData.points);
     if (isComparisonPayload) {
       const chartData = mergeComparisonSeries(performanceData);
       const benchmarkColors = getBenchmarkLineColors();
@@ -218,7 +222,11 @@ export default function Dashboard() {
         comparisonWarnings: performanceData.warnings || [],
       };
     }
-    const arr = Array.isArray(performanceData) ? performanceData : [];
+    const arr = Array.isArray(performanceData)
+      ? performanceData
+      : isValueWithWarnings
+        ? performanceData.points
+        : [];
     const chartData = arr.map((p) => ({
       date: p.date,
       value: p.value,
@@ -233,7 +241,7 @@ export default function Dashboard() {
           stroke: getSeriesColor(0),
         },
       ],
-      comparisonWarnings: [],
+      comparisonWarnings: isValueWithWarnings ? performanceData.warnings || [] : [],
     };
   }, [performanceData, chartTitle, displayCurrency]);
 

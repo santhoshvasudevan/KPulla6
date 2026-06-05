@@ -42,25 +42,141 @@ def test_login_logout_and_current_user(api_client, test_user):
     assert me_after.status_code in (401, 403)
 
 
+def _register_payload(**overrides):
+    payload = {
+        "username": "newuser",
+        "email": "newuser@example.com",
+        "password": "StrongPass123!",
+        "password_confirm": "StrongPass123!",
+    }
+    payload.update(overrides)
+    return payload
+
+
 @pytest.mark.django_db
-def test_register_creates_user_portfolio_and_settings(anon_client):
+def test_register_creates_user_portfolio_and_settings():
     from rest_framework.test import APIClient
 
     client = APIClient()
     response = client.post(
         "/api/v1/auth/register",
-        {
-            "username": "newuser",
-            "email": "newuser@example.com",
-            "password": "StrongPass123!",
-            "password_confirm": "StrongPass123!",
-        },
+        _register_payload(),
         format="json",
     )
     assert response.status_code == 201
     user = User.objects.get(username="newuser")
-    assert Portfolio.objects.filter(user=user, is_default=True).exists()
+    default = Portfolio.objects.get(user=user, is_default=True)
+    assert default.cash_aware_enabled is True
     assert AppSettings.objects.filter(user=user).exists()
+
+
+@pytest.mark.django_db
+def test_register_duplicate_username_returns_400():
+    from rest_framework.test import APIClient
+
+    client = APIClient()
+    client.post("/api/v1/auth/register", _register_payload(), format="json")
+    response = client.post(
+        "/api/v1/auth/register",
+        _register_payload(email="other@example.com"),
+        format="json",
+    )
+    assert response.status_code == 400
+    assert "username" in response.json()
+
+
+@pytest.mark.django_db
+def test_register_duplicate_email_returns_400():
+    from rest_framework.test import APIClient
+
+    client = APIClient()
+    client.post("/api/v1/auth/register", _register_payload(), format="json")
+    response = client.post(
+        "/api/v1/auth/register",
+        _register_payload(username="otheruser"),
+        format="json",
+    )
+    assert response.status_code == 400
+    assert "email" in response.json()
+
+
+@pytest.mark.django_db
+def test_register_password_mismatch_returns_400():
+    from rest_framework.test import APIClient
+
+    client = APIClient()
+    response = client.post(
+        "/api/v1/auth/register",
+        _register_payload(password_confirm="DifferentPass123!"),
+        format="json",
+    )
+    assert response.status_code == 400
+    assert "password_confirm" in response.json()
+
+
+@pytest.mark.django_db
+def test_register_weak_password_returns_400():
+    from rest_framework.test import APIClient
+
+    client = APIClient()
+    response = client.post(
+        "/api/v1/auth/register",
+        _register_payload(password="short", password_confirm="short"),
+        format="json",
+    )
+    assert response.status_code == 400
+    assert "password" in response.json()
+
+
+@pytest.mark.django_db
+def test_register_is_atomic_when_settings_setup_fails(monkeypatch):
+    from rest_framework.test import APIClient
+
+    from accounts import services as account_services
+
+    def fail_settings(_user):
+        raise RuntimeError("settings setup failed")
+
+    monkeypatch.setattr(account_services, "ensure_app_settings", fail_settings)
+    client = APIClient()
+    client.raise_request_exception = False
+    response = client.post(
+        "/api/v1/auth/register",
+        _register_payload(username="atomicuser", email="atomic@example.com"),
+        format="json",
+    )
+    assert response.status_code == 500
+    assert not User.objects.filter(username="atomicuser").exists()
+    assert not Portfolio.objects.filter(name="Default Portfolio", user__username="atomicuser").exists()
+
+
+@pytest.mark.django_db
+def test_register_completes_incomplete_user():
+    from rest_framework.test import APIClient
+
+    incomplete = User.objects.create_user(
+        username="partialuser",
+        email="partial@example.com",
+        password="StrongPass123!",
+    )
+    Portfolio.objects.create(
+        user=incomplete,
+        name="Default Portfolio",
+        base_currency="EUR",
+        is_default=True,
+        is_active=True,
+    )
+    assert not AppSettings.objects.filter(user=incomplete).exists()
+
+    client = APIClient()
+    response = client.post(
+        "/api/v1/auth/register",
+        _register_payload(username="partialuser", email="partial@example.com"),
+        format="json",
+    )
+    assert response.status_code == 201
+    assert AppSettings.objects.filter(user=incomplete).exists()
+    assert User.objects.filter(username="partialuser").count() == 1
 
 
 @pytest.mark.django_db
@@ -139,6 +255,16 @@ def test_google_email_authentication_settings_enabled(settings):
 
 def test_google_login_on_get_skips_intermediate_page(settings):
     assert settings.SOCIALACCOUNT_LOGIN_ON_GET is True
+
+
+def test_allauth_account_settings_use_current_keys(settings):
+    assert settings.ACCOUNT_LOGIN_METHODS == {"username", "email"}
+    assert settings.ACCOUNT_SIGNUP_FIELDS == [
+        "email*",
+        "username*",
+        "password1*",
+        "password2*",
+    ]
 
 
 @pytest.mark.django_db

@@ -1,9 +1,23 @@
-import { useState, useEffect } from 'react';
-import { createTransaction, updateTransaction } from '../api';
+import { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  createTransaction,
+  updateTransaction,
+  createCashDeposit,
+  createCashWithdrawal,
+  ApiError,
+} from '../api';
 import { Button, StatusBadge } from './ui';
 import { navVerificationBadgeStatus, navVerificationLabel } from '../utils/transactionDisplay';
+import CashEntryFormFields, { emptyCashForm } from './CashEntryFormFields';
+import CashShortfallDisplay from './CashShortfallDisplay';
+import PurchaseShortfallAction from './PurchaseShortfallAction';
+import { buildShortfallDepositPayload } from '../utils/purchaseShortfallHelpers';
 import './TransactionModal.css';
 import { usePortfolio } from '../portfolioContext';
+
+const PARTIAL_PURCHASE_WARNING =
+  'Cash deposit was created, but the purchase could not be recorded. Please review and try again.';
 
 const STOCK_TYPES = ['BUY', 'SELL', 'DIVIDEND', 'STOCK_SPLIT'];
 const MF_TYPES = ['BUY', 'SELL'];
@@ -164,18 +178,56 @@ function buildMutualFundPayload(formData) {
   return payload;
 }
 
+function buildCashWritePayload(form, portfolioId) {
+  return {
+    portfolio_id: portfolioId,
+    date: form.date,
+    currency: form.currency,
+    amount: parseFloat(form.amount),
+    note: form.note || '',
+    source_of_funds: form.source_of_funds || '',
+  };
+}
+
+function shortfallFromApiError(err) {
+  if (
+    !(err instanceof ApiError) ||
+    err.required == null ||
+    err.available == null ||
+    err.shortfall == null
+  ) {
+    return null;
+  }
+  return {
+    required: err.required,
+    available: err.available,
+    shortfall: err.shortfall,
+    currency: err.currency,
+  };
+}
+
 export default function TransactionModal({ isOpen, onClose, onSuccess, initialData }) {
   const isEditing = !!initialData;
   const { portfolios, selectedPortfolioMode, selectedPortfolioId } = usePortfolio();
   const activePortfolios = (portfolios || []).filter((p) => p && p.is_active);
   const defaultPortfolioId = activePortfolios.find((p) => p.is_default)?.id ?? null;
+  const isAllScope = selectedPortfolioMode === 'all';
+  const requirePortfolioPick = isAllScope;
 
-  const [assetType, setAssetType] = useState('STOCK');
+  const [recordType, setRecordType] = useState('STOCK');
+  const [cashAction, setCashAction] = useState('deposit');
   const [stockForm, setStockForm] = useState(emptyStockForm());
   const [mfForm, setMfForm] = useState(emptyMutualFundForm());
+  const [cashForm, setCashForm] = useState(emptyCashForm());
 
   const [error, setError] = useState('');
+  const [partialWarning, setPartialWarning] = useState('');
+  const [shortfall, setShortfall] = useState(null);
+  const [pendingAssetSubmit, setPendingAssetSubmit] = useState(null);
+  const [shortfallDeposit, setShortfallDeposit] = useState({ source_of_funds: '', note: '' });
   const [submitting, setSubmitting] = useState(false);
+  const [addAndContinueLoading, setAddAndContinueLoading] = useState(false);
+  const addAndContinueInFlight = useRef(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -186,25 +238,41 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
           ? String(defaultPortfolioId)
           : '';
 
+    const cashPortfolioDefault =
+      selectedPortfolioMode === 'portfolio' && selectedPortfolioId != null
+        ? String(selectedPortfolioId)
+        : selectedPortfolioMode === 'all'
+          ? ''
+          : suggested;
+
     if (initialData?.asset_type === 'MUTUAL_FUND') {
-      setAssetType('MUTUAL_FUND');
+      setRecordType('MUTUAL_FUND');
       setMfForm(mutualFundFormFromTransaction(initialData));
       setStockForm(emptyStockForm(suggested));
     } else if (initialData) {
-      setAssetType('STOCK');
+      setRecordType('STOCK');
       setStockForm(stockFormFromTransaction(initialData));
       setMfForm(emptyMutualFundForm(suggested));
     } else {
-      setAssetType('STOCK');
+      setRecordType('STOCK');
       setStockForm(emptyStockForm(suggested));
       setMfForm(emptyMutualFundForm(suggested));
+      setCashForm(emptyCashForm(cashPortfolioDefault));
+      setCashAction('deposit');
     }
     setError('');
+    setPartialWarning('');
+    setShortfall(null);
+    setPendingAssetSubmit(null);
+    setShortfallDeposit({ source_of_funds: '', note: '' });
+    setAddAndContinueLoading(false);
+    addAndContinueInFlight.current = false;
   }, [isOpen, initialData, selectedPortfolioMode, selectedPortfolioId, defaultPortfolioId]);
 
   if (!isOpen) return null;
 
-  const isMutualFund = assetType === 'MUTUAL_FUND';
+  const isCash = recordType === 'CASH';
+  const isMutualFund = recordType === 'MUTUAL_FUND';
 
   const handleStockChange = (e) => {
     const { name, value } = e.target;
@@ -216,27 +284,96 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
     setMfForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleAssetTypeChange = (e) => {
+  const handleCashFieldChange = (field, value) => {
+    setCashForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleRecordTypeChange = (e) => {
     if (isEditing) return;
     const next = e.target.value;
-    setAssetType(next);
+    setRecordType(next);
     const portfolioId =
-      next === 'MUTUAL_FUND' ? mfForm.portfolio_id : stockForm.portfolio_id;
+      next === 'MUTUAL_FUND'
+        ? mfForm.portfolio_id
+        : next === 'CASH'
+          ? cashForm.portfolio_id
+          : stockForm.portfolio_id;
+    const shared = portfolioId || stockForm.portfolio_id || mfForm.portfolio_id || cashForm.portfolio_id;
     if (next === 'MUTUAL_FUND' && !mfForm.portfolio_id) {
-      setMfForm((prev) => ({ ...prev, portfolio_id: portfolioId || stockForm.portfolio_id }));
+      setMfForm((prev) => ({ ...prev, portfolio_id: shared }));
     }
     if (next === 'STOCK' && !stockForm.portfolio_id) {
-      setStockForm((prev) => ({ ...prev, portfolio_id: portfolioId || mfForm.portfolio_id }));
+      setStockForm((prev) => ({ ...prev, portfolio_id: shared }));
     }
+    if (next === 'CASH') {
+      setCashForm((prev) => ({
+        ...prev,
+        portfolio_id:
+          prev.portfolio_id || (requirePortfolioPick ? '' : shared),
+      }));
+    }
+  };
+
+  const resolveCashPortfolioId = () => {
+    if (requirePortfolioPick) {
+      return Number(cashForm.portfolio_id);
+    }
+    if (cashForm.portfolio_id) {
+      return Number(cashForm.portfolio_id);
+    }
+    if (activePortfolios.length === 1) {
+      return activePortfolios[0].id;
+    }
+    return NaN;
+  };
+
+  const isAssetBuy =
+    !isCash &&
+    ((isMutualFund && mfForm.type === 'BUY') || (!isMutualFund && stockForm.type === 'BUY'));
+
+  const showPurchaseShortfallAction =
+    shortfall && isAssetBuy && pendingAssetSubmit != null;
+
+  const busy = submitting || addAndContinueLoading;
+
+  const storeBuyShortfall = (apiShortfall, assetSubmit) => {
+    setError('Insufficient cash balance for purchase.');
+    setPartialWarning('');
+    setShortfall(apiShortfall);
+    setPendingAssetSubmit(assetSubmit);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setPartialWarning('');
+    setShortfall(null);
+    setPendingAssetSubmit(null);
     setSubmitting(true);
 
     try {
-      if (isMutualFund) {
+      if (isCash) {
+        const portfolioId = resolveCashPortfolioId();
+        if (!portfolioId || Number.isNaN(portfolioId)) {
+          setError('Select a portfolio.');
+          setSubmitting(false);
+          return;
+        }
+        const amount = parseFloat(cashForm.amount);
+        if (!cashForm.amount || Number.isNaN(amount) || amount <= 0) {
+          setError('Enter an amount greater than zero.');
+          setSubmitting(false);
+          return;
+        }
+        const payload = buildCashWritePayload(cashForm, portfolioId);
+        if (cashAction === 'deposit') {
+          await createCashDeposit(payload);
+          onSuccess?.({ kind: 'cash', message: 'Deposit recorded.' });
+        } else {
+          await createCashWithdrawal(payload);
+          onSuccess?.({ kind: 'cash', message: 'Withdrawal recorded.' });
+        }
+      } else if (isMutualFund) {
         const validationError = validateMutualFundForm(mfForm);
         if (validationError) {
           setError(validationError);
@@ -249,6 +386,7 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
         } else {
           await createTransaction(payload);
         }
+        onSuccess?.({ kind: 'asset' });
       } else {
         const isStockSplit = stockForm.type === 'STOCK_SPLIT';
         if (isStockSplit) {
@@ -266,392 +404,533 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
         } else {
           await createTransaction(payload);
         }
+        onSuccess?.({ kind: 'asset' });
       }
-      onSuccess();
       onClose();
     } catch (err) {
-      setError(err.message || 'Save failed');
+      const apiShortfall = shortfallFromApiError(err);
+      if (apiShortfall && isCash && cashAction === 'withdrawal') {
+        setError('Insufficient cash balance for withdrawal.');
+        setShortfall(apiShortfall);
+      } else if (apiShortfall && isAssetBuy) {
+        const assetSubmit = isMutualFund
+          ? {
+              mode: isEditing ? 'update' : 'create',
+              transactionId: initialData?.id,
+              payload: buildMutualFundPayload(mfForm),
+              isMutualFund: true,
+            }
+          : {
+              mode: isEditing ? 'update' : 'create',
+              transactionId: initialData?.id,
+              payload: buildStockPayload(stockForm),
+              isMutualFund: false,
+            };
+        storeBuyShortfall(apiShortfall, assetSubmit);
+      } else {
+        setError(err.message || 'Save failed');
+      }
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const retryAssetSubmit = async (pending) => {
+    if (pending.mode === 'update') {
+      await updateTransaction(pending.transactionId, pending.payload);
+    } else {
+      await createTransaction(pending.payload);
+    }
+  };
+
+  const handleAddMissingCashAndContinue = async () => {
+    if (addAndContinueInFlight.current || !shortfall || !pendingAssetSubmit) return;
+    addAndContinueInFlight.current = true;
+    setAddAndContinueLoading(true);
+    setError('');
+    setPartialWarning('');
+
+    const form = pendingAssetSubmit.isMutualFund ? mfForm : stockForm;
+    const depositPayload = buildShortfallDepositPayload(
+      shortfall,
+      form,
+      pendingAssetSubmit.isMutualFund,
+      {
+        sourceOfFunds: shortfallDeposit.source_of_funds,
+        note: shortfallDeposit.note,
+      }
+    );
+
+    try {
+      await createCashDeposit(depositPayload);
+    } catch (err) {
+      setError(err.message || 'Cash deposit failed');
+      addAndContinueInFlight.current = false;
+      setAddAndContinueLoading(false);
+      return;
+    }
+
+    try {
+      await retryAssetSubmit(pendingAssetSubmit);
+      onSuccess?.({
+        kind: 'asset',
+        message: 'Cash deposit added and purchase recorded.',
+      });
+      onClose();
+    } catch (err) {
+      const apiShortfall = shortfallFromApiError(err);
+      setPartialWarning(PARTIAL_PURCHASE_WARNING);
+      if (apiShortfall) {
+        setError('Insufficient cash balance for purchase.');
+        setShortfall(apiShortfall);
+        setPendingAssetSubmit(pendingAssetSubmit);
+      } else {
+        const detail = err.detail || err.message;
+        setError(detail ? String(detail) : 'Purchase could not be recorded.');
+      }
+    } finally {
+      addAndContinueInFlight.current = false;
+      setAddAndContinueLoading(false);
     }
   };
 
   const navStatus = initialData?.nav_verification_status;
   const navMessage = initialData?.nav_verification_message;
 
+  const submitLabel = submitting
+    ? 'Saving...'
+    : addAndContinueLoading
+      ? 'Saving...'
+      : isCash
+      ? cashAction === 'deposit'
+        ? 'Record deposit'
+        : 'Record withdrawal'
+      : 'Save';
+
   return (
     <div className="modal-overlay">
       <div className={`modal-content${isMutualFund ? ' modal-content--wide' : ''}`}>
         <h3>{isEditing ? 'Edit Transaction' : 'Add Transaction'}</h3>
+        {partialWarning ? <div className="modal-warning">{partialWarning}</div> : null}
         {error && <div className="modal-error">{error}</div>}
 
         <form className="modal-form" onSubmit={handleSubmit}>
           <div className="form-group">
-            <label>Asset type</label>
+            <label>Record type</label>
             <select
-              aria-label="asset type"
-              name="asset_type"
-              value={assetType}
-              onChange={handleAssetTypeChange}
+              aria-label="record type"
+              name="record_type"
+              value={recordType}
+              onChange={handleRecordTypeChange}
               disabled={isEditing}
             >
+              <option value="CASH">Cash</option>
               <option value="STOCK">Stock</option>
-              <option value="MUTUAL_FUND">Mutual fund</option>
+              <option value="MUTUAL_FUND">Mutual Fund</option>
             </select>
           </div>
 
-          <div className="form-group">
-            <label>Portfolio</label>
-            <select
-              aria-label="portfolio"
-              name="portfolio_id"
-              value={isMutualFund ? mfForm.portfolio_id : stockForm.portfolio_id}
-              onChange={isMutualFund ? handleMfChange : handleStockChange}
-              required
-            >
-              {activePortfolios.map((p) => (
-                <option key={p.id} value={String(p.id)}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {isMutualFund ? (
+          {isCash ? (
             <>
-              {isEditing && navStatus ? (
-                <div className="modal-nav-status">
-                  <StatusBadge
-                    status={navVerificationBadgeStatus(navStatus)}
-                    label={navVerificationLabel(navStatus)}
-                  />
-                  {navMessage ? (
-                    <p className="modal-nav-status__message">{navMessage}</p>
-                  ) : null}
-                </div>
-              ) : null}
-
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Scheme code</label>
-                  <input
-                    type="text"
-                    name="scheme_code"
-                    value={mfForm.scheme_code}
-                    onChange={handleMfChange}
-                    required
-                    disabled={isEditing}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Scheme name</label>
-                  <input
-                    type="text"
-                    name="scheme_name"
-                    value={mfForm.scheme_name}
-                    onChange={handleMfChange}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Folio number</label>
-                  <input
-                    type="text"
-                    name="folio_number"
-                    value={mfForm.folio_number}
-                    onChange={handleMfChange}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Type</label>
-                  <select name="type" value={mfForm.type} onChange={handleMfChange} required>
-                    {MF_TYPES.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Investment date</label>
-                  <input
-                    type="date"
-                    name="investment_date"
-                    value={mfForm.investment_date}
-                    onChange={handleMfChange}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>NAV date</label>
-                  <input
-                    type="date"
-                    name="nav_date"
-                    value={mfForm.nav_date}
-                    onChange={handleMfChange}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="form-row">
-                <div className="form-group">
-                  <label>NAV</label>
-                  <input
-                    type="number"
-                    step="any"
-                    name="nav"
-                    value={mfForm.nav}
-                    onChange={handleMfChange}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Units allotted</label>
-                  <input
-                    type="number"
-                    step="any"
-                    name="units_allotted"
-                    value={mfForm.units_allotted}
-                    onChange={handleMfChange}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Paid value</label>
-                  <input
-                    type="number"
-                    step="any"
-                    name="paid_value"
-                    value={mfForm.paid_value}
-                    onChange={handleMfChange}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Market value</label>
-                  <input
-                    type="number"
-                    step="any"
-                    name="market_value"
-                    value={mfForm.market_value}
-                    onChange={handleMfChange}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Currency</label>
-                  <input
-                    type="text"
-                    name="currency"
-                    value={mfForm.currency}
-                    onChange={handleMfChange}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Fees (optional)</label>
-                  <input
-                    type="number"
-                    step="any"
-                    name="fees"
-                    value={mfForm.fees}
-                    onChange={handleMfChange}
-                  />
-                </div>
-              </div>
-
-              <details className="modal-mf-optional">
-                <summary>Optional scheme metadata</summary>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Fund house</label>
-                    <input
-                      type="text"
-                      name="fund_house"
-                      value={mfForm.fund_house}
-                      onChange={handleMfChange}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Scheme type</label>
-                    <input
-                      type="text"
-                      name="scheme_type"
-                      value={mfForm.scheme_type}
-                      onChange={handleMfChange}
-                    />
-                  </div>
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Scheme category</label>
-                    <input
-                      type="text"
-                      name="scheme_category"
-                      value={mfForm.scheme_category}
-                      onChange={handleMfChange}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Direct or regular</label>
-                    <input
-                      type="text"
-                      name="direct_or_regular"
-                      value={mfForm.direct_or_regular}
-                      onChange={handleMfChange}
-                    />
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label>Growth or IDCW</label>
-                  <input
-                    type="text"
-                    name="growth_or_idcw"
-                    value={mfForm.growth_or_idcw}
-                    onChange={handleMfChange}
-                  />
-                </div>
-              </details>
+              <p className="modal-form__hint">
+                Cash entries can be edited from the Cash page.
+              </p>
+              <CashEntryFormFields
+                form={cashForm}
+                onFieldChange={handleCashFieldChange}
+                cashAction={cashAction}
+                onCashActionChange={setCashAction}
+                showActionSelector
+                activePortfolios={activePortfolios}
+                requirePortfolioPick={requirePortfolioPick}
+                shortfall={shortfall}
+                idPrefix="txn-modal-cash"
+              />
             </>
           ) : (
             <>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Asset Symbol</label>
-                  <input
-                    type="text"
-                    name="asset_symbol"
-                    value={stockForm.asset_symbol}
-                    onChange={handleStockChange}
-                    required
-                    disabled={isEditing}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Date</label>
-                  <input
-                    type="date"
-                    name="date"
-                    value={stockForm.date}
-                    onChange={handleStockChange}
-                    required
-                  />
-                </div>
+              <div className="form-group">
+                <label>Portfolio</label>
+                <select
+                  aria-label="portfolio"
+                  name="portfolio_id"
+                  value={isMutualFund ? mfForm.portfolio_id : stockForm.portfolio_id}
+                  onChange={isMutualFund ? handleMfChange : handleStockChange}
+                  required
+                >
+                  {activePortfolios.map((p) => (
+                    <option key={p.id} value={String(p.id)}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Type</label>
-                  <select name="type" value={stockForm.type} onChange={handleStockChange} required>
-                    {STOCK_TYPES.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Currency</label>
-                  <input
-                    type="text"
-                    name="currency"
-                    value={stockForm.currency}
-                    onChange={handleStockChange}
-                    required={stockForm.type !== 'STOCK_SPLIT'}
-                    disabled={stockForm.type === 'STOCK_SPLIT'}
-                  />
-                </div>
-              </div>
+              {isMutualFund ? (
+                <>
+                  {isEditing && navStatus ? (
+                    <div className="modal-nav-status">
+                      <StatusBadge
+                        status={navVerificationBadgeStatus(navStatus)}
+                        label={navVerificationLabel(navStatus)}
+                      />
+                      {navMessage ? (
+                        <p className="modal-nav-status__message">{navMessage}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
 
-              {stockForm.type !== 'STOCK_SPLIT' && (
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Scheme code</label>
+                      <input
+                        type="text"
+                        name="scheme_code"
+                        value={mfForm.scheme_code}
+                        onChange={handleMfChange}
+                        required
+                        disabled={isEditing}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Scheme name</label>
+                      <input
+                        type="text"
+                        name="scheme_name"
+                        value={mfForm.scheme_name}
+                        onChange={handleMfChange}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Folio number</label>
+                      <input
+                        type="text"
+                        name="folio_number"
+                        value={mfForm.folio_number}
+                        onChange={handleMfChange}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Type</label>
+                      <select name="type" value={mfForm.type} onChange={handleMfChange} required>
+                        {MF_TYPES.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Investment date</label>
+                      <input
+                        type="date"
+                        name="investment_date"
+                        value={mfForm.investment_date}
+                        onChange={handleMfChange}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>NAV date</label>
+                      <input
+                        type="date"
+                        name="nav_date"
+                        value={mfForm.nav_date}
+                        onChange={handleMfChange}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>NAV</label>
+                      <input
+                        type="number"
+                        step="any"
+                        name="nav"
+                        value={mfForm.nav}
+                        onChange={handleMfChange}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Units allotted</label>
+                      <input
+                        type="number"
+                        step="any"
+                        name="units_allotted"
+                        value={mfForm.units_allotted}
+                        onChange={handleMfChange}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Paid value</label>
+                      <input
+                        type="number"
+                        step="any"
+                        name="paid_value"
+                        value={mfForm.paid_value}
+                        onChange={handleMfChange}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Market value</label>
+                      <input
+                        type="number"
+                        step="any"
+                        name="market_value"
+                        value={mfForm.market_value}
+                        onChange={handleMfChange}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Currency</label>
+                      <input
+                        type="text"
+                        name="currency"
+                        value={mfForm.currency}
+                        onChange={handleMfChange}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Fees (optional)</label>
+                      <input
+                        type="number"
+                        step="any"
+                        name="fees"
+                        value={mfForm.fees}
+                        onChange={handleMfChange}
+                      />
+                    </div>
+                  </div>
+
+                  <details className="modal-mf-optional">
+                    <summary>Optional scheme metadata</summary>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>Fund house</label>
+                        <input
+                          type="text"
+                          name="fund_house"
+                          value={mfForm.fund_house}
+                          onChange={handleMfChange}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Scheme type</label>
+                        <input
+                          type="text"
+                          name="scheme_type"
+                          value={mfForm.scheme_type}
+                          onChange={handleMfChange}
+                        />
+                      </div>
+                    </div>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>Scheme category</label>
+                        <input
+                          type="text"
+                          name="scheme_category"
+                          value={mfForm.scheme_category}
+                          onChange={handleMfChange}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Direct or regular</label>
+                        <input
+                          type="text"
+                          name="direct_or_regular"
+                          value={mfForm.direct_or_regular}
+                          onChange={handleMfChange}
+                        />
+                      </div>
+                    </div>
+                    <div className="form-group">
+                      <label>Growth or IDCW</label>
+                      <input
+                        type="text"
+                        name="growth_or_idcw"
+                        value={mfForm.growth_or_idcw}
+                        onChange={handleMfChange}
+                      />
+                    </div>
+                  </details>
+                </>
+              ) : (
                 <>
                   <div className="form-row">
                     <div className="form-group">
-                      <label>Quantity</label>
+                      <label>Asset Symbol</label>
                       <input
-                        type="number"
-                        step="any"
-                        name="quantity"
-                        value={stockForm.quantity}
+                        type="text"
+                        name="asset_symbol"
+                        value={stockForm.asset_symbol}
                         onChange={handleStockChange}
                         required
+                        disabled={isEditing}
                       />
                     </div>
                     <div className="form-group">
-                      <label>Price / Share</label>
+                      <label>Date</label>
                       <input
-                        type="number"
-                        step="any"
-                        name="price_per_share"
-                        value={stockForm.price_per_share}
+                        type="date"
+                        name="date"
+                        value={stockForm.date}
                         onChange={handleStockChange}
                         required
                       />
                     </div>
                   </div>
-                  <div className="form-group">
-                    <label>Fees</label>
-                    <input
-                      type="number"
-                      step="any"
-                      name="fees"
-                      value={stockForm.fees}
-                      onChange={handleStockChange}
-                      required
-                    />
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Type</label>
+                      <select name="type" value={stockForm.type} onChange={handleStockChange} required>
+                        {STOCK_TYPES.map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Currency</label>
+                      <input
+                        type="text"
+                        name="currency"
+                        value={stockForm.currency}
+                        onChange={handleStockChange}
+                        required={stockForm.type !== 'STOCK_SPLIT'}
+                        disabled={stockForm.type === 'STOCK_SPLIT'}
+                      />
+                    </div>
                   </div>
+
+                  {stockForm.type !== 'STOCK_SPLIT' && (
+                    <>
+                      <div className="form-row">
+                        <div className="form-group">
+                          <label>Quantity</label>
+                          <input
+                            type="number"
+                            step="any"
+                            name="quantity"
+                            value={stockForm.quantity}
+                            onChange={handleStockChange}
+                            required
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>Price / Share</label>
+                          <input
+                            type="number"
+                            step="any"
+                            name="price_per_share"
+                            value={stockForm.price_per_share}
+                            onChange={handleStockChange}
+                            required
+                          />
+                        </div>
+                      </div>
+                      <div className="form-group">
+                        <label>Fees</label>
+                        <input
+                          type="number"
+                          step="any"
+                          name="fees"
+                          value={stockForm.fees}
+                          onChange={handleStockChange}
+                          required
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {stockForm.type === 'STOCK_SPLIT' && (
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>split_from</label>
+                        <input
+                          type="number"
+                          step="any"
+                          name="split_from"
+                          value={stockForm.split_from}
+                          onChange={handleStockChange}
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>split_to</label>
+                        <input
+                          type="number"
+                          step="any"
+                          name="split_to"
+                          value={stockForm.split_to}
+                          onChange={handleStockChange}
+                          required
+                        />
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
 
-              {stockForm.type === 'STOCK_SPLIT' && (
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>split_from</label>
-                    <input
-                      type="number"
-                      step="any"
-                      name="split_from"
-                      value={stockForm.split_from}
-                      onChange={handleStockChange}
-                      required
+              {shortfall && !isCash ? (
+                <>
+                  <CashShortfallDisplay
+                    shortfall={shortfall}
+                    variant={isAssetBuy ? 'purchase' : undefined}
+                  />
+                  {showPurchaseShortfallAction ? (
+                    <PurchaseShortfallAction
+                      shortfall={shortfall}
+                      sourceOfFunds={shortfallDeposit.source_of_funds}
+                      note={shortfallDeposit.note}
+                      onSourceOfFundsChange={(value) =>
+                        setShortfallDeposit((prev) => ({ ...prev, source_of_funds: value }))
+                      }
+                      onNoteChange={(value) =>
+                        setShortfallDeposit((prev) => ({ ...prev, note: value }))
+                      }
+                      onConfirm={handleAddMissingCashAndContinue}
+                      loading={addAndContinueLoading}
+                      disabled={busy}
                     />
-                  </div>
-                  <div className="form-group">
-                    <label>split_to</label>
-                    <input
-                      type="number"
-                      step="any"
-                      name="split_to"
-                      value={stockForm.split_to}
-                      onChange={handleStockChange}
-                      required
-                    />
-                  </div>
-                </div>
-              )}
+                  ) : null}
+                  <p className="modal-form__hint">
+                    <Link to="/cash">Open Cash page</Link>
+                  </p>
+                </>
+              ) : null}
             </>
           )}
 
           <div className="modal-actions">
-            <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
+            <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>
               Cancel
             </Button>
-            <Button type="submit" variant="primary" disabled={submitting}>
-              {submitting ? 'Saving...' : 'Save'}
+            <Button type="submit" variant="primary" disabled={busy}>
+              {submitLabel}
             </Button>
           </div>
         </form>

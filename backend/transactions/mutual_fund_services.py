@@ -19,6 +19,7 @@ from transactions.models import (
     Transaction,
     TransactionType,
 )
+from transactions.cash_settlement import sync_mutual_fund_settlement
 from transactions.services import TransactionNotFoundError, TransactionValidationError, get_transaction
 
 
@@ -247,7 +248,7 @@ def create_mutual_fund_transaction(
         currency=payload.currency,
         fees=payload.fees,
     )
-    MutualFundTransactionDetail.objects.create(
+    detail = MutualFundTransactionDetail.objects.create(
         transaction=txn,
         folio=folio,
         investment_date=payload.investment_date,
@@ -259,6 +260,7 @@ def create_mutual_fund_transaction(
         nav_verification_status=nav_status,
         nav_verification_message=nav_message,
     )
+    sync_mutual_fund_settlement(txn, detail)
     return get_transaction(user, txn.id)
 
 
@@ -319,4 +321,5 @@ def update_mutual_fund_transaction(
     detail.nav_verification_message = nav_message
     detail.save()
 
+    sync_mutual_fund_settlement(transaction, detail)
     return get_transaction(user, transaction.id)

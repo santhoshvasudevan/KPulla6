@@ -13,6 +13,7 @@ export function buildCompareAssetOptions(holdings) {
   const bySymbol = new Map();
 
   for (const h of holdings || []) {
+    if (h.is_cash || h.asset_type === 'CASH') continue;
     const sym = h.asset_symbol;
     if (!sym) continue;
 

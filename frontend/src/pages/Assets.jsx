@@ -57,12 +57,14 @@ export default function Assets() {
   const navigate = useNavigate();
   const { apiQuery, selectedPortfolioName, selectedDisplayCurrency } = usePortfolio();
   const [holdings, setHoldings] = useState([]);
+  const [allocation, setAllocation] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [sort, setSort] = useState({ key: 'current_value', direction: 'desc' });
   const [showPrevious, setShowPrevious] = useState(false);
 
   const [fxStatus, setFxStatus] = useState('ok');
+  const [apiWarnings, setApiWarnings] = useState([]);
 
   const activeHoldings = useMemo(
     () =>
@@ -80,8 +82,11 @@ export default function Assets() {
   );
 
   const chartHoldings = useMemo(
-    () => activeHoldings.filter((h) => Number(h.current_value || 0) > 0),
-    [activeHoldings]
+    () =>
+      allocation.filter(
+        (h) => h.holding_status !== 'closed' && Number(h.current_value || 0) > 0
+      ),
+    [allocation]
   );
 
   const chartTotal = useMemo(
@@ -135,7 +140,9 @@ export default function Assets() {
     fetchHoldings(apiQuery)
       .then((data) => {
         setHoldings(data.holdings || []);
+        setAllocation(data.allocation || data.holdings || []);
         setFxStatus(data.fx_status || 'ok');
+        setApiWarnings(data.warnings || []);
         setLoading(false);
       })
       .catch((err) => {
@@ -181,6 +188,10 @@ export default function Assets() {
           className="assets-page__banner"
         />
       ) : null}
+
+      {apiWarnings.map((w) => (
+        <WarningBanner key={w} severity="warning" message={w} className="assets-page__banner" />
+      ))}
 
       <div className="assets-main">
         <div className="assets-main__table">
@@ -320,7 +331,7 @@ export default function Assets() {
             className="assets-allocation-card"
             compact
           >
-            {activeHoldings.length === 0 ? (
+            {activeHoldings.length === 0 && chartHoldings.length === 0 ? (
               <EmptyState title="No active holdings to display." />
             ) : chartTotal <= 0 ? (
               <EmptyState
@@ -353,8 +364,10 @@ export default function Assets() {
                       formatter={(value, _name, payload) => {
                         const pct = chartTotal > 0 ? Number(value) / chartTotal : 0;
                         const sym = payload?.payload?.asset_symbol || '';
+                        const currency =
+                          payload?.payload?.currency || selectedDisplayCurrency || 'EUR';
                         return [
-                          `${formatCurrency(value, payload?.payload?.currency || 'EUR')} (${formatPercent(pct)})`,
+                          `${formatCurrency(value, currency)} (${formatPercent(pct)})`,
                           sym,
                         ];
                       }}

@@ -16,6 +16,17 @@
   font-weight: 600;
 }
 
+.transactions-page__cash-link {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.transactions-page__cash-link:hover {
+  color: color-mix(in srgb, var(--accent) 85%, var(--text-primary));
+}
+
 .transactions-import-help {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);

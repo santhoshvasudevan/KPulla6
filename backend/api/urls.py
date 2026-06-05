@@ -13,6 +13,7 @@ from market_data.views import (
     PricesRefreshView,
 )
 from transactions.views import (
+    TransactionCsvImportCashPreviewView,
     TransactionCsvImportView,
     TransactionDetailView,
     TransactionFilterOptionsView,
@@ -21,6 +22,7 @@ from transactions.views import (
 
 urlpatterns = [
     path("auth/", include("accounts.urls")),
+    path("cash/", include("cash.urls")),
     path("analytics/", include("analytics.urls")),
     path("health", HealthView.as_view(), name="health"),
     path("settings", SettingsView.as_view(), name="settings"),
@@ -55,6 +57,11 @@ urlpatterns = [
         "transactions/filter-options",
         TransactionFilterOptionsView.as_view(),
         name="transaction-filter-options",
+    ),
+    path(
+        "transactions/import-csv/preview-cash",
+        TransactionCsvImportCashPreviewView.as_view(),
+        name="transaction-import-csv-preview-cash",
     ),
     path(
         "transactions/import-csv",

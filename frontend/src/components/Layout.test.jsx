@@ -48,6 +48,7 @@ describe('Layout component', () => {
 
     expect(screen.getByText(/dashboard/i)).toBeInTheDocument();
     expect(screen.getByText(/transactions/i)).toBeInTheDocument();
+    expect(screen.getByText(/^cash$/i)).toBeInTheDocument();
     expect(screen.getByText(/assets/i)).toBeInTheDocument();
     expect(screen.getByText(/^compare$/i)).toBeInTheDocument();
     expect(screen.getByText(/settings/i)).toBeInTheDocument();
@@ -197,5 +198,26 @@ describe('Layout component', () => {
       expect(screen.getByRole('option', { name: 'Renamed Portfolio' })).toBeInTheDocument();
     });
     expect(screen.queryByRole('option', { name: 'Old Name' })).not.toBeInTheDocument();
+  });
+
+  it('highlights Cash nav link on /cash route', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });
+    renderLayout(
+      <MemoryRouter initialEntries={['/cash']}>
+        <Routes>
+          <Route path="/cash" element={<Layout />}>
+            <Route index element={<div data-testid="child">Cash child</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('display-currency')).not.toBeDisabled();
+    });
+
+    const cashLink = screen.getByRole('link', { name: /^cash$/i });
+    expect(cashLink).toHaveClass('app-sidebar__nav-link--active');
   });
 });
