@@ -69,7 +69,7 @@ def _seed_goog_split_scenario(api_client):
 
 
 @pytest.mark.django_db
-def test_summary_timeseries_goog_split_adjusted_value(api_client, seeded, today_patch):
+def test_summary_timeseries_goog_split_adjusted_value(api_client, legacy_seeded, today_patch):
     _seed_goog_split_scenario(api_client)
     data = api_client.get("/api/v1/portfolio/summary?include_timeseries=true").json()
     pt = next(p for p in data["timeseries"] if p["date"] == "2024-06-01")
@@ -80,7 +80,7 @@ def test_summary_timeseries_goog_split_adjusted_value(api_client, seeded, today_
 
 
 @pytest.mark.django_db
-def test_performance_value_goog_split_adjusted(api_client, seeded, today_patch):
+def test_performance_value_goog_split_adjusted(api_client, legacy_seeded, today_patch):
     _seed_goog_split_scenario(api_client)
     pts = api_client.get(
         "/api/v1/portfolio/performance?metric=value&range=ALL"
@@ -90,7 +90,7 @@ def test_performance_value_goog_split_adjusted(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_cumulative_return_no_artificial_split_loss(api_client, seeded, today_patch):
+def test_cumulative_return_no_artificial_split_loss(api_client, legacy_seeded, today_patch):
     _seed_goog_split_scenario(api_client)
     pts = api_client.get(
         "/api/v1/portfolio/performance?metric=cumulative_return&range=ALL"
@@ -103,7 +103,7 @@ def test_cumulative_return_no_artificial_split_loss(api_client, seeded, today_pa
 
 
 @pytest.mark.django_db
-def test_twror_no_artificial_split_drop(api_client, seeded, today_patch):
+def test_twror_no_artificial_split_drop(api_client, legacy_seeded, today_patch):
     _seed_goog_split_scenario(api_client)
     pts = api_client.get(
         "/api/v1/portfolio/performance?metric=twror&range=ALL"
@@ -113,7 +113,7 @@ def test_twror_no_artificial_split_drop(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_split_does_not_adjust_post_split_buy(api_client, seeded, today_patch):
+def test_split_does_not_adjust_post_split_buy(api_client, legacy_seeded, today_patch):
     api_client.post(
         "/api/v1/transactions",
         {
@@ -151,7 +151,7 @@ def test_split_does_not_adjust_post_split_buy(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_split_does_not_adjust_other_symbols(api_client, seeded, today_patch):
+def test_split_does_not_adjust_other_symbols(api_client, legacy_seeded, today_patch):
     api_client.post(
         "/api/v1/transactions",
         {
@@ -201,7 +201,7 @@ def test_split_does_not_adjust_other_symbols(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_split_valuation_missing_price_unchanged(api_client, seeded, today_patch):
+def test_split_valuation_missing_price_unchanged(api_client, legacy_seeded, today_patch):
     _buy(api_client)
     _split(api_client)
     data = api_client.get("/api/v1/portfolio/summary?include_timeseries=true").json()
@@ -210,7 +210,7 @@ def test_split_valuation_missing_price_unchanged(api_client, seeded, today_patch
 
 
 @pytest.mark.django_db
-def test_split_valuation_missing_fx_unchanged(api_client, seeded, today_patch):
+def test_split_valuation_missing_fx_unchanged(api_client, legacy_seeded, today_patch):
     _buy(api_client, currency="EUR")
     _split(api_client)
     _price("GOOG", "2024-06-01", "107.45", currency="USD")
@@ -224,7 +224,7 @@ def test_split_valuation_missing_fx_unchanged(api_client, seeded, today_patch):
 
 @pytest.mark.django_db
 @patch("yfinance.Ticker")
-def test_no_yfinance_on_summary_split_scenario(mock_ticker, api_client, seeded, today_patch):
+def test_no_yfinance_on_summary_split_scenario(mock_ticker, api_client, legacy_seeded, today_patch):
     _seed_goog_split_scenario(api_client)
     r = api_client.get("/api/v1/portfolio/summary?include_timeseries=true")
     assert r.status_code == 200
@@ -234,7 +234,7 @@ def test_no_yfinance_on_summary_split_scenario(mock_ticker, api_client, seeded, 
 @pytest.mark.django_db
 @patch("yfinance.download")
 def test_no_yfinance_on_performance_split_scenario(
-    mock_dl, api_client, seeded, today_patch
+    mock_dl, api_client, legacy_seeded, today_patch
 ):
     _seed_goog_split_scenario(api_client)
     api_client.get("/api/v1/portfolio/performance?metric=value&range=ALL")

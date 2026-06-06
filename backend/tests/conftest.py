@@ -56,7 +56,12 @@ def seeded(db, test_user):
 
 @pytest.fixture
 def legacy_seeded(seeded, test_user):
-    """Default portfolio in legacy cash mode (pre–Cash-4A.1 rows)."""
+    """Default portfolio in legacy cash mode (pre–Cash-4A.1 rows).
+
+    Use for tests that set up BUY/SELL/MF transactions without exercising cash
+    ledger enforcement (holdings, filters, split valuation, MF NAV, etc.).
+    Use ``seeded`` plus explicit ``CASH_DEPOSIT`` rows when testing cash-aware behavior.
+    """
     from portfolios.seed import ensure_default_portfolio
 
     portfolio = ensure_default_portfolio(test_user)

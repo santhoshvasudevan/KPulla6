@@ -85,7 +85,7 @@ def _mf_nav(scheme: str, d: str, close: str):
 
 
 @pytest.mark.django_db
-def test_summary_single_mf_buy_with_cached_nav(api_client, seeded):
+def test_summary_single_mf_buy_with_cached_nav(api_client, legacy_seeded):
     _mf_buy(api_client)
     _mf_nav("120503", "2026-03-20", "50.00")
     data = api_client.get(
@@ -96,7 +96,7 @@ def test_summary_single_mf_buy_with_cached_nav(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_summary_stock_plus_mf_mixed(api_client, seeded, monkeypatch, test_user):
+def test_summary_stock_plus_mf_mixed(api_client, legacy_seeded, monkeypatch, test_user):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
     default = ensure_default_portfolio(test_user)
     _buy_stock(api_client, portfolio_id=default.id)
@@ -117,7 +117,7 @@ def test_summary_stock_plus_mf_mixed(api_client, seeded, monkeypatch, test_user)
 
 
 @pytest.mark.django_db
-def test_summary_mf_missing_nav_warning_and_zero_value(api_client, seeded):
+def test_summary_mf_missing_nav_warning_and_zero_value(api_client, legacy_seeded):
     _mf_buy(api_client)
     data = api_client.get(
         "/api/v1/portfolio/summary?include_timeseries=false"
@@ -127,7 +127,7 @@ def test_summary_mf_missing_nav_warning_and_zero_value(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_summary_mf_display_currency_inr_to_eur(api_client, seeded, monkeypatch):
+def test_summary_mf_display_currency_inr_to_eur(api_client, legacy_seeded, monkeypatch):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
     _mf_buy(api_client, investment_date="2026-03-10", nav_date="2026-03-15")
     _mf_nav("120503", "2026-03-20", "50.00")
@@ -145,7 +145,7 @@ def test_summary_mf_display_currency_inr_to_eur(api_client, seeded, monkeypatch)
 
 
 @pytest.mark.django_db
-def test_summary_timeseries_includes_mf_value(api_client, seeded):
+def test_summary_timeseries_includes_mf_value(api_client, legacy_seeded):
     _mf_buy(api_client, nav_date="2026-03-15", investment_date="2026-03-10")
     _mf_nav("120503", "2026-03-15", "40.00")
     _mf_nav("120503", "2026-03-17", "45.00")
@@ -157,7 +157,7 @@ def test_summary_timeseries_includes_mf_value(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_summary_mf_nav_forward_fill(api_client, seeded):
+def test_summary_mf_nav_forward_fill(api_client, legacy_seeded):
     _mf_buy(api_client, nav_date="2026-03-15")
     _mf_nav("120503", "2026-03-15", "40.00")
     _mf_nav("120503", "2026-03-17", "44.00")
@@ -169,7 +169,11 @@ def test_summary_mf_nav_forward_fill(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_summary_mf_xirr_uses_investment_date_and_paid_value(api_client, seeded):
+def test_summary_mf_xirr_uses_investment_date_and_paid_value(
+    api_client, legacy_seeded, monkeypatch
+):
+    # Default summary scope is all_active with EUR display; INR MF flows need FX for XIRR.
+    monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
     _mf_buy(
         api_client,
         investment_date="2025-06-01",
@@ -180,6 +184,13 @@ def test_summary_mf_xirr_uses_investment_date_and_paid_value(api_client, seeded)
         nav="50.000000",
     )
     _mf_nav("120503", "2026-03-20", "60.00")
+    for d in (date(2025, 6, 1), date(2026, 3, 20)):
+        upsert_fx_rate(
+            from_currency="INR",
+            to_currency="EUR",
+            row_date=d,
+            rate=Decimal("0.01"),
+        )
     data = api_client.get(
         "/api/v1/portfolio/summary?include_timeseries=false"
     ).json()
@@ -187,7 +198,7 @@ def test_summary_mf_xirr_uses_investment_date_and_paid_value(api_client, seeded)
 
 
 @pytest.mark.django_db
-def test_summary_mf_sell_affects_realized_pl(api_client, seeded):
+def test_summary_mf_sell_affects_realized_pl(api_client, legacy_seeded):
     _mf_buy(api_client, units_allotted="100.00000000")
     _mf_sell(
         api_client,
@@ -207,7 +218,7 @@ def test_summary_mf_sell_affects_realized_pl(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_performance_value_includes_mf(api_client, seeded, monkeypatch):
+def test_performance_value_includes_mf(api_client, legacy_seeded, monkeypatch):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
     _mf_buy(api_client, nav_date="2026-03-15")
     _mf_nav("120503", "2026-03-15", "50.00")
@@ -220,7 +231,7 @@ def test_performance_value_includes_mf(api_client, seeded, monkeypatch):
 
 
 @pytest.mark.django_db
-def test_performance_cumulative_return_includes_mf(api_client, seeded, monkeypatch):
+def test_performance_cumulative_return_includes_mf(api_client, legacy_seeded, monkeypatch):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
     _mf_buy(api_client, investment_date="2026-03-10", nav_date="2026-03-15")
     _mf_nav("120503", "2026-03-15", "45.00")
@@ -241,7 +252,7 @@ def test_performance_cumulative_return_includes_mf(api_client, seeded, monkeypat
 
 
 @pytest.mark.django_db
-def test_performance_twror_includes_mf(api_client, seeded, monkeypatch):
+def test_performance_twror_includes_mf(api_client, legacy_seeded, monkeypatch):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
     _mf_buy(api_client, investment_date="2026-03-10", nav_date="2026-03-15")
     _mf_nav("120503", "2026-03-15", "45.00")
@@ -261,7 +272,7 @@ def test_performance_twror_includes_mf(api_client, seeded, monkeypatch):
 
 
 @pytest.mark.django_db
-def test_performance_benchmark_still_works_with_mf(api_client, seeded, monkeypatch):
+def test_performance_benchmark_still_works_with_mf(api_client, legacy_seeded, monkeypatch):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
     from market_data.models import BenchmarkIndexConfig
 
@@ -313,7 +324,7 @@ def test_performance_benchmark_still_works_with_mf(api_client, seeded, monkeypat
 
 
 @pytest.mark.django_db
-def test_summary_no_external_nav_provider(api_client, seeded):
+def test_summary_no_external_nav_provider(api_client, legacy_seeded):
     _mf_buy(api_client)
     _mf_nav("120503", "2026-03-20", "50.00")
     with patch(
@@ -324,7 +335,7 @@ def test_summary_no_external_nav_provider(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_performance_no_external_nav_provider(api_client, seeded, monkeypatch):
+def test_performance_no_external_nav_provider(api_client, legacy_seeded, monkeypatch):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
     _mf_buy(api_client)
     _mf_nav("120503", "2026-03-20", "50.00")

@@ -3,7 +3,7 @@
 ## Project identity
 - Local-first portfolio tracker: Django 5 + DRF backend, React 19 + Vite frontend, PostgreSQL 16 (Docker Compose).
 - API base: `/api/v1`. Transactions are source of truth; prices/FX cached in DB.
-- Key docs: `AGENTS.md`, `docs/current-state.md`, `docs/architecture.md`, `docs/api-design.md`, `docs/workflows.md`.
+- Key docs: `AGENTS.md`, `docs/product-rules.md`, `docs/current-state.md`, `docs/architecture.md`, `docs/api-design.md`, `docs/workflows.md`.
 - Dev: `make dev` · tests: `make test` · market sync: `make refresh`.
 
 ## Hard boundaries

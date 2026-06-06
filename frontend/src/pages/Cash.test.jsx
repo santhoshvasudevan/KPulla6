@@ -553,6 +553,20 @@ describe('Cash page', () => {
     ).toBeInTheDocument();
   });
 
+  it('bulk wizard opens modal when button clicked', async () => {
+    renderCash();
+    await waitFor(() => expect(screen.getByText('Totals by currency')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /add bulk cash entries/i }));
+    expect(
+      await screen.findByRole('dialog', { name: /add bulk cash entries/i })
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('dialog', { name: /add bulk cash entries/i })).getByText(
+        /amounts and dates come from the server preview/i
+      )
+    ).toBeInTheDocument();
+  });
+
   it('Transfer Cash button opens modal', async () => {
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
     await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
@@ -788,6 +802,12 @@ describe('Cash page', () => {
     fireEvent.change(within(dialog).getByLabelText(/end date/i), {
       target: { value: '2022-12-01' },
     });
+    fireEvent.change(within(dialog).getByLabelText(/source of funds/i), {
+      target: { value: 'Monthly contribution' },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/^note$/i), {
+      target: { value: 'Historical contribution' },
+    });
     fireEvent.click(within(dialog).getByRole('button', { name: /preview schedule/i }));
     await waitFor(() => {
       expect(api.previewCashBulkEntries).toHaveBeenCalledWith(
@@ -799,10 +819,14 @@ describe('Cash page', () => {
           start_date: '2022-06-01',
           end_date: '2022-12-01',
           frequency: 'monthly',
+          source_of_funds: 'Monthly contribution',
+          note: 'Historical contribution',
         })
       );
     });
     expect(await within(dialog).findByText('Scheduled entries')).toBeInTheDocument();
+    expect(within(dialog).getByText('Total by currency')).toBeInTheDocument();
+    expect(within(dialog).getByText('€6,300.00')).toBeInTheDocument();
     expect(within(dialog).getAllByText('€900.00').length).toBeGreaterThan(0);
     expect(within(dialog).getByText('2022-06-01')).toBeInTheDocument();
   });
@@ -811,6 +835,7 @@ describe('Cash page', () => {
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
     await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
     const balanceCallsBefore = api.fetchCashBalances.mock.calls.length;
+    const ledgerCallsBefore = api.fetchCashLedger.mock.calls.length;
 
     fireEvent.click(screen.getByRole('button', { name: /add bulk cash entries/i }));
     let dialog = await screen.findByRole('dialog', { name: /add bulk cash entries/i });
@@ -830,6 +855,7 @@ describe('Cash page', () => {
         expect.objectContaining({ portfolio_id: 1, frequency: 'monthly' })
       );
       expect(api.fetchCashBalances.mock.calls.length).toBeGreaterThan(balanceCallsBefore);
+      expect(api.fetchCashLedger.mock.calls.length).toBeGreaterThan(ledgerCallsBefore);
     });
     dialog = await screen.findByRole('dialog', { name: /add bulk cash entries/i });
     expect(within(dialog).getByText('Created')).toBeInTheDocument();

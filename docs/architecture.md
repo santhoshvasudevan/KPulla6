@@ -6,19 +6,30 @@ Local-first portfolio tracker. **KPulla6** uses Django + DRF + PostgreSQL + Reac
 ## Backend
 - **Framework:** Django 5 + Django REST Framework
 - **Auth:** Django session auth + django-allauth (Google OAuth); see `docs/auth.md`
-- **Domain apps (Phase 2 models in place):**
-  - `portfolios` — `Portfolio` (`cash_aware_enabled`, default false)
-  - `cash` — `CashLedgerEntry`, `CashTransferGroup` (Cash-1 schema; APIs Cash-2+)
-  - `transactions` — `Transaction` (FK to real portfolio only)
-  - `market_data` — `HistoricalPrice`, `BenchmarkIndexConfig`
-  - `fx` — `FXRate`
+- **Domain apps (MVP — implemented):**
+  - `portfolios` — valuation, holdings, summary, performance orchestration; `cash_ledger_flows.py`, `external_flows_service.py`, `xirr_service.py`
+  - `cash` — `CashLedgerEntry`, `CashTransferGroup`; deposits, withdrawals, transfers, bulk entries (`cash/services.py`)
+  - `transactions` — asset transaction lifecycle; **`transactions/cash_settlement.py`** syncs BUY/SELL settlements atomically
+  - `analytics` — Metric Sheet and Compare orchestration (`analytics/services.py`)
+  - `market_data` — `HistoricalPrice`, benchmarks, MF NAV cache + sync
+  - `fx` — `FXRate` cache + sync
   - `settings_app` — `AppSettings`
-  - `analytics` — Metric Sheet orchestration (`analytics/services.py`); `GET /api/v1/analytics/performance-metrics` (Phase 5)
-  - `api` — HTTP routing (`/api/v1/health` today)
-- **Finance logic:** `backend/finance/` — framework-independent (Phase 6)
-  - `types.py`, `splits.py`, `fifo.py`, `xirr.py`, `twror.py`, `performance_range.py`, `benchmarks.py`
-  - Analytics: `returns.py` (Phase 2); `performance_stats.py`, `risk_metrics.py`, `drawdowns.py` (Phase 3); `comparison.py` (Phase 4); `benchmarks.py` (chart overlay only)
+  - `api` — HTTP routing (`/api/v1/*`)
+- **Finance logic:** `backend/finance/` — framework-independent pure calculations (FIFO, splits, XIRR, TWROR, returns, risk, drawdowns, comparison)
   - Django adapter: `transactions/finance_adapter.py` (DTO mapping only)
+
+## Module boundaries
+
+| Path | Responsibility | Must not |
+|------|----------------|----------|
+| `backend/finance/` | Pure math: FIFO, TWROR, XIRR, returns, Metric Sheet stats | Import Django ORM |
+| `backend/cash/` | Ledger ORM, cash services, HTTP serializers/views for `/cash/*` | Duplicate finance formulas |
+| `backend/transactions/` | Transaction CRUD, CSV import, MF services, **`cash_settlement.py`** | Portfolio valuation series |
+| `backend/portfolios/` | Scope, holdings, summary, performance, external flows, XIRR orchestration | Metric Sheet assembly (delegates to analytics) |
+| `backend/analytics/` | Metric Sheet + Compare API orchestration; calls `finance/*` | Live market-data providers on GET |
+| `frontend/src/` | Display API values; format currency/percent | FIFO, XIRR, TWROR, FX, cash balance, or valuation math |
+
+Product rules index: [product-rules.md](./product-rules.md).
 
 ## Database
 - PostgreSQL 16 via Docker Compose
@@ -37,23 +48,19 @@ Local-first portfolio tracker. **KPulla6** uses Django + DRF + PostgreSQL + Reac
 - **XIRR** (`calculate_xirr`): BUY negative, SELL positive, terminal holding value; uses `pyxirr`.
 - **TWROR** (`compute_twror_series`): chain-linked daily return series; exposed via `GET /portfolio/performance?metric=twror` (Phase 10).
 
-## Data flow (target)
-1. **Transactions** → holdings, cost basis, realized P/L (finance layer ready; APIs next).
-2. **HistoricalPrice** + **FXRate** → cached valuation inputs.
-3. **AppSettings.display_currency** → API display layer (future).
-4. Manual sync (`POST /prices/refresh`, management commands) writes prices/FX/benchmarks; holdings and future dashboard reads DB only.
+## Data flow (implemented)
+1. **Transactions** + **CashLedgerEntry** → holdings, cost basis, cash balances, settlements.
+2. **HistoricalPrice** + **FXRate** + **NAV cache** → valuation inputs (DB only on read).
+3. **AppSettings.display_currency** → API display layer for summary, performance, Metric Sheet.
+4. Manual sync (`make refresh`, refresh HTTP endpoints) writes prices/FX/benchmarks/NAVs; all dashboard/read APIs use DB cache only.
 
 ## Frontend
 - React + Vite; API-driven; no finance calculations in the client.
 
 ## API
 - Base: `/api/v1`
-- Implemented: health, settings, portfolios CRUD, transactions CRUD, CSV import, holdings, asset detail
-- Services: `portfolios/services.py`, `portfolios/holdings_service.py`, `portfolios/scope.py`, `settings_app/services.py`, `transactions/services.py`, `transactions/csv_import.py`, `market_data/price_lookup.py`
-- Phase 8: `market_data/services/`, `market_data/providers/`, `fx/services/`, `fx/lookup.py`
-- Phase 9: `portfolios/summary_service.py` — summary + timeseries from cached prices/FX
-- `GET /api/v1/portfolio/performance` — value / cumulative return / TWROR time series; optional benchmark comparison (`portfolios/performance_service.py`, `finance/benchmarks.py`, `finance/performance_range.py`)
-- **Frontend** (`frontend/src/`): API-driven pages; `portfolioContext` builds `portfolio_scope=all` or `portfolio_id` query params; charts render backend series only
+- **Implemented:** health, auth, settings, portfolios CRUD, transactions CRUD + CSV import, holdings, asset detail, summary, performance, analytics (portfolio/asset/compare Metric Sheet), cash ledger (read/write/transfer/bulk), market-data refresh endpoints
+- Endpoint index: [api-design.md](./api-design.md) § Implemented Endpoint Index
 
 ## Development
 - `make bootstrap` — db, migrate, seed
@@ -65,11 +72,11 @@ Local-first portfolio tracker. **KPulla6** uses Django + DRF + PostgreSQL + Reac
 
 ### Subject levels
 
-| Level | Scope | Primary user surface (future) |
-|-------|--------|--------------------------------|
-| **Portfolio** | `portfolio_scope=all` or `portfolio_id` | Dashboard — Performance Quality section |
-| **Asset** | One stock/ETF symbol or MF scheme+folio | Asset Detail — Metric Sheet tab/section |
-| **Comparison** | Two or more assets, same range/benchmark | Future Compare page (side-by-side table + charts) |
+| Level | Scope | User surface |
+|-------|--------|--------------|
+| **Portfolio** | `portfolio_scope=all` or `portfolio_id` | Dashboard — Metric Sheet section |
+| **Asset** | One stock/ETF symbol or MF scheme+folio | Asset Detail — Metric Sheet section |
+| **Comparison** | Two assets, same range/benchmark | Compare page (`/compare`) |
 
 ### Data sources (persisted; no live provider on read)
 
@@ -86,7 +93,7 @@ Transactions remain the **source of truth**. Prices, FX, NAVs, and benchmarks ar
 Most technical metrics (Sharpe, Sortino, annualized volatility, max drawdown, beta, alpha, correlation, monthly/yearly return tables, win/loss rates, best/worst period) are computed from a **daily cash-flow-adjusted return series**:
 
 - Build daily **portfolio value** (or asset value) series from cached prices/NAV + split-adjusted holdings — same foundation as Phase 9/10 (`build_portfolio_value_timeseries` / asset-level analogue).
-- Derive **external flows** per day (BUY/SELL cash, MF `paid_value` on `investment_date`) — same rules as `portfolios/performance_service._build_external_flows`.
+- Derive **external flows** per day — cash-aware portfolios use `portfolios/cash_ledger_flows.py`; legacy portfolios use transaction BUY/SELL flows until cash-aware mode is enabled.
 - Convert to **period returns** via TWROR logic: \(r_d = (PV_d - F_d - PV_{d-1}) / PV_{d-1}\), then chain-link for cumulative TWROR or export **daily \(r_d\)** as the analytics input series.
 
 **Do not** use XIRR or raw price-only returns as the base input for these daily technical metrics.
@@ -144,11 +151,11 @@ subjects=asset:AAPL,asset:MSFT
 
 Compare metrics (return, risk, drawdown, periods) use the **aligned common window only**, not each asset’s independent full history. XIRR remains full-scope per subject when computable.
 
-### Frontend direction (proposed — not implemented in Phase 1)
+### Frontend (implemented)
 
-- **Dashboard:** Performance Quality cards + drawdown / monthly return charts fed only by analytics APIs.
-- **Asset Detail:** Metric Sheet section (metrics table, drawdown table, periodic returns).
-- **Compare (future):** Side-by-side metrics table; all values from backend — **no** Sharpe/beta/volatility math in React.
+- **Dashboard:** Metric Sheet section + performance chart; all values from analytics and performance APIs.
+- **Asset Detail:** Metric Sheet section (metrics, drawdown, periodic returns, charts).
+- **Compare:** Side-by-side metrics table + normalized chart; **no** Sharpe/beta/volatility math in React.
 
 ### Warnings and partial availability
 
@@ -171,18 +178,18 @@ Never call yfinance, MFAPI, or other external providers during analytics **read*
 - **Optional future cache/snapshot table** may be added only after formulas and API contracts stabilize.
 - If caching is introduced later, invalidation must run on changes to transactions, prices, FX, NAVs, or benchmark rows affecting the subject; cache keys must include **subject** (portfolio/asset), **range**, **display_currency**, **benchmark**, and an **input hash** (e.g. latest transaction id + max price date per symbol).
 
-## Cash Ledger (Cash-1 foundation)
+## Cash Ledger (implemented — Cash-1 through Cash-8B)
 
-Schema and pure balance helpers are in place; read APIs and cash-aware performance logic are **Cash-2+**. Full specification: [cash-ledger.md](./cash-ledger.md).
+Full specification: [cash-ledger.md](./cash-ledger.md). Product rules: [product-rules.md](./product-rules.md).
 
-- **App:** `cash` — `CashLedgerEntry`, `CashTransferGroup`; `Portfolio.cash_aware_enabled` (default `false`).
-
-- **Cash** = portfolio balance component (per portfolio, per currency); included in current value, value history, allocation, and buying-power checks.
-- **Stocks / MFs** = investment assets; cash excluded from Asset Metric Sheet, Compare, and investment-style performance analytics.
-- **Ledger:** proposed `CashLedgerEntry` (+ later `CashTransferGroup`) — settlements link to `Transaction`; deposits/withdrawals are external flows for TWROR/XIRR in cash-aware mode; BUY/SELL become internal after backfill.
-- **Legacy mode:** existing BUY/SELL external-flow behavior until portfolio cash-aware mode is enabled and backfilled.
-- **Finance:** balance and flow rules in `backend/finance/` (framework-independent); Django services orchestrate ORM + existing summary/performance builders.
-- **APIs:** additive `/api/v1/cash/*` (planned); preserve existing contracts.
+- **App:** `cash` — `CashLedgerEntry`, `CashTransferGroup`; `Portfolio.cash_aware_enabled`.
+- **Settlements:** `backend/transactions/cash_settlement.py` — atomic BUY/SELL settlement sync with transactions.
+- **Cash** = portfolio balance component; included in current value, value history, allocation, buying-power checks.
+- **Stocks / MFs** = investment assets; cash excluded from Asset Metric Sheet and Compare.
+- **Cash-aware returns:** portfolio XIRR, TWROR, cumulative return use cash ledger external flows (Cash-6C).
+- **Transfers:** same- and cross-currency portfolio transfers (Cash-8A/8B); user-entered amounts; no market FX lookup.
+- **Historical funding:** manual deposits/withdrawals or **Bulk Cash Entries** (Cash-7D). Shortfall **backfill APIs removed** from product flow.
+- **APIs:** `/api/v1/cash/*` — see [api-design.md](./api-design.md).
 
 ## Constraints
 - Do not modify KPulla5

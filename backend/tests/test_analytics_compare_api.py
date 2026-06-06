@@ -122,7 +122,7 @@ def _mf_nav(scheme: str, d: str, close: str):
 
 
 @pytest.mark.django_db
-def test_compare_missing_subjects_400(api_client, seeded, today_patch):
+def test_compare_missing_subjects_400(api_client, legacy_seeded, today_patch):
     r = api_client.get("/api/v1/analytics/compare?range=ALL")
     assert r.status_code == 400
     assert "subjects" in r.json()["detail"].lower()
@@ -132,7 +132,7 @@ def test_compare_missing_subjects_400(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_compare_invalid_subject_format_400(api_client, seeded, today_patch):
+def test_compare_invalid_subject_format_400(api_client, legacy_seeded, today_patch):
     r = api_client.get(_compare_url(subjects="AAPL,MSFT", range="ALL"))
     assert r.status_code == 400
     assert "format" in r.json()["detail"].lower()
@@ -142,14 +142,14 @@ def test_compare_invalid_subject_format_400(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_compare_one_subject_400(api_client, seeded, today_patch):
+def test_compare_one_subject_400(api_client, legacy_seeded, today_patch):
     r = api_client.get(_compare_url(subjects="asset:AAPL", range="ALL"))
     assert r.status_code == 400
     assert "two" in r.json()["detail"].lower()
 
 
 @pytest.mark.django_db
-def test_compare_three_subjects_400(api_client, seeded, today_patch):
+def test_compare_three_subjects_400(api_client, legacy_seeded, today_patch):
     r = api_client.get(
         _compare_url(subjects="asset:AAPL,asset:MSFT,asset:GOOG", range="ALL")
     )
@@ -157,7 +157,7 @@ def test_compare_three_subjects_400(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_compare_unsupported_subject_type_400(api_client, seeded, today_patch):
+def test_compare_unsupported_subject_type_400(api_client, legacy_seeded, today_patch):
     r = api_client.get(
         _compare_url(subjects="portfolio:1,asset:AAPL", range="ALL")
     )
@@ -169,7 +169,7 @@ def test_compare_unsupported_subject_type_400(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_compare_normalized_series_and_common_dates(api_client, seeded, today_patch):
+def test_compare_normalized_series_and_common_dates(api_client, legacy_seeded, today_patch):
     _seed_two_stock_overlap(api_client)
     r = api_client.get(
         _compare_url(subjects="asset:AAPL,asset:MSFT", range="ALL", portfolio_scope="all")
@@ -231,7 +231,7 @@ def _assert_metric_sheet_metrics_shape(metrics: dict) -> None:
 
 @pytest.mark.django_db
 def test_compare_success_includes_common_window_warning_and_xirr_scope(
-    api_client, seeded, today_patch
+    api_client, legacy_seeded, today_patch
 ):
     _seed_two_stock_overlap(api_client)
     data = api_client.get(
@@ -248,7 +248,7 @@ def test_compare_success_includes_common_window_warning_and_xirr_scope(
 
 @pytest.mark.django_db
 def test_compare_metrics_use_aligned_window_not_independent_histories(
-    api_client, seeded, today_patch
+    api_client, legacy_seeded, today_patch
 ):
     _buy(api_client, asset_symbol="AAPL", date="2026-01-01")
     _buy_msft(api_client, date="2026-02-01")
@@ -286,7 +286,7 @@ def test_compare_metrics_use_aligned_window_not_independent_histories(
 
 @pytest.mark.django_db
 def test_compare_insufficient_overlap_warning_and_null_metrics(
-    api_client, seeded, today_patch
+    api_client, legacy_seeded, today_patch
 ):
     _buy(api_client, asset_symbol="AAPL", date="2026-01-01", quantity="10")
     api_client.post(
@@ -322,7 +322,7 @@ def test_compare_insufficient_overlap_warning_and_null_metrics(
 
 @pytest.mark.django_db
 def test_compare_subjects_include_periodic_returns_and_drawdown_periods(
-    api_client, seeded, today_patch
+    api_client, legacy_seeded, today_patch
 ):
     _seed_two_stock_overlap(api_client)
     data = api_client.get(
@@ -347,7 +347,7 @@ def test_compare_subjects_include_periodic_returns_and_drawdown_periods(
 
 
 @pytest.mark.django_db
-def test_compare_benchmark_metrics_per_subject(api_client, seeded, today_patch):
+def test_compare_benchmark_metrics_per_subject(api_client, legacy_seeded, today_patch):
     BenchmarkIndexConfig.objects.get_or_create(
         symbol="^GSPC",
         defaults={"display_name": "S&P 500", "enabled": True},
@@ -377,7 +377,7 @@ def test_compare_benchmark_metrics_per_subject(api_client, seeded, today_patch):
 
 @pytest.mark.django_db
 def test_compare_missing_benchmark_prices_null_metrics_and_warning(
-    api_client, seeded, today_patch
+    api_client, legacy_seeded, today_patch
 ):
     BenchmarkIndexConfig.objects.get_or_create(
         symbol="^GSPC",
@@ -401,7 +401,7 @@ def test_compare_missing_benchmark_prices_null_metrics_and_warning(
 
 
 @pytest.mark.django_db
-def test_compare_split_warning_on_one_subject(api_client, seeded, today_patch):
+def test_compare_split_warning_on_one_subject(api_client, legacy_seeded, today_patch):
     api_client.post(
         "/api/v1/transactions",
         {
@@ -446,7 +446,7 @@ def test_compare_split_warning_on_one_subject(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_compare_portfolio_id_scoping(api_client, seeded, today_patch, test_user):
+def test_compare_portfolio_id_scoping(api_client, legacy_seeded, today_patch, test_user):
     p1 = ensure_default_portfolio(test_user)
     p2 = Portfolio.objects.create(user=test_user, name="Scoped", base_currency="EUR", is_active=True)
     _buy(api_client, portfolio_id=p1.id, asset_symbol="AAPL", date="2026-01-01")
@@ -480,7 +480,7 @@ def test_compare_portfolio_id_scoping(api_client, seeded, today_patch, test_user
 
 
 @pytest.mark.django_db
-def test_compare_mf_vs_stock(api_client, seeded, today_patch):
+def test_compare_mf_vs_stock(api_client, legacy_seeded, today_patch):
     _mf_buy(api_client, investment_date="2026-03-01", nav_date="2026-03-01")
     _buy_msft(api_client, date="2026-03-01")
     for day in range(1, 16):
@@ -503,7 +503,7 @@ def test_compare_mf_vs_stock(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_compare_unknown_asset_404(api_client, seeded, today_patch):
+def test_compare_unknown_asset_404(api_client, legacy_seeded, today_patch):
     _buy(api_client)
     _price("AAPL", "2026-01-01", "100")
     r = api_client.get(
@@ -517,7 +517,7 @@ def test_compare_unknown_asset_404(api_client, seeded, today_patch):
 
 @pytest.mark.django_db
 @patch("yfinance.Ticker")
-def test_compare_no_yfinance_on_read(mock_ticker, api_client, seeded, today_patch):
+def test_compare_no_yfinance_on_read(mock_ticker, api_client, legacy_seeded, today_patch):
     _seed_two_stock_overlap(api_client)
     r = api_client.get(
         _compare_url(subjects="asset:AAPL,asset:MSFT", range="ALL")

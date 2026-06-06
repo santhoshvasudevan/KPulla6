@@ -1,5 +1,200 @@
 # Changelog — KPulla6
 
+## 2026-06-06 — RELEASE: MVP sign-off (MVP-RELEASE-1)
+
+### Status
+- **MVP release-ready with accepted limitations** — not production-deployed
+- Manual golden-flow browser QA **complete** (user sign-off)
+- Automated STAB-6 gates previously passed; no re-run required for this docs-only sign-off
+
+### Sign-off
+- **Date:** 2026-06-06
+- **Branch:** `main` (stabilization commit pending)
+- **Tester:** Manual QA completed per [mvp-release-checklist.md](./mvp-release-checklist.md) § C
+
+### Accepted limitations
+- Transfer fees deferred (Cash-8C)
+- Same-portfolio FX conversion deferred
+- Dashboard performance optimization deferred (STAB-5B baseline acceptable)
+- Background scheduler / Celery deferred
+- Full browser E2E suite deferred
+
+### Updated
+- `docs/current-state.md` — MVP release-ready status, commit-prep summary
+- `docs/mvp-release-checklist.md` — checklist completed, § E sign-off
+
+### Notes
+- Documentation only — no production code changes in MVP-RELEASE-1
+- Next: commit STAB-1 through MVP-RELEASE-1 working tree; optional tag `mvp-2026-06-06`
+
+---
+
+## 2026-06-06 — QA: MVP release checklist execution (STAB-6)
+
+### Executed (automated)
+- `makemigrations --check --dry-run` — no pending model changes
+- `make db-safety-check` — Postgres healthy (67 transactions, 5 portfolios)
+- `make test-fast` — 127 passed
+- `make test-critical` — 302 backend + 239 frontend passed
+- `make test-all` — 840 backend + 384 frontend + `npm run build` passed
+- Read-only diagnostics (user `santhoshkgvasudevan`, all scope) — all exit 0
+- `profile_dashboard_read_paths.py` — no major regression vs STAB-5B baseline
+- `make graphify` — `graphify-out/GRAPH_REPORT.md` updated
+
+### Pending
+- ~~Manual golden-flow browser QA~~ — **Complete** (MVP-RELEASE-1)
+- Git commit of STAB-1–MVP-RELEASE-1 working tree before release tag
+
+### Updated
+- `docs/current-state.md` — STAB-6 release QA table and verdict
+
+### Notes
+- No production code changes in STAB-6
+- Verdict: **Ready with accepted limitations** (manual QA + commit pending)
+
+---
+
+## 2026-06-06 — DOCS: Dashboard performance decision and optimization backlog (STAB-5B)
+
+### Added
+- Real Postgres dev baseline in `docs/performance/dashboard-read-baseline.md` (user `santhoshkgvasudevan`, portfolios 1–4, EUR)
+- STAB-5B decision: MVP performance acceptable; optimization deferred
+- Ranked optimization backlog P1–P6 and **do not optimize yet** guardrails in `docs/performance/dashboard-read-paths.md`
+
+### Updated
+- `docs/performance/dashboard-read-paths.md` — decision record, Postgres observations, test verification matrix
+- `docs/current-state.md` — STAB-5B complete; implementation deferred
+- `docs/mvp-release-checklist.md` — optional Dashboard profiler step before release
+
+### Notes
+- Documentation only — no production code, formula, or API changes
+- Profiler username is Django `username`, not email
+
+---
+
+## 2026-06-06 — DOCS/TOOLS: Dashboard read-path baseline (STAB-5A)
+
+### Added
+- `backend/diagnostics/dashboard_read_profile.py` — structured Dashboard endpoint profiling (timing, SQL count, notes)
+- `docs/performance/dashboard-read-paths.md` — bottleneck/design report and STAB-5B options
+- `docs/performance/dashboard-read-baseline.md` — reference snapshot table (SQLite synthetic portfolio)
+
+### Updated
+- `backend/scripts/profile_dashboard_read_paths.py` — argparse (`--username`, `--portfolio-id`, `--display-currency`, `--json-out`, `--verbose`); measures summary, performance, Metric Sheet, holdings paths
+- `docs/workflows.md` — Performance profiling section
+- `docs/current-state.md` — STAB-5A complete; STAB-5B planned
+
+### Notes
+- Measurement/design only — no production behavior, formula, or API changes
+- Re-profile on Postgres dev data before STAB-5B optimizations; `backend/tmp/*.json` is local output only
+
+---
+
+## 2026-06-06 — DOCS/TOOLS: Read-only diagnostics scripts (STAB-4)
+
+### Added
+- `backend/diagnostics/` — reusable read-only integrity check helpers
+- `backend/scripts/diagnose_settlement_integrity.py` — cash-aware settlement link/orphan/duplicate/mismatch checks
+- `backend/scripts/diagnose_negative_cash.py` — chronological negative running cash balances
+- `backend/scripts/diagnose_summary_vs_performance.py` — summary `current_value` vs performance `metric=value`
+- `backend/scripts/diagnose_fx_coverage.py` — cached FX gaps for display-currency conversion (DB only)
+- `backend/scripts/diagnose_nav_coverage.py` — held MF scheme NAV missing/stale coverage (DB only)
+- `backend/tests/test_diagnostics_integrity.py` — lightweight helper tests
+
+### Updated
+- `docs/workflows.md` — Diagnostics section lists all scripts with examples
+- `docs/mvp-release-checklist.md` — optional pre-release / pre-migration diagnostics
+- `docs/current-state.md` — STAB-4 complete
+
+### Notes
+- Read-only: no model saves/deletes, no external API calls
+- Scripts exit `1` when issues found (optional CI gate); exit `0` when clean
+- No production runtime or API behavior changes
+
+---
+
+## 2026-06-06 — TEST: Full backend suite restored after cash-aware default (STAB-3B)
+
+### Fixed
+- **72 failing backend tests** after Cash-4A.1 default `cash_aware_enabled=true` — tests that POST BUY/MF rows without ledger funding now use `legacy_seeded` when exercising non–cash-enforcement behavior (holdings, filters, split valuation, MF NAV/import/summary helpers, analytics split/MF freshness)
+- `test_mutual_fund_summary_performance_api.py::test_summary_mf_xirr_uses_investment_date_and_paid_value` — add INR→EUR FX + fixed `current_date`; default summary scope (`all`) with EUR display requires FX for INR MF XIRR flows
+
+### Updated
+- `backend/tests/conftest.py` — `legacy_seeded` docstring: when to use vs `seeded` + explicit `CASH_DEPOSIT`
+- `docs/current-state.md`, `docs/workflows.md` — full suite green; fixture decision note
+
+### Notes
+- No production backend or frontend behavior changes
+- Cash-aware enforcement, summary/TWROR/XIRR formulas unchanged
+- **834** backend pytest · **384** frontend Vitest · `make test-all` passes
+
+---
+
+## 2026-06-06 — DOCS/TEST: Test infrastructure and golden-flow targets (STAB-3)
+
+### Added
+- `make test-fast` — finance unit + cash service pytest subset
+- `make test-critical` — curated golden-flow backend APIs + key frontend Vitest files
+- `make test-all` — full `make test` + frontend production build
+
+### Updated
+- `make test-frontend` — runs `npm test -- --run` (non-watch)
+- `frontend/src/pages/Cash.test.jsx` — bulk wizard modal, preview totals from server, ledger refresh on apply, full preview payload fields
+- `frontend/src/api.test.js` — `previewCashBulkEntries` CashApiError parsing
+- `backend/tests/test_analytics_asset_metrics_api.py`, `test_analytics_compare_api.py` — use `legacy_seeded` for BUY-without-deposit scenarios (cash-aware default portfolio)
+- `docs/mvp-release-checklist.md`, `docs/workflows.md`, `docs/current-state.md` — test target documentation
+
+### Notes
+- No production backend or frontend behavior changes
+- Bulk Cash Entries frontend coverage gap closed (tests in existing `Cash.test.jsx`)
+
+---
+
+## 2026-06-06 — DOCS: MVP release checklist and API contracts index (STAB-2)
+
+### Added
+- `docs/mvp-release-checklist.md` — pre-release safety, automated checks, manual golden-flow QA, known limitations, release sign-off
+- `docs/api-contracts.md` — thin endpoint index (frontend client, tests, key response/error shapes) with links to `api-design.md`
+
+### Updated
+- `docs/current-state.md` — STAB-2 status; links to checklist and contracts index
+- `docs/workflows.md` — pointers to checklist and contracts index
+- `AGENTS.md` — release and contract doc links
+- `docs/api-design.md` — cross-link to `api-contracts.md`
+
+### Notes
+- No production backend or frontend behavior changes
+- No migrations or data mutations
+- STAB-3 (`make test-critical`, `make test-fast`) still planned
+
+---
+
+## 2026-06-06 — DOCS: MVP maintenance baseline (STAB-1)
+
+### Added
+- `docs/product-rules.md` — canonical product-rules index (cash, returns, Metric Sheet, transfers, frontend, data safety)
+
+### Updated
+- `docs/current-state.md` — MVP status, deferred items, removed contradictory “not implemented” Metric Sheet entries, STAB tracker
+- `docs/architecture.md` — module boundaries, implemented Cash Ledger / Metric Sheet UI / cash-aware returns; `cash_settlement.py`
+- `docs/api-design.md` — Implemented Endpoint Index; removed stale Planned/Proposed blocks for shipped endpoints
+- `docs/workflows.md` — Graphify Usage, TDD/test workflow, Diagnostics sections
+- `AGENTS.md` — product-rules pointer, TDD expectations, Graphify policy
+- `.cursor/rules/graphify.mdc`, `project-core.mdc`, `django-drf.mdc`, `200-frontend-design.mdc`
+
+### Fixed
+- `Makefile` `graphify` target — `graphify update .` (was broken `graphify .`)
+- Graphify policy aligned to “major structural changes only”
+
+### Graphify
+- Regenerated via `graphify update .`; `graphify-out/GRAPH_REPORT.md` refreshed
+
+### Notes
+- No production backend or frontend behavior changes
+- No migrations or data mutations
+
+---
+
 ## 2026-06-06 — FEAT: User-entered cross-currency portfolio transfer (Cash-8B)
 
 ### Added

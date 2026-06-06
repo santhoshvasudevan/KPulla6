@@ -118,7 +118,7 @@ def test_verify_does_not_call_external_provider():
 
 
 @pytest.mark.django_db
-def test_create_mf_with_matching_cached_nav_verified(api_client, seeded):
+def test_create_mf_with_matching_cached_nav_verified(api_client, legacy_seeded):
     _cached_nav("120503", "2026-03-15", "42.500000")
     response = api_client.post("/api/v1/transactions", _mf_payload(), format="json")
     assert response.status_code == 201
@@ -126,7 +126,7 @@ def test_create_mf_with_matching_cached_nav_verified(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_create_mf_without_cached_nav_nav_missing(api_client, seeded):
+def test_create_mf_without_cached_nav_nav_missing(api_client, legacy_seeded):
     response = api_client.post("/api/v1/transactions", _mf_payload(), format="json")
     assert response.status_code == 201
     data = response.json()
@@ -135,7 +135,7 @@ def test_create_mf_without_cached_nav_nav_missing(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_create_mf_nav_mismatch_still_saves(api_client, seeded):
+def test_create_mf_nav_mismatch_still_saves(api_client, legacy_seeded):
     _cached_nav("120503", "2026-03-15", "42.500000")
     response = api_client.post(
         "/api/v1/transactions",
@@ -149,7 +149,7 @@ def test_create_mf_nav_mismatch_still_saves(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_create_mf_value_mismatch_still_saves(api_client, seeded):
+def test_create_mf_value_mismatch_still_saves(api_client, legacy_seeded):
     _cached_nav("120503", "2026-03-15", "42.500000")
     response = api_client.post(
         "/api/v1/transactions",
@@ -161,7 +161,7 @@ def test_create_mf_value_mismatch_still_saves(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_update_mf_recomputes_verification_status(api_client, seeded):
+def test_update_mf_recomputes_verification_status(api_client, legacy_seeded):
     created = api_client.post("/api/v1/transactions", _mf_payload(), format="json").json()
     assert created["nav_verification_status"] == "NAV_MISSING"
 

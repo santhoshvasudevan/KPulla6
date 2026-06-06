@@ -8,7 +8,7 @@ alwaysApply: true
 ## Project identity
 - **Active project:** KPulla6 only. **`../KPulla5/` is read-only reference** — never modify.
 - Backend: Django 5 + Django REST Framework. Frontend: React + Vite. DB: PostgreSQL via Docker Compose (`make db`).
-- API: `/api/v1`. Key docs: `AGENTS.md`, `docs/current-state.md`, `docs/architecture.md`, `docs/api-design.md`.
+- API: `/api/v1`. Key docs: `AGENTS.md`, `docs/product-rules.md`, `docs/current-state.md`, `docs/architecture.md`, `docs/api-design.md`.
 
 ## Safety
 - Inspect existing code before editing. Smallest safe change. Do not rewrite unrelated files.
@@ -27,10 +27,12 @@ alwaysApply: true
 
 ## Testing
 - Add/update tests for API, DB, finance, sync, and frontend behavior changes.
-- Run relevant tests (`make test-backend`, `cd frontend && npm test`) and state results.
+- Run relevant tests (`make test-backend`, `cd frontend && npm test`) and state results in every implementation summary.
+- `make test-critical` (curated golden-flow suite) — see `docs/workflows.md` § Test Makefile targets
 
 ## Docs
-- API → `docs/api-design.md` · schema/data → `docs/database.md` · architecture → `docs/architecture.md`
+- API → `docs/api-design.md` · contract index → `docs/api-contracts.md` · schema/data → `docs/database.md` · architecture → `docs/architecture.md`
+- Release → `docs/mvp-release-checklist.md` · product rules → `docs/product-rules.md`
 - Cash Ledger → `docs/cash-ledger.md` · `.cursor/rules/320-cash-ledger.mdc`
 - Completed work → `docs/current-state.md` + `docs/changelog.md`
 

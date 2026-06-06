@@ -718,6 +718,27 @@ describe('API Service', () => {
     expect(JSON.parse(opts.body).confirmed).toBe(true);
   });
 
+  it('previewCashBulkEntries surfaces CashApiError from backend', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: async () => ({ detail: 'End date is required for monthly frequency.' }),
+    });
+    await expect(
+      api.previewCashBulkEntries({
+        portfolio_id: 1,
+        entry_type: 'CASH_DEPOSIT',
+        currency: 'EUR',
+        amount: 900,
+        start_date: '2022-06-01',
+        frequency: 'monthly',
+      })
+    ).rejects.toMatchObject({
+      name: 'CashApiError',
+      message: 'End date is required for monthly frequency.',
+    });
+  });
+
   it('createTransaction surfaces field validation errors', async () => {
     global.fetch.mockResolvedValueOnce({
       ok: false,

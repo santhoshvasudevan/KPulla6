@@ -4,6 +4,37 @@
 
 This document describes the **target** REST API (carried forward from KPulla5). KPulla6 implements endpoints incrementally; only implemented routes are live in the running app.
 
+## Implemented Endpoint Index
+
+Quick reference for MVP endpoints. Detail sections below. Product rules: [product-rules.md](./product-rules.md). **Contract index (frontend + tests + error shapes):** [api-contracts.md](./api-contracts.md).
+
+| Method | Path | Purpose | Frontend (`api.js`) | Backend tests |
+|--------|------|---------|----------------------|---------------|
+| GET | `/api/v1/portfolio/summary` | FIFO headline metrics, optional timeseries, cash-inclusive `current_value` | `fetchDashboardSummary` | `test_portfolio_summary_api.py` |
+| GET | `/api/v1/portfolio/performance` | Value / cumulative return / TWROR series; benchmark overlay | `fetchPortfolioPerformance` | `test_portfolio_performance_api.py` |
+| GET | `/api/v1/portfolio/holdings` | Holdings table + allocation (includes cash) | `fetchHoldings` | `test_holdings_api.py` |
+| GET | `/api/v1/portfolio/assets/{asset_symbol}` | Asset detail + FIFO metrics | `fetchAssetDetails` | `test_holdings_api.py` |
+| GET | `/api/v1/analytics/performance-metrics` | Portfolio Metric Sheet | `getPortfolioMetricSheet` | `test_analytics_performance_metrics_api.py` |
+| GET | `/api/v1/analytics/assets/{asset_symbol}/performance-metrics` | Asset Metric Sheet | `getAssetMetricSheet` | `test_analytics_asset_metrics_api.py` |
+| GET | `/api/v1/analytics/compare` | Two-asset Metric Sheet compare | `getCompareMetricSheet` | `test_analytics_compare_api.py` |
+| GET | `/api/v1/cash/balances` | Native-currency balances (no display FX in read path) | `fetchCashBalances` | `test_cash_api.py` |
+| GET | `/api/v1/cash/ledger` | Paginated cash ledger | `fetchCashLedger` | `test_cash_api.py` |
+| POST | `/api/v1/cash/deposits` | Manual `CASH_DEPOSIT` | `createCashDeposit` | `test_cash_api.py` |
+| POST | `/api/v1/cash/withdrawals` | Manual `CASH_WITHDRAWAL` | `createCashWithdrawal` | `test_cash_api.py` |
+| PUT | `/api/v1/cash/ledger/{id}` | Edit manual deposit/withdrawal | `updateCashLedgerEntry` | `test_cash_api.py` |
+| DELETE | `/api/v1/cash/ledger/{id}` | Delete manual deposit/withdrawal | `deleteCashLedgerEntry` | `test_cash_api.py` |
+| POST | `/api/v1/cash/transfers` | Same- or cross-currency portfolio transfer | `createCashTransfer` | `test_cash_api.py` |
+| POST | `/api/v1/cash/bulk-entries/preview` | Bulk schedule preview | `previewCashBulkEntries` | `test_cash_bulk_entries_api.py` |
+| POST | `/api/v1/cash/bulk-entries/apply` | Confirmed bulk manual entries | `applyCashBulkEntries` | `test_cash_bulk_entries_api.py` |
+| GET | `/api/v1/transactions` | Paginated asset transactions | `fetchTransactions` | `test_transactions_api.py` |
+| POST | `/api/v1/transactions` | Create stock/MF transaction | `createTransaction` | `test_transactions_api.py`, `test_cash_aware_transactions_api.py` |
+| PUT | `/api/v1/transactions/{id}` | Update transaction | `updateTransaction` | `test_transactions_api.py`, `test_cash_aware_transactions_api.py` |
+| DELETE | `/api/v1/transactions/{id}` | Delete transaction | `deleteTransaction` | `test_transactions_api.py` |
+| POST | `/api/v1/transactions/import-csv` | CSV import (stock or MF) | `importTransactionsCsv` | `test_csv_import_api.py`, `test_mutual_fund_csv_import.py` |
+| POST | `/api/v1/transactions/import-csv/preview-cash` | CSV cash shortfall preview (no writes) | `previewCsvImportCash` | `test_csv_import_cash_preview.py` |
+
+**Removed (not active):** `POST /api/v1/cash/backfill-preview`, `POST /api/v1/cash/backfill-apply` — use deposits/withdrawals or bulk entries instead.
+
 ## Implemented in KPulla6
 
 ### Health
@@ -580,8 +611,6 @@ When cash FX is partial, `metric=value` may return `{"points": [...], "warnings"
 
 Portfolio-level Quantitative Statistics. Wired in `analytics/services.py`, `analytics/views.py`.
 
-### Proposed (not yet implemented)
-
 ### Common query parameters (all analytics endpoints)
 
 | Param | Default | Notes |
@@ -1064,13 +1093,6 @@ Same body as preview plus **`confirmed`: true** (required).
 6. Max **500** entries per schedule.
 
 **Response (200):** `created_count`, `skipped_existing_count`, `created_entries[]`, `summary.total_created_by_currency`, `warnings[]`.
-
-### Planned — Cash write / integration
-
-| Method | Path | Purpose |
-|--------|------|---------|
-| POST | `/api/v1/cash/transfers` | Portfolio transfer (same or cross currency; `CashTransferGroup`) |
-| POST | `/api/v1/transactions/import-csv/preview-cash` | **Done** (Cash-5) |
 
 ### Implemented (Cash-4A) — cash-aware BUY/SELL settlements
 

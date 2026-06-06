@@ -108,7 +108,7 @@ def _mf_nav(scheme: str, d: str, close: str):
 
 
 @pytest.mark.django_db
-def test_asset_metrics_basic_stock(api_client, seeded, today_patch):
+def test_asset_metrics_basic_stock(api_client, legacy_seeded, today_patch):
     _buy(api_client)
     _price("AAPL", "2026-01-01", "100")
     _price("AAPL", "2026-01-02", "110")
@@ -126,7 +126,7 @@ def test_asset_metrics_basic_stock(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_asset_buy_neutrality(api_client, seeded, today_patch):
+def test_asset_buy_neutrality(api_client, legacy_seeded, today_patch):
     _buy(api_client, date="2026-01-01", quantity="1", price_per_share="100")
     _buy(api_client, date="2026-01-02", quantity="1", price_per_share="100")
     _price("AAPL", "2026-01-01", "100")
@@ -139,7 +139,7 @@ def test_asset_buy_neutrality(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_asset_sell_neutrality(api_client, seeded, today_patch):
+def test_asset_sell_neutrality(api_client, legacy_seeded, today_patch):
     _buy(api_client, date="2026-01-01", quantity="10", price_per_share="100")
     _sell(api_client, date="2026-01-15", quantity="5", price_per_share="100")
     _price("AAPL", "2026-01-01", "100")
@@ -152,7 +152,7 @@ def test_asset_sell_neutrality(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_asset_stock_split_neutrality(api_client, seeded, today_patch):
+def test_asset_stock_split_neutrality(api_client, legacy_seeded, today_patch):
     api_client.post(
         "/api/v1/transactions",
         {
@@ -189,7 +189,7 @@ def test_asset_stock_split_neutrality(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_asset_scoping_portfolio_id(api_client, seeded, today_patch, test_user):
+def test_asset_scoping_portfolio_id(api_client, legacy_seeded, today_patch, test_user):
     p1 = ensure_default_portfolio(test_user)
     p2 = Portfolio.objects.create(user=test_user, name="Scoped", base_currency="EUR", is_active=True)
     _buy(api_client, portfolio_id=p1.id, date="2026-01-01", quantity="10", price_per_share="100")
@@ -209,7 +209,7 @@ def test_asset_scoping_portfolio_id(api_client, seeded, today_patch, test_user):
 
 
 @pytest.mark.django_db
-def test_asset_missing_fx_warning(api_client, seeded, today_patch):
+def test_asset_missing_fx_warning(api_client, legacy_seeded, today_patch):
     _buy(api_client, date="2026-01-01", currency="EUR")
     _price("AAPL", "2026-01-01", "100", currency="USD")
     _price("AAPL", "2026-03-15", "100", currency="USD")
@@ -219,14 +219,14 @@ def test_asset_missing_fx_warning(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_asset_missing_stock_price_warning(api_client, seeded, today_patch):
+def test_asset_missing_stock_price_warning(api_client, legacy_seeded, today_patch):
     _buy(api_client, date="2026-01-01")
     data = api_client.get(_asset_metrics_url("AAPL", range="ALL")).json()
     assert any("Cached prices are missing" in w for w in data["warnings"])
 
 
 @pytest.mark.django_db
-def test_asset_missing_mf_nav_warning(api_client, seeded, today_patch):
+def test_asset_missing_mf_nav_warning(api_client, legacy_seeded, today_patch):
     _mf_buy(api_client, investment_date="2026-03-01", nav_date="2026-03-01")
     data = api_client.get(
         _asset_metrics_url(
@@ -239,7 +239,7 @@ def test_asset_missing_mf_nav_warning(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_asset_mf_nav_no_warning_when_latest_nav_recent(api_client, seeded, today_patch):
+def test_asset_mf_nav_no_warning_when_latest_nav_recent(api_client, legacy_seeded, today_patch):
     _mf_buy(api_client, investment_date="2026-03-01", nav_date="2026-03-01")
     _mf_nav("120503", "2026-03-13", "44.00")
     data = api_client.get(
@@ -253,7 +253,7 @@ def test_asset_mf_nav_no_warning_when_latest_nav_recent(api_client, seeded, toda
 
 
 @pytest.mark.django_db
-def test_asset_mf_nav_stale_warning(api_client, seeded, today_patch):
+def test_asset_mf_nav_stale_warning(api_client, legacy_seeded, today_patch):
     _mf_buy(api_client, investment_date="2026-03-01", nav_date="2026-03-01")
     _mf_nav("120503", "2026-03-01", "42.00")
     data = api_client.get(
@@ -267,7 +267,7 @@ def test_asset_mf_nav_stale_warning(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_asset_benchmark_metrics(api_client, seeded, today_patch):
+def test_asset_benchmark_metrics(api_client, legacy_seeded, today_patch):
     BenchmarkIndexConfig.objects.get_or_create(
         symbol="^GSPC",
         defaults={"display_name": "S&P 500", "enabled": True},
@@ -285,13 +285,13 @@ def test_asset_benchmark_metrics(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_asset_unknown_symbol_404(api_client, seeded, today_patch):
+def test_asset_unknown_symbol_404(api_client, legacy_seeded, today_patch):
     r = api_client.get(_asset_metrics_url("NOPE", range="ALL"))
     assert r.status_code == 404
 
 
 @pytest.mark.django_db
-def test_asset_mutual_fund_metrics(api_client, seeded, today_patch):
+def test_asset_mutual_fund_metrics(api_client, legacy_seeded, today_patch):
     _mf_buy(
         api_client,
         investment_date="2026-03-01",
@@ -314,7 +314,7 @@ def test_asset_mutual_fund_metrics(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_asset_mf_multiple_folios_requires_folio_number(api_client, seeded, today_patch):
+def test_asset_mf_multiple_folios_requires_folio_number(api_client, legacy_seeded, today_patch):
     _mf_buy(api_client, folio_number="FOLIO-A")
     _mf_buy(api_client, folio_number="FOLIO-B", investment_date="2026-03-11")
     r = api_client.get(_asset_metrics_url("120503", range="ALL"))
@@ -323,7 +323,7 @@ def test_asset_mf_multiple_folios_requires_folio_number(api_client, seeded, toda
 
 @pytest.mark.django_db
 def test_asset_metrics_includes_periodic_returns_and_drawdown_periods(
-    api_client, seeded, today_patch
+    api_client, legacy_seeded, today_patch
 ):
     _buy(api_client)
     _price("AAPL", "2026-01-01", "100")
@@ -346,7 +346,7 @@ def test_asset_metrics_includes_periodic_returns_and_drawdown_periods(
 
 @pytest.mark.django_db
 @patch("yfinance.Ticker")
-def test_asset_metrics_no_yfinance_on_read(mock_ticker, api_client, seeded, today_patch):
+def test_asset_metrics_no_yfinance_on_read(mock_ticker, api_client, legacy_seeded, today_patch):
     _buy(api_client)
     _price("AAPL", "2026-03-15", "100")
     r = api_client.get(_asset_metrics_url("AAPL", range="ALL"))

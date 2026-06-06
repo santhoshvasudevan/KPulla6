@@ -71,7 +71,7 @@ def _cached_nav(scheme: str, d: str, close: str):
 
 
 @pytest.mark.django_db
-def test_mf_csv_import_buy_creates_full_graph(api_client, seeded):
+def test_mf_csv_import_buy_creates_full_graph(api_client, legacy_seeded):
     csv_text = MF_HEADER + _mf_row()
     response = _import(api_client, csv_text)
     assert response.status_code == 200
@@ -99,7 +99,7 @@ def test_mf_csv_import_buy_creates_full_graph(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_csv_import_sell(api_client, seeded):
+def test_mf_csv_import_sell(api_client, legacy_seeded):
     csv_text = MF_HEADER + _mf_row(action="SELL")
     response = _import(api_client, csv_text)
     assert response.json()["success"] is True
@@ -107,7 +107,7 @@ def test_mf_csv_import_sell(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_csv_missing_scheme_code(api_client, seeded):
+def test_mf_csv_missing_scheme_code(api_client, legacy_seeded):
     csv_text = MF_HEADER + _mf_row(scheme_code="")
     data = _import(api_client, csv_text).json()
     assert data["success"] is False
@@ -115,7 +115,7 @@ def test_mf_csv_missing_scheme_code(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_csv_missing_folio_number(api_client, seeded):
+def test_mf_csv_missing_folio_number(api_client, legacy_seeded):
     csv_text = MF_HEADER + _mf_row(folio="")
     data = _import(api_client, csv_text).json()
     assert data["success"] is False
@@ -123,7 +123,7 @@ def test_mf_csv_missing_folio_number(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_csv_invalid_date(api_client, seeded):
+def test_mf_csv_invalid_date(api_client, legacy_seeded):
     csv_text = MF_HEADER + _mf_row(nav_date="99/99/24")
     data = _import(api_client, csv_text).json()
     assert data["success"] is False
@@ -131,7 +131,7 @@ def test_mf_csv_invalid_date(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_csv_invalid_nav(api_client, seeded):
+def test_mf_csv_invalid_nav(api_client, legacy_seeded):
     csv_text = MF_HEADER + _mf_row(nav="0")
     data = _import(api_client, csv_text).json()
     assert data["success"] is False
@@ -139,7 +139,7 @@ def test_mf_csv_invalid_nav(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_csv_invalid_units(api_client, seeded):
+def test_mf_csv_invalid_units(api_client, legacy_seeded):
     csv_text = MF_HEADER + _mf_row(units="-1")
     data = _import(api_client, csv_text).json()
     assert data["success"] is False
@@ -147,7 +147,7 @@ def test_mf_csv_invalid_units(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_csv_invalid_paid_value(api_client, seeded):
+def test_mf_csv_invalid_paid_value(api_client, legacy_seeded):
     csv_text = MF_HEADER + _mf_row(paid="-1")
     data = _import(api_client, csv_text).json()
     assert data["success"] is False
@@ -155,7 +155,7 @@ def test_mf_csv_invalid_paid_value(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_csv_omitted_fees_uses_default(api_client, seeded):
+def test_mf_csv_omitted_fees_uses_default(api_client, legacy_seeded):
     row = _mf_row(fees="").replace(",5.00,", ",,")
     csv_text = MF_HEADER + row
     response = _import(api_client, csv_text)
@@ -164,7 +164,7 @@ def test_mf_csv_omitted_fees_uses_default(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_csv_assigns_portfolio_id(api_client, seeded, test_user):
+def test_mf_csv_assigns_portfolio_id(api_client, legacy_seeded, test_user):
     target = Portfolio.objects.create(user=test_user, name="MF Target", base_currency="INR", is_active=True)
     csv_text = MF_HEADER + _mf_row()
     response = _import(api_client, csv_text, portfolio_id=target.id)
@@ -173,7 +173,7 @@ def test_mf_csv_assigns_portfolio_id(api_client, seeded, test_user):
 
 
 @pytest.mark.django_db
-def test_mf_csv_rejects_unknown_portfolio_id(api_client, seeded):
+def test_mf_csv_rejects_unknown_portfolio_id(api_client, legacy_seeded):
     csv_text = MF_HEADER + _mf_row()
     response = _import(api_client, csv_text, portfolio_id=999999)
     assert response.status_code == 404
@@ -181,7 +181,7 @@ def test_mf_csv_rejects_unknown_portfolio_id(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_csv_rejects_inactive_portfolio_id(api_client, seeded, test_user):
+def test_mf_csv_rejects_inactive_portfolio_id(api_client, legacy_seeded, test_user):
     inactive = Portfolio.objects.create(user=test_user, name="Inactive MF", is_active=False)
     csv_text = MF_HEADER + _mf_row()
     response = _import(api_client, csv_text, portfolio_id=inactive.id)
@@ -189,7 +189,7 @@ def test_mf_csv_rejects_inactive_portfolio_id(api_client, seeded, test_user):
 
 
 @pytest.mark.django_db
-def test_mf_csv_all_or_nothing(api_client, seeded):
+def test_mf_csv_all_or_nothing(api_client, legacy_seeded):
     before = _count_txns()
     csv_text = MF_HEADER + _mf_row() + _mf_row(units="-1")
     data = _import(api_client, csv_text).json()
@@ -199,7 +199,7 @@ def test_mf_csv_all_or_nothing(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_csv_nav_verification_uses_cached_db_only(api_client, seeded):
+def test_mf_csv_nav_verification_uses_cached_db_only(api_client, legacy_seeded):
     _cached_nav("120503", "2024-03-15", "42.500000")
     csv_text = MF_HEADER + _mf_row()
     with patch(
@@ -213,7 +213,7 @@ def test_mf_csv_nav_verification_uses_cached_db_only(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_csv_rejects_mixed_stock_and_mf_headers(api_client, seeded):
+def test_mf_csv_rejects_mixed_stock_and_mf_headers(api_client, legacy_seeded):
     csv_text = (
         "Action,Date,ASSET SYMBOL,Qty,Price/Share,Scheme Code,Folio Number\n"
         "Buy,01/15/24,AAPL,10,150.00,120503,FOLIO-1\n"
@@ -224,7 +224,7 @@ def test_mf_csv_rejects_mixed_stock_and_mf_headers(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_csv_rejects_invalid_action(api_client, seeded):
+def test_mf_csv_rejects_invalid_action(api_client, legacy_seeded):
     csv_text = MF_HEADER + _mf_row(action="DIVIDEND")
     data = _import(api_client, csv_text).json()
     assert data["success"] is False

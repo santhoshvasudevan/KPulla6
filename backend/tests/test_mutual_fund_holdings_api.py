@@ -59,7 +59,7 @@ def _nav(scheme: str, close: str, *, d: str = "2026-03-20"):
 
 
 @pytest.mark.django_db
-def test_mf_buy_appears_in_holdings_grouped_by_scheme_and_folio(api_client, seeded, test_user):
+def test_mf_buy_appears_in_holdings_grouped_by_scheme_and_folio(api_client, legacy_seeded, test_user):
     default = ensure_default_portfolio(test_user)
     _mf_buy(api_client, portfolio_id=default.id)
     _nav("120503", "50.00")
@@ -78,7 +78,7 @@ def test_mf_buy_appears_in_holdings_grouped_by_scheme_and_folio(api_client, seed
 
 
 @pytest.mark.django_db
-def test_same_scheme_two_folios_two_holdings(api_client, seeded):
+def test_same_scheme_two_folios_two_holdings(api_client, legacy_seeded):
     _mf_buy(api_client, folio_number="FOLIO-A")
     _mf_buy(api_client, folio_number="FOLIO-B")
     _nav("120503", "50.00")
@@ -89,7 +89,7 @@ def test_same_scheme_two_folios_two_holdings(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_same_scheme_same_folio_combines_transactions(api_client, seeded):
+def test_same_scheme_same_folio_combines_transactions(api_client, legacy_seeded):
     _mf_buy(api_client, folio_number="FOLIO-ONE", units_allotted="50.00000000", paid_value="2125.00", market_value="2125.00")
     _mf_buy(
         api_client,
@@ -108,7 +108,7 @@ def test_same_scheme_same_folio_combines_transactions(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_sell_reduces_units_and_invested(api_client, seeded):
+def test_mf_sell_reduces_units_and_invested(api_client, legacy_seeded):
     _mf_buy(api_client, units_allotted="100.00000000")
     _mf_sell(api_client, units_allotted="40.00000000", paid_value="2000.00", market_value="2000.00")
     _nav("120503", "50.00")
@@ -118,7 +118,7 @@ def test_mf_sell_reduces_units_and_invested(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_fully_sold_mf_holding_closed(api_client, seeded):
+def test_fully_sold_mf_holding_closed(api_client, legacy_seeded):
     _mf_buy(api_client, units_allotted="100.00000000")
     _mf_sell(api_client, units_allotted="100.00000000", paid_value="5000.00", market_value="5000.00")
     _nav("120503", "50.00")
@@ -128,7 +128,7 @@ def test_fully_sold_mf_holding_closed(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_missing_nav_nav_missing_and_zero_current_value(api_client, seeded):
+def test_missing_nav_nav_missing_and_zero_current_value(api_client, legacy_seeded):
     _mf_buy(api_client)
     row = [h for h in api_client.get("/api/v1/portfolio/holdings").json()["holdings"] if h.get("asset_type") == "MUTUAL_FUND"][0]
     assert row["nav_status"] == "nav_missing"
@@ -139,7 +139,7 @@ def test_missing_nav_nav_missing_and_zero_current_value(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_cached_nav_calculates_current_value(api_client, seeded):
+def test_cached_nav_calculates_current_value(api_client, legacy_seeded):
     _mf_buy(api_client, units_allotted="100.00000000")
     _nav("120503", "55.25")
     row = [h for h in api_client.get("/api/v1/portfolio/holdings").json()["holdings"] if h.get("asset_type") == "MUTUAL_FUND"][0]
@@ -150,7 +150,7 @@ def test_cached_nav_calculates_current_value(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_oversell_status_and_warning(api_client, seeded):
+def test_mf_oversell_status_and_warning(api_client, legacy_seeded):
     _mf_buy(api_client, units_allotted="10.00000000")
     _mf_sell(api_client, units_allotted="15.00000000", paid_value="750.00", market_value="750.00")
     _nav("120503", "50.00")
@@ -160,7 +160,7 @@ def test_mf_oversell_status_and_warning(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_asset_detail_with_folio_number(api_client, seeded):
+def test_mf_asset_detail_with_folio_number(api_client, legacy_seeded):
     _mf_buy(api_client, folio_number="FOLIO-X")
     _nav("120503", "48.00")
     r = api_client.get("/api/v1/portfolio/assets/120503?folio_number=FOLIO-X")
@@ -179,7 +179,7 @@ def test_mf_asset_detail_with_folio_number(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_asset_detail_single_folio_without_query_param(api_client, seeded):
+def test_mf_asset_detail_single_folio_without_query_param(api_client, legacy_seeded):
     _mf_buy(api_client, folio_number="ONLY-FOLIO")
     _nav("120503", "48.00")
     r = api_client.get("/api/v1/portfolio/assets/120503")
@@ -188,7 +188,7 @@ def test_mf_asset_detail_single_folio_without_query_param(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_asset_detail_multiple_folios_requires_folio_number(api_client, seeded):
+def test_mf_asset_detail_multiple_folios_requires_folio_number(api_client, legacy_seeded):
     _mf_buy(api_client, folio_number="F1")
     _mf_buy(api_client, folio_number="F2", nav_date="2026-04-01", investment_date="2026-03-28")
     r = api_client.get("/api/v1/portfolio/assets/120503")
@@ -197,7 +197,7 @@ def test_mf_asset_detail_multiple_folios_requires_folio_number(api_client, seede
 
 
 @pytest.mark.django_db
-def test_holdings_no_external_nav_provider(api_client, seeded):
+def test_holdings_no_external_nav_provider(api_client, legacy_seeded):
     _mf_buy(api_client)
     _nav("120503", "50.00")
     with patch("market_data.providers.mutual_fund_nav_provider.AmfiNavProvider.get_latest_nav") as mocked:
@@ -206,7 +206,7 @@ def test_holdings_no_external_nav_provider(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_asset_detail_no_external_nav_provider(api_client, seeded):
+def test_asset_detail_no_external_nav_provider(api_client, legacy_seeded):
     _mf_buy(api_client)
     _nav("120503", "50.00")
     with patch("market_data.providers.mutual_fund_nav_provider.AmfiNavProvider.get_latest_nav") as mocked:
@@ -215,7 +215,7 @@ def test_asset_detail_no_external_nav_provider(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_stock_holdings_unchanged_shape(api_client, seeded, test_user):
+def test_stock_holdings_unchanged_shape(api_client, legacy_seeded, test_user):
     default = ensure_default_portfolio(test_user)
     api_client.post(
         "/api/v1/transactions",

@@ -63,7 +63,7 @@ def _mf_txns(api_client):
 
 @pytest.mark.django_db
 def test_mf_nav_freshness_no_warning_for_recent_friday_nav_on_sunday_end(
-    api_client, seeded, today_patch
+    api_client, legacy_seeded, today_patch
 ):
     txns = _mf_txns(api_client)
     _mf_nav("120503", "2026-03-13", "44.00")
@@ -75,7 +75,7 @@ def test_mf_nav_freshness_no_warning_for_recent_friday_nav_on_sunday_end(
 
 @pytest.mark.django_db
 def test_mf_nav_freshness_no_warning_within_five_calendar_days(
-    api_client, seeded, today_patch
+    api_client, legacy_seeded, today_patch
 ):
     txns = _mf_txns(api_client)
     _mf_nav("120503", "2026-03-11", "44.00")
@@ -87,7 +87,7 @@ def test_mf_nav_freshness_no_warning_within_five_calendar_days(
 
 @pytest.mark.django_db
 def test_mf_nav_freshness_stale_warning_when_latest_nav_older_than_five_days(
-    api_client, seeded, today_patch
+    api_client, legacy_seeded, today_patch
 ):
     txns = _mf_txns(api_client)
     _mf_nav("120503", "2026-03-01", "42.00")
@@ -100,7 +100,7 @@ def test_mf_nav_freshness_stale_warning_when_latest_nav_older_than_five_days(
 
 @pytest.mark.django_db
 def test_mf_nav_freshness_missing_warning_when_no_cached_nav(
-    api_client, seeded, today_patch
+    api_client, legacy_seeded, today_patch
 ):
     txns = _mf_txns(api_client)
 

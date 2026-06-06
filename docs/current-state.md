@@ -1,7 +1,37 @@
 # Current State — KPulla6 (Portfolio Insight)
 
 ## Last Updated
-2026-06-04 (TXN-AUDIT-2/3 transaction future-impact UX; Cash-7D bulk entries)
+2026-06-06 (MVP-RELEASE-1 — MVP release-ready sign-off)
+
+## MVP Status
+
+**MVP release-ready** (local-first dev; **not** marked production-deployed). Sign-off: **2026-06-06**.
+
+**Ready with accepted limitations** — automated tests, diagnostics, and performance gates passed (STAB-6); manual golden-flow browser QA completed (MVP-RELEASE-1). Commit stabilization work before tagging.
+
+**KPulla6 has reached MVP maturity** for local-first portfolio tracking with:
+
+- Quantitative Statistics / **Metric Sheet** (portfolio, asset, Compare — backend + frontend)
+- Full **cash ledger** (deposits, withdrawals, edit/delete, cash-aware BUY/SELL, summary/performance/XIRR integration)
+- Same- and cross-currency **portfolio transfers**
+- **Bulk Cash Entries** for historical funding (backfill wizard/APIs **removed**)
+- Stock + mutual fund transactions, CSV import, holdings, dashboard performance
+
+Product rules index: [product-rules.md](./product-rules.md). Release checklist: [mvp-release-checklist.md](./mvp-release-checklist.md). API contract index: [api-contracts.md](./api-contracts.md).
+
+### Accepted limitations (MVP)
+
+| Limitation | Status |
+|------------|--------|
+| Transfer fees | Deferred (Cash-8C) |
+| Same-portfolio FX conversion | Deferred |
+| Dashboard read-path optimization | Deferred — STAB-5B baseline acceptable (< 1 s critical paths) |
+| Background sync scheduler (Celery/RQ) | Not configured |
+| Full browser E2E suite (Playwright/Cypress) | Not present |
+| Display-currency cash totals on `/cash` | Deferred |
+| Dividends / interest / taxes ledger types | Deferred |
+
+See [performance/dashboard-read-paths.md](./performance/dashboard-read-paths.md) for optimization backlog (STAB-5C+ when targets exceeded).
 
 ## Stack
 - **Backend:** Django 5 + Django REST Framework + django-allauth (session auth, Google OAuth)
@@ -173,7 +203,7 @@ Design doc: [cash-ledger.md](./cash-ledger.md).
 | `cash/services.py` ORM skeleton (no HTTP) | **Done** |
 | Tests | `test_cash_ledger_models.py`, `test_finance_cash.py`, `test_cash_services.py` |
 | `GET /api/v1/cash/balances`, `GET /api/v1/cash/ledger` | **Done** (Cash-2) |
-| `cash_aware_enabled` on portfolio API | **Done** (Cash-2) — editable via PUT; no runtime effect yet |
+| `cash_aware_enabled` on portfolio API | **Done** (Cash-2) — editable via PUT; drives settlement enforcement when true |
 | `POST /api/v1/cash/deposits`, `POST /api/v1/cash/withdrawals` | **Done** (Cash-3A) — withdrawal blocked when insufficient cash |
 | Cash page UI (`/cash`) — balances, ledger, deposit/withdrawal modals | **Done** (Cash-3B) |
 | Manual ledger edit/delete (`PUT`/`DELETE /cash/ledger/{id}`) | **Done** (Cash-3D + **Cash-4D**) — manual rows only; future-impact **409** with `affected_entries`; no cascade delete |
@@ -203,38 +233,27 @@ Design doc: [cash-ledger.md](./cash-ledger.md).
 
 **Next recommended phase:** transfer fees (Cash-8C); optional bulk quarterly/yearly frequencies.
 
-## Not Yet Implemented
-- Automatic background sync scheduler (Celery/RQ not configured)
-- **Quantitative Statistics / Metric Sheet** — portfolio + asset + compare APIs **implemented** (Phase 5–7); Dashboard + Asset Detail + Compare Metric Sheet UI **implemented** (Phase 8B–8D)
-
-### Planned — Analytics Metric Sheet (Phase 1 docs complete)
+## Deferred / Not Yet Implemented
 
 | Topic | Status |
 |-------|--------|
-| Architecture: TWROR-derived daily returns as primary stats input | **Documented** |
-| MVP: compute metrics on query; no DB persistence of derived series | **Documented** |
-| `backend/finance/returns.py` | **Done** (Phase 2) — unit tests in `test_finance_returns.py` |
-| `backend/finance/performance_stats.py`, `risk_metrics.py`, `drawdowns.py` | **Done** (Phase 3) — `test_finance_performance_stats.py`, `test_finance_risk_metrics.py`, `test_finance_drawdowns.py` |
-| `backend/finance/comparison.py` | **Done** (Phase 4) — `test_finance_comparison.py` |
-| `backend/analytics/services.py`, views | **Done** (Phase 5–6) — portfolio + asset Metric Sheet |
-| `GET /api/v1/analytics/performance-metrics` | **Done** (Phase 5) — `test_analytics_performance_metrics_api.py` |
-| `GET /api/v1/analytics/assets/{symbol}/performance-metrics` | **Done** (Phase 6) — `test_analytics_asset_metrics_api.py`; split hardening in `test_analytics_split_metrics_api.py` (Phase 6B) |
-| `GET /api/v1/analytics/compare` | **Done** (Phase 7) — `test_analytics_compare_api.py` |
-| Metric Sheet frontend foundation (API client, formatters, components) | **Done** (Phase 8A) — `metricSheet.test.jsx`, `metricFormatters.test.js` |
-| Dashboard Metric Sheet section | **Done** (Phase 8B) — `Dashboard.test.jsx` Metric Sheet tests |
-| Asset Detail Metric Sheet section | **Done** (Phase 8C) — `AssetDetail.test.jsx` Metric Sheet tests |
-| Compare UI | **Done** (Phase 8D) — `Compare.jsx`, `Compare.test.jsx` |
-| Metric Sheet UX hardening | **Done** (Phase 8E) — picker labels, range copy, XIRR note, warnings |
-| Metric Sheet periodic returns + drawdown periods (API) | **Done** (Phase 9A) — `periodic_returns`, `drawdown_periods` on portfolio/asset/compare |
-| Metric Sheet drawdown series + Calendar-Year Return contract (API) | **Done** (Phase 13B) — `drawdown_series` on portfolio/asset/compare; `periodic_returns.yearly` = Calendar-Year Return (TWROR daily compounded); `drawdown_periods.worst[].rank` |
-| Metric Sheet visualization charts (frontend) | **Done** (Phase 13C) — Calendar-Year Return bar chart, Drawdown area chart with ranked shading, monthly heatmap five-band scale on Dashboard + Asset Detail |
-| Metric Sheet periodic/drawdown UI (frontend) | **Done** (Phase 9B) — `MetricSheetPeriodicReturnsTable`, `MetricSheetDrawdownPeriodsTable`, Compare sections |
-| Metric Sheet polish (Phase 10B) | **Done** — Dashboard benchmark control, table scroll, Asset Detail settings gate, clearer price/NAV warnings |
-| Metric Sheet monthly returns grid (Phase 11A) | **Done** — `MetricSheetMonthlyReturnsGrid` on Dashboard + Asset Detail |
-| Compare metric highlighting (Phase 11B) | **Done** — `compareMetricRanking.js`, subtle per-cell highlights in `CompareMetricTable`; yearly column labeled **Year Return** |
-| Metric Sheet release readiness (Phase 12A) | **Done** — compare TWROR aligned to common window; label/scroll/benchmark guard consistency; contract + warning tests |
-| Dashboard Metric Sheet full-width + MF NAV freshness (Phase 12B) | **Done** — full-width layout; NAV warnings only when missing or stale (>5 calendar days) |
-| Golden unit tests for analytics formulas | Partial — TWROR golden tests in `test_finance_domain.py` only |
+| Transfer fees (Cash-8C) | Deferred |
+| Same-portfolio FX conversion | Deferred |
+| Display-currency cash totals on `/cash` page | Deferred |
+| Dividends / interest / taxes ledger types | Deferred |
+| Bulk quarterly/yearly frequencies | Planned |
+| Automatic background sync (Celery/RQ) | Not configured |
+| Dashboard performance optimization (shared series builder) | **Deferred** — acceptable for MVP (STAB-5B); backlog P1–P6 in [performance/dashboard-read-paths.md](./performance/dashboard-read-paths.md) |
+| Expanded read-only diagnostics (settlement integrity, FX/NAV coverage) | **Done** (STAB-4) |
+| Golden unit tests for all analytics formulas | Partial — see `test_finance_domain.py` |
+
+## Quantitative Statistics / Metric Sheet — implemented
+
+| Topic | Status |
+|-------|--------|
+| Portfolio / asset / compare APIs (Phase 5–7) | **Done** |
+| Dashboard / Asset Detail / Compare Metric Sheet UI (Phase 8B–8D, 9B–13C) | **Done** |
+| Periodic returns, drawdown periods/series, monthly grid, charts | **Done** |
 
 ## Planned — Indian Mutual Funds (MF-4+)
 
@@ -259,7 +278,7 @@ Design doc: [mutual-funds.md](./mutual-funds.md). **MF-1 schema, MF-2 NAV sync, 
 - XIRR cashflow rules; TWROR chain-link helper (not exposed via API)
 - Oversell: no hard reject; realized P/L uses full sell proceeds vs FIFO cost of held lots only
 - TWROR: `compute_twror_series` in `finance/twror.py`; golden unit tests in `test_finance_domain.py`; exposed via performance API (Phase 10)
-- Analytics Metric Sheet: design only (Phase 1) — see `docs/architecture.md` § Quantitative Statistics / Metric Sheet architecture
+- Analytics Metric Sheet: **implemented** (Phase 5–13C) — see `docs/architecture.md` § Quantitative Statistics / Metric Sheet architecture
 
 ## Phase 10 contracts (verified in tests)
 - Performance scoping/validation matches summary (default `all`, 400/404/422 rules)
@@ -298,8 +317,55 @@ Design doc: [mutual-funds.md](./mutual-funds.md). **MF-1 schema, MF-2 NAV sync, 
 - All sync tests mock providers — no real network calls
 
 ## Test Status
-- Backend: `make test-backend` — 612 pytest tests
-- Frontend: `make test-frontend` — 266 vitest tests; `npm run build` passes
+- Backend: `make test-backend` — **840 passed** (`DJANGO_TEST_USE_SQLITE=1`)
+- Frontend: `make test-frontend` — **384 passed**; `npm run build` passes
+- **STAB-3 targets:** `make test-fast` · `make test-critical` · `make test-all` — all green (STAB-6 verified 2026-06-06)
+- Graphify: `make graphify` → `graphify update .`; `graphify-out/GRAPH_REPORT.md` tracked
+
+## MVP release QA (STAB-6 — 2026-06-06)
+
+| Gate | Result |
+|------|--------|
+| Migrations | `makemigrations --check --dry-run` — no pending changes |
+| DB safety | `make db-safety-check` — 67 transactions, 5 portfolios, 29277 prices |
+| `make test-fast` | **127 passed** |
+| `make test-critical` | **302 backend + 239 frontend passed** |
+| `make test-all` | **840 backend + 384 frontend + build passed** |
+| Diagnostics (Postgres, `santhoshkgvasudevan`) | All **exit 0** — settlement, negative cash, summary vs performance, FX, NAV clean |
+| Dashboard profiler | No major regression vs STAB-5B; default parallel max ~433 ms (Metric Sheet 1Y) |
+| Graphify | `make graphify` OK; `GRAPH_REPORT.md` updated |
+| Manual golden-flow QA | **Complete** (MVP-RELEASE-1 — user browser sign-off) |
+| Git working tree | **Dirty** — stabilization commit pending |
+
+**Release verdict:** **MVP release-ready with accepted limitations** — ready to commit STAB/MVP stabilization; not production-deployed.
+
+### Commit-prep summary (single stabilization commit)
+
+| Area | Contents |
+|------|----------|
+| Docs / rules | `product-rules.md`, STAB-1 doc cleanup, `AGENTS.md`, `.cursor/rules/*`, `workflows.md`, `architecture.md`, `api-design.md` |
+| Release artifacts | `mvp-release-checklist.md`, `api-contracts.md`, performance baseline docs |
+| Test infrastructure | `make test-fast` / `test-critical` / `test-all`; `legacy_seeded` fixture hygiene (STAB-3B); 840 backend tests |
+| Diagnostics | `backend/diagnostics/*`, five `diagnose_*.py` scripts, `test_diagnostics_integrity.py` |
+| Performance | `profile_dashboard_read_paths.py`, STAB-5A/5B baseline and decision record |
+| Frontend tests | Bulk Cash Entries coverage in `Cash.test.jsx` |
+| Graphify | `Makefile` fix, `graphify-out/GRAPH_REPORT.md` |
+
+## STAB maintenance (documentation)
+
+| Phase | Status |
+|-------|--------|
+| STAB-0 | MVP maintenance baseline audit — **Done** |
+| STAB-1 | Product rules index, doc cleanup, Graphify policy, TDD guardrails — **Done** |
+| STAB-2 | MVP release checklist + API contracts index — **Done** |
+| STAB-3 | `make test-fast` / `make test-critical` / `make test-all`; Bulk Cash Entries frontend tests — **Done** |
+| STAB-3B | Full backend suite after cash-aware default — `legacy_seeded` fixture hygiene + MF XIRR FX setup — **Done** |
+| STAB-4 | Read-only diagnostics scripts (settlement, negative cash, summary vs performance, FX/NAV coverage) — **Done** |
+| STAB-5A | Dashboard read-path profiler + bottleneck report — **Done** |
+| STAB-5B | Performance decision + optimization backlog (Postgres baseline; no refactor now) — **Done** |
+| STAB-6 | MVP release QA execution (automated + diagnostics + profiler) — **Done** |
+| MVP-RELEASE-1 | Manual golden-flow QA + release sign-off — **Done** (2026-06-06) |
+| STAB-5C | Summary bulk loading / shared read context (when targets exceeded) — Planned |
 
 ## Phase 4 contracts (verified in tests)
 - `portfolio_scope=all` + `portfolio_id` → **422**

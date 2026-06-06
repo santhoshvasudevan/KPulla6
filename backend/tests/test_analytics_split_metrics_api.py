@@ -107,7 +107,7 @@ def _seed_raw_nominal_price_split_scenario(api_client):
 
 
 @pytest.mark.django_db
-def test_asset_metrics_adjusted_prices_stable_around_split(api_client, seeded, today_patch):
+def test_asset_metrics_adjusted_prices_stable_around_split(api_client, legacy_seeded, today_patch):
     _seed_adjusted_price_split_scenario(api_client)
     data = api_client.get(
         "/api/v1/analytics/assets/GOOG/performance-metrics?range=ALL"
@@ -120,7 +120,7 @@ def test_asset_metrics_adjusted_prices_stable_around_split(api_client, seeded, t
 
 
 @pytest.mark.django_db
-def test_portfolio_metrics_adjusted_prices_stable_around_split(api_client, seeded, today_patch):
+def test_portfolio_metrics_adjusted_prices_stable_around_split(api_client, legacy_seeded, today_patch):
     _seed_adjusted_price_split_scenario(api_client)
     data = api_client.get("/api/v1/analytics/performance-metrics?range=ALL").json()
     ret = data["metrics"]["return"]
@@ -130,7 +130,7 @@ def test_portfolio_metrics_adjusted_prices_stable_around_split(api_client, seede
 
 
 @pytest.mark.django_db
-def test_asset_metrics_raw_nominal_prices_warn(api_client, seeded, today_patch):
+def test_asset_metrics_raw_nominal_prices_warn(api_client, legacy_seeded, today_patch):
     _seed_raw_nominal_price_split_scenario(api_client)
     data = api_client.get(
         "/api/v1/analytics/assets/RAW/performance-metrics?range=ALL"
@@ -145,14 +145,14 @@ def test_asset_metrics_raw_nominal_prices_warn(api_client, seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_portfolio_metrics_raw_nominal_prices_warn(api_client, seeded, today_patch):
+def test_portfolio_metrics_raw_nominal_prices_warn(api_client, legacy_seeded, today_patch):
     _seed_raw_nominal_price_split_scenario(api_client)
     data = api_client.get("/api/v1/analytics/performance-metrics?range=ALL").json()
     assert any("split-adjusted" in w.lower() for w in data["warnings"])
 
 
 @pytest.mark.django_db
-def test_asset_metrics_split_no_external_flow_neutral_twror(api_client, seeded, today_patch):
+def test_asset_metrics_split_no_external_flow_neutral_twror(api_client, legacy_seeded, today_patch):
     _seed_adjusted_price_split_scenario(api_client)
     data = api_client.get(
         "/api/v1/analytics/assets/GOOG/performance-metrics?range=ALL"
@@ -162,7 +162,7 @@ def test_asset_metrics_split_no_external_flow_neutral_twror(api_client, seeded, 
 
 
 @pytest.mark.django_db
-def test_asset_metrics_split_day_daily_returns_near_zero(api_client, seeded, today_patch):
+def test_asset_metrics_split_day_daily_returns_near_zero(api_client, legacy_seeded, today_patch):
     _seed_adjusted_price_split_scenario(api_client)
     data = api_client.get(
         "/api/v1/analytics/assets/GOOG/performance-metrics?range=ALL"

@@ -76,7 +76,13 @@ Agent rules: `.cursor/rules/320-cash-ledger.mdc` · design: [cash-ledger.md](./c
 | `make migrate` | Django migrations (requires db) |
 | `make backend` | Run Django dev server |
 | `make frontend` | Run Vite dev server |
-| `make test` | Backend pytest (SQLite, no Docker) |
+| `make test` | Backend pytest + frontend Vitest (SQLite, no Docker) |
+| `make test-backend` | Backend pytest only (`DJANGO_TEST_USE_SQLITE=1`) |
+| `make test-frontend` | Frontend Vitest only (`npm test -- --run`) |
+| `make test-fast` | Finance unit + cash service pytest subset (~1 min) |
+| `make test-critical` | Golden-flow backend APIs + key frontend page tests |
+| `make test-all` | Full `make test` + frontend production build |
+| `make graphify` | Regenerate code graph (`graphify update .`) — see § Graphify Usage |
 | `make dev` | db + migrate + backend + frontend |
 | `make ports` | Show processes on backend/frontend dev ports |
 | `make stop-backend` | Stop process on `BACKEND_PORT` (default 8000) |
@@ -144,6 +150,124 @@ Same discipline as KPulla5 (`../KPulla5/docs/workflows.md`):
 5. Minimal implementation; finance logic in `backend/finance/`
 6. Run `make test`, frontend tests, `make dev` smoke check
 7. Update docs and `docs/changelog.md`
+
+## Graphify Usage
+
+Graphify is an **optional navigation aid**, not source of truth. Code, tests, migrations, and docs are authoritative.
+
+**When to regenerate**
+
+- After **significant** changes: new Django apps, large service refactors, API flow changes, model/migration changes, frontend routing or page-structure changes, architecture shifts.
+- **Do not** regenerate for: small one-file bug fixes, UI copy/style tweaks, docs-only edits, or test-only changes.
+
+**Command**
+
+```bash
+graphify update .
+# or
+make graphify
+```
+
+AST-only rebuild; no LLM/API cost.
+
+**Inspect**
+
+- `graphify-out/GRAPH_REPORT.md` — broad architecture review
+- `graphify-out/graph.json` — machine-readable graph (gitignored locally)
+- `graphify-out/graph.html` — interactive view (gitignored locally)
+- `graphify query "<question>"` — scoped subgraph for specific questions
+
+**Commit policy:** `graphify-out/GRAPH_REPORT.md` is tracked; commit it after significant structural changes. Do not commit large ignored artifacts (`graph.json`, `graph.html`, `cache/`) unless project convention changes.
+
+## TDD / test workflow
+
+1. Read `docs/product-rules.md` and affected contract docs before coding.
+2. Define test impact alongside API/DB behavior.
+3. **Backend** logic, API, or calculation changes → add or update **pytest** (`backend/tests/`).
+4. **Frontend** UI or `api.js` changes → add or update **Vitest**.
+5. **Calculation changes** → deterministic regression tests (finance unit tests or API golden cases).
+6. **Data-sensitive work** → SQLite tests only; `make backup-db` + `make db-safety-check` before live DB mutations.
+7. Run relevant suites before marking work complete:
+   - `make test-backend` or targeted `pytest tests/test_….py`
+   - `cd frontend && npm test -- --run`
+   - `cd frontend && npm run build` when UI changes affect build
+8. Every Cursor implementation summary must **report tests run and pass/fail**.
+
+### Test Makefile targets (STAB-3)
+
+| Target | When to use |
+|--------|-------------|
+| `make test-fast` | Daily dev — pure `backend/finance/` + `test_cash_services.py` |
+| `make test-critical` | Before major merges — cash, summary, performance, analytics, transactions, CSV cash preview + key frontend pages |
+| `make test-all` | Release — full suites + `npm run build` |
+| `make test` / `make test-backend` / `make test-frontend` | Full backend and/or frontend as before |
+
+**Fixture hygiene (cash-aware default):** New portfolios default to `cash_aware_enabled=true`. Tests that only need historical BUY/MF setup (filters, holdings, splits, MF NAV) should use the `legacy_seeded` fixture. Tests that assert cash-aware enforcement or deposit-funded BUY behavior should use `seeded` plus explicit `CASH_DEPOSIT` rows in the transaction currency. See `backend/tests/conftest.py`.
+
+Release checklist: [mvp-release-checklist.md](./mvp-release-checklist.md).
+
+## Diagnostics
+
+Read-only scripts for local investigation against dev Postgres or SQLite scratch data. **They never mutate data** (no saves, deletes, or external market-data calls). Run from `backend/` with the project venv.
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/diagnose_cash_aware_returns.py` | Cash-aware summary, performance, XIRR, external flows, balances |
+| `scripts/diagnose_settlement_integrity.py` | Cash-aware BUY/SELL settlement orphans, duplicates, amount/date mismatches |
+| `scripts/diagnose_negative_cash.py` | Per-portfolio/currency chronological running balance below zero |
+| `scripts/diagnose_summary_vs_performance.py` | Summary `current_value` vs latest performance `metric=value` (cash-inclusive) |
+| `scripts/diagnose_fx_coverage.py` | Cached FX gaps for ledger/transaction → display currency conversion |
+| `scripts/diagnose_nav_coverage.py` | Held MF scheme NAV missing/stale rows (cached DB only) |
+| `scripts/profile_dashboard_read_paths.py` | Dashboard read-path timing + SQL query baseline (STAB-5A) |
+
+See [performance/dashboard-read-paths.md](./performance/dashboard-read-paths.md) and [performance/dashboard-read-baseline.md](./performance/dashboard-read-baseline.md).
+
+**When to use**
+
+| Situation | Script |
+|-----------|--------|
+| After enabling cash-aware on an existing portfolio, or odd BUY/SELL errors | `diagnose_settlement_integrity.py` |
+| Cash page shows unexpected balances or “future negative” errors | `diagnose_negative_cash.py` |
+| Dashboard headline value disagrees with value chart | `diagnose_summary_vs_performance.py` |
+| Holdings/summary show `fx_unavailable` or wrong display-currency totals | `diagnose_fx_coverage.py` then `make sync-fx` if gaps are confirmed |
+| MF holdings show zero value or NAV warnings | `diagnose_nav_coverage.py` then `make sync-mutual-fund-navs` if gaps are confirmed |
+| Return metric debugging (TWROR/XIRR/external flows) | `diagnose_cash_aware_returns.py` |
+| Dashboard latency or SQL regressions (before/after optimization) | `profile_dashboard_read_paths.py` |
+
+**Example commands** (Postgres dev DB — omit `DJANGO_TEST_USE_SQLITE`):
+
+```bash
+cd backend
+.venv/bin/python scripts/diagnose_settlement_integrity.py --username demo
+.venv/bin/python scripts/diagnose_negative_cash.py --portfolio-id 1 --currency EUR
+.venv/bin/python scripts/diagnose_summary_vs_performance.py --portfolio-scope=all --display-currency EUR --tolerance 0.01
+.venv/bin/python scripts/diagnose_fx_coverage.py --display-currency EUR --as-json
+.venv/bin/python scripts/diagnose_nav_coverage.py --stale-days 5
+.venv/bin/python scripts/profile_dashboard_read_paths.py --username demo --verbose \
+  --json-out tmp/dashboard_read_baseline.json
+```
+
+Exit codes: integrity scripts exit `1` when issues found; profiler exits `0` (measurement only). JSON: `--as-json` on diagnostics; `--json-out` on profiler.
+
+SQLite scratch run: prefix with `DJANGO_TEST_USE_SQLITE=1` only when intentionally using the test database.
+
+See [data-safety.md](./data-safety.md) and [mvp-release-checklist.md](./mvp-release-checklist.md) § B2 Optional diagnostics.
+
+## Performance profiling (STAB-5A)
+
+Before optimizing Dashboard read paths (STAB-5B), capture a baseline on the **same** database you care about:
+
+```bash
+cd backend
+.venv/bin/python scripts/profile_dashboard_read_paths.py --username YOUR_USER --verbose
+```
+
+Interpret results using [performance/dashboard-read-paths.md](./performance/dashboard-read-paths.md). Refresh [performance/dashboard-read-baseline.md](./performance/dashboard-read-baseline.md) when re-profiling on representative Postgres dev data. **STAB-5B decision:** current latency is MVP-acceptable; do not optimize until targets are exceeded (see decision record in that doc).
+
+## Release readiness
+
+- Before releases or major merges to `main`, follow [mvp-release-checklist.md](./mvp-release-checklist.md).
+- For endpoint → frontend client → test lookup, use [api-contracts.md](./api-contracts.md) (detail remains in [api-design.md](./api-design.md)).
 
 ## KPulla6-specific rules
 - Do not modify `../KPulla5/`

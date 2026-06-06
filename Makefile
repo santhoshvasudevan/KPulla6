@@ -1,4 +1,4 @@
-.PHONY: db db-stop db-logs db-shell db-reset backup-db db-safety-check backend frontend migrate seed bootstrap test test-backend test-frontend dev setup-backend setup-frontend sync-prices sync-benchmarks sync-fx sync-mutual-fund-navs sync-market-data refresh graphify ports stop-backend stop-frontend stop-dev stop-all clean-dev
+.PHONY: db db-stop db-logs db-shell db-reset backup-db db-safety-check backend frontend migrate seed bootstrap test test-backend test-frontend test-fast test-critical test-all dev setup-backend setup-frontend sync-prices sync-benchmarks sync-fx sync-mutual-fund-navs sync-market-data refresh graphify ports stop-backend stop-frontend stop-dev stop-all clean-dev
 
 BACKEND_DIR := backend
 FRONTEND_DIR := frontend
@@ -78,7 +78,48 @@ test-backend: setup-backend
 	cd $(BACKEND_DIR) && DJANGO_TEST_USE_SQLITE=1 $(PYTHON) -m pytest
 
 test-frontend: setup-frontend
-	cd $(FRONTEND_DIR) && npm test
+	cd $(FRONTEND_DIR) && npm test -- --run
+
+# Fast feedback: pure finance + cash service unit tests (~1 min)
+test-fast: setup-backend
+	@set -a && [ -f .env ] && . ./.env; set +a; \
+	cd $(BACKEND_DIR) && DJANGO_TEST_USE_SQLITE=1 $(PYTHON) -m pytest \
+	  tests/test_finance_returns.py \
+	  tests/test_finance_performance_stats.py \
+	  tests/test_finance_risk_metrics.py \
+	  tests/test_finance_drawdowns.py \
+	  tests/test_finance_comparison.py \
+	  tests/test_finance_domain.py \
+	  tests/test_finance_cash.py \
+	  tests/test_cash_services.py \
+	  -q
+
+# Golden-flow confidence before major merges (backend API + key frontend pages)
+test-critical: setup-backend setup-frontend
+	@set -a && [ -f .env ] && . ./.env; set +a; \
+	cd $(BACKEND_DIR) && DJANGO_TEST_USE_SQLITE=1 $(PYTHON) -m pytest \
+	  tests/test_cash_api.py \
+	  tests/test_cash_aware_transactions_api.py \
+	  tests/test_portfolio_summary_api.py \
+	  tests/test_portfolio_performance_api.py \
+	  tests/test_analytics_performance_metrics_api.py \
+	  tests/test_analytics_asset_metrics_api.py \
+	  tests/test_analytics_compare_api.py \
+	  tests/test_transactions_api.py \
+	  tests/test_csv_import_cash_preview.py \
+	  -q
+	cd $(FRONTEND_DIR) && npm test -- --run \
+	  src/pages/Cash.test.jsx \
+	  src/pages/Dashboard.test.jsx \
+	  src/pages/Transactions.test.jsx \
+	  src/pages/Compare.test.jsx \
+	  src/components/TransactionModal.test.jsx \
+	  src/components/metricSheet/metricSheet.test.jsx \
+	  src/api.test.js
+
+# Release confidence: full test suites + production build
+test-all: test
+	cd $(FRONTEND_DIR) && npm run build
 
 sync-prices: setup-backend db migrate
 	@set -a && [ -f .env ] && . ./.env; set +a; \
@@ -111,7 +152,7 @@ dev: setup-backend setup-frontend db migrate
 	cd $(FRONTEND_DIR) && npm run dev -- --host 0.0.0.0 --port $(FRONTEND_PORT)
 
 graphify:
-	graphify .
+	graphify update .
 
 ports:
 	@echo "Port $(BACKEND_PORT) (backend):"
