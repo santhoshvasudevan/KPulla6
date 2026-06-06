@@ -139,7 +139,7 @@ class CashTransferGroup(models.Model):
 class CashLedgerEntry(models.Model):
     """
     Portfolio cash ledger row. Signed ``amount``: positive increases cash,
-    negative decreases cash. Legacy portfolios have no rows until backfill.
+    negative decreases cash. Legacy portfolios may have no rows until the user adds cash.
     """
 
     portfolio = models.ForeignKey(

@@ -163,6 +163,17 @@ Distinct filter values for the current portfolio scope (same `portfolio_scope` /
 
 `DELETE /api/v1/transactions/{id}` — hard delete (`204`).
 
+**Cash-aware write errors (stock + MF when `portfolio.cash_aware_enabled`):**
+
+| Condition | Status | Response |
+|-----------|--------|----------|
+| Insufficient same-currency cash for BUY (create/update) | **400** | `detail`, `required`, `available`, `shortfall`, `currency` |
+| Settlement change would make future balance negative (edit/delete/type morph) | **409** | `detail`, `currency`, `earliest_negative_date`, `lowest_balance`, `affected_entries[]` |
+
+Future-impact `detail`: `"This transaction change would make future cash balance negative."` Applies when deleting a `SELL` whose proceeds funded later activity, morphing `SELL` → `BUY`/`STOCK_SPLIT`, or other settlement sync that removes positive cash before a later negative balance.
+
+**Legacy → cash-aware:** editing a transaction created while `cash_aware_enabled=false` after enable may attempt settlement creation on first `PUT`; fails with **400** shortfall if ledger funding is missing.
+
 **Validation:** quantity > 0 for non-split types; `price_per_share` ≥ 0; `split_from`/`split_to` > 0 for splits; inactive/unknown portfolio `404`.
 
 #### CSV import
@@ -745,12 +756,12 @@ Full design: [cash-ledger.md](./cash-ledger.md) · agent rules: [.cursor/rules/3
 | POST | `/api/v1/cash/withdrawals` | Manual `CASH_WITHDRAWAL`; 400 shortfall if insufficient |
 | PUT | `/api/v1/cash/ledger/{id}` | Manual rows only; 409 if linked/system or future-impact violation |
 | DELETE | `/api/v1/cash/ledger/{id}` | Manual rows only; same protections as PUT |
-| POST | `/api/v1/cash/transfers` | **Planned** (Cash-8) — not implemented |
-| POST | `/api/v1/cash/backfill-preview` | **Done** (Cash-7A) — read-only shortfall simulation |
-| POST | `/api/v1/cash/backfill-apply` | **Done** (Cash-7B) |
+| POST | `/api/v1/cash/transfers` | **Done** (Cash-8A/8B) — same- or cross-currency portfolio transfer |
+| POST | `/api/v1/cash/bulk-entries/preview` | **Done** (Cash-7D) — schedule preview |
+| POST | `/api/v1/cash/bulk-entries/apply` | **Done** (Cash-7D) — confirmed bulk manual entries |
 | POST | `/api/v1/transactions/import-csv/preview-cash` | **Done** (Cash-5) — CSV cash simulation; no writes |
 
-**Settlement rows** (`BUY_SETTLEMENT`, `SELL_SETTLEMENT`, transfers, FX legs) are **system-protected** — created/updated/deleted only via `/api/v1/transactions` (or future transfer APIs), not via manual cash ledger edit.
+**Settlement rows** (`BUY_SETTLEMENT`, `SELL_SETTLEMENT`, transfer legs, FX legs) are **system-protected** — created/updated/deleted only via `/api/v1/transactions` or `/api/v1/cash/transfers`, not via manual cash ledger edit.
 
 **No implicit FX:** BUY sufficiency and withdrawal checks use **same-currency** ledger cash only. No `FX_CONVERSION_*` write endpoint in current phase.
 
@@ -877,6 +888,76 @@ When `true`, Cash-4A BUY/SELL settlement rules apply. Portfolio-level XIRR uses 
 ```
 - No FX conversion for sufficiency checks (same currency only).
 
+#### `POST /api/v1/cash/transfers` — **201 Created** (Cash-8A / Cash-8B)
+
+Portfolio-to-portfolio transfer. **No automatic FX lookup** — the user enters what was sent and what was received.
+
+**Same-currency request (legacy, Cash-8A):**
+```json
+{
+  "source_portfolio_id": 1,
+  "target_portfolio_id": 2,
+  "date": "2026-06-06",
+  "currency": "EUR",
+  "amount": 1000.0,
+  "note": "Move cash"
+}
+```
+
+**Cross-currency request (Cash-8B):**
+```json
+{
+  "source_portfolio_id": 1,
+  "target_portfolio_id": 2,
+  "date": "2026-06-06",
+  "source_currency": "USD",
+  "source_amount": 1000.0,
+  "target_currency": "EUR",
+  "target_amount": 920.0,
+  "note": "Broker conversion"
+}
+```
+
+Use **either** `currency` + `amount` **or** the four explicit fields — not both.
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| `source_portfolio_id` | Yes | Active; must differ from target |
+| `target_portfolio_id` | Yes | Active; same user |
+| `date` | Yes | `YYYY-MM-DD` |
+| `currency` + `amount` | Legacy | Same-currency only; normalized to source/target fields |
+| `source_currency` / `source_amount` | Cross-currency | Supported code; strictly positive |
+| `target_currency` / `target_amount` | Cross-currency | Supported code; strictly positive; user-entered received amount |
+| `note` | No | Copied to group and both ledger rows |
+
+When `source_currency == target_currency`, `source_amount` must equal `target_amount`.
+
+**Response (201):**
+```json
+{
+  "transfer_group_id": 10,
+  "date": "2026-06-06",
+  "source_portfolio_id": 1,
+  "target_portfolio_id": 2,
+  "source_currency": "USD",
+  "source_amount": 1000.0,
+  "target_currency": "EUR",
+  "target_amount": 920.0,
+  "implied_rate": 0.92,
+  "currency": "EUR",
+  "amount": 1000.0,
+  "entries": []
+}
+```
+
+`implied_rate` = `target_amount / source_amount` (informational only; not used for valuation). Legacy `currency` / `amount` included when both legs share one currency.
+
+`entries`: `TRANSFER_OUT` in source currency (−`source_amount`), `TRANSFER_IN` in target currency (+`target_amount`).
+
+**Errors:** `400` validation; insufficient **source-currency** cash (shortfall payload); `404` portfolio; `409` future-impact on source; `401`/`403` unauthenticated.
+
+**Performance:** single-portfolio external flows per leg; same-currency all-scope nets to zero; cross-currency all-scope reflects user-entered amounts in display currency (not forced neutral).
+
 ### Implemented (Cash-3D / Cash-4D) — edit / delete manual ledger entries
 
 #### `PUT /api/v1/cash/ledger/{id}` — **200 OK**
@@ -934,36 +1015,55 @@ Up to **10** `affected_entries` from `earliest_negative_date` onward. Client mus
 
 **Protected entry detail:** `"Linked or system-generated cash entries cannot be edited directly."`
 
-### Implemented (Cash-7A) — `POST /api/v1/cash/backfill-preview`
+### Removed — Cash-7A/7B shortfall backfill APIs
 
-Read-only simulation for legacy → cash-aware migration. **No writes.**
+`POST /api/v1/cash/backfill-preview` and `POST /api/v1/cash/backfill-apply` were **removed**. Historical funding uses manual `POST /cash/deposits` / `withdrawals` or **Bulk Cash Entries** (`bulk-entries/preview` + `apply`).
 
-**Request:** `portfolio_id` (required), optional `start_date` / `end_date`, `mode` (`"shortfall"` only). No `portfolio_scope=all`. Invalid date range → **400**.
+### Implemented (Cash-7D) — bulk cash entries schedule
 
-**Simulation:** Existing ledger + historical transactions in chronological order; skip cash effects when linked `BUY_SETTLEMENT` / `SELL_SETTLEMENT` already exist. Same-currency BUY sufficiency only (no implicit FX). Proposes merged `CASH_DEPOSIT` rows (`source_of_funds`: `Backfill deposit`) for exact shortfalls before BUYs in the window.
+User-defined manual `CASH_DEPOSIT` / `CASH_WITHDRAWAL` schedules (opening balance, monthly contributions, periodic withdrawals). Use actual amounts and dates.
 
-**Response:** `proposed_deposits`, `shortfalls`, `summary`, `can_enable_cash_aware_after_apply`, `warnings` (informational when already cash-aware).
+#### `POST /api/v1/cash/bulk-entries/preview`
 
-**Apply / enable:** Cash-7B (`backfill-apply`) **done**; Cash-7C (wizard UI) — not in this phase.
+**Request:**
+```json
+{
+  "portfolio_id": 1,
+  "entry_type": "CASH_DEPOSIT",
+  "currency": "EUR",
+  "amount": 900,
+  "start_date": "2022-06-01",
+  "end_date": "2022-12-01",
+  "frequency": "monthly",
+  "source_of_funds": "Monthly contribution",
+  "note": "Historical contribution"
+}
+```
 
-### Implemented (Cash-7B) — `POST /api/v1/cash/backfill-apply`
+| Field | Rules |
+|-------|--------|
+| `entry_type` | `CASH_DEPOSIT` or `CASH_WITHDRAWAL` |
+| `frequency` | `once` (uses `start_date` only; `end_date` optional) or `monthly` (`end_date` required, ≥ `start_date`) |
+| `amount` | Positive decimal |
+| `currency` | Supported native currency |
 
-User-confirmed apply for legacy → cash-aware migration deposits. **Writes `CASH_DEPOSIT` only.**
+**Response (200):** `portfolio_id`, `entry_count`, `entries[]` (`date`, `currency`, `entry_type`, `amount`, `source_of_funds`, `note`), `total_by_currency[]`, `warnings[]` (duplicate skip hints; withdrawal negative-balance preview).
 
-**Request:** `portfolio_id` (required), optional `start_date` / `end_date`, `mode` (`"shortfall"` only), `confirmed: true` (required). Extra client fields (e.g. `proposed_deposits`) are ignored. No `portfolio_scope=all`. Invalid date range → **400**. Unknown/inactive/not-owned portfolio → **404**.
+**Errors:** **400** invalid range/frequency/currency; **404** portfolio not owned.
 
-**Confirmation:** `confirmed` missing or not `true` → **400** `Backfill apply requires explicit confirmation.`
+#### `POST /api/v1/cash/bulk-entries/apply`
 
-**Behavior:**
+Same body as preview plus **`confirmed`: true** (required).
 
-1. Recompute preview server-side (same logic as Cash-7A); do not trust frontend proposal amounts.
-2. If preview has `row_errors` or `BLOCKING:` warnings → **400**, no writes.
-3. Create proposed deposits inside `transaction.atomic()`; amounts quantized to 4 decimal places.
-4. Skip duplicate identical backfill rows (same portfolio/date/currency/amount/`Backfill deposit`/note).
-5. Do **not** set `cash_aware_enabled`; response includes `cash_aware_enablement` message to enable separately.
-6. No `BUY_SETTLEMENT` / `SELL_SETTLEMENT` for historical transactions; no transaction mutation.
+**Rules:**
+1. Backend **recomputes** schedule from request — does not trust client preview rows.
+2. Creates manual ledger rows inside `transaction.atomic()`.
+3. Skips duplicate identical manual rows (same portfolio/date/currency/amount/source/note/type); reports `skipped_existing_count`.
+4. **Withdrawals:** reject **400** if schedule would make running balance negative on any date.
+5. No `BUY_SETTLEMENT` / `SELL_SETTLEMENT`; no transaction mutation; no auto `cash_aware_enabled`.
+6. Max **500** entries per schedule.
 
-**Response (200):** `created_count`, `skipped_existing_count`, `created_deposits`, `summary.total_created_by_currency`, `cash_aware_enabled` (unchanged), `cash_aware_enablement`.
+**Response (200):** `created_count`, `skipped_existing_count`, `created_entries[]`, `summary.total_created_by_currency`, `warnings[]`.
 
 ### Planned — Cash write / integration
 

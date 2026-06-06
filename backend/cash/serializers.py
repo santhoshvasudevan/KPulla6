@@ -38,24 +38,32 @@ class CashManualLedgerUpdateSerializer(serializers.Serializer):
         return value
 
 
-class CashBackfillPreviewRequestSerializer(serializers.Serializer):
+class CashBulkEntriesRequestSerializer(serializers.Serializer):
     portfolio_id = serializers.IntegerField()
-    start_date = serializers.DateField(required=False, allow_null=True)
+    entry_type = serializers.CharField()
+    currency = serializers.CharField(max_length=3)
+    amount = serializers.DecimalField(max_digits=18, decimal_places=4)
+    start_date = serializers.DateField()
     end_date = serializers.DateField(required=False, allow_null=True)
-    mode = serializers.CharField(required=False, default="shortfall")
+    frequency = serializers.CharField()
+    source_of_funds = serializers.CharField(
+        required=False, allow_blank=True, default=""
+    )
+    note = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate_amount(self, value: Decimal) -> Decimal:
+        if value <= 0:
+            raise serializers.ValidationError("amount must be positive")
+        return value
 
 
-class CashBackfillApplyRequestSerializer(serializers.Serializer):
-    portfolio_id = serializers.IntegerField()
-    start_date = serializers.DateField(required=False, allow_null=True)
-    end_date = serializers.DateField(required=False, allow_null=True)
-    mode = serializers.CharField(required=False, default="shortfall")
+class CashBulkEntriesApplyRequestSerializer(CashBulkEntriesRequestSerializer):
     confirmed = serializers.BooleanField(required=False, default=False)
 
     def validate(self, attrs):
         if attrs.get("confirmed") is not True:
             raise serializers.ValidationError(
-                "Backfill apply requires explicit confirmation."
+                "Bulk cash apply requires explicit confirmation."
             )
         return attrs
 
@@ -74,6 +82,66 @@ class CashWithdrawalWriteSerializer(serializers.Serializer):
         if value <= 0:
             raise serializers.ValidationError("amount must be positive")
         return value
+
+
+class CashTransferWriteSerializer(serializers.Serializer):
+    source_portfolio_id = serializers.IntegerField()
+    target_portfolio_id = serializers.IntegerField()
+    date = serializers.DateField()
+    note = serializers.CharField(required=False, allow_blank=True, default="")
+    # Legacy same-currency (Cash-8A)
+    currency = serializers.CharField(max_length=3, required=False, allow_null=True)
+    amount = serializers.DecimalField(
+        max_digits=18, decimal_places=4, required=False, allow_null=True
+    )
+    # Explicit cross-currency (Cash-8B)
+    source_currency = serializers.CharField(
+        max_length=3, required=False, allow_null=True
+    )
+    source_amount = serializers.DecimalField(
+        max_digits=18, decimal_places=4, required=False, allow_null=True
+    )
+    target_currency = serializers.CharField(
+        max_length=3, required=False, allow_null=True
+    )
+    target_amount = serializers.DecimalField(
+        max_digits=18, decimal_places=4, required=False, allow_null=True
+    )
+
+    def validate_amount(self, value: Decimal | None) -> Decimal | None:
+        if value is not None and value <= 0:
+            raise serializers.ValidationError("amount must be positive")
+        return value
+
+    def validate_source_amount(self, value: Decimal | None) -> Decimal | None:
+        if value is not None and value <= 0:
+            raise serializers.ValidationError("source_amount must be positive")
+        return value
+
+    def validate_target_amount(self, value: Decimal | None) -> Decimal | None:
+        if value is not None and value <= 0:
+            raise serializers.ValidationError("target_amount must be positive")
+        return value
+
+    def validate(self, attrs):
+        from cash.services import CashValidationError, parse_transfer_amounts
+
+        try:
+            src_ccy, src_amt, tgt_ccy, tgt_amt = parse_transfer_amounts(
+                currency=attrs.get("currency"),
+                amount=attrs.get("amount"),
+                source_currency=attrs.get("source_currency"),
+                source_amount=attrs.get("source_amount"),
+                target_currency=attrs.get("target_currency"),
+                target_amount=attrs.get("target_amount"),
+            )
+        except CashValidationError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
+        attrs["source_currency"] = src_ccy
+        attrs["source_amount"] = src_amt
+        attrs["target_currency"] = tgt_ccy
+        attrs["target_amount"] = tgt_amt
+        return attrs
 
 
 def _decimal_to_float(value: Decimal | None) -> float | None:

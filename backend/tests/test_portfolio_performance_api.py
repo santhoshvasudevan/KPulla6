@@ -1338,3 +1338,194 @@ def test_cash_only_after_delete_buy_same_currency_returns_near_zero(
         )
     )
     assert abs(pts[-1]["value"]) < 0.5
+
+
+@pytest.mark.django_db
+def test_cash_8a_same_currency_transfer_all_scope_twror_xirr_neutral(
+    api_client, seeded, test_user, today_patch
+):
+    source = _enable_cash_aware(ensure_default_portfolio(test_user))
+    target = _enable_cash_aware(
+        Portfolio.objects.create(
+            user=test_user, name="Target", base_currency="EUR", is_active=True
+        )
+    )
+    _cash_deposit(source, amount="5000", day="2026-01-01")
+    before_summary = api_client.get(
+        "/api/v1/portfolio/summary?include_timeseries=false&portfolio_scope=all&display_currency=EUR"
+    ).json()
+    before_twror = _perf_points(
+        api_client.get(
+            "/api/v1/portfolio/performance?portfolio_scope=all&metric=twror&range=ALL&display_currency=EUR"
+        )
+    )
+    before_value_pts = _perf_points(
+        api_client.get(
+            "/api/v1/portfolio/performance?portfolio_scope=all&metric=value&range=ALL&display_currency=EUR"
+        )
+    )
+    before_xirr = before_summary["xirr"]
+    before_current_value = before_summary["current_value"]
+
+    transfer = api_client.post(
+        "/api/v1/cash/transfers",
+        {
+            "source_portfolio_id": source.id,
+            "target_portfolio_id": target.id,
+            "date": "2026-02-01",
+            "currency": "EUR",
+            "amount": "1000",
+            "note": "Rebalance cash",
+        },
+        format="json",
+    )
+    assert transfer.status_code == 201
+
+    after_twror = _perf_points(
+        api_client.get(
+            "/api/v1/portfolio/performance?portfolio_scope=all&metric=twror&range=ALL&display_currency=EUR"
+        )
+    )
+    after_xirr = api_client.get(
+        "/api/v1/portfolio/summary?include_timeseries=false&portfolio_scope=all&display_currency=EUR"
+    ).json()["xirr"]
+    after_summary = api_client.get(
+        "/api/v1/portfolio/summary?include_timeseries=false&portfolio_scope=all&display_currency=EUR"
+    ).json()
+    after_value_pts = _perf_points(
+        api_client.get(
+            "/api/v1/portfolio/performance?portfolio_scope=all&metric=value&range=ALL&display_currency=EUR"
+        )
+    )
+    assert abs(after_twror[-1]["value"] - before_twror[-1]["value"]) < 0.5
+    assert before_xirr is not None and after_xirr is not None
+    assert abs(after_xirr - before_xirr) < 0.02
+    assert after_summary["current_value"] == pytest.approx(
+        before_current_value, abs=0.01
+    )
+    assert _last_valid_performance_value(after_value_pts) == pytest.approx(
+        _last_valid_performance_value(before_value_pts), abs=0.01
+    )
+
+
+@pytest.mark.django_db
+def test_cash_8a_transfer_source_portfolio_twror_treats_as_external_flow(
+    api_client, seeded, test_user, today_patch
+):
+    source = _enable_cash_aware(ensure_default_portfolio(test_user))
+    target = _enable_cash_aware(
+        Portfolio.objects.create(
+            user=test_user, name="Target", base_currency="EUR", is_active=True
+        )
+    )
+    _cash_deposit(source, amount="5000", day="2026-01-01")
+    transfer = api_client.post(
+        "/api/v1/cash/transfers",
+        {
+            "source_portfolio_id": source.id,
+            "target_portfolio_id": target.id,
+            "date": "2026-02-01",
+            "currency": "EUR",
+            "amount": "1000",
+        },
+        format="json",
+    )
+    assert transfer.status_code == 201
+
+    src_twror = _metric_on_date(
+        _perf_points(
+            api_client.get(
+                f"/api/v1/portfolio/performance?portfolio_id={source.id}&metric=twror&range=ALL&display_currency=EUR"
+            )
+        ),
+        "2026-02-01",
+    )
+    tgt_value = _metric_on_date(
+        _perf_points(
+            api_client.get(
+                f"/api/v1/portfolio/performance?portfolio_id={target.id}&metric=value&range=ALL&display_currency=EUR"
+            )
+        ),
+        "2026-02-01",
+    )
+    tgt_twror_last = _perf_points(
+        api_client.get(
+            f"/api/v1/portfolio/performance?portfolio_id={target.id}&metric=twror&range=ALL&display_currency=EUR"
+        )
+    )[-1]["value"]
+    assert src_twror is not None and abs(src_twror) < 0.5
+    assert tgt_value == pytest.approx(1000.0, rel=1e-2)
+    assert tgt_twror_last is None or abs(tgt_twror_last) < 0.5
+
+
+@pytest.mark.django_db
+def test_cash_8b_cross_currency_transfer_all_scope_does_not_crash(
+    api_client, seeded, test_user, today_patch
+):
+    from fx.services import upsert_fx_rate
+
+    source = _enable_cash_aware(ensure_default_portfolio(test_user))
+    target = _enable_cash_aware(
+        Portfolio.objects.create(
+            user=test_user, name="Target", base_currency="EUR", is_active=True
+        )
+    )
+    CashLedgerEntry.objects.create(
+        portfolio=source,
+        date=date(2026, 1, 1),
+        currency="USD",
+        entry_type=CashEntryType.CASH_DEPOSIT,
+        amount=Decimal("5000"),
+    )
+    upsert_fx_rate(
+        from_currency="USD",
+        to_currency="EUR",
+        row_date=date(2026, 1, 1),
+        rate=Decimal("0.90"),
+    )
+    upsert_fx_rate(
+        from_currency="USD",
+        to_currency="EUR",
+        row_date=date(2026, 2, 1),
+        rate=Decimal("0.90"),
+    )
+    before_summary = api_client.get(
+        "/api/v1/portfolio/summary?include_timeseries=false&portfolio_scope=all&display_currency=EUR"
+    ).json()
+
+    transfer = api_client.post(
+        "/api/v1/cash/transfers",
+        {
+            "source_portfolio_id": source.id,
+            "target_portfolio_id": target.id,
+            "date": "2026-02-01",
+            "source_currency": "USD",
+            "source_amount": "1000",
+            "target_currency": "EUR",
+            "target_amount": "920",
+        },
+        format="json",
+    )
+    assert transfer.status_code == 201
+    assert transfer.json()["implied_rate"] == pytest.approx(0.92, rel=1e-4)
+
+    after_summary = api_client.get(
+        "/api/v1/portfolio/summary?include_timeseries=false&portfolio_scope=all&display_currency=EUR"
+    ).json()
+    twror_pts = _perf_points(
+        api_client.get(
+            "/api/v1/portfolio/performance?portfolio_scope=all&metric=twror&range=ALL&display_currency=EUR"
+        )
+    )
+    value_pts = _perf_points(
+        api_client.get(
+            "/api/v1/portfolio/performance?portfolio_scope=all&metric=value&range=ALL&display_currency=EUR"
+        )
+    )
+    assert after_summary["current_value"] is not None
+    assert twror_pts[-1]["value"] is not None or twror_pts[-1]["value"] is None
+    assert _last_valid_performance_value(value_pts) is not None
+    # Cross-currency user-entered amounts may change display total vs cached FX.
+    assert after_summary["current_value"] != pytest.approx(
+        before_summary["current_value"], abs=0.01
+    )

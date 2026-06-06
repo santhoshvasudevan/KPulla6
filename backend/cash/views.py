@@ -4,23 +4,21 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from cash.backfill_apply import (
-    BackfillApplyBlockedError,
-    BackfillApplyValidationError,
-    apply_cash_backfill,
-    backfill_apply_to_response_dict,
-)
-from cash.backfill_preview import (
-    BackfillPreviewValidationError,
-    backfill_preview_to_response_dict,
-    simulate_cash_backfill_preview,
+from cash.bulk_entries import (
+    BulkEntriesBlockedError,
+    BulkEntriesValidationError,
+    apply_bulk_cash_entries,
+    bulk_entries_apply_to_response_dict,
+    bulk_entries_preview_to_response_dict,
+    preview_bulk_cash_entries,
 )
 from cash.serializers import (
-    CashBackfillApplyRequestSerializer,
-    CashBackfillPreviewRequestSerializer,
+    CashBulkEntriesApplyRequestSerializer,
+    CashBulkEntriesRequestSerializer,
     CashDepositWriteSerializer,
     CashLedgerEntrySerializer,
     CashManualLedgerUpdateSerializer,
+    CashTransferWriteSerializer,
     CashWithdrawalWriteSerializer,
 )
 from cash.services import (
@@ -31,7 +29,9 @@ from cash.services import (
     FutureCashImpactError,
     InsufficientCashError,
     cash_balances_for_scope,
+    cash_transfer_response_payload,
     create_cash_deposit,
+    create_cash_transfer,
     create_cash_withdrawal,
     delete_cash_ledger_entry,
     future_cash_impact_payload,
@@ -310,6 +310,42 @@ class CashWithdrawalView(APIView):
         )
 
 
+class CashTransferView(APIView):
+    def post(self, request):
+        serializer = CashTransferWriteSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        data = serializer.validated_data
+        try:
+            result = create_cash_transfer(
+                request.user,
+                source_portfolio_id=data["source_portfolio_id"],
+                target_portfolio_id=data["target_portfolio_id"],
+                entry_date=data["date"],
+                source_currency=data["source_currency"],
+                source_amount=data["source_amount"],
+                target_currency=data["target_currency"],
+                target_amount=data["target_amount"],
+                note=data.get("note", ""),
+            )
+        except (
+            PortfolioNotFoundError,
+            CashValidationError,
+            InsufficientCashError,
+            FutureCashImpactError,
+        ) as exc:
+            err = _cash_write_error_response(exc)
+            if err is not None:
+                return err
+            raise
+
+        return Response(
+            cash_transfer_response_payload(result),
+            status=status.HTTP_201_CREATED,
+        )
+
+
 class CashLedgerEntryDetailView(APIView):
     def put(self, request, entry_id: int):
         serializer = CashManualLedgerUpdateSerializer(data=request.data)
@@ -352,11 +388,25 @@ class CashLedgerEntryDetailView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class CashBackfillPreviewView(APIView):
-    """POST /api/v1/cash/backfill-preview — read-only legacy cash backfill simulation (Cash-7A)."""
+def _bulk_entries_validation_response(exc: CashValidationError) -> Response:
+    return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+def _bulk_apply_confirmation_response(errors) -> Response | None:
+    if isinstance(errors, dict) and errors.get("non_field_errors"):
+        detail = errors["non_field_errors"][0]
+        if isinstance(detail, str):
+            return Response({"detail": detail}, status=status.HTTP_400_BAD_REQUEST)
+    if isinstance(errors, list) and errors:
+        return Response({"detail": str(errors[0])}, status=status.HTTP_400_BAD_REQUEST)
+    return None
+
+
+class CashBulkEntriesPreviewView(APIView):
+    """POST /api/v1/cash/bulk-entries/preview — schedule manual cash rows (Cash-7D)."""
 
     def post(self, request):
-        serializer = CashBackfillPreviewRequestSerializer(data=request.data)
+        serializer = CashBulkEntriesRequestSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -373,32 +423,33 @@ class CashBackfillPreviewView(APIView):
             )
 
         try:
-            result = simulate_cash_backfill_preview(
+            result = preview_bulk_cash_entries(
                 portfolio,
-                start_date=data.get("start_date"),
+                entry_type=data["entry_type"],
+                currency=data["currency"],
+                amount=data["amount"],
+                start_date=data["start_date"],
                 end_date=data.get("end_date"),
-                mode=(data.get("mode") or "shortfall").strip().lower(),
+                frequency=data["frequency"],
+                source_of_funds=data.get("source_of_funds", ""),
+                note=data.get("note", ""),
             )
-        except BackfillPreviewValidationError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except (BulkEntriesValidationError, CashValidationError) as exc:
+            return _bulk_entries_validation_response(exc)
 
-        return Response(backfill_preview_to_response_dict(result))
+        return Response(bulk_entries_preview_to_response_dict(result))
 
 
-class CashBackfillApplyView(APIView):
-    """POST /api/v1/cash/backfill-apply — create proposed backfill CASH_DEPOSIT rows (Cash-7B)."""
+class CashBulkEntriesApplyView(APIView):
+    """POST /api/v1/cash/bulk-entries/apply — confirmed bulk manual entries (Cash-7D)."""
 
     def post(self, request):
-        serializer = CashBackfillApplyRequestSerializer(data=request.data)
+        serializer = CashBulkEntriesApplyRequestSerializer(data=request.data)
         if not serializer.is_valid():
-            errors = serializer.errors
-            if isinstance(errors, dict) and errors.get("non_field_errors"):
-                detail = errors["non_field_errors"][0]
-                if isinstance(detail, str):
-                    return Response({"detail": detail}, status=status.HTTP_400_BAD_REQUEST)
-            if isinstance(errors, list) and errors:
-                return Response({"detail": str(errors[0])}, status=status.HTTP_400_BAD_REQUEST)
-            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+            err = _bulk_apply_confirmation_response(serializer.errors)
+            if err is not None:
+                return err
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         data = serializer.validated_data
         try:
@@ -413,22 +464,23 @@ class CashBackfillApplyView(APIView):
             )
 
         try:
-            result = apply_cash_backfill(
+            result = apply_bulk_cash_entries(
                 portfolio,
-                start_date=data.get("start_date"),
+                entry_type=data["entry_type"],
+                currency=data["currency"],
+                amount=data["amount"],
+                start_date=data["start_date"],
                 end_date=data.get("end_date"),
-                mode=(data.get("mode") or "shortfall").strip().lower(),
+                frequency=data["frequency"],
+                source_of_funds=data.get("source_of_funds", ""),
+                note=data.get("note", ""),
             )
-        except BackfillApplyBlockedError as exc:
+        except BulkEntriesBlockedError as exc:
             return Response(
-                {
-                    "detail": str(exc),
-                    "row_errors": exc.row_errors,
-                    "blocking_warnings": exc.blocking_warnings,
-                },
+                {"detail": str(exc), "warnings": exc.warnings},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        except BackfillApplyValidationError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except (BulkEntriesValidationError, CashValidationError) as exc:
+            return _bulk_entries_validation_response(exc)
 
-        return Response(backfill_apply_to_response_dict(result))
+        return Response(bulk_entries_apply_to_response_dict(result))

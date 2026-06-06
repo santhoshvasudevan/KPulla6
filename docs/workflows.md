@@ -51,14 +51,14 @@ Compare transaction and portfolio counts to the pre-phase snapshot. If counts dr
 
 Cash ledger changes can affect **transaction validity** (BUY sufficiency, settlements, future running balances) and portfolio analytics once Cash-6+ lands.
 
-Before cash-aware **backfill**, bulk enable, migration-heavy ledger schema work, or any script that mutates `cash_ledger_entries` / linked settlements on the live dev database:
+Before bulk cash ledger writes, bulk enable, migration-heavy ledger schema work, or any script that mutates `cash_ledger_entries` / linked settlements on the live dev database:
 
 1. Run `make backup-db` and `make db-safety-check` (record counts).
 2. Obtain **explicit user approval** for bulk or destructive steps.
 
 **Policy:**
 
-- Do **not** bulk-flip existing portfolios to `cash_aware_enabled=true` without per-portfolio user confirmation (Settings enable or backfill wizard).
+- Do **not** bulk-flip existing portfolios to `cash_aware_enabled=true` without per-portfolio user confirmation (Settings enable or Cash page status).
 - Do **not** delete users, profiles, or portfolios as part of cash feature work.
 - Unit tests: `make test-backend` (SQLite). Ad-hoc scripts: scratch DB or `DJANGO_TEST_USE_SQLITE=1` — not default dev Postgres unless the user asks.
 

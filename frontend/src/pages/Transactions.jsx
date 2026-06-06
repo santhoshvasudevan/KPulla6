@@ -7,8 +7,14 @@ import {
   importTransactionsCsv,
   previewCsvImportCash,
   updateTransaction,
+  futureImpactFromApiError,
 } from '../api';
 import TransactionModal from '../components/TransactionModal';
+import CashFutureImpactDisplay, {
+  TRANSACTION_FUTURE_IMPACT_INTRO,
+  TRANSACTION_FUTURE_IMPACT_HELPER,
+} from '../components/CashFutureImpactDisplay';
+import '../components/CashFutureImpactDisplay.css';
 import CsvImportCashPreviewModal from '../components/CsvImportCashPreviewModal';
 import {
   PageHeader,
@@ -77,6 +83,8 @@ export default function Transactions() {
   const [csvCashPreviewFile, setCsvCashPreviewFile] = useState(null);
   const [csvCashConfirming, setCsvCashConfirming] = useState(false);
   const [cashEntryStatus, setCashEntryStatus] = useState('');
+  const [deleteFutureImpact, setDeleteFutureImpact] = useState(null);
+  const [deleteError, setDeleteError] = useState('');
   const fileInputRef = useRef(null);
 
   const [selectedIds, setSelectedIds] = useState(() => new Set());
@@ -335,11 +343,18 @@ export default function Transactions() {
 
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this transaction?')) return;
+    setDeleteFutureImpact(null);
+    setDeleteError('');
     try {
       await deleteTransaction(id);
       refreshAfterMutation();
     } catch (err) {
-      alert(err.message);
+      const impact = futureImpactFromApiError(err);
+      if (impact) {
+        setDeleteFutureImpact(impact);
+      } else {
+        setDeleteError(err.message || 'Delete failed');
+      }
     }
   };
 
@@ -598,6 +613,24 @@ export default function Transactions() {
           }
           className="transactions-page__banner"
         />
+      ) : null}
+
+      {deleteError ? (
+        <WarningBanner
+          severity="warning"
+          message={deleteError}
+          className="transactions-page__banner"
+        />
+      ) : null}
+
+      {deleteFutureImpact ? (
+        <div className="transactions-page__delete-impact">
+          <CashFutureImpactDisplay
+            impact={deleteFutureImpact}
+            intro={TRANSACTION_FUTURE_IMPACT_INTRO}
+            helperText={TRANSACTION_FUTURE_IMPACT_HELPER}
+          />
+        </div>
       ) : null}
 
       <TransactionFilterBar

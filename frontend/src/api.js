@@ -298,6 +298,34 @@ export class TransactionApiError extends ApiError {
   }
 }
 
+function buildTransactionApiError(errorData, status) {
+  const data = errorData && typeof errorData === 'object' ? errorData : {};
+  return new TransactionApiError(buildApiErrorMessage(data, status), {
+    status,
+    detail: data.detail,
+    required: data.required,
+    available: data.available,
+    shortfall: data.shortfall,
+    currency: data.currency,
+    earliest_negative_date: data.earliest_negative_date,
+    lowest_balance: data.lowest_balance,
+    affected_entries: data.affected_entries,
+    data,
+  });
+}
+
+/** Structured future-impact rejection from transaction or cash write APIs. */
+export function futureImpactFromApiError(err) {
+  if (!err || err.earliest_negative_date == null) return null;
+  return {
+    detail: err.detail ?? err.message,
+    currency: err.currency,
+    earliest_negative_date: err.earliest_negative_date,
+    lowest_balance: err.lowest_balance,
+    affected_entries: err.affected_entries,
+  };
+}
+
 async function transactionRequestWithHandling(path, { method = 'POST', body } = {}) {
   const hasJsonBody = body != null && method !== 'GET' && method !== 'DELETE';
   const response = await fetch(
@@ -316,16 +344,10 @@ async function transactionRequestWithHandling(path, { method = 'POST', body } = 
     response.status === 204 ? null : await response.json().catch(() => null);
 
   if (!response.ok) {
-    const errorData = payload && typeof payload === 'object' ? payload : {};
-    throw new TransactionApiError(buildApiErrorMessage(errorData, response.status), {
-      status: response.status,
-      detail: errorData.detail,
-      required: errorData.required,
-      available: errorData.available,
-      shortfall: errorData.shortfall,
-      currency: errorData.currency,
-      data: errorData,
-    });
+    throw buildTransactionApiError(
+      payload && typeof payload === 'object' ? payload : {},
+      response.status
+    );
   }
   return payload;
 }
@@ -343,7 +365,7 @@ export async function updateTransaction(id, data) {
 }
 
 export async function deleteTransaction(id) {
-  const res = await fetchWithHandling(`/transactions/${id}`, { method: 'DELETE' });
+  const res = await transactionRequestWithHandling(`/transactions/${id}`, { method: 'DELETE' });
   invalidateDashboardSummaryCache();
   return res;
 }
@@ -491,8 +513,6 @@ export class CashApiError extends ApiError {
   constructor(message, extras = {}) {
     super(message, extras);
     this.name = 'CashApiError';
-    this.row_errors = extras.row_errors ?? null;
-    this.blocking_warnings = extras.blocking_warnings ?? null;
   }
 }
 
@@ -555,8 +575,6 @@ async function cashRequestWithHandling(path, { method = 'POST', body } = {}) {
       earliest_negative_date: errorData.earliest_negative_date,
       lowest_balance: errorData.lowest_balance,
       affected_entries: errorData.affected_entries,
-      row_errors: errorData.row_errors,
-      blocking_warnings: errorData.blocking_warnings,
       data: errorData,
     });
   }
@@ -621,6 +639,11 @@ export async function createCashWithdrawal(payload) {
   return postCashWithHandling('/cash/withdrawals', payload);
 }
 
+/** POST /api/v1/cash/transfers — same-currency portfolio-to-portfolio transfer (Cash-8A). */
+export async function createCashTransfer(payload) {
+  return postCashWithHandling('/cash/transfers', payload);
+}
+
 /** PUT /api/v1/cash/ledger/{id} — manual deposit/withdrawal only. */
 export async function updateCashLedgerEntry(id, payload) {
   return cashRequestWithHandling(`/cash/ledger/${id}`, { method: 'PUT', body: payload });
@@ -631,25 +654,30 @@ export async function deleteCashLedgerEntry(id) {
   return cashRequestWithHandling(`/cash/ledger/${id}`, { method: 'DELETE' });
 }
 
-function buildCashBackfillRequestBody(payload = {}) {
+function buildCashBulkEntriesBody(payload = {}) {
   const body = {
     portfolio_id: payload.portfolio_id,
-    mode: payload.mode || 'shortfall',
+    entry_type: payload.entry_type,
+    currency: payload.currency,
+    amount: payload.amount,
+    start_date: payload.start_date,
+    frequency: payload.frequency,
+    source_of_funds: payload.source_of_funds || '',
+    note: payload.note || '',
   };
-  if (payload.start_date) body.start_date = payload.start_date;
   if (payload.end_date) body.end_date = payload.end_date;
   return body;
 }
 
-/** POST /api/v1/cash/backfill-preview — read-only legacy cash backfill simulation. */
-export async function previewCashBackfill(payload) {
-  return postCashWithHandling('/cash/backfill-preview', buildCashBackfillRequestBody(payload));
+/** POST /api/v1/cash/bulk-entries/preview — schedule manual cash rows (Cash-7D). */
+export async function previewCashBulkEntries(payload) {
+  return postCashWithHandling('/cash/bulk-entries/preview', buildCashBulkEntriesBody(payload));
 }
 
-/** POST /api/v1/cash/backfill-apply — confirmed; server recomputes preview before writes. */
-export async function applyCashBackfill(payload) {
-  return postCashWithHandling('/cash/backfill-apply', {
-    ...buildCashBackfillRequestBody(payload),
+/** POST /api/v1/cash/bulk-entries/apply — confirmed bulk manual entries. */
+export async function applyCashBulkEntries(payload) {
+  return postCashWithHandling('/cash/bulk-entries/apply', {
+    ...buildCashBulkEntriesBody(payload),
     confirmed: true,
   });
 }

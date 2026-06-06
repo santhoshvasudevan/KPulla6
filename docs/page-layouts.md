@@ -121,7 +121,8 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 | **Import feedback** | Success/warning banner; error block with row-level list |
 | **Table** | Checkbox, Portfolio, Symbol, Date, Type (`.ui-txn-type`), Qty, Price, Fees, Total, Actions (edit/delete icon buttons) |
 | **Bulk actions** | Toolbar when rows selected: portfolio dropdown (active real only), Apply, Clear; partial failure banner |
-| **Modal** | `TransactionModal` — add: **Record type** Cash / Stock / Mutual Fund; cash → `POST /cash/deposits` or `/cash/withdrawals` (not `/transactions`); stock/MF unchanged; edit asset rows only (cash edit on `/cash`); success banner + link to Cash page after cash add |
+| **Modal** | `TransactionModal` — add: **Record type** Cash / Stock / Mutual Fund; cash → `POST /cash/deposits` or `/cash/withdrawals` (not `/transactions`); stock/MF unchanged; edit asset rows only (cash edit on `/cash`); success banner + link to Cash page after cash add; edit blocked → `CashFutureImpactDisplay` or BUY shortfall panel |
+| **Delete impact** | Inline `CashFutureImpactDisplay` when delete blocked by linked settlement future-impact (**409**); generic delete errors → `WarningBanner` |
 
 **States:** `LoadingState` · `ErrorState` · table `EmptyState`.
 
@@ -204,7 +205,7 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 | Component | `pages/Cash.jsx` |
 | Styles | `pages/Cash.css` |
 | Primitives | `PageHeader`, `SectionCard`, `Button`, `EmptyState`, `LoadingState`, `ErrorState`, `WarningBanner`, `CurrencyValue` |
-| APIs | `GET /cash/balances`, `GET /cash/ledger`, `POST /cash/deposits`, `POST /cash/withdrawals` |
+| APIs | `GET /cash/balances`, `GET /cash/ledger`, `POST /cash/deposits`, `POST /cash/withdrawals`, `POST /cash/transfers` |
 
 Design: [cash-ledger.md](./cash-ledger.md).
 
@@ -212,27 +213,40 @@ Design: [cash-ledger.md](./cash-ledger.md).
 |---------|--------|
 | **Header** | `PageHeader` — title **Cash**; subtitle: native balances by portfolio and currency (no display-currency conversion on this page) |
 | **Cash-aware** | `CashAwarePortfolioStatus` — status + enable for selected portfolio; All Portfolios note only |
-| **Actions** | **Add Deposit** (primary), **Add Withdrawal** (secondary), **Backfill Cash** (secondary); deposit/withdrawal modals; **CashBackfillWizard** for legacy backfill |
+| **Actions** | **Add Deposit** (primary), **Add Withdrawal** (secondary), **Add Bulk Cash Entries** (secondary), **Transfer Cash** (secondary); deposit/withdrawal/transfer modals; `CashBulkEntriesWizard` |
 | **Balances** | `SectionCard` — table: Portfolio (all scope), Currency, Balance; optional **Totals by currency** list from API |
 | **Ledger** | `SectionCard` — filters: currency, entry type, date from/to; table: Date, Portfolio (all scope), Type, Currency, Amount, Source, Note, **Actions**; backend pagination |
-| **Ledger actions** | Manual deposit/withdrawal only: Edit (modal) / Delete (confirm). System/linked rows show em dash with tooltip |
+| **Ledger actions** | Manual deposit/withdrawal only: Edit (modal) / Delete (confirm). System/linked/**transfer** rows show em dash with tooltip |
 | **Edit modal** | Reuses deposit/withdrawal modal — **Edit Deposit** / **Edit Withdrawal**; portfolio read-only; `PUT /cash/ledger/{id}` |
 | **Delete** | Confirm: “Delete this cash entry? This will update cash balances.” → `DELETE /cash/ledger/{id}` |
 | **Future impact (Cash-4D)** | **409** shows `CashFutureImpactDisplay`: earliest negative date, lowest balance, affected entries (incl. linked `asset_symbol`); helper to fix manually — no cascade delete |
 | **Empty states** | No balances / no ledger entries |
 | **Success / errors** | `WarningBanner` success after write/edit/delete; modal errors; insufficient withdrawal / future-impact rejection from API |
 
-**Not on this page:** transfers (Cash-8), display-currency cash totals, portfolio change on edit.
+**Not on this page:** transfer fees, same-portfolio FX conversion, display-currency cash totals, portfolio change on edit.
 
-### Backfill wizard (`CashBackfillWizard` — Cash-7C) **Implemented**
+### Transfer Cash modal (Cash-8A/8B) **Implemented**
 
-Modal from **Backfill Cash** on `/cash`. React displays API preview/apply only — no backfill calculation.
+Modal from **Transfer Cash**. Fields: source portfolio, target portfolio (excludes source), date, source currency, source amount, target currency, target amount, note.
+
+| Scope | Source portfolio |
+|-------|------------------|
+| Single portfolio | Preselected from Portfolio View |
+| All Portfolios | Required dropdown |
+
+Same-currency convenience: when source and target currency match, target amount copies from source amount. Cross-currency: user enters received target amount manually — **no market FX rate is applied**. Optional implied rate shown before submit (informational only). On success: close modal, refresh balances + ledger; cross-currency success may include implied rate in banner.
+
+### Bulk cash entries (`CashBulkEntriesWizard` — Cash-7D) **Implemented**
+
+Modal from **Add Bulk Cash Entries**. Server generates schedule; React displays preview/apply only.
 
 | Step | Content |
 |------|---------|
-| 1 **Configure** | Portfolio (required when All Portfolios; preselected for single portfolio); optional start/end dates; mode `shortfall` (read-only); **Preview backfill** → `POST /cash/backfill-preview` |
-| 2 **Review** | Summary counts, proposed deposits table, shortfalls table, warnings/`row_errors`; amounts read-only; **Apply backfill deposits** or Cancel |
-| 3 **Result** | `created_count`, `skipped_existing_count`, created deposits, totals; refresh balances + ledger when `created_count > 0`; optional **Enable cash-aware mode** (`PUT /portfolios/{id}`) with confirmation — not auto-enabled |
+| 1 **Configure** | Portfolio, deposit/withdrawal, currency, amount, start/end dates, once/monthly, source, note → **Preview schedule** |
+| 2 **Review** | Entry count, totals, scheduled rows table, warnings (duplicates, withdrawal negative balance) → **Apply bulk entries** |
+| 3 **Result** | `created_count`, `skipped_existing_count`, created rows; refresh balances + ledger |
+
+**Not on this page:** shortfall backfill (Cash-7A/7B/7C removed). Historical funding via bulk entries or manual deposits.
 
 ### Planned — Cash balances on Dashboard / Settings (Cash-6+)
 

@@ -1,5 +1,115 @@
 # Changelog — KPulla6
 
+## 2026-06-06 — FEAT: User-entered cross-currency portfolio transfer (Cash-8B)
+
+### Added
+- `POST /api/v1/cash/transfers` accepts `source_currency`, `source_amount`, `target_currency`, `target_amount` for cross-currency moves
+- Legacy `currency` + `amount` payload retained for same-currency transfers
+- Response includes `source_*`, `target_*`, and informational `implied_rate` (`target_amount / source_amount`; not used for valuation)
+- Transfer modal: separate source/target currency and amount fields; no market FX lookup or suggested target amount
+
+### Behavior
+- Source sufficiency and future-impact validation use **source currency outflow only**
+- Same-currency transfers require equal source/target amounts; all-scope remains neutral
+- Cross-currency all-scope totals reflect user-entered amounts converted for display (may differ from cached FX); no forced neutralization
+
+---
+
+## 2026-06-06 — QA: Same-currency transfer validation (Cash-8A-QA)
+
+### Validated
+- Transfer success creates exactly one `CashTransferGroup` and two ledger rows; balances update correctly
+- Insufficient cash and future-impact rejections create no transfer rows
+- All-scope `current_value`, value history, TWROR, and XIRR unchanged after same-currency internal transfer
+- Transfer modal copy and protected-row tooltip clarified
+
+### Tests
+- DB row-count assertions on failed transfers; all-scope `current_value` assertion on success path
+- Frontend label and success-message coverage
+
+---
+
+## 2026-06-06 — FEAT: Same-currency portfolio cash transfers (Cash-8A)
+
+### Added
+- `POST /api/v1/cash/transfers` — same-currency portfolio-to-portfolio transfer; atomic `CashTransferGroup` + `TRANSFER_OUT` / `TRANSFER_IN` ledger rows
+- Source sufficiency + future-impact validation on source portfolio (parity with withdrawals)
+- Transfer rows protected from manual `PUT`/`DELETE /cash/ledger/{id}`
+- `/cash` → **Transfer Cash** modal (`createCashTransfer`)
+- Cash-aware external flows: `TRANSFER_IN` / `TRANSFER_OUT` count as contribution/withdrawal at single-portfolio scope; **All Portfolios** aggregates net to zero (no artificial TWROR/XIRR spike)
+
+### Documented
+- Same-currency transfer only in Cash-8A; no FX conversion or transfer fees yet (Cash-8B)
+- All-scope transfer neutralization behavior
+
+---
+
+## 2026-06-04 — FEAT: Transaction edit/delete future-impact errors (TXN-AUDIT-2/3)
+
+### Added
+- `PUT`/`DELETE /api/v1/transactions/{id}` return structured **409** future-impact payload when linked settlement change would drive later cash negative (parity with `/cash/ledger` edit/delete)
+- `/transactions` delete blocked UX — `CashFutureImpactDisplay` inline panel (replaces `alert`)
+- `TransactionModal` edit — future-impact panel; insufficient BUY shortfall unchanged
+- `futureImpactFromApiError` in `api.js`; `deleteTransaction` uses `TransactionApiError` with full payload
+- Backend + frontend regression tests (TXN-AUDIT-1 extended)
+
+### Documented
+- Editing legacy-created transactions after enabling cash-aware mode may require funding first
+- Linked `BUY_SETTLEMENT` / `SELL_SETTLEMENT` rows remain protected from manual cash ledger edit
+
+---
+
+## 2026-06-04 — REMOVE: Cash shortfall backfill APIs (Cash-7A/7B)
+
+### Removed
+- `POST /api/v1/cash/backfill-preview` and `POST /api/v1/cash/backfill-apply`
+- `cash/backfill_preview.py`, `cash/backfill_apply.py`
+- Backfill serializers, views, routes
+- `tests/test_cash_backfill_preview_api.py`, `tests/test_cash_backfill_apply_api.py`
+
+### Product
+- Shortfall backfill (minimum deposits before historical BUYs) is no longer supported
+- Historical actual funding → manual cash entries or **Bulk Cash Entries** (Cash-7D)
+
+### Unchanged
+- Cash-7D bulk entries, cash-aware BUY/SELL, manual ledger CRUD, CSV cash preview, cash-aware returns
+
+---
+
+## 2026-06-04 — FEAT: Bulk cash entries schedule (Cash-7D)
+
+### Added
+- `POST /api/v1/cash/bulk-entries/preview` and `POST /api/v1/cash/bulk-entries/apply` — manual `CASH_DEPOSIT` / `CASH_WITHDRAWAL` schedules (`once`, `monthly`)
+- `cash/bulk_entries.py` — server-side date generation, withdrawal balance check, duplicate skip on apply
+- `/cash` → **Add Bulk Cash Entries** wizard (`CashBulkEntriesWizard`)
+- `tests/test_cash_bulk_entries_api.py`; frontend Vitest for wizard + API client
+
+### Behavior
+- Apply requires `confirmed: true`; backend recomputes schedule; skips identical manual rows
+- Withdrawal schedules blocked when running balance would go negative
+- No settlements, no transaction mutation, no auto-enable cash-aware
+
+---
+
+## 2026-06-04 — REVERT: Cash backfill wizard UI removed (Cash-7C)
+
+### Removed
+- `/cash` **Backfill Cash** button and `CashBackfillWizard` modal
+- Frontend `previewCashBackfill` / `applyCashBackfill` API client helpers
+- Cash-7C Vitest coverage
+
+### Unchanged
+- Backend `POST /cash/backfill-preview` and `POST /cash/backfill-apply` (Cash-7A/7B) remain available; not linked from UI
+- Cash-aware BUY/SELL enforcement, manual deposit/withdrawal, ledger edit/delete on `/cash`
+
+### Product
+- Historical cash is entered via manual deposits/withdrawals or a future **Bulk Cash Entries / Recurring Cash Deposits** feature — not the shortfall backfill wizard
+
+### Next
+- Bulk Cash Entries / Recurring Cash Deposits (planned)
+
+---
+
 ## 2026-06-04 — FEAT: Cash backfill wizard UI (Cash-7C)
 
 ### Added

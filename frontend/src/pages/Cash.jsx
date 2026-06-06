@@ -4,6 +4,7 @@ import {
   fetchCashLedger,
   createCashDeposit,
   createCashWithdrawal,
+  createCashTransfer,
   updateCashLedgerEntry,
   deleteCashLedgerEntry,
   CashApiError,
@@ -28,7 +29,7 @@ import {
   CurrencyValue,
 } from '../components/ui';
 import CashAwarePortfolioStatus from '../components/CashAwarePortfolioStatus';
-import CashBackfillWizard from '../components/CashBackfillWizard';
+import CashBulkEntriesWizard from '../components/CashBulkEntriesWizard';
 import CashFutureImpactDisplay from '../components/CashFutureImpactDisplay';
 import '../components/CashFutureImpactDisplay.css';
 import '../components/TransactionModal.css';
@@ -57,6 +58,377 @@ function formFromLedgerEntry(entry) {
     source_of_funds: entry?.source_of_funds || '',
     note: entry?.note || '',
   };
+}
+
+function emptyTransferForm(defaultSourcePortfolioId = '') {
+  return {
+    source_portfolio_id: defaultSourcePortfolioId,
+    target_portfolio_id: '',
+    date: new Date().toISOString().split('T')[0],
+    source_currency: 'EUR',
+    source_amount: '',
+    target_currency: 'EUR',
+    target_amount: '',
+    note: '',
+  };
+}
+
+function formatImpliedRate(sourceAmount, targetAmount) {
+  const src = Number(sourceAmount);
+  const tgt = Number(targetAmount);
+  if (!Number.isFinite(src) || !Number.isFinite(tgt) || src <= 0) return null;
+  return tgt / src;
+}
+
+function CashTransferModal({
+  open,
+  onClose,
+  activePortfolios,
+  requireSourcePortfolioPick,
+  defaultSourcePortfolioId,
+  onSuccess,
+}) {
+  const [form, setForm] = useState(() => emptyTransferForm(defaultSourcePortfolioId));
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [shortfall, setShortfall] = useState(null);
+  const [futureImpact, setFutureImpact] = useState(null);
+
+  const targetOptions = useMemo(
+    () =>
+      activePortfolios.filter(
+        (p) => String(p.id) !== String(form.source_portfolio_id || '')
+      ),
+    [activePortfolios, form.source_portfolio_id]
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    setForm(emptyTransferForm(defaultSourcePortfolioId));
+    setError('');
+    setShortfall(null);
+    setFutureImpact(null);
+    setSubmitting(false);
+  }, [open, defaultSourcePortfolioId]);
+
+  const sameCurrency = form.source_currency === form.target_currency;
+  const previewImpliedRate = useMemo(
+    () =>
+      !sameCurrency
+        ? formatImpliedRate(form.source_amount, form.target_amount)
+        : null,
+    [sameCurrency, form.source_amount, form.target_amount]
+  );
+
+  if (!open) return null;
+
+  const updateField = (field, value) => {
+    setForm((prev) => {
+      const next = { ...prev, [field]: value };
+      if (field === 'source_portfolio_id' && String(value) === String(prev.target_portfolio_id)) {
+        next.target_portfolio_id = '';
+      }
+      if (field === 'source_currency') {
+        if (value === prev.target_currency) {
+          next.target_amount = prev.source_amount;
+        } else if (value !== prev.target_currency) {
+          next.target_amount = '';
+        }
+      }
+      if (field === 'target_currency') {
+        if (value === prev.source_currency) {
+          next.target_amount = prev.source_amount;
+        } else if (value !== prev.source_currency) {
+          next.target_amount = '';
+        }
+      }
+      if (field === 'source_amount' && prev.source_currency === prev.target_currency) {
+        next.target_amount = value;
+      }
+      return next;
+    });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setShortfall(null);
+    setFutureImpact(null);
+
+    const sourcePortfolioId = Number(form.source_portfolio_id);
+    const targetPortfolioId = Number(form.target_portfolio_id);
+    if (!sourcePortfolioId || Number.isNaN(sourcePortfolioId)) {
+      setError('Select a source portfolio.');
+      return;
+    }
+    if (!targetPortfolioId || Number.isNaN(targetPortfolioId)) {
+      setError('Select a target portfolio.');
+      return;
+    }
+    if (sourcePortfolioId === targetPortfolioId) {
+      setError('Source and target portfolios must be different.');
+      return;
+    }
+
+    const sourceAmount = parseFloat(form.source_amount);
+    if (!form.source_amount || Number.isNaN(sourceAmount) || sourceAmount <= 0) {
+      setError('Enter a source amount greater than zero.');
+      return;
+    }
+
+    const targetAmount = parseFloat(form.target_amount);
+    if (!form.target_amount || Number.isNaN(targetAmount) || targetAmount <= 0) {
+      setError(
+        sameCurrency
+          ? 'Enter a target amount greater than zero.'
+          : 'Enter the amount actually received in the target currency.'
+      );
+      return;
+    }
+
+    if (sameCurrency && sourceAmount !== targetAmount) {
+      setError('Same-currency transfer requires equal source and target amounts.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const response = await createCashTransfer({
+        source_portfolio_id: sourcePortfolioId,
+        target_portfolio_id: targetPortfolioId,
+        date: form.date,
+        source_currency: form.source_currency,
+        source_amount: sourceAmount,
+        target_currency: form.target_currency,
+        target_amount: targetAmount,
+        note: form.note || '',
+      });
+      const successMessage =
+        !sameCurrency && response?.implied_rate != null
+          ? `Transfer recorded (implied rate ${Number(response.implied_rate).toFixed(4)}).`
+          : 'Transfer recorded.';
+      onSuccess(successMessage);
+      onClose();
+    } catch (err) {
+      if (err instanceof CashApiError && err.required != null) {
+        setError('Insufficient cash balance for transfer.');
+        setShortfall({
+          required: err.required,
+          available: err.available,
+          shortfall: err.shortfall,
+          currency: err.currency,
+        });
+      } else if (err?.earliest_negative_date) {
+        setError(err.detail || err.message);
+        setFutureImpact({
+          detail: err.detail,
+          currency: err.currency,
+          earliest_negative_date: err.earliest_negative_date,
+          lowest_balance: err.lowest_balance,
+          affected_entries: err.affected_entries,
+        });
+      } else {
+        setError(err.message || 'Request failed.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const showSourcePick = requireSourcePortfolioPick;
+  const sourcePortfolio =
+    !showSourcePick && defaultSourcePortfolioId
+      ? activePortfolios.find(
+          (p) => String(p.id) === String(defaultSourcePortfolioId)
+        ) ?? null
+      : !showSourcePick && activePortfolios.length === 1
+        ? activePortfolios[0]
+        : null;
+
+  return (
+    <div className="modal-overlay" role="presentation" onClick={onClose}>
+      <div
+        className="modal-content cash-entry-modal cash-transfer-modal"
+        role="dialog"
+        aria-labelledby="cash-transfer-modal-title"
+        onClick={(ev) => ev.stopPropagation()}
+      >
+        <h3 id="cash-transfer-modal-title">Transfer Cash</h3>
+        <p className="cash-transfer-modal__intro">
+          Move cash between portfolios. Enter the amount sent and the amount actually received.
+          No market FX rate is applied.
+        </p>
+        <form onSubmit={handleSubmit}>
+          {showSourcePick ? (
+            <div className="form-group">
+              <label htmlFor="cash-transfer-source">Source portfolio</label>
+              <select
+                id="cash-transfer-source"
+                value={form.source_portfolio_id}
+                onChange={(e) => updateField('source_portfolio_id', e.target.value)}
+              >
+                <option value="">Select portfolio…</option>
+                {activePortfolios.map((p) => (
+                  <option key={p.id} value={String(p.id)}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : sourcePortfolio ? (
+            <div className="form-group">
+              <label>Source portfolio</label>
+              <p>{sourcePortfolio.name}</p>
+            </div>
+          ) : null}
+
+          <div className="form-group">
+            <label htmlFor="cash-transfer-target">Target portfolio</label>
+            <select
+              id="cash-transfer-target"
+              value={form.target_portfolio_id}
+              onChange={(e) => updateField('target_portfolio_id', e.target.value)}
+            >
+              <option value="">Select portfolio…</option>
+              {targetOptions.map((p) => (
+                <option key={p.id} value={String(p.id)}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="cash-transfer-date">Date</label>
+            <input
+              id="cash-transfer-date"
+              type="date"
+              value={form.date}
+              onChange={(e) => updateField('date', e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="cash-transfer-modal__amounts">
+            <div className="form-group">
+              <label htmlFor="cash-transfer-source-currency">Source currency</label>
+              <select
+                id="cash-transfer-source-currency"
+                value={form.source_currency}
+                onChange={(e) => updateField('source_currency', e.target.value)}
+                required
+              >
+                {SUPPORTED_CASH_CURRENCIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="cash-transfer-source-amount">Source amount</label>
+              <input
+                id="cash-transfer-source-amount"
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.source_amount}
+                onChange={(e) => updateField('source_amount', e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="cash-transfer-target-currency">Target currency</label>
+              <select
+                id="cash-transfer-target-currency"
+                value={form.target_currency}
+                onChange={(e) => updateField('target_currency', e.target.value)}
+                required
+              >
+                {SUPPORTED_CASH_CURRENCIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="cash-transfer-target-amount">Target amount</label>
+              <input
+                id="cash-transfer-target-amount"
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.target_amount}
+                onChange={(e) => updateField('target_amount', e.target.value)}
+              />
+              {!sameCurrency ? (
+                <p className="cash-transfer-modal__hint">
+                  Enter the amount actually received in the target currency. No market FX rate is
+                  applied.
+                </p>
+              ) : null}
+            </div>
+          </div>
+
+          {!sameCurrency && previewImpliedRate != null ? (
+            <p className="cash-transfer-modal__implied-rate">
+              Implied rate: {previewImpliedRate.toFixed(4)} ({form.target_currency} per{' '}
+              {form.source_currency}). Informational only.
+            </p>
+          ) : null}
+
+          <div className="form-group">
+            <label htmlFor="cash-transfer-note">Note</label>
+            <textarea
+              id="cash-transfer-note"
+              rows={2}
+              value={form.note}
+              onChange={(e) => updateField('note', e.target.value)}
+              placeholder="Optional"
+            />
+          </div>
+
+          {error ? <p className="cash-entry-modal__error">{error}</p> : null}
+
+          {futureImpact ? (
+            <CashFutureImpactDisplay
+              impact={futureImpact}
+              className="cash-entry-modal__future-impact"
+            />
+          ) : null}
+
+          {shortfall ? (
+            <div className="cash-entry-modal__shortfall">
+              <p>
+                Required:{' '}
+                <CurrencyValue value={shortfall.required} currency={shortfall.currency} />
+              </p>
+              <p>
+                Available:{' '}
+                <CurrencyValue value={shortfall.available} currency={shortfall.currency} />
+              </p>
+              <p>
+                Shortfall:{' '}
+                <CurrencyValue value={shortfall.shortfall} currency={shortfall.currency} tone="loss" />
+              </p>
+            </div>
+          ) : null}
+
+          <div className="cash-entry-modal__actions">
+            <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" disabled={submitting}>
+              {submitting ? 'Saving…' : 'Record transfer'}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 function CashEntryModal({
@@ -350,7 +722,8 @@ export default function Cash() {
 
   const [depositOpen, setDepositOpen] = useState(false);
   const [withdrawalOpen, setWithdrawalOpen] = useState(false);
-  const [backfillOpen, setBackfillOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState(null);
 
   const [filterCurrency, setFilterCurrency] = useState('');
@@ -625,7 +998,7 @@ export default function Cash() {
       return (
         <EmptyState
           title="No ledger entries"
-          description="Deposits, withdrawals, and settlements appear here when recorded."
+          description="Deposits, withdrawals, transfers, and settlements appear here when recorded."
         />
       );
     }
@@ -695,7 +1068,7 @@ export default function Cash() {
                       ) : (
                         <span
                           className="cash-ledger-actions__protected"
-                          title="System or linked entries cannot be edited here."
+                          title="System, transfer, or linked entries cannot be edited here."
                         >
                           —
                         </span>
@@ -784,11 +1157,11 @@ export default function Cash() {
         >
           Add Withdrawal
         </Button>
-        <Button
-          variant="secondary"
-          onClick={() => setBackfillOpen(true)}
-        >
-          Backfill Cash
+        <Button variant="secondary" onClick={() => setBulkOpen(true)}>
+          Add Bulk Cash Entries
+        </Button>
+        <Button variant="secondary" onClick={() => setTransferOpen(true)}>
+          Transfer Cash
         </Button>
       </div>
 
@@ -880,13 +1253,21 @@ export default function Cash() {
         }
         onSuccess={handleEntrySuccess}
       />
-      <CashBackfillWizard
-        open={backfillOpen}
-        onClose={() => setBackfillOpen(false)}
+      <CashBulkEntriesWizard
+        open={bulkOpen}
+        onClose={() => setBulkOpen(false)}
         activePortfolios={activePortfolios}
         requirePortfolioPick={isAllScope}
         defaultPortfolioId={defaultPortfolioId}
         onApplySuccess={refreshAll}
+      />
+      <CashTransferModal
+        open={transferOpen}
+        onClose={() => setTransferOpen(false)}
+        activePortfolios={activePortfolios}
+        requireSourcePortfolioPick={isAllScope}
+        defaultSourcePortfolioId={defaultPortfolioId}
+        onSuccess={handleEntrySuccess}
       />
     </div>
   );

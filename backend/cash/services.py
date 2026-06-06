@@ -13,7 +13,7 @@ from django.db import transaction as db_transaction
 from django.db.models import QuerySet
 
 from cash.constants import SUPPORTED_CASH_CURRENCIES
-from cash.models import CashEntryType, CashLedgerEntry
+from cash.models import CashEntryType, CashLedgerEntry, CashTransferGroup
 from finance.cash import (
     CashLedgerPoint,
     cash_balance_by_currency,
@@ -24,7 +24,7 @@ from fx.lookup import convert_amount_with_fill_from_maps, load_fx_rate_maps
 from portfolios import dates as portfolio_dates
 from portfolios.models import Portfolio
 from portfolios.scope import ResolvedPortfolioScope, resolve_portfolio_scope
-from portfolios.services import PortfolioNotFoundError
+from portfolios.services import PortfolioNotFoundError, get_portfolio
 
 
 class CashValidationError(Exception):
@@ -37,6 +37,10 @@ class CashEntryNotEditableError(CashValidationError):
 
 FUTURE_CASH_IMPACT_DETAIL = (
     "This cash change would make future cash balance negative."
+)
+
+TRANSACTION_FUTURE_CASH_IMPACT_DETAIL = (
+    "This transaction change would make future cash balance negative."
 )
 
 AFFECTED_ENTRIES_LIMIT = 10
@@ -117,6 +121,21 @@ class CashBalancesSingleResult:
 
 
 @dataclass(frozen=True)
+class CashTransferResult:
+    transfer_group_id: int
+    date: date
+    source_portfolio_id: int
+    target_portfolio_id: int
+    source_currency: str
+    source_amount: Decimal
+    target_currency: str
+    target_amount: Decimal
+    implied_rate: Decimal | None
+    out_entry: CashLedgerEntry
+    in_entry: CashLedgerEntry
+
+
+@dataclass(frozen=True)
 class CashLedgerListResult:
     items: list[CashLedgerEntry]
     total: int
@@ -157,9 +176,84 @@ def parse_positive_request_amount(value) -> Decimal:
     return amount
 
 
+def compute_implied_transfer_rate(
+    source_amount: Decimal, target_amount: Decimal
+) -> Decimal | None:
+    if source_amount <= 0:
+        return None
+    return (target_amount / source_amount).quantize(Decimal("0.00000001"))
+
+
+def parse_transfer_amounts(
+    *,
+    currency: str | None = None,
+    amount=None,
+    source_currency: str | None = None,
+    source_amount=None,
+    target_currency: str | None = None,
+    target_amount=None,
+) -> tuple[str, Decimal, str, Decimal]:
+    """
+    Normalize legacy same-currency (currency+amount) or explicit cross-currency fields.
+    """
+    has_legacy = currency is not None or amount is not None
+    has_explicit = any(
+        v is not None
+        for v in (source_currency, source_amount, target_currency, target_amount)
+    )
+    if has_legacy and has_explicit:
+        raise CashValidationError(
+            "Provide either currency+amount or source/target currency amounts, not both."
+        )
+    if has_legacy:
+        if currency is None or amount is None:
+            raise CashValidationError(
+                "Both currency and amount are required for same-currency transfer."
+            )
+        ccy = validate_cash_currency(currency)
+        amt = parse_positive_request_amount(amount)
+        return ccy, amt, ccy, amt
+    if not has_explicit:
+        raise CashValidationError(
+            "Provide currency+amount or source/target currency amounts."
+        )
+    missing = [
+        name
+        for name, value in (
+            ("source_currency", source_currency),
+            ("source_amount", source_amount),
+            ("target_currency", target_currency),
+            ("target_amount", target_amount),
+        )
+        if value is None
+    ]
+    if missing:
+        raise CashValidationError(
+            f"Missing required transfer fields: {', '.join(missing)}."
+        )
+    src_ccy = validate_cash_currency(source_currency)
+    tgt_ccy = validate_cash_currency(target_currency)
+    src_amt = parse_positive_request_amount(source_amount)
+    tgt_amt = parse_positive_request_amount(target_amount)
+    if src_ccy == tgt_ccy and src_amt != tgt_amt:
+        raise CashValidationError(
+            "Same-currency transfer requires source_amount equal to target_amount."
+        )
+    return src_ccy, src_amt, tgt_ccy, tgt_amt
+
+
 def _portfolio_for_cash_write(user: AbstractBaseUser, portfolio_id: int) -> Portfolio:
     scope = resolve_portfolio_scope(user, portfolio_id=portfolio_id)
     return Portfolio.objects.get(pk=scope.portfolio_ids[0])
+
+
+def _active_portfolio_for_transfer(
+    user: AbstractBaseUser, portfolio_id: int, *, label: str
+) -> Portfolio:
+    portfolio = get_portfolio(user, portfolio_id)
+    if not portfolio.is_active:
+        raise CashValidationError(f"{label} portfolio is inactive.")
+    return portfolio
 
 
 def _reload_ledger_entry(entry_id: int) -> CashLedgerEntry:
@@ -192,9 +286,13 @@ def _require_manual_editable(entry: CashLedgerEntry) -> None:
         )
 
 
-def future_cash_impact_payload(impact: FutureCashImpact) -> dict:
+def future_cash_impact_payload(
+    impact: FutureCashImpact,
+    *,
+    detail: str | None = None,
+) -> dict:
     return {
-        "detail": FUTURE_CASH_IMPACT_DETAIL,
+        "detail": detail or FUTURE_CASH_IMPACT_DETAIL,
         "currency": impact.currency,
         "earliest_negative_date": impact.earliest_negative_date.isoformat(),
         "lowest_balance": float(impact.lowest_balance),
@@ -479,6 +577,152 @@ def create_cash_withdrawal(
     entry.full_clean()
     entry.save()
     return _reload_ledger_entry(entry.id)
+
+
+@db_transaction.atomic
+def create_cash_transfer(
+    user: AbstractBaseUser,
+    *,
+    source_portfolio_id: int,
+    target_portfolio_id: int,
+    entry_date: date | str,
+    source_currency: str,
+    source_amount,
+    target_currency: str,
+    target_amount,
+    note: str = "",
+) -> CashTransferResult:
+    src_ccy = validate_cash_currency(source_currency)
+    tgt_ccy = validate_cash_currency(target_currency)
+    src_amt = parse_positive_request_amount(source_amount)
+    tgt_amt = parse_positive_request_amount(target_amount)
+    if src_ccy == tgt_ccy and src_amt != tgt_amt:
+        raise CashValidationError(
+            "Same-currency transfer requires source_amount equal to target_amount."
+        )
+
+    if source_portfolio_id == target_portfolio_id:
+        raise CashValidationError("Source and target portfolios must be different.")
+
+    source = _active_portfolio_for_transfer(
+        user, source_portfolio_id, label="Source"
+    )
+    target = _active_portfolio_for_transfer(
+        user, target_portfolio_id, label="Target"
+    )
+
+    parsed_date = parse_ledger_date(entry_date)
+    note_text = (note or "").strip()
+    implied_rate = compute_implied_transfer_rate(src_amt, tgt_amt)
+    user_rate = (
+        Decimal("1")
+        if src_ccy == tgt_ccy
+        else implied_rate
+    )
+
+    points = list_ledger_points_for_portfolio(
+        source, currency=src_ccy, as_of_date=parsed_date
+    )
+    available = (
+        cash_balance_on_date(points, parsed_date).get(src_ccy, Decimal("0"))
+        if points
+        else Decimal("0")
+    )
+    if available < src_amt:
+        raise InsufficientCashError(
+            "Insufficient cash balance for transfer.",
+            required=src_amt,
+            available=available,
+            shortfall=src_amt - available,
+            currency=src_ccy,
+        )
+
+    proposed = CashLedgerPoint(
+        date=parsed_date, currency=src_ccy, amount=-src_amt
+    )
+    validate_non_negative_cash_after_change(
+        source,
+        src_ccy,
+        proposed_point=proposed,
+        from_date=parsed_date,
+    )
+
+    group = CashTransferGroup(
+        date=parsed_date,
+        source_portfolio=source,
+        target_portfolio=target,
+        source_currency=src_ccy,
+        target_currency=tgt_ccy,
+        source_amount=src_amt,
+        target_amount=tgt_amt,
+        user_rate=user_rate,
+        fees=Decimal("0"),
+        note=note_text,
+    )
+    group.full_clean()
+    group.save()
+
+    out_entry = CashLedgerEntry(
+        portfolio=source,
+        date=parsed_date,
+        currency=src_ccy,
+        entry_type=CashEntryType.TRANSFER_OUT,
+        amount=-src_amt,
+        transfer_group=group,
+        note=note_text,
+    )
+    in_entry = CashLedgerEntry(
+        portfolio=target,
+        date=parsed_date,
+        currency=tgt_ccy,
+        entry_type=CashEntryType.TRANSFER_IN,
+        amount=tgt_amt,
+        transfer_group=group,
+        note=note_text,
+    )
+    out_entry.full_clean()
+    in_entry.full_clean()
+    out_entry.save()
+    in_entry.save()
+
+    return CashTransferResult(
+        transfer_group_id=group.id,
+        date=parsed_date,
+        source_portfolio_id=source.id,
+        target_portfolio_id=target.id,
+        source_currency=src_ccy,
+        source_amount=src_amt,
+        target_currency=tgt_ccy,
+        target_amount=tgt_amt,
+        implied_rate=implied_rate,
+        out_entry=_reload_ledger_entry(out_entry.id),
+        in_entry=_reload_ledger_entry(in_entry.id),
+    )
+
+
+def cash_transfer_response_payload(result: CashTransferResult) -> dict:
+    from cash.serializers import CashLedgerEntrySerializer
+
+    payload = {
+        "transfer_group_id": result.transfer_group_id,
+        "date": result.date.isoformat(),
+        "source_portfolio_id": result.source_portfolio_id,
+        "target_portfolio_id": result.target_portfolio_id,
+        "source_currency": result.source_currency,
+        "source_amount": float(result.source_amount),
+        "target_currency": result.target_currency,
+        "target_amount": float(result.target_amount),
+        "implied_rate": (
+            float(result.implied_rate) if result.implied_rate is not None else None
+        ),
+        "entries": CashLedgerEntrySerializer(
+            [result.out_entry, result.in_entry], many=True
+        ).data,
+    }
+    if result.source_currency == result.target_currency:
+        payload["currency"] = result.source_currency
+        payload["amount"] = float(result.source_amount)
+    return payload
 
 
 def validate_entry_type(entry_type: str) -> str:

@@ -743,3 +743,310 @@ def test_put_ledger_does_not_modify_transactions(api_client, seeded, test_user):
     before = set(Transaction.objects.values_list("id", flat=True))
     _put_ledger(api_client, created["id"], amount="900", note="x")
     assert set(Transaction.objects.values_list("id", flat=True)) == before
+
+
+def _post_transfer(api_client, source_id, target_id, **overrides):
+    payload = {
+        "source_portfolio_id": source_id,
+        "target_portfolio_id": target_id,
+        "date": "2026-06-06",
+        "currency": "EUR",
+        "amount": "1000.00",
+        "note": "Move cash to another portfolio",
+    }
+    payload.update(overrides)
+    return api_client.post("/api/v1/cash/transfers", payload, format="json")
+
+
+def _post_cross_currency_transfer(api_client, source_id, target_id, **overrides):
+    payload = {
+        "source_portfolio_id": source_id,
+        "target_portfolio_id": target_id,
+        "date": "2026-06-06",
+        "source_currency": "USD",
+        "source_amount": "1000.00",
+        "target_currency": "EUR",
+        "target_amount": "920.00",
+        "note": "Broker conversion",
+    }
+    payload.update(overrides)
+    return api_client.post("/api/v1/cash/transfers", payload, format="json")
+
+
+@pytest.mark.django_db
+def test_transfer_creates_group_and_two_ledger_rows(api_client, seeded, test_user):
+    source = ensure_default_portfolio(test_user)
+    target = Portfolio.objects.create(
+        user=test_user, name="IndianMF", base_currency="INR", is_active=True
+    )
+    _deposit(source, day="2026-06-01", amount="5000")
+
+    response = _post_transfer(api_client, source.id, target.id, amount="1000")
+    assert response.status_code == 201
+    data = response.json()
+    assert data["transfer_group_id"]
+    assert data["currency"] == "EUR"
+    assert data["amount"] == 1000.0
+    assert data["source_currency"] == "EUR"
+    assert data["source_amount"] == 1000.0
+    assert data["target_currency"] == "EUR"
+    assert data["target_amount"] == 1000.0
+    assert data["implied_rate"] == 1.0
+    assert data["source_portfolio_id"] == source.id
+    assert data["target_portfolio_id"] == target.id
+    assert len(data["entries"]) == 2
+    types = {e["entry_type"] for e in data["entries"]}
+    assert types == {"TRANSFER_OUT", "TRANSFER_IN"}
+    for entry in data["entries"]:
+        assert set(entry.keys()) == LEDGER_ITEM_KEYS
+        assert entry["transfer_group_id"] == data["transfer_group_id"]
+    from cash.models import CashTransferGroup
+
+    assert CashTransferGroup.objects.count() == 1
+    assert CashLedgerEntry.objects.filter(
+        transfer_group_id=data["transfer_group_id"]
+    ).count() == 2
+
+
+@pytest.mark.django_db
+def test_transfer_updates_source_and_target_balances(api_client, seeded, test_user):
+    source = ensure_default_portfolio(test_user)
+    target = Portfolio.objects.create(
+        user=test_user, name="Target", base_currency="EUR", is_active=True
+    )
+    _deposit(source, day="2026-06-01", amount="5000")
+
+    assert _post_transfer(api_client, source.id, target.id, amount="1000").status_code == 201
+
+    src_bal = api_client.get(
+        "/api/v1/cash/balances", {"portfolio_id": source.id}
+    ).json()["balances"]
+    tgt_bal = api_client.get(
+        "/api/v1/cash/balances", {"portfolio_id": target.id}
+    ).json()["balances"]
+    assert src_bal == [{"currency": "EUR", "balance": 4000.0}]
+    assert tgt_bal == [{"currency": "EUR", "balance": 1000.0}]
+
+
+@pytest.mark.django_db
+def test_transfer_insufficient_source_cash_returns_shortfall(
+    api_client, seeded, test_user
+):
+    source = ensure_default_portfolio(test_user)
+    target = Portfolio.objects.create(
+        user=test_user, name="Target", base_currency="EUR", is_active=True
+    )
+    _deposit(source, day="2026-06-01", amount="500")
+
+    response = _post_transfer(api_client, source.id, target.id, amount="1000")
+    assert response.status_code == 400
+    data = response.json()
+    assert "Insufficient" in data["detail"]
+    assert data["required"] == 1000.0
+    assert data["available"] == 500.0
+    assert data["shortfall"] == 500.0
+    assert data["currency"] == "EUR"
+    from cash.models import CashTransferGroup
+
+    assert CashTransferGroup.objects.count() == 0
+    assert not CashLedgerEntry.objects.filter(
+        entry_type__in=(CashEntryType.TRANSFER_OUT, CashEntryType.TRANSFER_IN)
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_transfer_blocked_when_future_source_balance_negative(
+    api_client, seeded, test_user
+):
+    from transactions.models import Transaction
+
+    source = ensure_default_portfolio(test_user)
+    target = Portfolio.objects.create(
+        user=test_user, name="Target", base_currency="EUR", is_active=True
+    )
+    _deposit(source, day="2026-06-01", amount="1000")
+    txn = Transaction.objects.create(
+        portfolio=source,
+        asset_symbol="AAPL",
+        date=date(2026, 6, 10),
+        type="BUY",
+        quantity=1,
+        price_per_share=900,
+        currency="EUR",
+        fees=0,
+    )
+    CashLedgerEntry.objects.create(
+        portfolio=source,
+        date=date(2026, 6, 10),
+        currency="EUR",
+        entry_type=CashEntryType.BUY_SETTLEMENT,
+        amount=Decimal("-900"),
+        linked_transaction=txn,
+    )
+
+    response = _post_transfer(
+        api_client, source.id, target.id, amount="500", date="2026-06-05"
+    )
+    assert response.status_code == 409
+    data = response.json()
+    assert "future cash balance negative" in data["detail"].lower()
+    assert data["currency"] == "EUR"
+    from cash.models import CashTransferGroup
+
+    assert CashTransferGroup.objects.count() == 0
+    assert not CashLedgerEntry.objects.filter(
+        entry_type__in=(CashEntryType.TRANSFER_OUT, CashEntryType.TRANSFER_IN)
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_transfer_same_portfolio_rejected(api_client, seeded, test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    _deposit(portfolio, day="2026-06-01", amount="1000")
+    response = _post_transfer(api_client, portfolio.id, portfolio.id)
+    assert response.status_code == 400
+    assert "different" in response.json()["detail"].lower()
+
+
+@pytest.mark.django_db
+def test_transfer_other_user_portfolio_404(api_client, seeded, test_user, other_user):
+    source = ensure_default_portfolio(test_user)
+    other = Portfolio.objects.create(
+        user=other_user, name="Other", base_currency="EUR", is_active=True
+    )
+    _deposit(source, day="2026-06-01", amount="1000")
+    assert _post_transfer(api_client, source.id, other.id).status_code == 404
+    assert _post_transfer(api_client, other.id, source.id).status_code == 404
+
+
+@pytest.mark.django_db
+def test_transfer_rows_protected_from_manual_edit_delete(
+    api_client, seeded, test_user
+):
+    source = ensure_default_portfolio(test_user)
+    target = Portfolio.objects.create(
+        user=test_user, name="Target", base_currency="EUR", is_active=True
+    )
+    _deposit(source, day="2026-06-01", amount="2000")
+    created = _post_transfer(api_client, source.id, target.id, amount="500").json()
+    out_id = next(e["id"] for e in created["entries"] if e["entry_type"] == "TRANSFER_OUT")
+    in_id = next(e["id"] for e in created["entries"] if e["entry_type"] == "TRANSFER_IN")
+
+    for entry_id in (out_id, in_id):
+        put_resp = _put_ledger(api_client, entry_id, amount="100")
+        assert put_resp.status_code == 409
+        del_resp = api_client.delete(f"/api/v1/cash/ledger/{entry_id}")
+        assert del_resp.status_code == 409
+
+
+@pytest.mark.django_db
+def test_transfer_does_not_call_external_apis(api_client, seeded, test_user, monkeypatch):
+    source = ensure_default_portfolio(test_user)
+    target = Portfolio.objects.create(
+        user=test_user, name="Target", base_currency="EUR", is_active=True
+    )
+    _deposit(source, day="2026-06-01", amount="1000")
+
+    def _forbidden(*args, **kwargs):
+        raise AssertionError("external API must not be called during cash transfer")
+
+    monkeypatch.setattr("fx.lookup.load_fx_rate_maps", _forbidden)
+    response = _post_transfer(api_client, source.id, target.id, amount="100")
+    assert response.status_code == 201
+
+
+@pytest.mark.django_db
+def test_cross_currency_transfer_creates_mixed_currency_ledger_rows(
+    api_client, seeded, test_user
+):
+    source = ensure_default_portfolio(test_user)
+    target = Portfolio.objects.create(
+        user=test_user, name="Target", base_currency="EUR", is_active=True
+    )
+    _deposit(source, day="2026-06-01", amount="5000", currency="USD")
+
+    response = _post_cross_currency_transfer(api_client, source.id, target.id)
+    assert response.status_code == 201
+    data = response.json()
+    assert data["source_currency"] == "USD"
+    assert data["source_amount"] == 1000.0
+    assert data["target_currency"] == "EUR"
+    assert data["target_amount"] == 920.0
+    assert data["implied_rate"] == pytest.approx(0.92, rel=1e-4)
+    assert "currency" not in data
+    entries = {e["entry_type"]: e for e in data["entries"]}
+    assert entries["TRANSFER_OUT"]["currency"] == "USD"
+    assert entries["TRANSFER_OUT"]["amount"] == -1000.0
+    assert entries["TRANSFER_IN"]["currency"] == "EUR"
+    assert entries["TRANSFER_IN"]["amount"] == 920.0
+
+
+@pytest.mark.django_db
+def test_cross_currency_transfer_updates_balances_per_currency(
+    api_client, seeded, test_user
+):
+    source = ensure_default_portfolio(test_user)
+    target = Portfolio.objects.create(
+        user=test_user, name="Target", base_currency="EUR", is_active=True
+    )
+    _deposit(source, day="2026-06-01", amount="5000", currency="USD")
+
+    assert _post_cross_currency_transfer(api_client, source.id, target.id).status_code == 201
+
+    src_bal = api_client.get(
+        "/api/v1/cash/balances", {"portfolio_id": source.id}
+    ).json()["balances"]
+    tgt_bal = api_client.get(
+        "/api/v1/cash/balances", {"portfolio_id": target.id}
+    ).json()["balances"]
+    assert src_bal == [{"currency": "USD", "balance": 4000.0}]
+    assert tgt_bal == [{"currency": "EUR", "balance": 920.0}]
+
+
+@pytest.mark.django_db
+def test_cross_currency_insufficient_checks_source_currency_only(
+    api_client, seeded, test_user
+):
+    source = ensure_default_portfolio(test_user)
+    target = Portfolio.objects.create(
+        user=test_user, name="Target", base_currency="EUR", is_active=True
+    )
+    _deposit(source, day="2026-06-01", amount="500", currency="USD")
+
+    response = _post_cross_currency_transfer(
+        api_client, source.id, target.id, source_amount="1000"
+    )
+    assert response.status_code == 400
+    data = response.json()
+    assert data["currency"] == "USD"
+    assert data["shortfall"] == 500.0
+
+
+@pytest.mark.django_db
+def test_same_currency_mismatched_amounts_rejected(api_client, seeded, test_user):
+    source = ensure_default_portfolio(test_user)
+    target = Portfolio.objects.create(
+        user=test_user, name="Target", base_currency="EUR", is_active=True
+    )
+    _deposit(source, day="2026-06-01", amount="5000")
+
+    response = api_client.post(
+        "/api/v1/cash/transfers",
+        {
+            "source_portfolio_id": source.id,
+            "target_portfolio_id": target.id,
+            "date": "2026-06-06",
+            "source_currency": "EUR",
+            "source_amount": "1000",
+            "target_currency": "EUR",
+            "target_amount": "999",
+        },
+        format="json",
+    )
+    assert response.status_code == 400
+    body = response.json()
+    error_text = " ".join(
+        body.get("non_field_errors", [])
+        + ([body["detail"]] if isinstance(body.get("detail"), str) else [])
+    ).lower()
+    assert "equal" in error_text

@@ -431,6 +431,42 @@ describe('API Service', () => {
     });
   });
 
+  it('createCashTransfer posts JSON payload to transfers endpoint', async () => {
+    const responseBody = {
+      transfer_group_id: 10,
+      date: '2026-06-06',
+      source_currency: 'USD',
+      source_amount: 1000,
+      target_currency: 'EUR',
+      target_amount: 920,
+      implied_rate: 0.92,
+      source_portfolio_id: 1,
+      target_portfolio_id: 2,
+      entries: [],
+    };
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      json: async () => responseBody,
+    });
+    const payload = {
+      source_portfolio_id: 1,
+      target_portfolio_id: 2,
+      date: '2026-06-06',
+      source_currency: 'USD',
+      source_amount: 1000,
+      target_currency: 'EUR',
+      target_amount: 920,
+      note: 'Broker conversion',
+    };
+    const result = await api.createCashTransfer(payload);
+    const [url, opts] = global.fetch.mock.calls[0];
+    expect(url).toBe('/api/v1/cash/transfers');
+    expect(opts.method).toBe('POST');
+    expect(JSON.parse(opts.body)).toEqual(payload);
+    expect(result).toEqual(responseBody);
+  });
+
   it('updateCashLedgerEntry sends PUT with parsed response', async () => {
     const responseBody = { id: 5, entry_type: 'CASH_DEPOSIT', amount: 900 };
     global.fetch.mockResolvedValueOnce({
@@ -572,6 +608,36 @@ describe('API Service', () => {
     expect(jsonCalls).toBe(1);
   });
 
+  it('deleteTransaction throws TransactionApiError with future-impact fields', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 409,
+      json: async () => ({
+        detail: 'This transaction change would make future cash balance negative.',
+        currency: 'EUR',
+        earliest_negative_date: '2026-06-10',
+        lowest_balance: -500,
+        affected_entries: [
+          {
+            id: 12,
+            date: '2026-06-10',
+            entry_type: 'BUY_SETTLEMENT',
+            amount: -1500,
+            linked_transaction_id: 8,
+            asset_symbol: 'AAPL',
+          },
+        ],
+      }),
+    });
+    await expect(api.deleteTransaction(5)).rejects.toMatchObject({
+      name: 'TransactionApiError',
+      currency: 'EUR',
+      earliest_negative_date: '2026-06-10',
+      lowest_balance: -500,
+      affected_entries: expect.any(Array),
+    });
+  });
+
   it('createTransaction throws TransactionApiError with shortfall fields', async () => {
     global.fetch.mockResolvedValueOnce({
       ok: false,
@@ -604,6 +670,54 @@ describe('API Service', () => {
     });
   });
 
+  it('previewCashBulkEntries posts schedule payload', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ entry_count: 1, entries: [] }),
+    });
+    await api.previewCashBulkEntries({
+      portfolio_id: 1,
+      entry_type: 'CASH_DEPOSIT',
+      currency: 'EUR',
+      amount: 900,
+      start_date: '2022-06-01',
+      end_date: '2022-12-01',
+      frequency: 'monthly',
+    });
+    const [url, opts] = global.fetch.mock.calls[0];
+    expect(url).toBe('/api/v1/cash/bulk-entries/preview');
+    expect(JSON.parse(opts.body)).toEqual({
+      portfolio_id: 1,
+      entry_type: 'CASH_DEPOSIT',
+      currency: 'EUR',
+      amount: 900,
+      start_date: '2022-06-01',
+      end_date: '2022-12-01',
+      frequency: 'monthly',
+      source_of_funds: '',
+      note: '',
+    });
+  });
+
+  it('applyCashBulkEntries always sends confirmed true', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ created_count: 0 }),
+    });
+    await api.applyCashBulkEntries({
+      portfolio_id: 1,
+      entry_type: 'CASH_DEPOSIT',
+      currency: 'EUR',
+      amount: 900,
+      start_date: '2022-06-01',
+      frequency: 'once',
+    });
+    const [, opts] = global.fetch.mock.calls[0];
+    expect(JSON.parse(opts.body).confirmed).toBe(true);
+  });
+
   it('createTransaction surfaces field validation errors', async () => {
     global.fetch.mockResolvedValueOnce({
       ok: false,
@@ -624,76 +738,6 @@ describe('API Service', () => {
       name: 'TransactionApiError',
       message: 'asset_symbol: This field is required.',
       fieldErrors: { asset_symbol: ['This field is required.'] },
-    });
-  });
-});
-
-describe('cash backfill API', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('previewCashBackfill posts payload and parses body once', async () => {
-    let jsonCalls = 0;
-    const body = { proposed_deposits: [], summary: { proposed_deposit_count: 0 } };
-    global.fetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => {
-        jsonCalls += 1;
-        return body;
-      },
-    });
-
-    const result = await api.previewCashBackfill({
-      portfolio_id: 1,
-      start_date: '2022-05-01',
-      end_date: '2026-06-04',
-      mode: 'shortfall',
-    });
-
-    expect(jsonCalls).toBe(1);
-    expect(result).toEqual(body);
-    const [url, opts] = global.fetch.mock.calls[0];
-    expect(url).toBe('/api/v1/cash/backfill-preview');
-    expect(JSON.parse(opts.body)).toEqual({
-      portfolio_id: 1,
-      start_date: '2022-05-01',
-      end_date: '2026-06-04',
-      mode: 'shortfall',
-    });
-  });
-
-  it('applyCashBackfill always sends confirmed true', async () => {
-    global.fetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({ created_count: 0, skipped_existing_count: 0 }),
-    });
-
-    await api.applyCashBackfill({ portfolio_id: 2, mode: 'shortfall' });
-
-    const [, opts] = global.fetch.mock.calls[0];
-    expect(JSON.parse(opts.body)).toEqual({
-      portfolio_id: 2,
-      mode: 'shortfall',
-      confirmed: true,
-    });
-  });
-
-  it('applyCashBackfill surfaces blocking warnings from error body', async () => {
-    global.fetch.mockResolvedValueOnce({
-      ok: false,
-      status: 400,
-      json: async () => ({
-        detail: 'Backfill apply blocked.',
-        blocking_warnings: ['BLOCKING: test'],
-      }),
-    });
-
-    await expect(api.applyCashBackfill({ portfolio_id: 1 })).rejects.toMatchObject({
-      name: 'CashApiError',
-      blocking_warnings: ['BLOCKING: test'],
     });
   });
 });

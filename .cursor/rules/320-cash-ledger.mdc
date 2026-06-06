@@ -36,7 +36,7 @@ General safety: `AGENTS.md`, `docs/data-safety.md`, `docs/workflows.md`.
 | `false` | **Legacy** — existing portfolios; BUY/SELL without cash settlement enforcement. |
 | `true` | **Cash-aware** — BUY/SELL create linked settlements; BUY sufficiency enforced. |
 
-- **Existing portfolios:** do **not** auto-enable without explicit user action (Settings enable, `PUT /portfolios/{id}`, or future backfill wizard).
+- **Existing portfolios:** do **not** auto-enable without explicit user action (Settings enable or `PUT /portfolios/{id}`).
 - **New portfolios** and **registration default portfolio:** `cash_aware_enabled=true` by default (`POST` omits field → true).
 - Mode is **per portfolio**; All Portfolios scope is informational only for enable UX.
 
@@ -92,7 +92,7 @@ General safety: `AGENTS.md`, `docs/data-safety.md`, `docs/workflows.md`.
 
 - Do **not** delete users, profiles, or portfolios as part of cash work.
 - Do **not** bulk-flip existing portfolios to `cash_aware_enabled=true`.
-- Migration / backfill / enforcement changes: `make backup-db`, `make db-safety-check`, explicit user approval before destructive steps.
+- Migration / bulk ledger writes / enforcement changes: `make backup-db`, `make db-safety-check`, explicit user approval before destructive steps.
 - No `flush`, `TRUNCATE`, bulk `Transaction.objects.delete()`, or `make db-reset` on live dev DB.
 
 ## Backend placement

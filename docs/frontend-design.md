@@ -330,8 +330,11 @@ Route `/transactions` — primary entry for recording activity:
 - Cash: Action (Deposit / Withdrawal), portfolio (required when All Portfolios scope), date, currency (20 codes), amount, source of funds, note.
 - Insufficient withdrawal: `CashApiError` shortfall display (required / available / shortfall).
 - Stock / MF **BUY** on cash-aware portfolios: `TransactionApiError` with shortfall panel; **Recommended action** (Cash-4C): **Add missing cash and continue** — `POST /cash/deposits` with backend `shortfall` amount and `currency` (same-currency only), then retries original BUY; partial-success warning if deposit succeeds but retry fails; link **Open Cash page** → `/cash`.
+- Stock / MF **edit** on cash-aware portfolios: **409** future-impact → `CashFutureImpactDisplay` in `TransactionModal` (earliest negative date, lowest balance, `affected_entries`); insufficient BUY edit still uses shortfall panel.
+- `/transactions` **delete** blocked by linked settlement: inline `CashFutureImpactDisplay` (not `alert`); generic delete errors use `WarningBanner`.
 - `CashShortfallDisplay.jsx` — shared shortfall panel for cash withdrawal (amounts only) and asset BUY (`purchase` guidance).
-- `ApiError` / `TransactionApiError` / `CashApiError` — structured errors; transaction create/update parse response JSON once.
+- `CashFutureImpactDisplay.jsx` — manual cash edit/delete and asset transaction edit/delete future-impact (shared component; transaction-specific intro/helper copy).
+- `ApiError` / `TransactionApiError` / `CashApiError` — structured errors; transaction create/update/delete parse response JSON once (`futureImpactFromApiError`).
 - After cash success: success banner on Transactions page; asset table **not** refetched; link to `/cash` ledger.
 - React does not compute cash balances; no unified activity list in this phase.
 
@@ -364,7 +367,10 @@ Backend supplies balances and ledger rows. React **displays only** — no cash b
 | **Cash-aware status** | `CashAwarePortfolioStatus` below header (Cash-4A.2) |
 | **Deposit / withdrawal** | Modals → `POST /cash/deposits`, `POST /cash/withdrawals`; insufficient withdrawal shows API shortfall fields |
 | **Edit / delete** | Manual rows only → `PUT`/`DELETE /cash/ledger/{id}`; edit reuses modal; delete confirm; **Cash-4D** future-impact panel (`CashFutureImpactDisplay`) with `affected_entries` — no cascade delete |
-| **Backfill wizard (Cash-7C)** | **Backfill Cash** → `CashBackfillWizard` modal: configure dates → `previewCashBackfill` → review API tables (read-only amounts) → `applyCashBackfill` (`confirmed: true`) → optional **Enable cash-aware** via `PUT /portfolios/{id}`; refreshes balances/ledger after apply; no React backfill math |
+
+| **Bulk cash entries (Cash-7D)** | **Add Bulk Cash Entries** → `CashBulkEntriesWizard`: deposit/withdrawal, currency, amount, date range, once/monthly → `previewCashBulkEntries` → review → `applyCashBulkEntries`; refresh after apply |
+
+**Removed:** Cash shortfall backfill (Cash-7A/7B/7C) — no UI or API. Historical funding via manual entries or **Add Bulk Cash Entries**.
 
 Page layout: [page-layouts.md](./page-layouts.md) §12. Design: [cash-ledger.md](./cash-ledger.md).
 
@@ -375,8 +381,9 @@ Page layout: [page-layouts.md](./page-layouts.md) §12. Design: [cash-ledger.md]
 | **Cash on Dashboard / allocation** | Cash-6A **done** | Dashboard KPI `current_value` from summary; Assets donut from `allocation` (`Cash EUR`, etc.); no React cash math |
 | **Manual BUY add missing cash + continue** | Cash-4C | **Done** — `PurchaseShortfallAction` on `TransactionModal` |
 | **CSV import cash preview** | Cash-5 | **Done** — `previewCsvImportCash` + `CsvImportCashPreviewModal`; confirmed import only |
-| **Backfill wizard** | Cash-7C **done** | `CashBackfillWizard` on `/cash`; preview/apply APIs only; explicit enable |
-| **Transfers** | Cash-8 | Cross-portfolio / FX transfer form → `POST /cash/transfers` |
+| **Bulk cash entries** | Cash-7D **done** | `CashBulkEntriesWizard` on `/cash` |
+| **Bulk frequencies** | Planned | Quarterly/yearly schedule options |
+| **Transfers** | Cash-8A/8B **done** | Source/target currency + amount fields; user-entered cross-currency; no market FX |
 
 Cash must **not** appear on Compare or Asset Metric Sheet as an investment subject.
 

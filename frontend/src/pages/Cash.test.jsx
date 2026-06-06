@@ -15,11 +15,11 @@ vi.mock('../api', async (importOriginal) => {
     fetchCashLedger: vi.fn(),
     createCashDeposit: vi.fn(),
     createCashWithdrawal: vi.fn(),
+    createCashTransfer: vi.fn(),
     updateCashLedgerEntry: vi.fn(),
     deleteCashLedgerEntry: vi.fn(),
-    previewCashBackfill: vi.fn(),
-    applyCashBackfill: vi.fn(),
-    updatePortfolio: vi.fn(),
+    previewCashBulkEntries: vi.fn(),
+    applyCashBulkEntries: vi.fn(),
     fetchPortfolios: vi.fn(),
     getSettings: vi.fn(),
     updateSettings: vi.fn(),
@@ -119,99 +119,54 @@ const ledgerFixture = {
 };
 
 const activePortfolios = [
-  {
-    id: 1,
-    name: 'Scalablefolio',
-    is_active: true,
-    base_currency: 'EUR',
-    cash_aware_enabled: false,
-    description: null,
-  },
-  {
-    id: 2,
-    name: 'IndianMF',
-    is_active: true,
-    base_currency: 'INR',
-    cash_aware_enabled: false,
-    description: null,
-  },
+  { id: 1, name: 'Scalablefolio', is_active: true, base_currency: 'EUR' },
+  { id: 2, name: 'IndianMF', is_active: true, base_currency: 'INR' },
 ];
 
-const backfillPreviewFixture = {
+const bulkPreviewFixture = {
   portfolio_id: 1,
   portfolio_name: 'Scalablefolio',
-  cash_aware_enabled: false,
-  start_date: '2026-01-01',
-  end_date: '2026-06-04',
-  mode: 'shortfall',
-  can_enable_cash_aware_after_apply: false,
-  summary: {
-    transaction_count: 3,
-    existing_cash_entry_count: 1,
-    proposed_deposit_count: 1,
-    total_proposed_by_currency: [{ currency: 'EUR', amount: 1000 }],
-  },
-  proposed_deposits: [
+  entry_count: 7,
+  entries: [
     {
-      portfolio_id: 1,
-      date: '2026-01-01',
+      date: '2022-06-01',
       currency: 'EUR',
-      amount: 1000,
-      source_of_funds: 'Backfill deposit',
-      note: 'Proposed before historical BUY AAPL',
-    },
-  ],
-  shortfalls: [
-    {
-      date: '2026-01-01',
-      currency: 'EUR',
-      required: 1000,
-      available_before: 0,
-      shortfall: 1000,
-      reason: 'BUY AAPL',
-    },
-  ],
-  warnings: [],
-  row_errors: [],
-};
-
-const backfillApplyFixture = {
-  portfolio_id: 1,
-  portfolio_name: 'Scalablefolio',
-  cash_aware_enabled: false,
-  created_count: 1,
-  skipped_existing_count: 0,
-  created_deposits: [
-    {
-      id: 201,
-      date: '2026-01-01',
-      currency: 'EUR',
-      amount: 1000,
       entry_type: 'CASH_DEPOSIT',
-      source_of_funds: 'Backfill deposit',
-      note: 'Backfill: Proposed before historical BUY AAPL',
+      amount: 900,
+      source_of_funds: 'Monthly contribution',
+      note: 'Historical contribution',
+    },
+    {
+      date: '2022-07-01',
+      currency: 'EUR',
+      entry_type: 'CASH_DEPOSIT',
+      amount: 900,
+      source_of_funds: 'Monthly contribution',
+      note: 'Historical contribution',
     },
   ],
-  summary: {
-    total_created_by_currency: [{ currency: 'EUR', amount: 1000 }],
-  },
-  cash_aware_enablement: {
-    enabled: false,
-    message:
-      'Backfill deposits were created. Enable cash-aware mode separately after review.',
-  },
+  total_by_currency: [{ currency: 'EUR', amount: 6300 }],
+  warnings: [],
+  duplicate_count: 0,
 };
 
-const emptyBackfillPreviewFixture = {
-  ...backfillPreviewFixture,
-  summary: {
-    transaction_count: 2,
-    existing_cash_entry_count: 2,
-    proposed_deposit_count: 0,
-    total_proposed_by_currency: [],
-  },
-  proposed_deposits: [],
-  shortfalls: [],
+const bulkApplyFixture = {
+  portfolio_id: 1,
+  portfolio_name: 'Scalablefolio',
+  created_count: 7,
+  skipped_existing_count: 0,
+  created_entries: [
+    {
+      id: 301,
+      date: '2022-06-01',
+      currency: 'EUR',
+      entry_type: 'CASH_DEPOSIT',
+      amount: 900,
+      source_of_funds: 'Monthly contribution',
+      note: 'Historical contribution',
+    },
+  ],
+  total_by_currency: [{ currency: 'EUR', amount: 6300 }],
 };
 
 function renderCash(options = {}) {
@@ -235,14 +190,16 @@ describe('Cash page', () => {
     api.fetchCashLedger.mockResolvedValue(ledgerFixture);
     api.createCashDeposit.mockResolvedValue({ id: 99 });
     api.createCashWithdrawal.mockResolvedValue({ id: 100 });
+    api.createCashTransfer.mockResolvedValue({
+      transfer_group_id: 10,
+      entries: [{ id: 201, entry_type: 'TRANSFER_OUT' }, { id: 202, entry_type: 'TRANSFER_IN' }],
+    });
     api.updateCashLedgerEntry.mockResolvedValue({ id: 10 });
     api.deleteCashLedgerEntry.mockResolvedValue(null);
-    api.previewCashBackfill.mockReset();
-    api.previewCashBackfill.mockResolvedValue(backfillPreviewFixture);
-    api.applyCashBackfill.mockReset();
-    api.applyCashBackfill.mockResolvedValue(backfillApplyFixture);
-    api.updatePortfolio.mockResolvedValue({ id: 1, cash_aware_enabled: true });
-    api.fetchPortfolios.mockResolvedValue(activePortfolios);
+    api.previewCashBulkEntries.mockReset();
+    api.previewCashBulkEntries.mockResolvedValue(bulkPreviewFixture);
+    api.applyCashBulkEntries.mockReset();
+    api.applyCashBulkEntries.mockResolvedValue(bulkApplyFixture);
     window.confirm = vi.fn(() => true);
   });
 
@@ -583,256 +540,350 @@ describe('Cash page', () => {
     });
   });
 
-  it('shows Backfill Cash button', async () => {
+  it('does not show Backfill Cash button', async () => {
     renderCash();
-    expect(await screen.findByRole('button', { name: /backfill cash/i })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Totals by currency')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /backfill cash/i })).not.toBeInTheDocument();
   });
 
-  it('all-portfolios scope requires portfolio selection in backfill wizard', async () => {
+  it('shows Add Bulk Cash Entries button', async () => {
+    renderCash();
+    expect(
+      await screen.findByRole('button', { name: /add bulk cash entries/i })
+    ).toBeInTheDocument();
+  });
+
+  it('Transfer Cash button opens modal', async () => {
+    renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
+    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /transfer cash/i }));
+    expect(await screen.findByRole('dialog', { name: /transfer cash/i })).toBeInTheDocument();
+  });
+
+  it('transfer modal single portfolio preselects source', async () => {
+    renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
+    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /transfer cash/i }));
+    const dialog = await screen.findByRole('dialog', { name: /transfer cash/i });
+    expect(within(dialog).getByText('Scalablefolio')).toBeInTheDocument();
+    expect(within(dialog).queryByRole('combobox', { name: /source portfolio/i })).not.toBeInTheDocument();
+  });
+
+  it('transfer modal all-portfolios requires source portfolio', async () => {
     renderCash({ initialSelection: { mode: 'all', id: null, name: 'All Portfolios' } });
     await waitFor(() => expect(screen.getByText('Totals by currency')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByRole('button', { name: /backfill cash/i }));
-    const dialog = await screen.findByRole('dialog', { name: /backfill cash/i });
-    expect(within(dialog).getByLabelText(/portfolio/i)).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole('button', { name: /preview backfill/i }));
-    expect(await within(dialog).findByText(/select a portfolio/i)).toBeInTheDocument();
-    expect(api.previewCashBackfill).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /transfer cash/i }));
+    const dialog = await screen.findByRole('dialog', { name: /transfer cash/i });
+    expect(within(dialog).getByLabelText(/source portfolio/i)).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText(/target portfolio/i), {
+      target: { value: '2' },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/source amount/i), { target: { value: '100' } });
+    fireEvent.change(within(dialog).getByLabelText(/target amount/i), { target: { value: '100' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /record transfer/i }));
+    expect(await within(dialog).findByText('Select a source portfolio.')).toBeInTheDocument();
+    expect(api.createCashTransfer).not.toHaveBeenCalled();
   });
 
-  it('single portfolio scope preselects portfolio in backfill wizard', async () => {
+  it('transfer modal target excludes source portfolio', async () => {
+    renderCash({ initialSelection: { mode: 'all', id: null, name: 'All Portfolios' } });
+    await waitFor(() => expect(screen.getByText('Totals by currency')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /transfer cash/i }));
+    const dialog = await screen.findByRole('dialog', { name: /transfer cash/i });
+    fireEvent.change(within(dialog).getByLabelText(/source portfolio/i), {
+      target: { value: '1' },
+    });
+    const targetOptions = within(dialog)
+      .getByLabelText(/target portfolio/i)
+      .querySelectorAll('option');
+    const values = Array.from(targetOptions).map((o) => o.value);
+    expect(values).not.toContain('1');
+    expect(values).toContain('2');
+  });
+
+  it('transfer modal submit calls createCashTransfer and refreshes', async () => {
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
     await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByRole('button', { name: /backfill cash/i }));
-    const dialog = await screen.findByRole('dialog', { name: /backfill cash/i });
-    fireEvent.change(within(dialog).getByLabelText(/start date/i), {
-      target: { value: '2022-05-01' },
+    fireEvent.click(screen.getByRole('button', { name: /transfer cash/i }));
+    const dialog = await screen.findByRole('dialog', { name: /transfer cash/i });
+    fireEvent.change(within(dialog).getByLabelText(/target portfolio/i), {
+      target: { value: '2' },
     });
-    fireEvent.change(within(dialog).getByLabelText(/end date/i), {
-      target: { value: '2026-06-04' },
-    });
-    fireEvent.click(within(dialog).getByRole('button', { name: /preview backfill/i }));
-
+    fireEvent.change(within(dialog).getByLabelText(/source amount/i), { target: { value: '250' } });
+    fireEvent.change(within(dialog).getByLabelText(/target amount/i), { target: { value: '250' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /record transfer/i }));
     await waitFor(() => {
-      expect(api.previewCashBackfill).toHaveBeenCalledWith({
-        portfolio_id: 1,
-        start_date: '2022-05-01',
-        end_date: '2026-06-04',
-        mode: 'shortfall',
-      });
-    });
-  });
-
-  it('preview result renders proposed deposits and totals from backend', async () => {
-    renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
-    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByRole('button', { name: /backfill cash/i }));
-    const dialog = await screen.findByRole('dialog', { name: /backfill cash/i });
-    fireEvent.click(within(dialog).getByRole('button', { name: /preview backfill/i }));
-
-    expect((await within(dialog).findAllByText('Proposed deposits')).length).toBeGreaterThan(
-      0
-    );
-    expect(within(dialog).getAllByText('€1,000.00').length).toBeGreaterThan(0);
-    expect(within(dialog).getByText('Total proposed by currency')).toBeInTheDocument();
-    expect(within(dialog).getByText('BUY AAPL')).toBeInTheDocument();
-    expect(within(dialog).getByText('Cash-aware mode')).toBeInTheDocument();
-    expect(within(dialog).getByText('Off')).toBeInTheDocument();
-  });
-
-  it('no-proposal preview renders empty success state', async () => {
-    api.previewCashBackfill.mockResolvedValueOnce(emptyBackfillPreviewFixture);
-    renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
-    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByRole('button', { name: /backfill cash/i }));
-    const dialog = await screen.findByRole('dialog', { name: /backfill cash/i });
-    fireEvent.click(within(dialog).getByRole('button', { name: /preview backfill/i }));
-
-    expect(
-      await within(dialog).findByText(/no backfill deposits are needed/i)
-    ).toBeInTheDocument();
-    expect(
-      within(dialog).getByRole('button', { name: /apply backfill deposits/i })
-    ).toBeDisabled();
-  });
-
-  it('apply sends confirmed true via applyCashBackfill and shows result', async () => {
-    renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
-    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByRole('button', { name: /backfill cash/i }));
-    let dialog = await screen.findByRole('dialog', { name: /backfill cash/i });
-    fireEvent.click(within(dialog).getByRole('button', { name: /preview backfill/i }));
-    await within(dialog).findByText('Apply backfill deposits');
-
-    fireEvent.click(within(dialog).getByRole('button', { name: /apply backfill deposits/i }));
-
-    await waitFor(() => {
-      expect(api.applyCashBackfill).toHaveBeenCalledWith(
-        expect.objectContaining({ portfolio_id: 1, mode: 'shortfall' })
+      expect(api.createCashTransfer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source_portfolio_id: 1,
+          target_portfolio_id: 2,
+          source_currency: 'EUR',
+          source_amount: 250,
+          target_currency: 'EUR',
+          target_amount: 250,
+        })
       );
     });
-    dialog = await screen.findByRole('dialog', { name: /backfill cash/i });
-    expect(within(dialog).getByText('Created')).toBeInTheDocument();
-    expect(within(dialog).getByText('Skipped (already existed)')).toBeInTheDocument();
-    expect(within(dialog).getByText(/enable cash-aware mode separately/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(api.fetchCashBalances.mock.calls.length).toBeGreaterThan(1);
+      expect(api.fetchCashLedger.mock.calls.length).toBeGreaterThan(1);
+    });
+    expect(screen.getByText('Transfer recorded.')).toBeInTheDocument();
   });
 
-  it('successful apply refreshes cash balances and ledger', async () => {
+  it('transfer modal shows expected field labels', async () => {
+    renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
+    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /transfer cash/i }));
+    const dialog = await screen.findByRole('dialog', { name: /transfer cash/i });
+    expect(within(dialog).getByText('Source portfolio')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/target portfolio/i)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/^date$/i)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/source currency/i)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/source amount/i)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/target currency/i)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/target amount/i)).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/no market fx rate is applied/i)
+    ).toBeInTheDocument();
+  });
+
+  it('transfer modal submits cross-currency payload', async () => {
+    renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
+    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /transfer cash/i }));
+    const dialog = await screen.findByRole('dialog', { name: /transfer cash/i });
+    fireEvent.change(within(dialog).getByLabelText(/source currency/i), {
+      target: { value: 'USD' },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/target currency/i), {
+      target: { value: 'EUR' },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/source amount/i), {
+      target: { value: '1000' },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/target amount/i), {
+      target: { value: '920' },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/target portfolio/i), {
+      target: { value: '2' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: /record transfer/i }));
+    await waitFor(() => {
+      expect(api.createCashTransfer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source_currency: 'USD',
+          source_amount: 1000,
+          target_currency: 'EUR',
+          target_amount: 920,
+        })
+      );
+    });
+  });
+
+  it('transfer modal shows insufficient cash shortfall', async () => {
+    api.createCashTransfer.mockRejectedValueOnce(
+      new CashApiError('Insufficient cash balance for transfer.', {
+        required: 500,
+        available: 100,
+        shortfall: 400,
+        currency: 'EUR',
+      })
+    );
+    renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
+    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /transfer cash/i }));
+    const dialog = await screen.findByRole('dialog', { name: /transfer cash/i });
+    fireEvent.change(within(dialog).getByLabelText(/target portfolio/i), {
+      target: { value: '2' },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/source amount/i), { target: { value: '500' } });
+    fireEvent.change(within(dialog).getByLabelText(/target amount/i), { target: { value: '500' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /record transfer/i }));
+    expect(
+      await within(dialog).findByText('Insufficient cash balance for transfer.')
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText(/shortfall/i)).toBeInTheDocument();
+  });
+
+  it('transfer modal shows future impact panel', async () => {
+    api.createCashTransfer.mockReset();
+    api.createCashTransfer.mockRejectedValue(
+      new CashApiError('This cash change would make future cash balance negative.', {
+        detail: 'This cash change would make future cash balance negative.',
+        currency: 'EUR',
+        earliest_negative_date: '2026-06-10',
+        lowest_balance: -200,
+        affected_entries: [],
+      })
+    );
+    renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
+    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /transfer cash/i }));
+    const dialog = await screen.findByRole('dialog', { name: /transfer cash/i });
+    fireEvent.change(within(dialog).getByLabelText(/target portfolio/i), {
+      target: { value: '2' },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/source amount/i), { target: { value: '900' } });
+    fireEvent.change(within(dialog).getByLabelText(/target amount/i), { target: { value: '900' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /record transfer/i }));
+    await waitFor(() => {
+      expect(api.createCashTransfer).toHaveBeenCalled();
+    });
+    expect(within(dialog).getByText(/add another cash deposit/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/2026-06-10/)).toBeInTheDocument();
+  });
+
+  it('transfer ledger rows do not show edit or delete actions', async () => {
+    api.fetchCashLedger.mockResolvedValueOnce({
+      items: [
+        {
+          id: 301,
+          portfolio_id: 1,
+          portfolio_name: 'Scalablefolio',
+          date: '2026-06-06',
+          currency: 'EUR',
+          entry_type: 'TRANSFER_OUT',
+          amount: -1000,
+          source_of_funds: null,
+          note: 'Move cash',
+          linked_transaction_id: null,
+          transfer_group_id: 10,
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    });
+    renderCash();
+    await waitFor(() => expect(screen.getByText('Transfer out')).toBeInTheDocument());
+    expect(screen.queryByLabelText(/edit transfer out/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/delete transfer out/i)).not.toBeInTheDocument();
+  });
+
+  it('bulk wizard all-portfolios requires portfolio selection', async () => {
+    renderCash({ initialSelection: { mode: 'all', id: null, name: 'All Portfolios' } });
+    await waitFor(() => expect(screen.getByText('Totals by currency')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /add bulk cash entries/i }));
+    const dialog = await screen.findByRole('dialog', { name: /add bulk cash entries/i });
+    fireEvent.change(within(dialog).getByLabelText(/amount/i), { target: { value: '900' } });
+    fireEvent.change(within(dialog).getByLabelText(/start date/i), {
+      target: { value: '2022-06-01' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: /preview schedule/i }));
+    expect(await within(dialog).findByText(/select a portfolio/i)).toBeInTheDocument();
+    expect(api.previewCashBulkEntries).not.toHaveBeenCalled();
+  });
+
+  it('bulk wizard single portfolio preselects and previews', async () => {
+    renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
+    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /add bulk cash entries/i }));
+    const dialog = await screen.findByRole('dialog', { name: /add bulk cash entries/i });
+    fireEvent.change(within(dialog).getByLabelText(/amount/i), { target: { value: '900' } });
+    fireEvent.change(within(dialog).getByLabelText(/start date/i), {
+      target: { value: '2022-06-01' },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/end date/i), {
+      target: { value: '2022-12-01' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: /preview schedule/i }));
+    await waitFor(() => {
+      expect(api.previewCashBulkEntries).toHaveBeenCalledWith(
+        expect.objectContaining({
+          portfolio_id: 1,
+          entry_type: 'CASH_DEPOSIT',
+          currency: 'EUR',
+          amount: 900,
+          start_date: '2022-06-01',
+          end_date: '2022-12-01',
+          frequency: 'monthly',
+        })
+      );
+    });
+    expect(await within(dialog).findByText('Scheduled entries')).toBeInTheDocument();
+    expect(within(dialog).getAllByText('€900.00').length).toBeGreaterThan(0);
+    expect(within(dialog).getByText('2022-06-01')).toBeInTheDocument();
+  });
+
+  it('bulk apply sends confirmed via applyCashBulkEntries and refreshes', async () => {
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
     await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
     const balanceCallsBefore = api.fetchCashBalances.mock.calls.length;
 
-    fireEvent.click(screen.getByRole('button', { name: /backfill cash/i }));
-    const dialog = await screen.findByRole('dialog', { name: /backfill cash/i });
-    fireEvent.click(within(dialog).getByRole('button', { name: /preview backfill/i }));
-    await within(dialog).findByText('Apply backfill deposits');
-    fireEvent.click(within(dialog).getByRole('button', { name: /apply backfill deposits/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add bulk cash entries/i }));
+    let dialog = await screen.findByRole('dialog', { name: /add bulk cash entries/i });
+    fireEvent.change(within(dialog).getByLabelText(/amount/i), { target: { value: '900' } });
+    fireEvent.change(within(dialog).getByLabelText(/start date/i), {
+      target: { value: '2022-06-01' },
+    });
+    fireEvent.change(within(dialog).getByLabelText(/end date/i), {
+      target: { value: '2022-12-01' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: /preview schedule/i }));
+    await within(dialog).findByRole('button', { name: /apply bulk entries/i });
+    fireEvent.click(within(dialog).getByRole('button', { name: /apply bulk entries/i }));
 
     await waitFor(() => {
-      expect(api.fetchCashBalances.mock.calls.length).toBeGreaterThan(balanceCallsBefore);
-      expect(api.fetchCashLedger.mock.calls.length).toBeGreaterThan(1);
-    });
-  });
-
-  it('enable cash-aware action calls portfolio update after apply', async () => {
-    renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
-    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByRole('button', { name: /backfill cash/i }));
-    let dialog = await screen.findByRole('dialog', { name: /backfill cash/i });
-    fireEvent.click(within(dialog).getByRole('button', { name: /preview backfill/i }));
-    await within(dialog).findByRole('button', { name: /apply backfill deposits/i });
-    fireEvent.click(within(dialog).getByRole('button', { name: /apply backfill deposits/i }));
-    await within(dialog).findByRole('button', {
-      name: /enable cash-aware mode for this portfolio/i,
-    });
-
-    fireEvent.click(
-      within(dialog).getByRole('button', {
-        name: /enable cash-aware mode for this portfolio/i,
-      })
-    );
-
-    await waitFor(() => {
-      expect(window.confirm).toHaveBeenCalled();
-      expect(api.updatePortfolio).toHaveBeenCalledWith(
-        1,
-        expect.objectContaining({ cash_aware_enabled: true })
+      expect(api.applyCashBulkEntries).toHaveBeenCalledWith(
+        expect.objectContaining({ portfolio_id: 1, frequency: 'monthly' })
       );
-      expect(api.fetchPortfolios).toHaveBeenCalled();
+      expect(api.fetchCashBalances.mock.calls.length).toBeGreaterThan(balanceCallsBefore);
     });
-    expect(
-      await within(dialog).findByText(/cash-aware mode enabled/i)
-    ).toBeInTheDocument();
+    dialog = await screen.findByRole('dialog', { name: /add bulk cash entries/i });
+    expect(within(dialog).getByText('Created')).toBeInTheDocument();
   });
 
-  it('prevents double submit on apply', async () => {
-    let resolveApply;
-    api.applyCashBackfill.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveApply = () => resolve(backfillApplyFixture);
-        })
-    );
-    renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
-    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByRole('button', { name: /backfill cash/i }));
-    const dialog = await screen.findByRole('dialog', { name: /backfill cash/i });
-    fireEvent.click(within(dialog).getByRole('button', { name: /preview backfill/i }));
-    await within(dialog).findByText('Apply backfill deposits');
-
-    const applyBtn = within(dialog).getByRole('button', {
-      name: /apply backfill deposits/i,
-    });
-    fireEvent.click(applyBtn);
-    fireEvent.click(applyBtn);
-    expect(api.applyCashBackfill).toHaveBeenCalledTimes(1);
-
-    resolveApply();
-    await waitFor(() => {
-      expect(within(dialog).getByText('Created')).toBeInTheDocument();
-    });
-  });
-
-  it('displays backend preview validation error', async () => {
-    api.previewCashBackfill.mockRejectedValueOnce(
+  it('bulk wizard displays preview validation error', async () => {
+    api.previewCashBulkEntries.mockRejectedValueOnce(
       new CashApiError('start_date must be on or before end_date', { status: 400 })
     );
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
     await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByRole('button', { name: /backfill cash/i }));
-    const dialog = await screen.findByRole('dialog', { name: /backfill cash/i });
+    fireEvent.click(screen.getByRole('button', { name: /add bulk cash entries/i }));
+    const dialog = await screen.findByRole('dialog', { name: /add bulk cash entries/i });
+    fireEvent.change(within(dialog).getByLabelText(/amount/i), { target: { value: '900' } });
     fireEvent.change(within(dialog).getByLabelText(/start date/i), {
-      target: { value: '2026-06-01' },
+      target: { value: '2022-12-01' },
     });
     fireEvent.change(within(dialog).getByLabelText(/end date/i), {
-      target: { value: '2026-01-01' },
+      target: { value: '2022-06-01' },
     });
-    fireEvent.click(within(dialog).getByRole('button', { name: /preview backfill/i }));
-
+    fireEvent.click(within(dialog).getByRole('button', { name: /preview schedule/i }));
     expect(
       await within(dialog).findByText(/start date must be on or before end date/i)
     ).toBeInTheDocument();
   });
 
-  it('displays backend apply blocking error', async () => {
-    api.applyCashBackfill.mockRejectedValueOnce(
-      new CashApiError('Backfill apply blocked.', {
-        status: 400,
-        blocking_warnings: ['BLOCKING: inconsistent ledger'],
-      })
+  it('bulk apply prevents double submit', async () => {
+    let resolveApply;
+    api.applyCashBulkEntries.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveApply = () => resolve(bulkApplyFixture);
+        })
     );
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
     await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByRole('button', { name: /backfill cash/i }));
-    const dialog = await screen.findByRole('dialog', { name: /backfill cash/i });
-    fireEvent.click(within(dialog).getByRole('button', { name: /preview backfill/i }));
-    await within(dialog).findByRole('button', { name: /apply backfill deposits/i });
-    fireEvent.click(within(dialog).getByRole('button', { name: /apply backfill deposits/i }));
-
-    expect(
-      await within(dialog).findByText(/inconsistent ledger/i)
-    ).toBeInTheDocument();
-  });
-
-  it('renders backend proposal amounts without client-side calculation', async () => {
-    api.previewCashBackfill.mockResolvedValueOnce({
-      ...backfillPreviewFixture,
-      proposed_deposits: [
-        {
-          portfolio_id: 1,
-          date: '2024-03-15',
-          currency: 'EUR',
-          amount: 4242.42,
-          source_of_funds: 'Backfill deposit',
-          note: 'Server amount only',
-        },
-      ],
-      summary: {
-        ...backfillPreviewFixture.summary,
-        proposed_deposit_count: 1,
-        total_proposed_by_currency: [{ currency: 'EUR', amount: 4242.42 }],
-      },
+    fireEvent.click(screen.getByRole('button', { name: /add bulk cash entries/i }));
+    const dialog = await screen.findByRole('dialog', { name: /add bulk cash entries/i });
+    fireEvent.change(within(dialog).getByLabelText(/amount/i), { target: { value: '900' } });
+    fireEvent.change(within(dialog).getByLabelText(/start date/i), {
+      target: { value: '2022-06-01' },
     });
-    renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
-    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
-
-    fireEvent.click(screen.getByRole('button', { name: /backfill cash/i }));
-    const dialog = await screen.findByRole('dialog', { name: /backfill cash/i });
-    fireEvent.click(within(dialog).getByRole('button', { name: /preview backfill/i }));
-
-    await waitFor(() => {
-      expect(within(dialog).getAllByText('€4,242.42').length).toBeGreaterThan(0);
+    fireEvent.change(within(dialog).getByLabelText(/end date/i), {
+      target: { value: '2022-12-01' },
     });
-    expect(within(dialog).getByText('Server amount only')).toBeInTheDocument();
-    expect(within(dialog).queryByText(/^1000$/)).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: /preview schedule/i }));
+    const applyBtn = await within(dialog).findByRole('button', {
+      name: /apply bulk entries/i,
+    });
+    fireEvent.click(applyBtn);
+    fireEvent.click(applyBtn);
+    expect(api.applyCashBulkEntries).toHaveBeenCalledTimes(1);
+    resolveApply();
+    await waitFor(() => expect(within(dialog).getByText('Created')).toBeInTheDocument());
   });
 });
 

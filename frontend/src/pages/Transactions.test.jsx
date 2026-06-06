@@ -475,6 +475,63 @@ describe('Transactions Page', () => {
     });
   });
 
+  it('shows future-impact panel when delete is blocked by linked settlement', async () => {
+    const futureImpactError = new TransactionApiError(
+      'This transaction change would make future cash balance negative.',
+      {
+        status: 409,
+        currency: 'EUR',
+        earliest_negative_date: '2026-06-10',
+        lowest_balance: -500,
+        affected_entries: [
+          {
+            id: 99,
+            date: '2026-06-10',
+            entry_type: 'BUY_SETTLEMENT',
+            amount: -1500,
+            linked_transaction_id: 2,
+            asset_symbol: 'AAPL',
+          },
+        ],
+      }
+    );
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'USD' });
+    api.fetchTransactions.mockResolvedValue(mockTransactions);
+    api.deleteTransaction.mockRejectedValueOnce(futureImpactError);
+    render(
+      <PortfolioProvider>
+        <Transactions />
+      </PortfolioProvider>
+    );
+    await waitFor(() => expect(screen.getByText('AAPL')).toBeInTheDocument());
+    fireEvent.click(screen.getByTitle('Delete'));
+    await waitFor(() => {
+      expect(
+        screen.getByText(/linked cash settlement funded later transactions/i)
+      ).toBeInTheDocument();
+      expect(screen.getByText(/Earliest negative balance on/)).toBeInTheDocument();
+      expect(screen.getByText(/Affected ledger entries/)).toBeInTheDocument();
+    });
+  });
+
+  it('shows readable warning when delete fails with generic error', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'USD' });
+    api.fetchTransactions.mockResolvedValue(mockTransactions);
+    api.deleteTransaction.mockRejectedValueOnce(new Error('Server unavailable'));
+    render(
+      <PortfolioProvider>
+        <Transactions />
+      </PortfolioProvider>
+    );
+    await waitFor(() => expect(screen.getByText('AAPL')).toBeInTheDocument());
+    fireEvent.click(screen.getByTitle('Delete'));
+    await waitFor(() => {
+      expect(screen.getByText('Server unavailable')).toBeInTheDocument();
+    });
+  });
+
   it('calls delete API and reloads data on delete button click', async () => {
     api.fetchPortfolios.mockResolvedValueOnce([]);
     api.getSettings.mockResolvedValueOnce({ display_currency: 'USD' });

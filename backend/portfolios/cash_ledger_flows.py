@@ -27,10 +27,15 @@ CASH_AWARE_INTERNAL_ENTRY_TYPES = frozenset(
         CashEntryType.INTEREST,
         CashEntryType.FEE,
         CashEntryType.TAX,
-        CashEntryType.TRANSFER_OUT,
-        CashEntryType.TRANSFER_IN,
         CashEntryType.FX_CONVERSION_OUT,
         CashEntryType.FX_CONVERSION_IN,
+    }
+)
+
+CASH_AWARE_TRANSFER_ENTRY_TYPES = frozenset(
+    {
+        CashEntryType.TRANSFER_OUT,
+        CashEntryType.TRANSFER_IN,
     }
 )
 
@@ -38,6 +43,8 @@ CASH_AWARE_INTERNAL_ENTRY_TYPES = frozenset(
 def is_cash_aware_external_ledger_entry(entry: CashLedgerEntry) -> bool:
     if entry.linked_transaction_id is not None:
         return False
+    if entry.entry_type in CASH_AWARE_TRANSFER_ENTRY_TYPES:
+        return True
     if entry.transfer_group_id is not None:
         return False
     if entry.entry_type in CASH_AWARE_INTERNAL_ENTRY_TYPES:

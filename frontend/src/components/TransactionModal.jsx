@@ -6,12 +6,18 @@ import {
   createCashDeposit,
   createCashWithdrawal,
   ApiError,
+  futureImpactFromApiError,
 } from '../api';
 import { Button, StatusBadge } from './ui';
 import { navVerificationBadgeStatus, navVerificationLabel } from '../utils/transactionDisplay';
 import CashEntryFormFields, { emptyCashForm } from './CashEntryFormFields';
 import CashShortfallDisplay from './CashShortfallDisplay';
+import CashFutureImpactDisplay, {
+  TRANSACTION_FUTURE_IMPACT_INTRO,
+  TRANSACTION_FUTURE_IMPACT_HELPER,
+} from './CashFutureImpactDisplay';
 import PurchaseShortfallAction from './PurchaseShortfallAction';
+import './CashFutureImpactDisplay.css';
 import { buildShortfallDepositPayload } from '../utils/purchaseShortfallHelpers';
 import './TransactionModal.css';
 import { usePortfolio } from '../portfolioContext';
@@ -225,6 +231,7 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
   const [shortfall, setShortfall] = useState(null);
   const [pendingAssetSubmit, setPendingAssetSubmit] = useState(null);
   const [shortfallDeposit, setShortfallDeposit] = useState({ source_of_funds: '', note: '' });
+  const [futureImpact, setFutureImpact] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [addAndContinueLoading, setAddAndContinueLoading] = useState(false);
   const addAndContinueInFlight = useRef(false);
@@ -263,6 +270,7 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
     setError('');
     setPartialWarning('');
     setShortfall(null);
+    setFutureImpact(null);
     setPendingAssetSubmit(null);
     setShortfallDeposit({ source_of_funds: '', note: '' });
     setAddAndContinueLoading(false);
@@ -339,6 +347,7 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
   const storeBuyShortfall = (apiShortfall, assetSubmit) => {
     setError('Insufficient cash balance for purchase.');
     setPartialWarning('');
+    setFutureImpact(null);
     setShortfall(apiShortfall);
     setPendingAssetSubmit(assetSubmit);
   };
@@ -348,6 +357,7 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
     setError('');
     setPartialWarning('');
     setShortfall(null);
+    setFutureImpact(null);
     setPendingAssetSubmit(null);
     setSubmitting(true);
 
@@ -428,7 +438,13 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
             };
         storeBuyShortfall(apiShortfall, assetSubmit);
       } else {
-        setError(err.message || 'Save failed');
+        const impact = futureImpactFromApiError(err);
+        if (impact) {
+          setFutureImpact(impact);
+          setError('');
+        } else {
+          setError(err.message || 'Save failed');
+        }
       }
     } finally {
       setSubmitting(false);
@@ -894,6 +910,14 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
                   )}
                 </>
               )}
+
+              {futureImpact && !isCash ? (
+                <CashFutureImpactDisplay
+                  impact={futureImpact}
+                  intro={TRANSACTION_FUTURE_IMPACT_INTRO}
+                  helperText={TRANSACTION_FUTURE_IMPACT_HELPER}
+                />
+              ) : null}
 
               {shortfall && !isCash ? (
                 <>

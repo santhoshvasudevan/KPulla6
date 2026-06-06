@@ -1,7 +1,7 @@
 # Current State — KPulla6 (Portfolio Insight)
 
 ## Last Updated
-2026-06-04 (Cash-7C — cash backfill wizard UI)
+2026-06-04 (TXN-AUDIT-2/3 transaction future-impact UX; Cash-7D bulk entries)
 
 ## Stack
 - **Backend:** Django 5 + Django REST Framework + django-allauth (session auth, Google OAuth)
@@ -179,8 +179,9 @@ Design doc: [cash-ledger.md](./cash-ledger.md).
 | Manual ledger edit/delete (`PUT`/`DELETE /cash/ledger/{id}`) | **Done** (Cash-3D + **Cash-4D**) — manual rows only; future-impact **409** with `affected_entries`; no cascade delete |
 | Unified Add Transaction modal on `/transactions` (Cash / Stock / MF) | **Done** (Cash-3G) — cash via `/cash/deposits` and `/cash/withdrawals`; cash edit on `/cash` only |
 | Cash-aware BUY/SELL settlements (`cash_aware_enabled`) | **Done** (Cash-4A) — linked `BUY_SETTLEMENT` / `SELL_SETTLEMENT`; insufficient BUY → 400 + shortfall payload |
+| Transaction edit/delete future-impact errors + UX | **Done** (TXN-AUDIT-2/3) — **409** structured payload; `/transactions` + `TransactionModal` panels |
 | CSV import cash shortfall preview + confirmed deposits | **Done** (Cash-5) |
-| Cash transfers | **Planned** (Cash-8) |
+| Cash transfers (same + cross currency) | **Done** (Cash-8A/8B) — user-entered amounts; no market FX |
 | Transaction modal insufficient-cash UX (stock/MF) | **Done** (Cash-4B) — BUY shortfall panel + `/cash` link in `TransactionModal` |
 | Same-currency BUY enforcement + guidance | **Done** (Cash-4E) — USD does not fund EUR BUY; purchase shortfall copy; no implicit FX |
 | BUY shortfall add cash + continue | **Done** (Cash-4C) — `TransactionModal` deposit in shortfall currency then retry BUY |
@@ -191,16 +192,16 @@ Design doc: [cash-ledger.md](./cash-ledger.md).
 | Portfolio-level XIRR cash-aware (Cash-6C.1) | **Done** |
 | TWROR/cumulative_return cash-aware (Cash-6C.2) | **Done** |
 | Cash-aware return QA regression + diagnostic script (Cash-6D) | **Done** |
-| Cash backfill preview API (Cash-7A) | **Done** |
-| Cash backfill apply API (Cash-7B) | **Done** |
-| Backfill wizard UI (Cash-7C) | **Done** — `/cash` → Backfill Cash; `CashBackfillWizard` |
-| Transfer HTTP APIs | **Planned** (Cash-8) |
+| Cash shortfall backfill APIs + wizard (Cash-7A/7B/7C) | **Removed** |
+| Bulk cash entries API + wizard (Cash-7D) | **Done** — `/cash` → Add Bulk Cash Entries |
+| Bulk quarterly/yearly frequencies | **Planned** |
+| Transfer HTTP APIs | **Done** (Cash-8A/8B) — fees / same-portfolio FX conversion deferred |
 
 **Runtime:** Legacy portfolios — investment-only TWROR/cumulative return; cash in `current_value` / `metric=value`. Cash-aware portfolios — ledger external flows and cash-inclusive daily values for XIRR (6C.1), TWROR, and cumulative return (6C.2).
 
 **Tester repair:** `PUT /api/v1/portfolios/{id}` with `"cash_aware_enabled": true` on the tester default portfolio (no user deletion).
 
-**Next recommended phase:** Cash-7 — transfers, backfill, portfolio transfer semantics.
+**Next recommended phase:** transfer fees (Cash-8C); optional bulk quarterly/yearly frequencies.
 
 ## Not Yet Implemented
 - Automatic background sync scheduler (Celery/RQ not configured)

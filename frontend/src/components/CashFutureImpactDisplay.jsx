@@ -4,18 +4,27 @@ import { cashEntryTypeLabel } from '../utils/cashDisplay';
 export const CASH_FUTURE_IMPACT_HELPER =
   'Please add another cash deposit, edit later transactions, or delete affected transactions manually before changing this cash entry.';
 
+export const TRANSACTION_FUTURE_IMPACT_INTRO =
+  'This transaction cannot be deleted or changed because its linked cash settlement funded later transactions.';
+
+export const TRANSACTION_FUTURE_IMPACT_HELPER =
+  'Add another cash deposit, edit later transactions, or delete affected transactions manually before changing this transaction.';
+
 /**
- * Backend future-impact rejection (edit/delete manual cash entry).
+ * Backend future-impact rejection (edit/delete manual cash entry or asset transaction).
  */
 export default function CashFutureImpactDisplay({
   impact,
   className = 'cash-future-impact',
+  intro,
+  helperText = CASH_FUTURE_IMPACT_HELPER,
 }) {
   if (!impact) return null;
   const entries = Array.isArray(impact.affected_entries) ? impact.affected_entries : [];
 
   return (
     <div className={className}>
+      {intro ? <p className="cash-future-impact__intro">{intro}</p> : null}
       {impact.detail ? <p className="cash-future-impact__detail">{impact.detail}</p> : null}
       {impact.currency && impact.earliest_negative_date ? (
         <p>
@@ -46,7 +55,7 @@ export default function CashFutureImpactDisplay({
           </ul>
         </>
       ) : null}
-      <p className="cash-future-impact__helper">{CASH_FUTURE_IMPACT_HELPER}</p>
+      <p className="cash-future-impact__helper">{helperText}</p>
     </div>
   );
 }

@@ -5,7 +5,13 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from cash.services import CashValidationError, InsufficientCashError
+from cash.services import (
+    CashValidationError,
+    FutureCashImpactError,
+    InsufficientCashError,
+    TRANSACTION_FUTURE_CASH_IMPACT_DETAIL,
+    future_cash_impact_payload,
+)
 from portfolios.services import PortfolioNotFoundError
 from transactions.models import MutualFundTransactionDetail
 from transactions.mutual_fund_services import (
@@ -57,11 +63,23 @@ def _insufficient_cash_response(exc: InsufficientCashError) -> Response:
     )
 
 
+def _future_cash_impact_response(exc: FutureCashImpactError) -> Response:
+    return Response(
+        future_cash_impact_payload(
+            exc.impact,
+            detail=TRANSACTION_FUTURE_CASH_IMPACT_DETAIL,
+        ),
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
 def _transaction_write_error_response(exc: Exception) -> Response | None:
     if isinstance(exc, PortfolioNotFoundError):
         return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
     if isinstance(exc, InsufficientCashError):
         return _insufficient_cash_response(exc)
+    if isinstance(exc, FutureCashImpactError):
+        return _future_cash_impact_response(exc)
     if isinstance(exc, TransactionValidationError):
         return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
     if isinstance(exc, CashValidationError):

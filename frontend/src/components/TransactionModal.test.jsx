@@ -681,6 +681,92 @@ describe('TransactionModal stock/MF BUY insufficient cash', () => {
     });
   });
 
+  it('edit transaction blocked by future-impact renders panel in modal', async () => {
+    api.updateTransaction.mockRejectedValueOnce(
+      new TransactionApiError(
+        'This transaction change would make future cash balance negative.',
+        {
+          status: 409,
+          currency: 'EUR',
+          earliest_negative_date: '2026-06-10',
+          lowest_balance: -500,
+          affected_entries: [
+            {
+              id: 12,
+              date: '2026-06-10',
+              entry_type: 'BUY_SETTLEMENT',
+              amount: -1500,
+              linked_transaction_id: 8,
+              asset_symbol: 'AAPL',
+            },
+          ],
+        }
+      )
+    );
+    const initialData = {
+      id: 5,
+      asset_symbol: 'AAPL',
+      date: '2026-06-05',
+      type: 'SELL',
+      quantity: 10,
+      price_per_share: 100,
+      currency: 'EUR',
+      fees: 0,
+      portfolio_id: 1,
+    };
+    render(
+      <PortfolioProvider initialPortfolios={portfolios} disableFetch>
+        <TransactionModal
+          isOpen
+          onClose={vi.fn()}
+          onSuccess={vi.fn()}
+          initialData={initialData}
+        />
+      </PortfolioProvider>
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      expect(
+        screen.getByText(/linked cash settlement funded later transactions/i)
+      ).toBeInTheDocument();
+      expect(screen.getByText(/Affected ledger entries/)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/Shortfall:/)).not.toBeInTheDocument();
+  });
+
+  it('insufficient BUY edit still renders shortfall panel', async () => {
+    api.updateTransaction.mockRejectedValueOnce(purchaseShortfallError);
+    const initialData = {
+      id: 5,
+      asset_symbol: 'AAPL',
+      date: '2026-06-01',
+      type: 'BUY',
+      quantity: 5,
+      price_per_share: 100,
+      currency: 'EUR',
+      fees: 5,
+      portfolio_id: 1,
+    };
+    const { container } = renderWithRouter(
+      <PortfolioProvider initialPortfolios={portfolios} disableFetch>
+        <TransactionModal
+          isOpen
+          onClose={vi.fn()}
+          onSuccess={vi.fn()}
+          initialData={initialData}
+        />
+      </PortfolioProvider>
+    );
+    fireEvent.change(container.querySelector('input[name="quantity"]'), { target: { value: '25' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      expect(screen.getByText(/Shortfall:/)).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByText(/linked cash settlement funded later transactions/i)
+    ).not.toBeInTheDocument();
+  });
+
   it('stock BUY generic validation error shows message without shortfall panel', async () => {
     api.createTransaction.mockRejectedValueOnce(
       new TransactionApiError('asset_symbol: This field is required.', {

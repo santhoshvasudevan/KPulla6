@@ -131,6 +131,31 @@
   margin-bottom: var(--space-3);
 }
 
+.cash-transfer-modal__intro {
+  margin: 0 0 var(--space-4);
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.cash-transfer-modal__amounts {
+  display: grid;
+  gap: 0;
+}
+
+.cash-transfer-modal__hint {
+  margin: var(--space-1) 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.cash-transfer-modal__implied-rate {
+  margin: 0 0 var(--space-3);
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
 .cash-entry-modal .form-group label {
   display: block;
   margin-bottom: var(--space-1);

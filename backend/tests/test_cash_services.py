@@ -3,13 +3,14 @@ from decimal import Decimal
 
 import pytest
 
-from cash.models import CashEntryType, CashLedgerEntry
+from cash.models import CashEntryType, CashLedgerEntry, CashTransferGroup
 from cash.services import (
     CashEntryNotEditableError,
     CashValidationError,
     FutureCashImpactError,
     InsufficientCashError,
     create_cash_deposit,
+    create_cash_transfer,
     create_cash_withdrawal,
     current_cash_balances,
     delete_cash_ledger_entry,
@@ -190,3 +191,131 @@ def test_delete_buy_settlement_not_editable_service(test_user):
     )
     with pytest.raises(CashEntryNotEditableError):
         delete_cash_ledger_entry(test_user, entry.id)
+
+
+@pytest.mark.django_db
+def test_create_cash_transfer_service(test_user):
+    source = ensure_default_portfolio(test_user)
+    target = Portfolio.objects.create(
+        user=test_user, name="Target", base_currency="EUR", is_active=True
+    )
+    create_cash_deposit(
+        test_user,
+        portfolio_id=source.id,
+        entry_date="2026-06-01",
+        currency="EUR",
+        amount=Decimal("5000"),
+    )
+    result = create_cash_transfer(
+        test_user,
+        source_portfolio_id=source.id,
+        target_portfolio_id=target.id,
+        entry_date="2026-06-06",
+        source_currency="EUR",
+        source_amount=Decimal("1000"),
+        target_currency="EUR",
+        target_amount=Decimal("1000"),
+        note="Move cash",
+    )
+    assert result.source_amount == Decimal("1000")
+    assert result.target_amount == Decimal("1000")
+    assert result.implied_rate == Decimal("1")
+    assert result.out_entry.entry_type == CashEntryType.TRANSFER_OUT
+    assert result.out_entry.amount == Decimal("-1000")
+    assert result.in_entry.entry_type == CashEntryType.TRANSFER_IN
+    assert result.in_entry.amount == Decimal("1000")
+    group = CashTransferGroup.objects.get(pk=result.transfer_group_id)
+    assert group.source_currency == "EUR"
+    assert group.target_currency == "EUR"
+    assert group.user_rate == Decimal("1")
+    assert group.fees == Decimal("0")
+
+
+@pytest.mark.django_db
+def test_create_cash_transfer_same_portfolio_rejected(test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    create_cash_deposit(
+        test_user,
+        portfolio_id=portfolio.id,
+        entry_date="2026-06-01",
+        currency="EUR",
+        amount=Decimal("100"),
+    )
+    with pytest.raises(CashValidationError):
+        create_cash_transfer(
+            test_user,
+            source_portfolio_id=portfolio.id,
+            target_portfolio_id=portfolio.id,
+            entry_date="2026-06-06",
+            source_currency="EUR",
+            source_amount=Decimal("50"),
+            target_currency="EUR",
+            target_amount=Decimal("50"),
+        )
+
+
+@pytest.mark.django_db
+def test_create_cash_transfer_future_impact_blocked(test_user):
+    source = ensure_default_portfolio(test_user)
+    target = Portfolio.objects.create(
+        user=test_user, name="Target", base_currency="EUR", is_active=True
+    )
+    create_cash_deposit(
+        test_user,
+        portfolio_id=source.id,
+        entry_date="2026-06-01",
+        currency="EUR",
+        amount=Decimal("1000"),
+    )
+    CashLedgerEntry.objects.create(
+        portfolio=source,
+        date=date(2026, 6, 10),
+        currency="EUR",
+        entry_type=CashEntryType.BUY_SETTLEMENT,
+        amount=Decimal("-900"),
+    )
+    with pytest.raises(FutureCashImpactError):
+        create_cash_transfer(
+            test_user,
+            source_portfolio_id=source.id,
+            target_portfolio_id=target.id,
+            entry_date="2026-06-05",
+            source_currency="EUR",
+            source_amount=Decimal("500"),
+            target_currency="EUR",
+            target_amount=Decimal("500"),
+        )
+
+
+@pytest.mark.django_db
+def test_create_cross_currency_transfer_service(test_user):
+    source = ensure_default_portfolio(test_user)
+    target = Portfolio.objects.create(
+        user=test_user, name="Target", base_currency="EUR", is_active=True
+    )
+    CashLedgerEntry.objects.create(
+        portfolio=source,
+        date=date(2026, 6, 1),
+        currency="USD",
+        entry_type=CashEntryType.CASH_DEPOSIT,
+        amount=Decimal("2000"),
+    )
+    result = create_cash_transfer(
+        test_user,
+        source_portfolio_id=source.id,
+        target_portfolio_id=target.id,
+        entry_date="2026-06-06",
+        source_currency="USD",
+        source_amount=Decimal("1000"),
+        target_currency="EUR",
+        target_amount=Decimal("920"),
+    )
+    assert result.out_entry.currency == "USD"
+    assert result.out_entry.amount == Decimal("-1000")
+    assert result.in_entry.currency == "EUR"
+    assert result.in_entry.amount == Decimal("920")
+    assert result.implied_rate == Decimal("0.92000000")
+    group = CashTransferGroup.objects.get(pk=result.transfer_group_id)
+    assert group.source_currency == "USD"
+    assert group.target_currency == "EUR"
+    assert group.user_rate == Decimal("0.92000000")

@@ -1,6 +1,6 @@
 # Cash Ledger — Design & Migration (Cash-0)
 
-**Status:** Cash-1 schema + Cash-2 read APIs + Cash-3A write APIs + Cash-3B `/cash` UI + **Cash-3D** manual ledger edit/delete + **Cash-3G** unified Add modal + **Cash-4A** cash-aware BUY/SELL settlements + **Cash-5** CSV cash preview + **Cash-6** analytics cash integration + **Cash-7A/B/C** backfill preview, apply, and wizard **implemented**. Transfers remain **Cash-8**.
+**Status:** Cash-1 through Cash-7D **done**; **Cash-8A** same-currency and **Cash-8B** user-entered cross-currency portfolio transfers **done**. Transfer fees and same-portfolio FX conversion remain deferred.
 
 **Related:** [architecture.md](./architecture.md) · [database.md](./database.md) · [api-design.md](./api-design.md) · [frontend-design.md](./frontend-design.md) · [data-safety.md](./data-safety.md) · Cursor rule [`.cursor/rules/320-cash-ledger.mdc`](../.cursor/rules/320-cash-ledger.mdc)
 
@@ -74,8 +74,8 @@ Cash must **not** be analyzed like a stock or mutual fund:
 | `FEE` | Decrease | Internal | Cash fees (account, wire) |
 | `TAX` | Decrease | Internal | Withholding or tax payment from cash |
 | `ADJUSTMENT` | ± | Internal | User-confirmed correction / reconciliation |
-| `TRANSFER_OUT` | Decrease | **Withdrawal** (source portfolio) | To another portfolio — see §9 |
-| `TRANSFER_IN` | Increase | **Contribution** (target portfolio) | From another portfolio |
+| `TRANSFER_OUT` | Decrease | **Withdrawal** (source portfolio) | To another portfolio — Cash-8A same-currency implemented |
+| `TRANSFER_IN` | Increase | **Contribution** (target portfolio) | From another portfolio — Cash-8A same-currency implemented |
 | `FX_CONVERSION_OUT` | Decrease | Internal | Leg of same-portfolio FX conversion |
 | `FX_CONVERSION_IN` | Increase | Internal | Paired leg; linked via `transfer_group` |
 
@@ -86,9 +86,9 @@ Cash must **not** be analyzed like a stock or mutual fund:
 - **`CASH_DEPOSIT` / `CASH_WITHDRAWAL`** are **external** portfolio flows for TWROR/XIRR at portfolio scope.
 - **`TRANSFER_OUT` / `TRANSFER_IN`:** external for the **individual** portfolio’s TWROR/XIRR; **neutral** when `portfolio_scope=all` (internal movement between user portfolios).
 
-### `CashTransferGroup` (Django model — `cash_transfer_groups`; ledger write APIs Cash-8)
+### `CashTransferGroup` (Django model — `cash_transfer_groups`; write API Cash-8A)
 
-Implemented in Cash-1 for schema linkage; HTTP transfer endpoints deferred to Cash-8.
+Implemented in Cash-1 for schema linkage; **same-currency** HTTP transfer endpoint in Cash-8A.
 
 | Field | Notes |
 |-------|--------|
@@ -154,7 +154,7 @@ This models “money appears on BUY day” even when the user already held cash 
 | `BUY` + `BUY_SETTLEMENT` | **Zero** — internal cash → asset |
 | `SELL` + `SELL_SETTLEMENT` | **Zero** — internal asset → cash |
 | `STOCK_SPLIT` | Zero (unchanged) |
-| `TRANSFER_*` / `FX_CONVERSION_*` / linked rows | Excluded until Cash-8 |
+| `TRANSFER_*` (manual edit) / `FX_CONVERSION_*` / linked rows | Manual edit excluded; transfers created via `POST /cash/transfers` (Cash-8A) |
 
 Daily portfolio value \(PV_d\) = **investment value + cash** (same series as `metric=value`, Cash-6B).
 
@@ -175,7 +175,7 @@ Daily portfolio value \(PV_d\) = **investment value + cash** (same series as `me
 2. **Buy €1,000 stock** (`BUY` + `BUY_SETTLEMENT −1000`) — PV unchanged (cash down, holdings up); \(F_d = 0\) → period return **0%**.
 3. **Stock marks to €1,100** — PV €1,100; no flow → \(r = (1100 - 1000) / 1000 = **10%**\) TWROR.
 
-Legacy mode without cash ledger continues to treat step 2’s BUY as external contribution until the portfolio is backfilled and cash-aware mode is enabled.
+Legacy mode without cash ledger continues to treat step 2’s BUY as external contribution until the user enables cash-aware mode and records actual cash funding.
 
 **Implementation note (future):** extend `_build_external_flows` (or parallel `build_cash_aware_external_flows`) in a service layer; keep formula in `finance/twror.py`.
 
@@ -196,7 +196,8 @@ Legacy mode without cash ledger continues to treat step 2’s BUY as external co
 Ledger signed amounts use deposit **+** / withdrawal **−**; external flows map as **`xirr_amount = −converted_ledger_amount`**.
 
 - **External flows:** `CASH_DEPOSIT`, `CASH_WITHDRAWAL`, and **unlinked** `ADJUSTMENT` (manual reconciliation only).
-- **Excluded internal rows:** `BUY_SETTLEMENT`, `SELL_SETTLEMENT`, `FEE`, `TAX`, `DIVIDEND_CASH`, `INTEREST`, `TRANSFER_*`, `FX_CONVERSION_*`, and any row with `linked_transaction` or `transfer_group`.
+- **External rows:** `CASH_DEPOSIT`, `CASH_WITHDRAWAL`, unlinked `ADJUSTMENT`, and **`TRANSFER_IN` / `TRANSFER_OUT`** (Cash-8A).
+- **Excluded internal rows:** `BUY_SETTLEMENT`, `SELL_SETTLEMENT`, `FEE`, `TAX`, `DIVIDEND_CASH`, `INTEREST`, `FX_CONVERSION_*`, rows with `linked_transaction`, and `transfer_group` rows that are not transfer legs (FX conversion).
 - **Terminal value:** investment holdings **plus** cash balances in the calculation currency (cached FX, 7-day fill; missing FX → `xirr: null` + warning).
 - **BUY/SELL transactions** are **not** portfolio-level external XIRR flows when `cash_aware_enabled=true`.
 
@@ -210,14 +211,14 @@ Ledger signed amounts use deposit **+** / withdrawal **−**; external flows map
 ### Legacy behavior
 
 - Portfolios in **legacy mode** (`cash_aware_enabled=false`) keep today’s XIRR: BUY negative, SELL positive, terminal = holdings only (cash in `current_value` but not in XIRR terminal).
-- Toggling cash-aware mode requires explicit user action + backfill preview (§8).
+- Toggling cash-aware mode requires explicit user action; historical funding via manual or bulk cash entries (§9).
 
 ### All Portfolios (`portfolio_scope=all`) — mixed mode (Cash-6C.1)
 
 - Each active portfolio applies its own rule (cash-aware vs legacy).
 - External flows are converted to the request **`display_currency`** and **aggregated by date** across portfolios.
 - Terminal value = sum of per-portfolio holdings + cash in `display_currency`.
-- `TRANSFER_IN` / `TRANSFER_OUT` remain excluded at single-portfolio scope until transfer semantics are implemented (Cash-8).
+- **`TRANSFER_IN` / `TRANSFER_OUT`:** external at single-portfolio scope (Cash-8A); all-scope aggregation nets same-currency transfers to zero.
 
 ---
 
@@ -266,7 +267,7 @@ Suggested endpoint: `POST /api/v1/transactions/import-csv/preview-cash` (or equi
 
 ## 8. Cash-aware BUY/SELL settlements (Cash-4A — implemented)
 
-Gate: `portfolio.cash_aware_enabled == true` only. No auto-enable; no backfill in this phase.
+Gate: `portfolio.cash_aware_enabled == true` only. No auto-enable.
 
 | Asset | BUY | SELL | Split / dividend |
 |-------|-----|------|------------------|
@@ -275,6 +276,9 @@ Gate: `portfolio.cash_aware_enabled == true` only. No auto-enable; no backfill i
 
 - Update/delete: settlement row updated or removed with the transaction; BUY updates re-check cash excluding the old settlement.
 - Delete: settlement removed first; deleting a SELL settlement blocked if later cash would go negative.
+- **TXN-AUDIT-2:** `PUT`/`DELETE /transactions/{id}` return structured **409** future-impact payload (`currency`, `earliest_negative_date`, `lowest_balance`, `affected_entries`) when settlement sync would break later balances — same shape as manual cash ledger edit/delete.
+- **Legacy → cash-aware edit:** transactions created while legacy may gain a linked settlement on first `PUT` after enable; fails with **400** shortfall if funding is missing (no retroactive auto-deposit).
+- Linked settlements remain **protected** from `PUT`/`DELETE /cash/ledger/{id}` (409).
 - **Cash-6A (done):** Summary `current_value` and holdings `allocation` include native cash converted to `display_currency` via cached FX.
 - **Cash-6B (done):** Summary timeseries and `GET /portfolio/performance?metric=value` include cash.
 - **Cash-6C.1 (done):** Portfolio-level XIRR uses cash ledger external flows when cash-aware; legacy portfolios unchanged.
@@ -283,14 +287,14 @@ Gate: `portfolio.cash_aware_enabled == true` only. No auto-enable; no backfill i
 
 ---
 
-## 9. Legacy mode and backfill strategy
+## 9. Legacy mode and historical cash funding
 
 ### Principles
 
 - **Existing transactions remain undisturbed** — no automatic rewrite of historical BUY/SELL.
 - **Cash enforcement** applies only when **cash-aware mode** is enabled for a portfolio.
-- Portfolios may stay in **legacy mode** until the user runs backfill.
-- **Backfill is preview-first, user-confirmed** — never silent mass insert on production-like dev DB without explicit approval ([data-safety.md](./data-safety.md)).
+- Portfolios may stay in **legacy mode** indefinitely until the user explicitly enables cash-aware mode.
+- **Historical funding** uses **actual** deposit/withdrawal amounts — manual entries or **Bulk Cash Entries** schedules — not shortfall simulation. Never silent mass insert on production-like dev DB without explicit approval ([data-safety.md](./data-safety.md)).
 
 ### Portfolio flag (Cash-4A.1)
 
@@ -298,57 +302,60 @@ Gate: `portfolio.cash_aware_enabled == true` only. No auto-enable; no backfill i
 
 **Enable legacy portfolio:** Settings → Portfolios → **Enable cash-aware**, or Cash/Transactions when a single portfolio is selected → **Enable cash-aware mode** (confirmation). API: `PUT /api/v1/portfolios/{id}` with full portfolio fields and `"cash_aware_enabled": true` (tester portfolio id 5). All Portfolios scope shows a per-portfolio note only — no global enable button.
 
-### Scalable portfolio backfill example
+### Scalable portfolio historical funding example
 
 | Portfolio | Scalablefolio |
 |-----------|----------------|
 | Currency | EUR |
-| 2022-05-01 | Opening cash deposit **€12,500** |
+| 2022-05-01 | Opening cash deposit **€12,500** (`once`) |
 | 2022-05-01 | Monthly contribution **€900** |
 | 2022-06-01 … 2022-12-01 | **€900** monthly |
 | 2023-01-01 … 2023-12-01 | **€945** monthly |
 | 2024-01-01 … 2024-12-01 | **€992** monthly |
 | 2025-01-01 … 2025-12-01 | **€1,042** monthly |
 
-Exact dates may be adjusted to match actual bank/broker transfer dates during wizard review.
+Enter via `/cash` → **Add Bulk Cash Entries** (one schedule per amount/rate period) or individual deposit modals. Dates should match actual bank/broker transfer dates.
 
-**Backfill algorithm (preview):**
+**Cash-7D (done):** `POST /api/v1/cash/bulk-entries/preview` and `apply` create manual deposit/withdrawal schedules (`once`, `monthly`). Duplicate identical manual rows skipped on apply; withdrawal schedules blocked if future balance would go negative.
 
-1. Replay transactions in date order (existing BUY/SELL/MF).
-2. Infer required `CASH_DEPOSIT` / `BUY_SETTLEMENT` / `SELL_SETTLEMENT` entries to reconcile legacy BUY/SELL with non-negative cash.
-3. Present proposed ledger rows; user edits dates/amounts; confirm → `POST /cash/backfill-apply` (Cash-7B).
+**Removed (Cash-7A/7B/7C):** Shortfall backfill preview/apply APIs and wizard — product direction changed; minimum-deposit simulation before historical BUYs is not supported.
 
-**Cash-7A (done):** `POST /api/v1/cash/backfill-preview` simulates chronological cash from existing ledger + historical transactions; proposes minimum same-currency `CASH_DEPOSIT` rows before each BUY shortfall in the requested window. No implicit FX. No writes. Already cash-aware portfolios receive an informational warning; consistent ledgers should show zero proposed deposits.
+### IndianMF historical funding approach
 
-**Cash-7B (done):** `POST /api/v1/cash/backfill-apply` requires `confirmed: true`, recomputes preview server-side, and atomically creates proposed `CASH_DEPOSIT` rows only (`source_of_funds`: `Backfill deposit`; note prefixed `Backfill:`). Skips identical existing backfill deposits. Does **not** enable `cash_aware_enabled`, create settlements, or mutate transactions.
-
-**Cash-7C (done):** `/cash` → **Backfill Cash** opens `CashBackfillWizard` (configure → preview API → review read-only tables → apply API → optional enable cash-aware). Frontend does not compute proposed amounts; apply always sends `confirmed: true`.
-
-### IndianMF backfill approach
-
-1. Run **cash shortfall preview** on INR (and other) currencies.
-2. Propose **INR `CASH_DEPOSIT`** rows before historical MF/stock purchases where simulated balance &lt; 0.
-3. User reviews and confirms.
-4. After enablement, **future purchases require sufficient INR cash** (or confirmed auto-deposit).
+1. Enter **INR `CASH_DEPOSIT`** rows (manual or bulk schedule) for actual funding before historical MF/stock purchases.
+2. Enable cash-aware mode when ready.
+3. **Future purchases require sufficient INR cash** (or confirmed auto-deposit in TransactionModal).
 
 ---
 
-## 9. Portfolio-to-portfolio transfers (planned — Cash-8)
+## 9. Portfolio-to-portfolio transfers
 
-### Same currency
+### Same currency (Cash-8A — implemented)
 
-- Source: `TRANSFER_OUT` (−amount).
-- Target: `TRANSFER_IN` (+amount).
-- Linked `CashTransferGroup`.
-- Single-portfolio TWROR: out = withdrawal, in = contribution.
-- **All Portfolios:** net zero — exclude from aggregated external flows.
+- `POST /api/v1/cash/transfers` with `source_portfolio_id`, `target_portfolio_id`, `date`, `currency`, `amount`, optional `note`.
+- Source and target must be different active portfolios owned by the current user.
+- Source must have sufficient same-currency cash as of `date`; future-impact validation blocks transfers that would make later source balances negative.
+- Creates one `CashTransferGroup` (`source_currency = target_currency`, `user_rate = 1`, `fees = 0`) and paired ledger rows atomically:
+  - Source: `TRANSFER_OUT` (−amount)
+  - Target: `TRANSFER_IN` (+amount)
+- Transfer rows are **system-protected** (no manual edit/delete via `/cash/ledger/{id}`).
+- **Single-portfolio TWROR/XIRR:** `TRANSFER_OUT` = external withdrawal; `TRANSFER_IN` = external contribution (signed ledger `amount`).
+- **All Portfolios scope:** per-portfolio external flows are summed in display currency; same-currency transfer on the same date **nets to zero** — no change to all-scope `current_value`, TWROR, or XIRR (validated Cash-8A-QA).
 
-### Cross-currency
+### Cross-currency (Cash-8B — implemented)
 
-- User supplies: source amount/currency, target amount/currency, date, **actual** conversion (rate or final target amount), fees, note.
-- **Do not force market FX rate** for the transfer itself (user/broker truth).
-- Store linked `CashTransferGroup` + conversion legs.
-- Fees recorded explicitly (currency — see open questions).
+- Request: `source_currency`, `source_amount`, `target_currency`, `target_amount` (+ portfolios, date, optional note).
+- **No market FX lookup** — user enters amount sent and amount actually received.
+- Creates `CashTransferGroup` with differing currencies/amounts; `user_rate` = `target_amount / source_amount` (stored; informational).
+- Ledger: `TRANSFER_OUT` −source_amount in source currency; `TRANSFER_IN` +target_amount in target currency.
+- `implied_rate` in API response is informational only.
+- Source sufficiency/future-impact validated in **source currency only**; target portfolio needs no prior balance in target currency.
+- **All Portfolios:** not forced neutral — display totals follow user-entered amounts converted for presentation; may differ from cached FX.
+
+### Deferred
+
+- Transfer fees (separate `FEE` rows or `fees` on group)
+- Same-portfolio currency conversion (`FX_CONVERSION_*` legs)
 
 ---
 
@@ -392,8 +399,8 @@ All endpoints require **authenticated session** and scope to the **current user�
 | POST | `/api/v1/cash/deposits` | Create `CASH_DEPOSIT` |
 | POST | `/api/v1/cash/withdrawals` | Create `CASH_WITHDRAWAL` |
 | POST | `/api/v1/cash/transfers` | Portfolio transfer (same or cross currency) |
-| POST | `/api/v1/cash/backfill-preview` | **Done** (Cash-7A) — read-only; same-currency shortfall simulation |
-| POST | `/api/v1/cash/backfill-apply` | **Done** (Cash-7B) — confirmed apply; atomic `CASH_DEPOSIT` only |
+| POST | `/api/v1/cash/bulk-entries/preview` | **Done** (Cash-7D) — schedule preview |
+| POST | `/api/v1/cash/bulk-entries/apply` | **Done** (Cash-7D) — confirmed bulk manual entries |
 | POST | `/api/v1/transactions/import-csv/preview-cash` | CSV cash simulation + shortfall report (or nested under import service) |
 
 Preserve existing `/api/v1` contracts; cash endpoints are **additive**. Detail shapes documented in [api-design.md](./api-design.md) when implemented.
@@ -424,12 +431,14 @@ Preserve existing `/api/v1` contracts; cash endpoints are **additive**. Detail s
 | **Cash-6C.1** | Portfolio-level XIRR (cash-aware external flows + terminal) | **Done** |
 | **Cash-6C.2** | TWROR / cumulative_return cash-aware flows | **Done** |
 | **Cash-6D** | Cash-aware return QA regression + `scripts/diagnose_cash_aware_returns.py` | **Done** |
-| **Cash-7A** | `POST /cash/backfill-preview` (read-only shortfall simulation) | **Done** |
-| **Cash-7B** | `POST /cash/backfill-apply` (create deposits; no auto-enable) | **Done** |
-| **Cash-7C** | Backfill wizard UI (`CashBackfillWizard` on `/cash`) | **Done** |
-| **Cash-8** | Portfolio-to-portfolio transfer + FX conversion (`CashTransferGroup`) | Planned |
+| **Cash-7A/7B/7C** | Shortfall backfill preview/apply APIs + wizard | **Removed** |
+| **Cash-7D** | Bulk cash entries schedule (`bulk-entries/preview` + `apply`; `/cash` wizard) | **Done** |
+| **Bulk Cash Entries** | Quarterly/yearly frequencies (optional later) | Planned |
+| **Cash-8A** | Same-currency portfolio transfer (`CashTransferGroup` + `/cash/transfers`) | **Done** |
+| **Cash-8B** | User-entered cross-currency portfolio transfer | **Done** |
+| **Cash-8C** | Transfer fees; same-portfolio FX conversion legs | Planned |
 
-**Recommended next phase:** **Cash-7** — transfers, backfill, or portfolio transfer neutralization in all-scope flows.
+**Recommended next phase:** **Cash-8B** cross-currency transfers / FX conversion; optional quarterly/yearly bulk frequencies.
 
 ---
 
@@ -438,11 +447,11 @@ Preserve existing `/api/v1` contracts; cash endpoints are **additive**. Detail s
 | # | Question |
 |---|----------|
 | 1 | Should **cash-aware mode** be a **portfolio-level toggle** or a **global user setting**? |
-| 2 | Should existing transactions be allowed to remain **legacy forever** without backfill? |
+| 2 | Should existing transactions be allowed to remain **legacy forever** without enabling cash-aware mode? |
 | 3 | Should **negative cash** be allowed behind an advanced setting (reconciliation / margin)? |
 | 4 | Should dividends be entered as **`DIVIDEND` transaction first** vs direct **`DIVIDEND_CASH` ledger** entries? |
 | 5 | Should **`CASH_DEPOSIT`** require **`source_of_funds`** categories (salary, bonus, gift, other)? |
-| 6 | Should **backfill deposits** be editable after creation? |
+| 6 | Should **bulk-schedule deposits** be editable after creation (same as manual entries)? |
 | 7 | Should **transfer fees** be recorded in **source currency**, **target currency**, or separate `FEE` ledger row? |
 | 8 | Should cash appear in the **Assets table** (row per currency) vs a dedicated **Cash** page / Settings section? |
 
