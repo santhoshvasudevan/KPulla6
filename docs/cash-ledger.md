@@ -68,7 +68,8 @@ Cash must **not** be analyzed like a stock or mutual fund:
 | `CASH_DEPOSIT` | Increase | **Contribution** | Money from outside the portfolio (bank, broker funding) |
 | `CASH_WITHDRAWAL` | Decrease | **Withdrawal** | Money leaving the portfolio to the user |
 | `BUY_SETTLEMENT` | Decrease | **Internal** | Cash used to pay for a BUY (`linked_transaction` → BUY) |
-| `SELL_SETTLEMENT` | Increase | **Internal** | Proceeds from SELL credited to cash |
+| `SELL_SETTLEMENT` | Increase | **Internal** | Calculated SELL proceeds credited to cash (audit gross) |
+| `TAX_WITHHELD` | Decrease | **Internal** | Tax withheld / broker adjustment when `actual_cash_received` &lt; calculated proceeds |
 | `DIVIDEND_CASH` | Increase | Internal or external depending on product rule | Cash dividend credited (may link to `DIVIDEND` txn) |
 | `INTEREST` | Increase | Usually internal | Broker interest on cash balance |
 | `FEE` | Decrease | Internal | Cash fees (account, wire) |
@@ -82,7 +83,8 @@ Cash must **not** be analyzed like a stock or mutual fund:
 **Clarifications:**
 
 - **`BUY_SETTLEMENT`** reduces cash by settlement amount (typically `qty × price + fees` in transaction currency).
-- **`SELL_SETTLEMENT`** increases cash by proceeds (typically `qty × price − fees`).
+- **`SELL_SETTLEMENT`** increases cash by **calculated** proceeds (typically `qty × price − fees`).
+- **`TAX_WITHHELD`** decreases cash by `calculated − actual_cash_received` when the user enters a lower actual received amount on SELL. Net cash impact = `actual_cash_received`. Tax reporting is a future feature; the ledger row is the foundation.
 - **`CASH_DEPOSIT` / `CASH_WITHDRAWAL`** are **external** portfolio flows for TWROR/XIRR at portfolio scope.
 - **`TRANSFER_OUT` / `TRANSFER_IN`:** external for the **individual** portfolio’s TWROR/XIRR; **neutral** when `portfolio_scope=all` (internal movement between user portfolios).
 
@@ -197,7 +199,7 @@ Ledger signed amounts use deposit **+** / withdrawal **−**; external flows map
 
 - **External flows:** `CASH_DEPOSIT`, `CASH_WITHDRAWAL`, and **unlinked** `ADJUSTMENT` (manual reconciliation only).
 - **External rows:** `CASH_DEPOSIT`, `CASH_WITHDRAWAL`, unlinked `ADJUSTMENT`, and **`TRANSFER_IN` / `TRANSFER_OUT`** (Cash-8A).
-- **Excluded internal rows:** `BUY_SETTLEMENT`, `SELL_SETTLEMENT`, `FEE`, `TAX`, `DIVIDEND_CASH`, `INTEREST`, `FX_CONVERSION_*`, rows with `linked_transaction`, and `transfer_group` rows that are not transfer legs (FX conversion).
+- **Excluded internal rows:** `BUY_SETTLEMENT`, `SELL_SETTLEMENT`, `TAX_WITHHELD`, `FEE`, `TAX`, `DIVIDEND_CASH`, `INTEREST`, `FX_CONVERSION_*`, rows with `linked_transaction`, and `transfer_group` rows that are not transfer legs (FX conversion).
 - **Terminal value:** investment holdings **plus** cash balances in the calculation currency (cached FX, 7-day fill; missing FX → `xirr: null` + warning).
 - **BUY/SELL transactions** are **not** portfolio-level external XIRR flows when `cash_aware_enabled=true`.
 
@@ -271,8 +273,8 @@ Gate: `portfolio.cash_aware_enabled == true` only. No auto-enable.
 
 | Asset | BUY | SELL | Split / dividend |
 |-------|-----|------|------------------|
-| Stock/ETF | `BUY_SETTLEMENT` = −(qty×price+fees), date = `transaction.date` | `SELL_SETTLEMENT` = +(qty×price−fees) | No ledger row |
-| Mutual fund | `BUY_SETTLEMENT` = −`paid_value`, date = **`investment_date`** | `SELL_SETTLEMENT` = +`paid_value` if &gt; 0 else units×NAV−fees, date = **`investment_date`** | N/A |
+| Stock/ETF | `BUY_SETTLEMENT` = −(qty×price+fees), date = `transaction.date` | `SELL_SETTLEMENT` = +(qty×price−fees); optional `TAX_WITHHELD` = −(calculated−actual) | No ledger row |
+| Mutual fund | `BUY_SETTLEMENT` = −`paid_value`, date = **`investment_date`** | `SELL_SETTLEMENT` = +calculated proceeds; optional `TAX_WITHHELD` when `actual_cash_received` set, date = **`investment_date`** | N/A |
 
 - Update/delete: settlement row updated or removed with the transaction; BUY updates re-check cash excluding the old settlement.
 - Delete: settlement removed first; deleting a SELL settlement blocked if later cash would go negative.
@@ -302,6 +304,30 @@ Gate: `portfolio.cash_aware_enabled == true` only. No auto-enable.
 
 **Enable legacy portfolio:** Settings → Portfolios → **Enable cash-aware**, or Cash/Transactions when a single portfolio is selected → **Enable cash-aware mode** (confirmation). API: `PUT /api/v1/portfolios/{id}` with full portfolio fields and `"cash_aware_enabled": true` (tester portfolio id 5). All Portfolios scope shows a per-portfolio note only — no global enable button.
 
+**Important (CASH-HIST-1):** Flipping `cash_aware_enabled` to `true` does **not** automatically create `BUY_SETTLEMENT` / `SELL_SETTLEMENT` rows for transactions that existed while the portfolio was legacy. New writes sync settlements; historical rows need a one-time repair.
+
+| Step | Purpose |
+|------|---------|
+| 1. Bulk Cash Entries / manual deposits | Record **funding events** (money entering the portfolio) |
+| 2. `sync_cash_settlements` | Record **historical BUY/SELL cash movements** linked to existing transactions |
+| 3. `diagnose_settlement_integrity.py` | Confirm zero `missing_settlement` issues |
+
+Both steps are required for accurate historical cash balance, Value History (`metric=value`), and cash-aware TWROR/cumulative return.
+
+```bash
+make backup-db
+make db-safety-check
+cd backend
+.venv/bin/python manage.py sync_cash_settlements --portfolio-id PORTFOLIO_ID          # dry-run (default)
+.venv/bin/python manage.py sync_cash_settlements --portfolio-id PORTFOLIO_ID --apply # after backup
+```
+
+- Dry-run by default; `--apply` writes rows (atomic, idempotent).
+- One portfolio per run; portfolio must be `cash_aware_enabled=true` unless `--allow-legacy`.
+- Skips `STOCK_SPLIT`; does not duplicate existing settlements; reports mismatches without silent overwrite.
+- Blocks `--apply` when simulated historical balance would go negative — add deposits first, then re-run.
+- Implementation: `transactions/cash_settlement_sync.py`, management command `sync_cash_settlements`.
+
 ### Scalable portfolio historical funding example
 
 | Portfolio | Scalablefolio |
@@ -324,7 +350,8 @@ Enter via `/cash` → **Add Bulk Cash Entries** (one schedule per amount/rate pe
 
 1. Enter **INR `CASH_DEPOSIT`** rows (manual or bulk schedule) for actual funding before historical MF/stock purchases.
 2. Enable cash-aware mode when ready.
-3. **Future purchases require sufficient INR cash** (or confirmed auto-deposit in TransactionModal).
+3. Run `sync_cash_settlements --portfolio-id …` (dry-run, then `--apply` after backup) to backfill historical BUY/SELL settlements.
+4. **Future purchases require sufficient INR cash** (or confirmed auto-deposit in TransactionModal).
 
 ---
 
@@ -437,8 +464,10 @@ Preserve existing `/api/v1` contracts; cash endpoints are **additive**. Detail s
 | **Cash-8A** | Same-currency portfolio transfer (`CashTransferGroup` + `/cash/transfers`) | **Done** |
 | **Cash-8B** | User-entered cross-currency portfolio transfer | **Done** |
 | **Cash-8C** | Transfer fees; same-portfolio FX conversion legs | Planned |
+| **CASH-HIST-1** | Historical settlement backfill (`sync_cash_settlements`); Assets Overview cash balances card | **Done** |
+| **CASH-UI-1** | Cash page full-width layout; ledger `details` API field + UI column | **Done** |
 
-**Recommended next phase:** **Cash-8B** cross-currency transfers / FX conversion; optional quarterly/yearly bulk frequencies.
+**Recommended next phase:** **Cash-8C** transfer fees; optional quarterly/yearly bulk frequencies.
 
 ---
 
@@ -472,3 +501,5 @@ Preserve existing `/api/v1` contracts; cash endpoints are **additive**. Detail s
 | Portfolio value timeseries | `portfolios/summary_service.py` |
 | Metric Sheet flows | `analytics/services.py` (reuses performance flow builders) |
 | Transactions | `transactions/models.py` |
+| Settlement sync (create/update on write) | `transactions/cash_settlement.py` |
+| Historical settlement backfill | `transactions/cash_settlement_sync.py`, `manage.py sync_cash_settlements` |

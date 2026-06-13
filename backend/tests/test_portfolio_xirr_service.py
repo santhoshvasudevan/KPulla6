@@ -53,6 +53,42 @@ def test_settlement_and_linked_rows_not_external(test_user):
 
 
 @pytest.mark.django_db
+def test_tax_withheld_not_external(test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    from transactions.models import Transaction, TransactionType
+
+    txn = Transaction.objects.create(
+        portfolio=portfolio,
+        asset_symbol="AAPL",
+        date=date(2026, 3, 1),
+        type=TransactionType.SELL,
+        quantity=Decimal("10"),
+        price_per_share=Decimal("100"),
+        currency="EUR",
+        fees=Decimal("0"),
+        actual_cash_received=Decimal("930"),
+    )
+    tax_row = CashLedgerEntry.objects.create(
+        portfolio=portfolio,
+        date=date(2026, 3, 1),
+        currency="EUR",
+        entry_type=CashEntryType.TAX_WITHHELD,
+        amount=Decimal("-70"),
+        linked_transaction=txn,
+    )
+    assert not is_cash_aware_external_ledger_entry(tax_row)
+    twror_flows, _ = build_cash_aware_twror_external_flows(
+        portfolio.id, calculation_currency="EUR"
+    )
+    assert twror_flows == {}
+    xirr_flows, fx_missing = build_cash_aware_xirr_external_flows(
+        portfolio.id, calculation_currency="EUR"
+    )
+    assert not fx_missing
+    assert xirr_flows == {}
+
+
+@pytest.mark.django_db
 def test_unlinked_adjustment_counts_as_external(test_user):
     portfolio = ensure_default_portfolio(test_user)
     CashLedgerEntry.objects.create(

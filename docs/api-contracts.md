@@ -55,7 +55,7 @@ Detail: [api-design.md § analytics](./api-design.md), [architecture.md § Metri
 | Method | Endpoint | Purpose | Frontend | Key 200/201 blocks | Errors / warnings | Backend tests | Frontend tests |
 |--------|----------|---------|----------|-------------------|-------------------|---------------|----------------|
 | GET | `/cash/balances` | Native-currency balances | `fetchCashBalances` | `balances[]` (`currency`, `balance`) | 404 scope | `test_cash_api.py` | `Cash.test.jsx`, `api.test.js` |
-| GET | `/cash/ledger` | Paginated ledger | `fetchCashLedger` | `items[]`, `total`, `page` | 404 scope | `test_cash_api.py` | `Cash.test.jsx` |
+| GET | `/cash/ledger` | Paginated ledger | `fetchCashLedger` | `items[]` incl. `details`, `total`, `page` | 404 scope | `test_cash_api.py` | `Cash.test.jsx` |
 | POST | `/cash/deposits` | Manual deposit | `createCashDeposit` | Single ledger item | 400 validation | `test_cash_api.py` | `Cash.test.jsx`, `api.test.js` |
 | POST | `/cash/withdrawals` | Manual withdrawal | `createCashWithdrawal` | Single ledger item | **400 shortfall** | `test_cash_api.py` | `Cash.test.jsx` |
 | PUT | `/cash/ledger/{id}` | Edit manual row | `updateCashLedgerEntry` | Updated item | **409** future impact / protected | `test_cash_api.py` | `Cash.test.jsx` |
@@ -75,7 +75,7 @@ Detail: [api-design.md § Cash API](./api-design.md).
 | Method | Endpoint | Purpose | Frontend | Key 200/201 blocks | Errors / warnings | Backend tests | Frontend tests |
 |--------|----------|---------|----------|-------------------|-------------------|---------------|----------------|
 | GET | `/transactions` | Paginated list + filters | `fetchTransactions` | `items[]`, `total`, `page`, `pages` | 422 scope; filter 400 | `test_transactions_api.py`, `test_transaction_filters_api.py` | `Transactions.test.jsx` |
-| POST | `/transactions` | Create stock/MF | `createTransaction` | Transaction object | **400 shortfall** (cash-aware BUY) | `test_transactions_api.py`, `test_cash_aware_transactions_api.py` | `TransactionModal.test.jsx` |
+| POST | `/transactions` | Create stock/MF | `createTransaction` | Transaction object incl. optional SELL `actual_cash_received`, `settlement_note` | **400 shortfall** (cash-aware BUY); **400** if actual &gt; calculated proceeds | `test_transactions_api.py`, `test_cash_aware_transactions_api.py`, `test_cash_sell_tax_withheld.py` | `TransactionModal.test.jsx` |
 | PUT | `/transactions/{id}` | Full update | `updateTransaction` | Transaction object | **400 shortfall**; **409** future impact | same | `TransactionModal.test.jsx` |
 | DELETE | `/transactions/{id}` | Hard delete | `deleteTransaction` | 204 | **409** future impact | same | `TransactionModal.test.jsx` |
 | POST | `/transactions/import-csv` | CSV import | `importTransactionsCsv` | `success`, `imported_count` | Row errors 400; cash 409 without confirm | `test_csv_import_api.py`, `test_mutual_fund_csv_import.py` | `Transactions.test.jsx` |

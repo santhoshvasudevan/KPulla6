@@ -33,6 +33,8 @@
 
 Do **not** bulk-enable legacy portfolios without per-portfolio user confirmation.
 
+**After enabling cash-aware on a legacy portfolio:** Bulk Cash Entries / manual deposits record funding; they do **not** create historical `BUY_SETTLEMENT` / `SELL_SETTLEMENT` rows. Run `manage.py sync_cash_settlements` (dry-run, then `--apply` after `make backup-db`) — see [cash-ledger.md § CASH-HIST-1](./cash-ledger.md).
+
 ---
 
 ## C. Transaction and settlement rules
@@ -42,10 +44,10 @@ Do **not** bulk-enable legacy portfolios without per-portfolio user confirmation
 | Stock/MF transactions | Investment events in `transactions`; source of truth for holdings and asset analytics. |
 | Cash ledger entries | Cash events in `cash_ledger_entries`; deposits, withdrawals, settlements, transfers. |
 | **BUY** | Creates negative `BUY_SETTLEMENT` linked to transaction (cash-aware). |
-| **SELL** | Creates positive `SELL_SETTLEMENT` linked to transaction (cash-aware). |
+| **SELL** | Creates positive `SELL_SETTLEMENT` = calculated proceeds (`qty × price − fees` or MF rules). Optional `actual_cash_received` creates negative `TAX_WITHHELD` for the difference; **net cash** = actual received (cash-aware). |
 | **STOCK_SPLIT** | No cash movement. |
 | **Mutual fund BUY/SELL** | Settlement uses `paid_value`; ledger **`date` = `investment_date`** (not `nav_date`). |
-| Protected rows | `BUY_SETTLEMENT`, `SELL_SETTLEMENT`, `TRANSFER_IN`, `TRANSFER_OUT`, FX conversion legs, any row with `linked_transaction_id` or `transfer_group_id` — change via transaction or transfer APIs only. |
+| Protected rows | `BUY_SETTLEMENT`, `SELL_SETTLEMENT`, `TAX_WITHHELD`, `TRANSFER_IN`, `TRANSFER_OUT`, FX conversion legs, any row with `linked_transaction_id` or `transfer_group_id` — change via transaction or transfer APIs only. |
 | Manual cash rows | `CASH_DEPOSIT` / `CASH_WITHDRAWAL` editable via `PUT`/`DELETE /cash/ledger/{id}` only when unlinked and **future-impact validation** passes. |
 
 Settlement sync: `backend/transactions/cash_settlement.py` (atomic with transaction writes).

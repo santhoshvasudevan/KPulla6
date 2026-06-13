@@ -18,6 +18,14 @@
   margin-bottom: 0;
 }
 
+.assets-cash-balances {
+  margin-bottom: var(--space-4);
+}
+
+.assets-cash-table__row {
+  cursor: default;
+}
+
 .assets-main {
   display: grid;
   gap: var(--space-4);

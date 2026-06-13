@@ -89,6 +89,7 @@ def test_cash_ledger_entry_invalid_currency_rejected(test_user):
         (CashEntryType.CASH_WITHDRAWAL, Decimal("100")),
         (CashEntryType.BUY_SETTLEMENT, Decimal("50")),
         (CashEntryType.SELL_SETTLEMENT, Decimal("-50")),
+        (CashEntryType.TAX_WITHHELD, Decimal("50")),
     ],
 )
 def test_cash_ledger_entry_sign_validation(test_user, entry_type, amount):
@@ -103,6 +104,20 @@ def test_cash_ledger_entry_sign_validation(test_user, entry_type, amount):
     with pytest.raises(ValidationError) as exc:
         entry.full_clean()
     assert "amount" in exc.value.error_dict
+
+
+@pytest.mark.django_db
+def test_tax_withheld_requires_negative_amount(test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    entry = CashLedgerEntry(
+        portfolio=portfolio,
+        date=date(2026, 1, 15),
+        currency="EUR",
+        entry_type=CashEntryType.TAX_WITHHELD,
+        amount=Decimal("-68"),
+    )
+    entry.full_clean()
+    entry.save()
 
 
 @pytest.mark.django_db

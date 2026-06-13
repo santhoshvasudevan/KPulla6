@@ -994,6 +994,30 @@ def test_cash_aware_sell_to_cash_no_artificial_twror_spike(
 
 
 @pytest.mark.django_db
+def test_cash_aware_sell_with_tax_withheld_reduces_value_by_withheld_amount(
+    api_client, seeded, test_user, today_patch
+):
+    portfolio = _enable_cash_aware(ensure_default_portfolio(test_user))
+    _cash_deposit(portfolio, amount="1000", day="2026-01-01")
+    _buy(api_client, date="2026-01-01", quantity="10", price_per_share="100")
+    _price("AAPL", "2026-01-01", "100")
+    _price("AAPL", "2026-03-15", "110")
+    _sell(
+        api_client,
+        date="2026-03-15",
+        quantity="10",
+        price_per_share="110",
+        actual_cash_received="1000",
+    )
+    value_pts = _perf_points(
+        api_client.get(
+            "/api/v1/portfolio/performance?metric=value&range=ALL&display_currency=EUR"
+        )
+    )
+    assert _metric_on_date(value_pts, "2026-03-15") == pytest.approx(1000.0, rel=1e-2)
+
+
+@pytest.mark.django_db
 def test_cash_aware_value_and_twror_share_daily_value_base(
     api_client, seeded, test_user, today_patch
 ):

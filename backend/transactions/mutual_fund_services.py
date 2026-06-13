@@ -20,7 +20,14 @@ from transactions.models import (
     TransactionType,
 )
 from transactions.cash_settlement import sync_mutual_fund_settlement
-from transactions.services import TransactionNotFoundError, TransactionValidationError, get_transaction
+from finance.cash import mf_sell_cash_proceeds
+from transactions.services import (
+    TransactionNotFoundError,
+    TransactionValidationError,
+    _parse_optional_positive_decimal,
+    _validate_sell_cash_fields,
+    get_transaction,
+)
 
 
 @dataclass(frozen=True)
@@ -45,6 +52,8 @@ class MutualFundValidatedPayload:
     isin_reinvestment: str
     direct_or_regular: str
     growth_or_idcw: str
+    actual_cash_received: Decimal | None
+    settlement_note: str | None
 
 
 def _require_decimal(value, *, field: str, gt_zero: bool = False, ge_zero: bool = False) -> Decimal:
@@ -126,6 +135,24 @@ def validate_mutual_fund_transaction_payload(data: dict[str, Any]) -> MutualFund
 
     currency = (data.get("currency") or "INR").strip().upper() or "INR"
 
+    parsed_actual = _parse_optional_positive_decimal(
+        data.get("actual_cash_received"), field="actual_cash_received"
+    )
+    calculated_proceeds = None
+    if txn_type == TransactionType.SELL:
+        calculated_proceeds = mf_sell_cash_proceeds(
+            paid_value=paid_value,
+            units_allotted=units_allotted,
+            nav=nav,
+            fees=fees,
+        )
+    validated_actual, validated_note = _validate_sell_cash_fields(
+        txn_type=txn_type,
+        calculated_proceeds=calculated_proceeds,
+        actual_cash_received=parsed_actual,
+        settlement_note=data.get("settlement_note"),
+    )
+
     return MutualFundValidatedPayload(
         portfolio_id=data.get("portfolio_id"),
         scheme_code=scheme_code,
@@ -147,6 +174,8 @@ def validate_mutual_fund_transaction_payload(data: dict[str, Any]) -> MutualFund
         isin_reinvestment=(data.get("isin_reinvestment") or "").strip(),
         direct_or_regular=(data.get("direct_or_regular") or "").strip(),
         growth_or_idcw=(data.get("growth_or_idcw") or "").strip(),
+        actual_cash_received=validated_actual,
+        settlement_note=validated_note,
     )
 
 
@@ -247,6 +276,8 @@ def create_mutual_fund_transaction(
         price_per_share=payload.nav,
         currency=payload.currency,
         fees=payload.fees,
+        actual_cash_received=payload.actual_cash_received,
+        settlement_note=payload.settlement_note,
     )
     detail = MutualFundTransactionDetail.objects.create(
         transaction=txn,
@@ -307,6 +338,8 @@ def update_mutual_fund_transaction(
     transaction.price_per_share = payload.nav
     transaction.currency = payload.currency
     transaction.fees = payload.fees
+    transaction.actual_cash_received = payload.actual_cash_received
+    transaction.settlement_note = payload.settlement_note
     transaction.save()
 
     detail = transaction.mutual_fund_detail

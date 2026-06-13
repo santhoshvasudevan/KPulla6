@@ -68,6 +68,7 @@ cd backend
 | Check | When |
 |-------|------|
 | Settlement integrity | After bulk imports, enabling cash-aware, or settlement-related bugs |
+| `sync_cash_settlements` | After enabling cash-aware on a legacy portfolio with historical BUY/SELL — dry-run first, `--apply` only after `make backup-db` |
 | Negative cash | Unexpected cash balances or future-impact validation failures |
 | Summary vs performance | Dashboard headline value vs value chart mismatch |
 | FX coverage | `fx_unavailable` warnings; before relying on multi-currency display totals |

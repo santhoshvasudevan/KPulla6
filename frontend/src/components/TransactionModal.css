@@ -45,6 +45,26 @@
   line-height: 1.45;
 }
 
+.modal-sell-settlement {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.modal-sell-settlement__preview,
+.modal-sell-settlement__withheld {
+  margin: 0 0 var(--space-2);
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.modal-sell-settlement__withheld {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
 .modal-mf-optional {
   font-size: 0.875rem;
   color: var(--text-secondary);

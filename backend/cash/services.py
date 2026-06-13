@@ -257,7 +257,18 @@ def _active_portfolio_for_transfer(
 
 
 def _reload_ledger_entry(entry_id: int) -> CashLedgerEntry:
-    return CashLedgerEntry.objects.select_related("portfolio").get(pk=entry_id)
+    return (
+        CashLedgerEntry.objects.select_related(
+            "portfolio",
+            "linked_transaction",
+            "linked_transaction__mutual_fund_detail",
+            "linked_transaction__mutual_fund_detail__folio",
+            "transfer_group",
+            "transfer_group__source_portfolio",
+            "transfer_group__target_portfolio",
+        )
+        .get(pk=entry_id)
+    )
 
 
 def is_manual_editable_entry(entry: CashLedgerEntry) -> bool:
@@ -410,11 +421,15 @@ def _ledger_points_for_currency(
     currency: str,
     *,
     exclude_entry_id: int | None = None,
+    exclude_entry_ids: set[int] | None = None,
     include_point: CashLedgerPoint | None = None,
 ) -> list[CashLedgerPoint]:
+    excluded = set(exclude_entry_ids or ())
+    if exclude_entry_id is not None:
+        excluded.add(exclude_entry_id)
     points: list[CashLedgerPoint] = []
     for row in ledger_entries_queryset(portfolio, currency=currency):
-        if exclude_entry_id is not None and row.pk == exclude_entry_id:
+        if row.pk in excluded:
             continue
         points.append(ledger_entry_to_point(row))
     if include_point is not None:
@@ -480,13 +495,56 @@ def assert_delete_settlement_would_not_make_cash_negative(
     entry: CashLedgerEntry,
 ) -> None:
     """Block deleting a settlement that would drive later balances negative."""
-    validate_non_negative_cash_after_change(
-        entry.portfolio,
-        entry.currency,
-        exclude_entry_id=entry.id,
-        proposed_point=None,
-        from_date=entry.date,
+    assert_delete_entries_would_not_make_cash_negative([entry])
+
+
+def assert_delete_entries_would_not_make_cash_negative(
+    entries: list[CashLedgerEntry],
+) -> None:
+    """Block deleting linked settlements when net removal would drive balances negative."""
+    if not entries:
+        return
+    portfolio = entries[0].portfolio
+    currency = entries[0].currency
+    from_date = min(entry.date for entry in entries)
+    exclude_ids = {entry.id for entry in entries}
+    points = _ledger_points_for_currency(
+        portfolio,
+        currency,
+        exclude_entry_ids=exclude_ids,
     )
+    if not points:
+        return
+    dates = [p.date for p in points]
+    start = min(from_date, min(dates))
+    end = max(dates)
+    series = cash_balance_timeseries(points, start, end)
+    day_balances = series.get(currency, [])
+    for day, balance in day_balances:
+        if day < from_date:
+            continue
+        if balance < 0:
+            earliest_negative = day
+            lowest = balance
+            for d, bal in day_balances:
+                if d < from_date:
+                    continue
+                if bal < lowest:
+                    lowest = bal
+            affected = _collect_affected_entries(
+                portfolio,
+                currency,
+                earliest_negative,
+                exclude_entry_id=None,
+            )
+            raise FutureCashImpactError(
+                FutureCashImpact(
+                    currency=currency,
+                    earliest_negative_date=earliest_negative,
+                    lowest_balance=lowest,
+                    affected_entries=affected,
+                )
+            )
 
 
 def _withdrawal_available_on_date(
@@ -1306,7 +1364,15 @@ def list_cash_ledger_entries(
 
     qs = CashLedgerEntry.objects.filter(
         portfolio_id__in=scope.portfolio_ids
-    ).select_related("portfolio")
+    ).select_related(
+        "portfolio",
+        "linked_transaction",
+        "linked_transaction__mutual_fund_detail",
+        "linked_transaction__mutual_fund_detail__folio",
+        "transfer_group",
+        "transfer_group__source_portfolio",
+        "transfer_group__target_portfolio",
+    )
     if currency is not None:
         qs = qs.filter(currency=currency)
     if entry_type is not None:

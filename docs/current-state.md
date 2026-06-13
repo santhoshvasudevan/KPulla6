@@ -1,7 +1,9 @@
 # Current State — KPulla6 (Portfolio Insight)
 
 ## Last Updated
-2026-06-06 (MVP-RELEASE-1 — MVP release-ready sign-off)
+2026-06-07 (CASH-UI-1 — Cash page layout + ledger details)
+
+**Documentation index:** [README.md](./README.md)
 
 ## MVP Status
 
@@ -208,7 +210,7 @@ Design doc: [cash-ledger.md](./cash-ledger.md).
 | Cash page UI (`/cash`) — balances, ledger, deposit/withdrawal modals | **Done** (Cash-3B) |
 | Manual ledger edit/delete (`PUT`/`DELETE /cash/ledger/{id}`) | **Done** (Cash-3D + **Cash-4D**) — manual rows only; future-impact **409** with `affected_entries`; no cascade delete |
 | Unified Add Transaction modal on `/transactions` (Cash / Stock / MF) | **Done** (Cash-3G) — cash via `/cash/deposits` and `/cash/withdrawals`; cash edit on `/cash` only |
-| Cash-aware BUY/SELL settlements (`cash_aware_enabled`) | **Done** (Cash-4A) — linked `BUY_SETTLEMENT` / `SELL_SETTLEMENT`; insufficient BUY → 400 + shortfall payload |
+| Cash-aware BUY/SELL settlements (`cash_aware_enabled`) | **Done** (Cash-4A, CASH-SELL-1B) — `BUY_SETTLEMENT` / `SELL_SETTLEMENT`; optional SELL `actual_cash_received` + `TAX_WITHHELD`; insufficient BUY → 400 + shortfall payload |
 | Transaction edit/delete future-impact errors + UX | **Done** (TXN-AUDIT-2/3) — **409** structured payload; `/transactions` + `TransactionModal` panels |
 | CSV import cash shortfall preview + confirmed deposits | **Done** (Cash-5) |
 | Cash transfers (same + cross currency) | **Done** (Cash-8A/8B) — user-entered amounts; no market FX |
@@ -226,6 +228,8 @@ Design doc: [cash-ledger.md](./cash-ledger.md).
 | Bulk cash entries API + wizard (Cash-7D) | **Done** — `/cash` → Add Bulk Cash Entries |
 | Bulk quarterly/yearly frequencies | **Planned** |
 | Transfer HTTP APIs | **Done** (Cash-8A/8B) — fees / same-portfolio FX conversion deferred |
+| Historical settlement backfill (`sync_cash_settlements`) | **Done** (CASH-HIST-1) — dry-run default; `--apply` after backup |
+| Assets Overview cash balances card | **Done** (CASH-HIST-1) — `allocation[]` cash rows; not in holdings table |
 
 **Runtime:** Legacy portfolios — investment-only TWROR/cumulative return; cash in `current_value` / `metric=value`. Cash-aware portfolios — ledger external flows and cash-inclusive daily values for XIRR (6C.1), TWROR, and cumulative return (6C.2).
 
@@ -365,6 +369,9 @@ Design doc: [mutual-funds.md](./mutual-funds.md). **MF-1 schema, MF-2 NAV sync, 
 | STAB-5B | Performance decision + optimization backlog (Postgres baseline; no refactor now) — **Done** |
 | STAB-6 | MVP release QA execution (automated + diagnostics + profiler) — **Done** |
 | MVP-RELEASE-1 | Manual golden-flow QA + release sign-off — **Done** (2026-06-06) |
+| STAB-7 | Documentation index (`docs/README.md`) + cross-links — **Done** (2026-06-07) |
+| CASH-HIST-1 | Historical settlement sync command + Assets cash balances UI — **Done** (2026-06-07) |
+| CASH-UI-1 | Cash page full-width sections + ledger `details` column — **Done** (2026-06-07) |
 | STAB-5C | Summary bulk loading / shared read context (when targets exceeded) — Planned |
 
 ## Phase 4 contracts (verified in tests)

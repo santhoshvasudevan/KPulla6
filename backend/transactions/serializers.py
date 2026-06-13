@@ -23,6 +23,8 @@ class TransactionSerializer(serializers.ModelSerializer):
             "portfolio_id",
             "currency",
             "fees",
+            "actual_cash_received",
+            "settlement_note",
             "split_from",
             "split_to",
             "portfolio_name",
@@ -30,7 +32,14 @@ class TransactionSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        for key in ("quantity", "price_per_share", "fees", "split_from", "split_to"):
+        for key in (
+            "quantity",
+            "price_per_share",
+            "fees",
+            "actual_cash_received",
+            "split_from",
+            "split_to",
+        ):
             if data.get(key) is not None:
                 data[key] = float(data[key])
 
@@ -89,6 +98,17 @@ class TransactionWriteSerializer(serializers.Serializer):
         required=False,
         allow_null=True,
     )
+    actual_cash_received = serializers.DecimalField(
+        max_digits=18,
+        decimal_places=4,
+        required=False,
+        allow_null=True,
+    )
+    settlement_note = serializers.CharField(
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+    )
 
     def validate(self, attrs):
         try:
@@ -102,6 +122,8 @@ class TransactionWriteSerializer(serializers.Serializer):
                 currency=attrs.get("currency"),
                 split_from=attrs.get("split_from"),
                 split_to=attrs.get("split_to"),
+                actual_cash_received=attrs.get("actual_cash_received"),
+                settlement_note=attrs.get("settlement_note"),
             )
         except Exception as exc:
             from transactions.services import TransactionValidationError
@@ -132,6 +154,17 @@ class MutualFundTransactionWriteSerializer(serializers.Serializer):
         decimal_places=4,
         required=False,
         allow_null=True,
+    )
+    actual_cash_received = serializers.DecimalField(
+        max_digits=18,
+        decimal_places=4,
+        required=False,
+        allow_null=True,
+    )
+    settlement_note = serializers.CharField(
+        required=False,
+        allow_null=True,
+        allow_blank=True,
     )
     fund_house = serializers.CharField(max_length=255, required=False, allow_blank=True)
     scheme_type = serializers.CharField(max_length=128, required=False, allow_blank=True)
@@ -166,6 +199,8 @@ class MutualFundTransactionWriteSerializer(serializers.Serializer):
             "market_value": validated.market_value,
             "currency": validated.currency,
             "fees": validated.fees,
+            "actual_cash_received": validated.actual_cash_received,
+            "settlement_note": validated.settlement_note,
             "fund_house": validated.fund_house,
             "scheme_type": validated.scheme_type,
             "scheme_category": validated.scheme_category,

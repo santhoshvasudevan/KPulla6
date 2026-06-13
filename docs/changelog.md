@@ -1,5 +1,82 @@
 # Changelog — KPulla6
 
+## 2026-06-08 — CASH-SELL-1B: Actual SELL proceeds + TAX_WITHHELD ledger row
+
+### Added
+- Transaction fields `actual_cash_received` (optional, SELL only) and `settlement_note`
+- Cash ledger entry type `TAX_WITHHELD` — negative amount linked to SELL when actual broker cash is below calculated proceeds
+- Accounting-style SELL settlement: `SELL_SETTLEMENT` = calculated proceeds; `TAX_WITHHELD` = −(calculated − actual); net cash = actual received
+- Transaction modal SELL fields: calculated proceeds preview, actual cash received, withheld preview, settlement note
+- Cash ledger displays `TAX_WITHHELD` rows (protected; type label “Tax withheld”)
+
+### Updated
+- `docs/product-rules.md`, `docs/cash-ledger.md`, `docs/api-contracts.md`, `docs/api-design.md`, `docs/frontend-design.md`, `docs/page-layouts.md`, `docs/current-state.md`
+- `backend/transactions/cash_settlement.py`, serializers, `cash/ledger_details.py`, `portfolios/cash_ledger_flows.py`
+- `frontend/src/components/TransactionModal.jsx`, `frontend/src/utils/cashDisplay.js`
+
+### Tests
+- `backend/tests/test_cash_sell_tax_withheld.py`, updates to cash-aware / performance / XIRR tests
+- Frontend: `TransactionModal.test.jsx`, `Cash.test.jsx`
+
+---
+
+## 2026-06-07 — UX: Cash page full-width layout + ledger details (CASH-UI-1)
+
+### Fixed
+- Cash Balances and Cash Ledger `SectionCard` sections now span full content width (override global 480px `SectionCard` max-width on `/cash` only)
+
+### Added
+- Backend `details` field on `GET /cash/ledger` items — human-readable context for deposits, settlements, transfers, and system rows (`cash/ledger_details.py`)
+- Cash ledger **Details** column (replaces separate Source/Note columns); React displays API value only
+
+### Updated
+- `docs/page-layouts.md`, `docs/api-contracts.md`, `docs/cash-ledger.md`, `docs/current-state.md`
+- `backend/tests/test_cash_api.py`, `frontend/src/pages/Cash.test.jsx`
+
+### Tests
+- Backend: `pytest tests/test_cash_api.py` — ledger details cases
+- Frontend: `npm test -- --run src/pages/Cash.test.jsx` — full-width + details column
+
+---
+
+## 2026-06-07 — FIX: Historical cash settlement sync (CASH-HIST-1)
+
+### Root cause
+- Enabling `cash_aware_enabled` on a legacy portfolio does not backfill `BUY_SETTLEMENT` / `SELL_SETTLEMENT` for pre-existing transactions.
+- Observed on portfolio **Scalablefolio** (id=2): 37 missing settlements; cash balance reflected deposits only; Value History dipped on SELL dates.
+
+### Added
+- `transactions/cash_settlement_sync.py` — plan, negative-cash validation, atomic idempotent apply
+- `manage.py sync_cash_settlements` — `--portfolio-id` (required), dry-run default, `--apply`, `--allow-legacy`, `--json`
+- `backend/tests/test_cash_settlement_sync_command.py` (12 cases)
+- Assets Overview **Cash balances** section (`Assets.jsx`) — native + display values; cash excluded from holdings table clicks
+
+### Updated
+- `docs/cash-ledger.md`, `docs/product-rules.md`, `docs/workflows.md`, `docs/mvp-release-checklist.md`, `docs/current-state.md`
+- `backend/tests/conftest.py` — shared `cash_aware_portfolio` fixture
+- `frontend/src/pages/Assets.test.jsx` — cash visibility tests
+
+### Tests
+- Backend: `pytest tests/test_cash_settlement_sync_command.py tests/test_cash_aware_transactions_api.py tests/test_cash_api.py tests/test_portfolio_performance_api.py tests/test_diagnostics_integrity.py` — **181 passed**
+- Frontend: `npm test -- --run src/pages/Assets.test.jsx src/pages/Cash.test.jsx src/api.test.js` — **85 passed**; `npm run build` — OK
+
+---
+
+## 2026-06-07 — DOCS: Developer documentation index (STAB-7)
+
+### Added
+- `docs/README.md` — main documentation landing page (product overview, architecture, rules, API, cash, Metric Sheet, workflow, testing, diagnostics, performance, release readiness, deferred roadmap)
+
+### Updated
+- `AGENTS.md`, `docs/current-state.md`, `docs/workflows.md`, `.cursor/rules/project-core.mdc` — links to `docs/README.md`
+- `docs/current-state.md` — STAB-7 maintenance row
+
+### Notes
+- Documentation only — no production code changes
+- No backend/frontend tests run — documentation-only change
+
+---
+
 ## 2026-06-06 — RELEASE: MVP sign-off (MVP-RELEASE-1)
 
 ### Status

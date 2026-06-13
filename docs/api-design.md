@@ -790,7 +790,7 @@ Full design: [cash-ledger.md](./cash-ledger.md) · agent rules: [.cursor/rules/3
 | POST | `/api/v1/cash/bulk-entries/apply` | **Done** (Cash-7D) — confirmed bulk manual entries |
 | POST | `/api/v1/transactions/import-csv/preview-cash` | **Done** (Cash-5) — CSV cash simulation; no writes |
 
-**Settlement rows** (`BUY_SETTLEMENT`, `SELL_SETTLEMENT`, transfer legs, FX legs) are **system-protected** — created/updated/deleted only via `/api/v1/transactions` or `/api/v1/cash/transfers`, not via manual cash ledger edit.
+**Settlement rows** (`BUY_SETTLEMENT`, `SELL_SETTLEMENT`, `TAX_WITHHELD`, transfer legs, FX legs) are **system-protected** — created/updated/deleted only via `/api/v1/transactions` or `/api/v1/cash/transfers`, not via manual cash ledger edit.
 
 **No implicit FX:** BUY sufficiency and withdrawal checks use **same-currency** ledger cash only. No `FX_CONVERSION_*` write endpoint in current phase.
 
@@ -1103,7 +1103,7 @@ When `portfolio.cash_aware_enabled` is **true**, `POST` / `PUT` / `DELETE` `/api
 | Type | Settlement | Cash check |
 |------|------------|------------|
 | `BUY` | `BUY_SETTLEMENT` (negative) = `quantity × price_per_share + fees` on `transaction.date` | Required cash in `transaction.currency` as of transaction date |
-| `SELL` | `SELL_SETTLEMENT` (positive) = `quantity × price_per_share − fees` | Reject if proceeds ≤ 0 |
+| `SELL` | `SELL_SETTLEMENT` (positive) = calculated proceeds; optional `TAX_WITHHELD` (negative) when `actual_cash_received` &lt; calculated | Reject if proceeds ≤ 0; reject if actual &gt; calculated |
 | `STOCK_SPLIT` | None | None |
 | `DIVIDEND` | None (deferred) | None |
 
@@ -1127,7 +1127,8 @@ When `portfolio.cash_aware_enabled` is **true**, `POST` / `PUT` / `DELETE` `/api
 ```
 
 - Atomic: transaction and settlement succeed or fail together.
-- `DELETE` removes linked settlement first (then transaction). Deleting a `SELL_SETTLEMENT` is blocked if later balances would go negative.
+- `DELETE` removes linked settlement rows first (then transaction). Deleting SELL settlements (`SELL_SETTLEMENT` + `TAX_WITHHELD`) is blocked if net removal would make later balances negative.
+- SELL write body (optional): `actual_cash_received` (positive), `settlement_note` (text). Response includes both fields.
 - Linked settlements are not editable via `PUT/DELETE /cash/ledger/{id}` (**409**).
 
 **Same-currency funding (Cash-4E):** `available` and `shortfall` reflect **only** ledger cash in `currency` (the transaction currency). Other currencies are ignored for sufficiency — e.g. USD deposits do not fund a EUR BUY. No implicit FX conversion; no `FX_CONVERSION_*` APIs in this phase.

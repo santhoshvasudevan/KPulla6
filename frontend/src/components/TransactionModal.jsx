@@ -38,6 +38,8 @@ function emptyStockForm(portfolioId = '') {
     price_per_share: '',
     currency: 'EUR',
     fees: '0',
+    actual_cash_received: '',
+    settlement_note: '',
     split_from: '',
     split_to: '',
   };
@@ -58,6 +60,8 @@ function emptyMutualFundForm(portfolioId = '') {
     market_value: '',
     currency: 'INR',
     fees: '',
+    actual_cash_received: '',
+    settlement_note: '',
     fund_house: '',
     scheme_type: '',
     scheme_category: '',
@@ -76,6 +80,9 @@ function stockFormFromTransaction(txn) {
     price_per_share: String(txn.price_per_share ?? ''),
     currency: txn.currency,
     fees: String(txn.fees ?? '0'),
+    actual_cash_received:
+      txn.actual_cash_received != null ? String(txn.actual_cash_received) : '',
+    settlement_note: txn.settlement_note || '',
     split_from: txn.split_from?.toString() || '',
     split_to: txn.split_to?.toString() || '',
   };
@@ -96,6 +103,9 @@ function mutualFundFormFromTransaction(txn) {
     market_value: String(txn.market_value ?? ''),
     currency: txn.currency || 'INR',
     fees: txn.fees != null ? String(txn.fees) : '',
+    actual_cash_received:
+      txn.actual_cash_received != null ? String(txn.actual_cash_received) : '',
+    settlement_note: txn.settlement_note || '',
     fund_house: txn.fund_house || '',
     scheme_type: txn.scheme_type || '',
     scheme_category: txn.scheme_category || '',
@@ -108,6 +118,44 @@ function parseOptionalNumber(value) {
   if (value === '' || value == null) return undefined;
   const n = parseFloat(value);
   return Number.isNaN(n) ? undefined : n;
+}
+
+function previewStockCalculatedProceeds(form) {
+  const qty = parseFloat(form.quantity);
+  const price = parseFloat(form.price_per_share);
+  const fees = parseFloat(form.fees || 0);
+  if (Number.isNaN(qty) || Number.isNaN(price)) return null;
+  const feeValue = Number.isNaN(fees) ? 0 : fees;
+  const proceeds = qty * price - feeValue;
+  return proceeds > 0 ? proceeds : null;
+}
+
+function previewMfCalculatedProceeds(form) {
+  const paid = parseFloat(form.paid_value);
+  const units = parseFloat(form.units_allotted);
+  const nav = parseFloat(form.nav);
+  const fees = parseFloat(form.fees || 0);
+  if (!Number.isNaN(paid) && paid > 0) return paid;
+  if (Number.isNaN(units) || Number.isNaN(nav)) return null;
+  const feeValue = Number.isNaN(fees) ? 0 : fees;
+  const proceeds = units * nav - feeValue;
+  return proceeds > 0 ? proceeds : null;
+}
+
+function previewTaxWithheld(calculated, actualRaw) {
+  if (calculated == null || actualRaw === '' || actualRaw == null) return null;
+  const actual = parseFloat(actualRaw);
+  if (Number.isNaN(actual) || actual <= 0) return null;
+  const withheld = calculated - actual;
+  return withheld > 0 ? withheld : 0;
+}
+
+function appendSellSettlementFields(payload, form) {
+  const actual = parseOptionalNumber(form.actual_cash_received);
+  if (actual !== undefined) payload.actual_cash_received = actual;
+  const note = String(form.settlement_note ?? '').trim();
+  if (note) payload.settlement_note = note;
+  return payload;
 }
 
 function validateMutualFundForm(form) {
@@ -138,7 +186,7 @@ function validateMutualFundForm(form) {
 
 function buildStockPayload(formData) {
   const isStockSplit = formData.type === 'STOCK_SPLIT';
-  return {
+  const payload = {
     asset_symbol: formData.asset_symbol,
     date: formData.date,
     type: formData.type,
@@ -150,6 +198,10 @@ function buildStockPayload(formData) {
     split_from: isStockSplit ? parseFloat(formData.split_from) : null,
     split_to: isStockSplit ? parseFloat(formData.split_to) : null,
   };
+  if (formData.type === 'SELL') {
+    appendSellSettlementFields(payload, formData);
+  }
+  return payload;
 }
 
 function buildMutualFundPayload(formData) {
@@ -180,6 +232,9 @@ function buildMutualFundPayload(formData) {
   for (const key of optionalStrings) {
     const v = String(formData[key] ?? '').trim();
     if (v) payload[key] = v;
+  }
+  if (formData.type === 'SELL') {
+    appendSellSettlementFields(payload, formData);
   }
   return payload;
 }
@@ -513,6 +568,30 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
   const navStatus = initialData?.nav_verification_status;
   const navMessage = initialData?.nav_verification_message;
 
+  const stockSellPreview =
+    !isMutualFund && stockForm.type === 'SELL'
+      ? {
+          calculated: previewStockCalculatedProceeds(stockForm),
+          withheld: previewTaxWithheld(
+            previewStockCalculatedProceeds(stockForm),
+            stockForm.actual_cash_received
+          ),
+          currency: stockForm.currency,
+        }
+      : null;
+
+  const mfSellPreview =
+    isMutualFund && mfForm.type === 'SELL'
+      ? {
+          calculated: previewMfCalculatedProceeds(mfForm),
+          withheld: previewTaxWithheld(
+            previewMfCalculatedProceeds(mfForm),
+            mfForm.actual_cash_received
+          ),
+          currency: mfForm.currency,
+        }
+      : null;
+
   const submitLabel = submitting
     ? 'Saving...'
     : addAndContinueLoading
@@ -739,6 +818,45 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
                     </div>
                   </div>
 
+                  {mfForm.type === 'SELL' ? (
+                    <div className="modal-sell-settlement">
+                      {mfSellPreview?.calculated != null ? (
+                        <p className="modal-sell-settlement__preview">
+                          Calculated proceeds: {mfSellPreview.calculated.toFixed(2)}{' '}
+                          {mfSellPreview.currency}
+                        </p>
+                      ) : null}
+                      <div className="form-group">
+                        <label>Actual cash received</label>
+                        <input
+                          type="number"
+                          step="any"
+                          name="actual_cash_received"
+                          value={mfForm.actual_cash_received}
+                          onChange={handleMfChange}
+                        />
+                        <p className="modal-form__hint">
+                          Leave empty to use calculated proceeds.
+                        </p>
+                      </div>
+                      {mfSellPreview?.withheld != null && mfSellPreview.withheld > 0 ? (
+                        <p className="modal-sell-settlement__withheld">
+                          Tax withheld / broker adjustment: {mfSellPreview.withheld.toFixed(2)}{' '}
+                          {mfSellPreview.currency}
+                        </p>
+                      ) : null}
+                      <div className="form-group">
+                        <label>Settlement note / tax note</label>
+                        <input
+                          type="text"
+                          name="settlement_note"
+                          value={mfForm.settlement_note}
+                          onChange={handleMfChange}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+
                   <details className="modal-mf-optional">
                     <summary>Optional scheme metadata</summary>
                     <div className="form-row">
@@ -879,6 +997,45 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
                           required
                         />
                       </div>
+                      {stockForm.type === 'SELL' ? (
+                        <div className="modal-sell-settlement">
+                          {stockSellPreview?.calculated != null ? (
+                            <p className="modal-sell-settlement__preview">
+                              Calculated proceeds: {stockSellPreview.calculated.toFixed(2)}{' '}
+                              {stockSellPreview.currency}
+                            </p>
+                          ) : null}
+                          <div className="form-group">
+                            <label>Actual cash received</label>
+                            <input
+                              type="number"
+                              step="any"
+                              name="actual_cash_received"
+                              value={stockForm.actual_cash_received}
+                              onChange={handleStockChange}
+                            />
+                            <p className="modal-form__hint">
+                              Leave empty to use calculated proceeds.
+                            </p>
+                          </div>
+                          {stockSellPreview?.withheld != null &&
+                          stockSellPreview.withheld > 0 ? (
+                            <p className="modal-sell-settlement__withheld">
+                              Tax withheld / broker adjustment:{' '}
+                              {stockSellPreview.withheld.toFixed(2)} {stockSellPreview.currency}
+                            </p>
+                          ) : null}
+                          <div className="form-group">
+                            <label>Settlement note / tax note</label>
+                            <input
+                              type="text"
+                              name="settlement_note"
+                              value={stockForm.settlement_note}
+                              onChange={handleStockChange}
+                            />
+                          </div>
+                        </div>
+                      ) : null}
                     </>
                   )}
 

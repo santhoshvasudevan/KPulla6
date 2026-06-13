@@ -831,6 +831,130 @@ describe('TransactionModal stock/MF BUY insufficient cash', () => {
     });
   });
 
+  it('SELL modal shows actual cash received and calculated proceeds preview', () => {
+    const { container } = render(
+      <PortfolioProvider initialPortfolios={portfolios} disableFetch>
+        <TransactionModal isOpen onClose={vi.fn()} onSuccess={vi.fn()} />
+      </PortfolioProvider>
+    );
+    fireEvent.change(container.querySelector('select[name="type"]'), { target: { value: 'SELL' } });
+    expect(container.querySelector('input[name="actual_cash_received"]')).toBeInTheDocument();
+    expect(screen.getByText(/Leave empty to use calculated proceeds/i)).toBeInTheDocument();
+    fireEvent.change(container.querySelector('input[name="quantity"]'), { target: { value: '10' } });
+    fireEvent.change(container.querySelector('input[name="price_per_share"]'), { target: { value: '100' } });
+    fireEvent.change(container.querySelector('input[name="fees"]'), { target: { value: '2' } });
+    expect(screen.getByText(/Calculated proceeds: 998.00 EUR/i)).toBeInTheDocument();
+  });
+
+  it('BUY modal hides actual cash received field', () => {
+    const { container } = render(
+      <PortfolioProvider initialPortfolios={portfolios} disableFetch>
+        <TransactionModal isOpen onClose={vi.fn()} onSuccess={vi.fn()} />
+      </PortfolioProvider>
+    );
+    expect(container.querySelector('select[name="type"]')).toHaveValue('BUY');
+    expect(container.querySelector('input[name="actual_cash_received"]')).not.toBeInTheDocument();
+  });
+
+  it('SELL shows withheld preview when actual cash received is lower', () => {
+    const { container } = render(
+      <PortfolioProvider initialPortfolios={portfolios} disableFetch>
+        <TransactionModal isOpen onClose={vi.fn()} onSuccess={vi.fn()} />
+      </PortfolioProvider>
+    );
+    fireEvent.change(container.querySelector('select[name="type"]'), { target: { value: 'SELL' } });
+    fireEvent.change(container.querySelector('input[name="quantity"]'), { target: { value: '10' } });
+    fireEvent.change(container.querySelector('input[name="price_per_share"]'), { target: { value: '100' } });
+    fireEvent.change(container.querySelector('input[name="fees"]'), { target: { value: '2' } });
+    fireEvent.change(container.querySelector('input[name="actual_cash_received"]'), {
+      target: { value: '930' },
+    });
+    expect(
+      screen.getByText(/Tax withheld \/ broker adjustment: 68.00 EUR/i)
+    ).toBeInTheDocument();
+  });
+
+  it('submit SELL sends actual_cash_received and settlement_note', async () => {
+    api.createTransaction.mockResolvedValueOnce({});
+    const { container } = render(
+      <PortfolioProvider initialPortfolios={portfolios} disableFetch>
+        <TransactionModal isOpen onClose={vi.fn()} onSuccess={vi.fn()} />
+      </PortfolioProvider>
+    );
+    fireEvent.change(container.querySelector('input[name="asset_symbol"]'), { target: { value: 'AAPL' } });
+    fireEvent.change(container.querySelector('select[name="type"]'), { target: { value: 'SELL' } });
+    fireEvent.change(container.querySelector('input[name="quantity"]'), { target: { value: '10' } });
+    fireEvent.change(container.querySelector('input[name="price_per_share"]'), { target: { value: '100' } });
+    fireEvent.change(container.querySelector('input[name="fees"]'), { target: { value: '2' } });
+    fireEvent.change(container.querySelector('input[name="actual_cash_received"]'), {
+      target: { value: '930' },
+    });
+    fireEvent.change(container.querySelector('input[name="settlement_note"]'), {
+      target: { value: 'CGT' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(api.createTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'SELL',
+          actual_cash_received: 930,
+          settlement_note: 'CGT',
+        })
+      );
+    });
+  });
+
+  it('edit SELL loads actual_cash_received and settlement_note', () => {
+    const { container } = render(
+      <PortfolioProvider initialPortfolios={portfolios} disableFetch>
+        <TransactionModal
+          isOpen
+          onClose={vi.fn()}
+          onSuccess={vi.fn()}
+          initialData={{
+            id: 9,
+            asset_symbol: 'AAPL',
+            date: '2026-06-01',
+            type: 'SELL',
+            quantity: 10,
+            price_per_share: 100,
+            currency: 'EUR',
+            fees: 2,
+            actual_cash_received: 930,
+            settlement_note: 'Withheld',
+            portfolio_id: 1,
+          }}
+        />
+      </PortfolioProvider>
+    );
+    expect(container.querySelector('input[name="actual_cash_received"]')).toHaveValue(930);
+    expect(container.querySelector('input[name="settlement_note"]')).toHaveValue('Withheld');
+    expect(screen.getByText(/Tax withheld \/ broker adjustment: 68.00 EUR/i)).toBeInTheDocument();
+  });
+
+  it('shows backend validation error when actual exceeds calculated', async () => {
+    api.createTransaction.mockRejectedValueOnce(
+      new TransactionApiError('Actual cash received cannot exceed calculated proceeds.', {})
+    );
+    const { container } = render(
+      <PortfolioProvider initialPortfolios={portfolios} disableFetch>
+        <TransactionModal isOpen onClose={vi.fn()} onSuccess={vi.fn()} />
+      </PortfolioProvider>
+    );
+    fireEvent.change(container.querySelector('input[name="asset_symbol"]'), { target: { value: 'AAPL' } });
+    fireEvent.change(container.querySelector('select[name="type"]'), { target: { value: 'SELL' } });
+    fireEvent.change(container.querySelector('input[name="quantity"]'), { target: { value: '10' } });
+    fireEvent.change(container.querySelector('input[name="price_per_share"]'), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Actual cash received cannot exceed calculated proceeds.')
+      ).toBeInTheDocument();
+    });
+  });
+
   it('successful stock SELL does not show shortfall', async () => {
     api.createTransaction.mockResolvedValueOnce({});
     const onClose = vi.fn();

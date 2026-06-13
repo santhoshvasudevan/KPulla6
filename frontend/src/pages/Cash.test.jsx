@@ -99,6 +99,7 @@ const ledgerFixture = {
       amount: 12500,
       source_of_funds: 'Bank',
       note: 'Seed',
+      details: 'Bank · Seed',
     },
     {
       id: 11,
@@ -110,6 +111,7 @@ const ledgerFixture = {
       amount: -1000,
       source_of_funds: null,
       note: null,
+      details: 'Cash withdrawal',
     },
   ],
   total: 2,
@@ -275,7 +277,74 @@ describe('Cash page', () => {
     expect(within(ledger).getByText('Withdrawal')).toBeInTheDocument();
     expect(within(ledger).getByText('€12,500.00')).toBeInTheDocument();
     expect(within(ledger).getByText('−₹1,000.00')).toBeInTheDocument();
+    expect(within(ledger).getByText('Bank · Seed')).toBeInTheDocument();
     expect(screen.getByText('Page 1 of 1 · 2 entries')).toBeInTheDocument();
+  });
+
+  it('uses full-width section cards for balances and ledger', async () => {
+    const { container } = renderCash();
+    await screen.findByText('Cash balances');
+    expect(container.querySelectorAll('.cash-page__section.ui-section-card')).toHaveLength(2);
+    expect(container.querySelector('.cash-page__balances.cash-page__section')).toBeTruthy();
+    expect(container.querySelector('.cash-page__ledger.cash-page__section')).toBeTruthy();
+  });
+
+  it('renders TAX_WITHHELD row with protected actions', async () => {
+    api.fetchCashLedger.mockResolvedValueOnce({
+      items: [
+        {
+          id: 21,
+          portfolio_id: 1,
+          portfolio_name: 'Scalablefolio',
+          date: '2026-06-02',
+          currency: 'EUR',
+          entry_type: 'TAX_WITHHELD',
+          amount: -68,
+          details:
+            'Tax withheld / broker adjustment for SELL AAPL · Calculated 998 EUR · Actual received 930 EUR · Withheld 68 EUR',
+          linked_transaction_id: 42,
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    });
+    renderCash();
+    await screen.findByText('Cash ledger');
+    const details =
+      'Tax withheld / broker adjustment for SELL AAPL · Calculated 998 EUR · Actual received 930 EUR · Withheld 68 EUR';
+    expect(screen.getByText(details)).toBeInTheDocument();
+    expect(screen.getAllByText('Tax withheld').length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByRole('button', { name: /edit/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument();
+  });
+
+  it('renders backend-provided ledger details column', async () => {
+    api.fetchCashLedger.mockResolvedValueOnce({
+      items: [
+        {
+          id: 20,
+          portfolio_id: 1,
+          portfolio_name: 'Scalablefolio',
+          date: '2026-06-02',
+          currency: 'EUR',
+          entry_type: 'BUY_SETTLEMENT',
+          amount: -1005,
+          details: 'Buy AAPL · Qty 10 · Price 100 EUR · Fees 5 EUR',
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    });
+    renderCash();
+    await screen.findByText('Cash ledger');
+    expect(
+      screen.getByText('Buy AAPL · Qty 10 · Price 100 EUR · Fees 5 EUR')
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Source')).not.toBeInTheDocument();
   });
 
   it('deposit modal shows readable backend validation error', async () => {

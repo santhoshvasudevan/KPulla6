@@ -1017,8 +1017,7 @@ export default function Cash() {
                 <th>Type</th>
                 <th>Currency</th>
                 <th className="num-col">Amount</th>
-                <th>Source</th>
-                <th>Note</th>
+                <th className="cash-ledger-table__details-col">Details</th>
                 <th className="cash-ledger-table__actions-col">Actions</th>
               </tr>
             </thead>
@@ -1043,8 +1042,9 @@ export default function Cash() {
                         tone={amountTone(entry.amount)}
                       />
                     </td>
-                    <td>{entry.source_of_funds || '—'}</td>
-                    <td>{entry.note || '—'}</td>
+                    <td className="cash-ledger-table__details-col">
+                      {entry.details || entry.note || entry.source_of_funds || '—'}
+                    </td>
                     <td className="cash-ledger-table__actions-col">
                       {editable ? (
                         <div className="cash-ledger-actions">
@@ -1166,6 +1166,7 @@ export default function Cash() {
       </div>
 
       <SectionCard
+        className="cash-page__section cash-page__balances"
         title="Cash balances"
         subtitle={
           isAllScope
@@ -1176,7 +1177,11 @@ export default function Cash() {
         {renderBalancesBody()}
       </SectionCard>
 
-      <SectionCard title="Cash ledger" subtitle="Deposits, withdrawals, and settlements">
+      <SectionCard
+        className="cash-page__section cash-page__ledger"
+        title="Cash ledger"
+        subtitle="Deposits, withdrawals, and settlements"
+      >
         <div className="cash-ledger-filters">
           <div className="form-group">
             <label htmlFor="cash-filter-currency">Currency</label>

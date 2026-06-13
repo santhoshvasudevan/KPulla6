@@ -121,7 +121,7 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 | **Import feedback** | Success/warning banner; error block with row-level list |
 | **Table** | Checkbox, Portfolio, Symbol, Date, Type (`.ui-txn-type`), Qty, Price, Fees, Total, Actions (edit/delete icon buttons) |
 | **Bulk actions** | Toolbar when rows selected: portfolio dropdown (active real only), Apply, Clear; partial failure banner |
-| **Modal** | `TransactionModal` — add: **Record type** Cash / Stock / Mutual Fund; cash → `POST /cash/deposits` or `/cash/withdrawals` (not `/transactions`); stock/MF unchanged; edit asset rows only (cash edit on `/cash`); success banner + link to Cash page after cash add; edit blocked → `CashFutureImpactDisplay` or BUY shortfall panel |
+| **Modal** | `TransactionModal` — add: **Record type** Cash / Stock / Mutual Fund; cash → `POST /cash/deposits` or `/cash/withdrawals` (not `/transactions`); stock/MF unchanged; **SELL** optional actual cash received + settlement note; edit asset rows only (cash edit on `/cash`); success banner + link to Cash page after cash add; edit blocked → `CashFutureImpactDisplay` or BUY shortfall panel |
 | **Delete impact** | Inline `CashFutureImpactDisplay` when delete blocked by linked settlement future-impact (**409**); generic delete errors → `WarningBanner` |
 
 **States:** `LoadingState` · `ErrorState` · table `EmptyState`.
@@ -214,8 +214,8 @@ Design: [cash-ledger.md](./cash-ledger.md).
 | **Header** | `PageHeader` — title **Cash**; subtitle: native balances by portfolio and currency (no display-currency conversion on this page) |
 | **Cash-aware** | `CashAwarePortfolioStatus` — status + enable for selected portfolio; All Portfolios note only |
 | **Actions** | **Add Deposit** (primary), **Add Withdrawal** (secondary), **Add Bulk Cash Entries** (secondary), **Transfer Cash** (secondary); deposit/withdrawal/transfer modals; `CashBulkEntriesWizard` |
-| **Balances** | `SectionCard` — table: Portfolio (all scope), Currency, Balance; optional **Totals by currency** list from API |
-| **Ledger** | `SectionCard` — filters: currency, entry type, date from/to; table: Date, Portfolio (all scope), Type, Currency, Amount, Source, Note, **Actions**; backend pagination |
+| **Balances** | `SectionCard` (`cash-page__section`) — **full content width**; table: Portfolio (all scope), Currency, Balance; optional **Totals by currency** list from API |
+| **Ledger** | `SectionCard` (`cash-page__section`) — **full content width**; filters: currency, entry type, date from/to; table: Date, Portfolio (all scope), Type, Currency, Amount, **Details** (backend `details`), **Actions**; backend pagination |
 | **Ledger actions** | Manual deposit/withdrawal only: Edit (modal) / Delete (confirm). System/linked/**transfer** rows show em dash with tooltip |
 | **Edit modal** | Reuses deposit/withdrawal modal — **Edit Deposit** / **Edit Withdrawal**; portfolio read-only; `PUT /cash/ledger/{id}` |
 | **Delete** | Confirm: “Delete this cash entry? This will update cash balances.” → `DELETE /cash/ledger/{id}` |

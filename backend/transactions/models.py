@@ -36,6 +36,10 @@ class Transaction(models.Model):
     price_per_share = models.DecimalField(max_digits=18, decimal_places=6, null=True, blank=True)
     currency = models.CharField(max_length=3, default=DEFAULT_BASE_CURRENCY)
     fees = models.DecimalField(max_digits=18, decimal_places=4, default=0)
+    actual_cash_received = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True
+    )
+    settlement_note = models.TextField(blank=True, null=True)
     split_from = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
     split_to = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

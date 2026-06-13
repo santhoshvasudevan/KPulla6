@@ -257,7 +257,7 @@ describe('Assets Page', () => {
     });
   });
 
-  it('renders Cash EUR allocation slice when backend provides it', async () => {
+  it('shows cash balances section and excludes cash from holdings table', async () => {
     api.fetchPortfolios.mockResolvedValueOnce([]);
     api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });
     api.fetchHoldings.mockResolvedValue({
@@ -288,7 +288,20 @@ describe('Assets Page', () => {
           asset_symbol: 'Cash EUR',
           primary_asset_class: 'CASH',
           currency: 'EUR',
+          native_currency: 'EUR',
+          native_balance: 1200,
           current_value: 1200,
+          is_cash: true,
+          holding_status: 'ok',
+        },
+        {
+          asset_type: 'CASH',
+          asset_symbol: 'Cash USD',
+          primary_asset_class: 'CASH',
+          currency: 'EUR',
+          native_currency: 'USD',
+          native_balance: 500,
+          current_value: 460,
           is_cash: true,
           holding_status: 'ok',
         },
@@ -296,10 +309,19 @@ describe('Assets Page', () => {
     });
     renderAssets();
     await waitFor(() => {
-      expect(screen.getByText('AAPL')).toBeInTheDocument();
-      expect(screen.queryByText('Cash EUR')).not.toBeInTheDocument();
+      expect(screen.getByText('Cash balances')).toBeInTheDocument();
+      expect(screen.getByText('Cash EUR')).toBeInTheDocument();
+      expect(screen.getByText('Cash USD')).toBeInTheDocument();
+      expect(screen.getAllByText(/€1,200\.00/).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText(/\$500\.00/)).toBeInTheDocument();
+      expect(screen.getByText(/€460\.00/)).toBeInTheDocument();
       expect(screen.getByTestId('pie-chart')).toBeInTheDocument();
     });
+
+    const cashRow = screen.getByText('Cash EUR').closest('tr');
+    expect(cashRow).not.toHaveClass('assets-table__row-clickable');
+    fireEvent.click(screen.getByText('Cash EUR'));
+    expect(screen.queryByTestId('asset-detail-route')).not.toBeInTheDocument();
   });
 
   it('shows empty state when no assets', async () => {

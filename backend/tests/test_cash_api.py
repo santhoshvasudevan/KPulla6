@@ -20,6 +20,7 @@ LEDGER_ITEM_KEYS = {
     "linked_transaction_id",
     "transfer_group_id",
     "note",
+    "details",
     "created_at",
     "updated_at",
 }
@@ -1050,3 +1051,140 @@ def test_same_currency_mismatched_amounts_rejected(api_client, seeded, test_user
         + ([body["detail"]] if isinstance(body.get("detail"), str) else [])
     ).lower()
     assert "equal" in error_text
+
+
+@pytest.mark.django_db
+def test_ledger_manual_deposit_details_combines_source_and_note(
+    api_client, seeded, test_user
+):
+    portfolio = ensure_default_portfolio(test_user)
+    CashLedgerEntry.objects.create(
+        portfolio=portfolio,
+        date=date(2026, 6, 1),
+        currency="EUR",
+        entry_type=CashEntryType.CASH_DEPOSIT,
+        amount=Decimal("100"),
+        source_of_funds="Bank",
+        note="Opening balance",
+    )
+    response = api_client.get(
+        "/api/v1/cash/ledger", {"portfolio_id": portfolio.id}
+    )
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["details"] == "Bank · Opening balance"
+
+
+@pytest.mark.django_db
+def test_ledger_buy_settlement_details_include_asset_qty_price(
+    api_client, seeded, test_user
+):
+    portfolio = ensure_default_portfolio(test_user)
+    txn = Transaction.objects.create(
+        portfolio=portfolio,
+        asset_symbol="AAPL",
+        date=date(2026, 6, 1),
+        type="BUY",
+        quantity=Decimal("10"),
+        price_per_share=Decimal("100"),
+        currency="EUR",
+        fees=Decimal("5"),
+    )
+    CashLedgerEntry.objects.create(
+        portfolio=portfolio,
+        date=date(2026, 6, 1),
+        currency="EUR",
+        entry_type=CashEntryType.BUY_SETTLEMENT,
+        amount=Decimal("-1005"),
+        linked_transaction=txn,
+        note="BUY AAPL",
+    )
+    response = api_client.get(
+        "/api/v1/cash/ledger", {"portfolio_id": portfolio.id}
+    )
+    item = response.json()["items"][0]
+    assert "Buy AAPL" in item["details"]
+    assert "Qty 10" in item["details"]
+    assert "Price 100 EUR" in item["details"]
+    assert "Fees 5 EUR" in item["details"]
+
+
+@pytest.mark.django_db
+def test_ledger_transfer_details_include_counterparty_and_amount(
+    api_client, seeded, test_user
+):
+    source = ensure_default_portfolio(test_user)
+    target = Portfolio.objects.create(
+        user=test_user, name="IndianMF", base_currency="INR", is_active=True
+    )
+    _deposit(source, day="2026-06-01", amount="5000")
+    _post_transfer(api_client, source.id, target.id, amount="1000")
+
+    out_resp = api_client.get(
+        "/api/v1/cash/ledger",
+        {"portfolio_id": source.id, "entry_type": "TRANSFER_OUT"},
+    )
+    in_resp = api_client.get(
+        "/api/v1/cash/ledger",
+        {"portfolio_id": target.id, "entry_type": "TRANSFER_IN"},
+    )
+    out_item = out_resp.json()["items"][0]
+    in_item = in_resp.json()["items"][0]
+    assert "Transfer to IndianMF" in out_item["details"]
+    assert "1000 EUR" in out_item["details"]
+    assert "Transfer from" in in_item["details"]
+    assert "1000 EUR" in in_item["details"]
+
+
+@pytest.mark.django_db
+def test_ledger_mf_buy_settlement_details_include_folio_and_paid_value(
+    api_client, seeded, test_user
+):
+    from market_data.models import Asset, AssetType
+    from transactions.models import Folio, MutualFundTransactionDetail, TransactionType
+
+    portfolio = ensure_default_portfolio(test_user)
+    asset = Asset.objects.create(
+        asset_type=AssetType.MUTUAL_FUND,
+        symbol="120503",
+        display_name="Test MF",
+        currency="INR",
+    )
+    folio = Folio.objects.create(
+        portfolio=portfolio, asset=asset, folio_number="F123"
+    )
+    txn = Transaction.objects.create(
+        portfolio=portfolio,
+        asset_symbol="120503",
+        date=date(2026, 3, 15),
+        type=TransactionType.BUY,
+        quantity=Decimal("100"),
+        price_per_share=Decimal("42.5"),
+        currency="INR",
+    )
+    MutualFundTransactionDetail.objects.create(
+        transaction=txn,
+        folio=folio,
+        investment_date=date(2026, 3, 10),
+        nav_date=date(2026, 3, 15),
+        nav=Decimal("42.5"),
+        units_allotted=Decimal("100"),
+        paid_value=Decimal("4255"),
+        market_value=Decimal("4250"),
+    )
+    CashLedgerEntry.objects.create(
+        portfolio=portfolio,
+        date=date(2026, 3, 10),
+        currency="INR",
+        entry_type=CashEntryType.BUY_SETTLEMENT,
+        amount=Decimal("-4255"),
+        linked_transaction=txn,
+    )
+    response = api_client.get(
+        "/api/v1/cash/ledger", {"portfolio_id": portfolio.id}
+    )
+    item = response.json()["items"][0]
+    assert "Buy 120503" in item["details"]
+    assert "Folio F123" in item["details"]
+    assert "Units 100" in item["details"]
+    assert "Paid 4255 INR" in item["details"]

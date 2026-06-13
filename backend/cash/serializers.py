@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
+from cash.ledger_details import build_ledger_entry_details
 from cash.models import CashLedgerEntry
 
 
@@ -153,6 +154,7 @@ def _decimal_to_float(value: Decimal | None) -> float | None:
 class CashLedgerEntrySerializer(serializers.ModelSerializer):
     portfolio_id = serializers.IntegerField(source="portfolio.id", read_only=True)
     portfolio_name = serializers.CharField(source="portfolio.name", read_only=True)
+    details = serializers.SerializerMethodField()
 
     class Meta:
         model = CashLedgerEntry
@@ -168,9 +170,13 @@ class CashLedgerEntrySerializer(serializers.ModelSerializer):
             "linked_transaction_id",
             "transfer_group_id",
             "note",
+            "details",
             "created_at",
             "updated_at",
         )
+
+    def get_details(self, obj: CashLedgerEntry) -> str:
+        return build_ledger_entry_details(obj)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

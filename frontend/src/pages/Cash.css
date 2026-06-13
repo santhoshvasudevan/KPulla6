@@ -1,3 +1,8 @@
+.cash-page__section.ui-section-card {
+  max-width: none;
+  width: 100%;
+}
+
 .cash-page__banner {
   margin-bottom: var(--space-4);
 }
@@ -211,6 +216,11 @@
 .cash-ledger-table-wrapper--loading {
   opacity: 0.6;
   pointer-events: none;
+}
+
+.cash-ledger-table__details-col {
+  min-width: 12rem;
+  max-width: 28rem;
 }
 
 .cash-ledger-table__actions-col {

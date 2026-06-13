@@ -81,6 +81,11 @@ export default function Assets() {
     [holdings]
   );
 
+  const cashAllocationRows = useMemo(
+    () => allocation.filter((row) => row.is_cash || row.asset_type === 'CASH'),
+    [allocation]
+  );
+
   const chartHoldings = useMemo(
     () =>
       allocation.filter(
@@ -192,6 +197,47 @@ export default function Assets() {
       {apiWarnings.map((w) => (
         <WarningBanner key={w} severity="warning" message={w} className="assets-page__banner" />
       ))}
+
+      {cashAllocationRows.length > 0 ? (
+        <SectionCard
+          className="assets-cash-balances"
+          title="Cash balances"
+          subtitle="Portfolio cash by currency — not an investment asset"
+          compact
+        >
+          <div className="assets-table-wrapper">
+            <table className="assets-table assets-cash-table">
+              <thead>
+                <tr>
+                  <th>Currency</th>
+                  <th className="num-col">Native balance</th>
+                  <th className="num-col">Display value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cashAllocationRows.map((row) => {
+                  const nativeCurrency = row.native_currency || row.currency || 'EUR';
+                  const displayCurrency = row.currency || selectedDisplayCurrency || 'EUR';
+                  return (
+                    <tr key={`cash-${nativeCurrency}`} className="assets-cash-table__row">
+                      <td className="symbol-col">{row.asset_symbol || `Cash ${nativeCurrency}`}</td>
+                      <td className="num-col">
+                        <CurrencyValue
+                          value={row.native_balance ?? row.current_value}
+                          currency={nativeCurrency}
+                        />
+                      </td>
+                      <td className="num-col">
+                        <CurrencyValue value={row.current_value} currency={displayCurrency} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </SectionCard>
+      ) : null}
 
       <div className="assets-main">
         <div className="assets-main__table">
@@ -365,7 +411,10 @@ export default function Assets() {
                         const pct = chartTotal > 0 ? Number(value) / chartTotal : 0;
                         const sym = payload?.payload?.asset_symbol || '';
                         const currency =
-                          payload?.payload?.currency || selectedDisplayCurrency || 'EUR';
+                          payload?.payload?.native_currency ||
+                          payload?.payload?.currency ||
+                          selectedDisplayCurrency ||
+                          'EUR';
                         return [
                           `${formatCurrency(value, currency)} (${formatPercent(pct)})`,
                           sym,

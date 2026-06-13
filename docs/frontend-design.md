@@ -311,7 +311,7 @@ These rules apply to all Cash phases (see [cash-ledger.md](./cash-ledger.md), `.
 | **Balances** | React **does not compute** cash balances, running totals, or future-impact simulation. Display `GET /cash/balances` and ledger API fields only. |
 | **Shortfall** | Use API `required`, `available`, `shortfall`, `currency` (and `affected_entries` on 409). Guide user to add or edit **same-currency** cash on `/cash` — no implicit FX in the UI. |
 | **`/transactions`** | Asset transaction table + unified **Add/Edit** modal (Stock, MF, Cash deposit/withdrawal). **Not** a merged client-side ledger; no fake pagination across cash + asset rows. |
-| **`/cash`** | Cash balance table, ledger, manual edit/delete, cash-aware status. Primary place to manage ledger rows after a cash deposit from Transactions. |
+| **`/cash`** | Full-width `SectionCard` sections for balances and ledger; balance table, ledger with backend **`details`** column (no client-side detail assembly), manual edit/delete, cash-aware status. Primary place to manage ledger rows after a cash deposit from Transactions. |
 | **API routing** | Cash branch → `/api/v1/cash/*`. Stock/MF → `/api/v1/transactions`. Never `asset_type=CASH` on `/transactions`. |
 | **Analytics surfaces** | Cash must not appear on Compare or Asset Metric Sheet. Dashboard `current_value` and Assets allocation chart use backend `allocation` / summary (Cash-6A). |
 | **Future Activity** | If a unified timeline is needed, use a backend activity endpoint — do not join cash + transactions in the client. |
@@ -339,6 +339,8 @@ Route `/transactions` — primary entry for recording activity:
 - React does not compute cash balances; no unified activity list in this phase.
 
 Component: `CashEntryFormFields.jsx` (shared cash form fields); `TransactionModal.jsx`.
+
+**SELL settlement (CASH-SELL-1B):** When type is `SELL`, show calculated proceeds preview, optional **Actual cash received**, withheld/adjustment preview, and **Settlement note**. Hidden for BUY / `STOCK_SPLIT`. React previews math only; backend computes `SELL_SETTLEMENT` + `TAX_WITHHELD`.
 
 ## Cash-aware portfolio status (Cash-4A.2) — **Implemented**
 

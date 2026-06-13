@@ -31,6 +31,7 @@ alwaysApply: true
 - `make test-critical` (curated golden-flow suite) — see `docs/workflows.md` § Test Makefile targets
 
 ## Docs
+- **Index:** `docs/README.md` — developer documentation landing page
 - API → `docs/api-design.md` · contract index → `docs/api-contracts.md` · schema/data → `docs/database.md` · architecture → `docs/architecture.md`
 - Release → `docs/mvp-release-checklist.md` · product rules → `docs/product-rules.md`
 - Cash Ledger → `docs/cash-ledger.md` · `.cursor/rules/320-cash-ledger.mdc`

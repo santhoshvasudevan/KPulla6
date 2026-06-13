@@ -14,6 +14,7 @@ class CashEntryType(models.TextChoices):
     CASH_WITHDRAWAL = "CASH_WITHDRAWAL", "Cash withdrawal"
     BUY_SETTLEMENT = "BUY_SETTLEMENT", "Buy settlement"
     SELL_SETTLEMENT = "SELL_SETTLEMENT", "Sell settlement"
+    TAX_WITHHELD = "TAX_WITHHELD", "Tax withheld"
     DIVIDEND_CASH = "DIVIDEND_CASH", "Dividend (cash)"
     INTEREST = "INTEREST", "Interest"
     FEE = "FEE", "Fee"
@@ -41,6 +42,7 @@ NEGATIVE_ENTRY_TYPES = frozenset(
     {
         CashEntryType.CASH_WITHDRAWAL,
         CashEntryType.BUY_SETTLEMENT,
+        CashEntryType.TAX_WITHHELD,
         CashEntryType.FEE,
         CashEntryType.TAX,
         CashEntryType.TRANSFER_OUT,

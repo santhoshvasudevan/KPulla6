@@ -1,5 +1,7 @@
 # Development Workflow — KPulla6
 
+**Documentation index:** [README.md](./README.md)
+
 ## Prerequisites
 - Python 3.11+
 - Node.js 20+
@@ -212,6 +214,7 @@ Read-only scripts for local investigation against dev Postgres or SQLite scratch
 
 | Script | Purpose |
 |--------|---------|
+| `manage.py sync_cash_settlements` | Backfill missing historical BUY/SELL settlements (dry-run default; `--apply` after backup) |
 | `scripts/diagnose_cash_aware_returns.py` | Cash-aware summary, performance, XIRR, external flows, balances |
 | `scripts/diagnose_settlement_integrity.py` | Cash-aware BUY/SELL settlement orphans, duplicates, amount/date mismatches |
 | `scripts/diagnose_negative_cash.py` | Per-portfolio/currency chronological running balance below zero |
@@ -226,7 +229,7 @@ See [performance/dashboard-read-paths.md](./performance/dashboard-read-paths.md)
 
 | Situation | Script |
 |-----------|--------|
-| After enabling cash-aware on an existing portfolio, or odd BUY/SELL errors | `diagnose_settlement_integrity.py` |
+| After enabling cash-aware on an existing portfolio, or odd BUY/SELL errors | `diagnose_settlement_integrity.py`; if `missing_settlement`, run `sync_cash_settlements` (see [cash-ledger.md](./cash-ledger.md) § CASH-HIST-1) |
 | Cash page shows unexpected balances or “future negative” errors | `diagnose_negative_cash.py` |
 | Dashboard headline value disagrees with value chart | `diagnose_summary_vs_performance.py` |
 | Holdings/summary show `fx_unavailable` or wrong display-currency totals | `diagnose_fx_coverage.py` then `make sync-fx` if gaps are confirmed |

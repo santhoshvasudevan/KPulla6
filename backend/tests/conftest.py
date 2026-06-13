@@ -55,6 +55,17 @@ def seeded(db, test_user):
 
 
 @pytest.fixture
+def cash_aware_portfolio(seeded, test_user):
+    from portfolios.seed import ensure_default_portfolio
+
+    portfolio = ensure_default_portfolio(test_user)
+    if not portfolio.cash_aware_enabled:
+        portfolio.cash_aware_enabled = True
+        portfolio.save(update_fields=["cash_aware_enabled", "updated_at"])
+    return portfolio
+
+
+@pytest.fixture
 def legacy_seeded(seeded, test_user):
     """Default portfolio in legacy cash mode (pre–Cash-4A.1 rows).
 

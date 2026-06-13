@@ -16,6 +16,7 @@ from portfolios.scope import (
     resolve_portfolio_scope,
 )
 from portfolios.services import PortfolioNotFoundError, list_active_portfolios
+from finance.cash import mf_sell_cash_proceeds, stock_sell_cash_proceeds
 from transactions.models import Transaction, TransactionType
 
 
@@ -403,6 +404,55 @@ def import_transactions_from_csv(
     )
 
 
+def _parse_optional_positive_decimal(
+    value,
+    *,
+    field: str,
+) -> Decimal | None:
+    if value is None or value == "":
+        return None
+    try:
+        dec = Decimal(str(value))
+    except Exception as exc:
+        raise TransactionValidationError(f"{field} must be a number") from exc
+    if dec <= 0:
+        raise TransactionValidationError(f"{field} must be greater than 0")
+    return dec
+
+
+def _validate_sell_cash_fields(
+    *,
+    txn_type: str,
+    calculated_proceeds: Decimal | None,
+    actual_cash_received: Decimal | None,
+    settlement_note: str | None,
+) -> tuple[Decimal | None, str | None]:
+    note = (settlement_note or "").strip() or None
+    if txn_type != TransactionType.SELL:
+        if actual_cash_received is not None:
+            raise TransactionValidationError(
+                "actual_cash_received is only allowed for SELL transactions"
+            )
+        if note:
+            raise TransactionValidationError(
+                "settlement_note is only allowed for SELL transactions"
+            )
+        return None, None
+
+    if actual_cash_received is None:
+        return None, note
+
+    if calculated_proceeds is None or calculated_proceeds <= 0:
+        raise TransactionValidationError(
+            "SELL proceeds must be greater than zero after fees"
+        )
+    if actual_cash_received > calculated_proceeds:
+        raise TransactionValidationError(
+            "Actual cash received cannot exceed calculated proceeds."
+        )
+    return actual_cash_received, note
+
+
 def validate_transaction_payload(
     *,
     txn_type: str,
@@ -414,6 +464,8 @@ def validate_transaction_payload(
     currency: str | None,
     split_from: Decimal | None,
     split_to: Decimal | None,
+    actual_cash_received=None,
+    settlement_note: str | None = None,
 ) -> dict[str, Any]:
     symbol = normalize_asset_symbol(asset_symbol or "")
     if not symbol:
@@ -430,6 +482,14 @@ def validate_transaction_payload(
             raise TransactionValidationError(
                 "split_from and split_to must be greater than 0"
             )
+        _validate_sell_cash_fields(
+            txn_type=txn_type,
+            calculated_proceeds=None,
+            actual_cash_received=_parse_optional_positive_decimal(
+                actual_cash_received, field="actual_cash_received"
+            ),
+            settlement_note=settlement_note,
+        )
         return {
             "asset_symbol": symbol,
             "date": date,
@@ -440,6 +500,8 @@ def validate_transaction_payload(
             "currency": (currency or "EUR").strip().upper() or "EUR",
             "split_from": split_from,
             "split_to": split_to,
+            "actual_cash_received": None,
+            "settlement_note": None,
         }
 
     if txn_type not in TransactionType.values:
@@ -455,6 +517,21 @@ def validate_transaction_payload(
     if fee_value < 0:
         raise TransactionValidationError("fees must be greater than or equal to 0")
 
+    parsed_actual = _parse_optional_positive_decimal(
+        actual_cash_received, field="actual_cash_received"
+    )
+    calculated_proceeds = None
+    if txn_type == TransactionType.SELL:
+        calculated_proceeds = stock_sell_cash_proceeds(
+            quantity, price_per_share, fee_value
+        )
+    validated_actual, validated_note = _validate_sell_cash_fields(
+        txn_type=txn_type,
+        calculated_proceeds=calculated_proceeds,
+        actual_cash_received=parsed_actual,
+        settlement_note=settlement_note,
+    )
+
     return {
         "asset_symbol": symbol,
         "date": date,
@@ -465,4 +542,6 @@ def validate_transaction_payload(
         "currency": (currency or "EUR").strip().upper() or "EUR",
         "split_from": None,
         "split_to": None,
+        "actual_cash_received": validated_actual,
+        "settlement_note": validated_note,
     }

@@ -119,6 +119,26 @@ def mf_buy_cash_required(paid_value: Decimal) -> Decimal:
     return paid_value
 
 
+def sell_actual_cash_received(
+    calculated_proceeds: Decimal,
+    actual_cash_received: Decimal | None,
+) -> Decimal:
+    """Net cash credited after optional tax withholding; defaults to calculated proceeds."""
+    if actual_cash_received is None:
+        return calculated_proceeds
+    return actual_cash_received
+
+
+def sell_tax_withheld_amount(
+    calculated_proceeds: Decimal,
+    actual_cash_received: Decimal | None,
+) -> Decimal:
+    """Positive withheld/adjustment when actual received is below calculated proceeds."""
+    actual = sell_actual_cash_received(calculated_proceeds, actual_cash_received)
+    gap = calculated_proceeds - actual
+    return gap if gap > 0 else _ZERO
+
+
 def mf_sell_cash_proceeds(
     *,
     paid_value: Decimal,

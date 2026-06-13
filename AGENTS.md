@@ -1,5 +1,7 @@
 # AGENTS.md — KPulla6
 
+**Documentation index:** [docs/README.md](./docs/README.md)
+
 - Inspect existing code before editing.
 - Make the smallest safe change.
 - Do not rewrite unrelated files.
