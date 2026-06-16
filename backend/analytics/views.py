@@ -94,6 +94,7 @@ class PortfolioPerformanceMetricsView(APIView):
                 range_code=params["range_code"],
                 display_currency=params["display_currency"],
                 benchmark_symbol=params["benchmark"],
+                user=request.user,
             )
         except BenchmarkConfigError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)

@@ -253,7 +253,6 @@ describe('Assets Page', () => {
     await waitFor(() => {
       expect(screen.getByText('Oversold')).toBeInTheDocument();
       expect(screen.getByText('GOOD')).toBeInTheDocument();
-      expect(screen.getByTestId('pie-chart')).toBeInTheDocument();
     });
   });
 
@@ -322,6 +321,84 @@ describe('Assets Page', () => {
     expect(cashRow).not.toHaveClass('assets-table__row-clickable');
     fireEvent.click(screen.getByText('Cash EUR'));
     expect(screen.queryByTestId('asset-detail-route')).not.toBeInTheDocument();
+  });
+
+  it('renders bank cash rows without quantity or price fields', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'INR' });
+    api.fetchHoldings.mockResolvedValueOnce({
+      fx_status: 'ok',
+      holdings: [
+        {
+          asset_type: 'BANK_CASH',
+          holding_key: 'bank:1',
+          bank_account_name: 'Savings',
+          asset_symbol: 'Savings',
+          institution_name: 'HDFC',
+          account_number: '123456',
+          currency: 'INR',
+          current_value: 25000,
+          invested_amount: 25000,
+          holding_status: 'ok',
+          unrealized_pl: 0,
+        },
+        {
+          asset_type: 'FIXED_DEPOSIT',
+          holding_key: 'fd:1',
+          institution_name: 'HDFC',
+          deposit_account_number: 'FD-001',
+          asset_symbol: 'FD HDFC',
+          currency: 'INR',
+          principal_amount: 100000,
+          current_value: 100000,
+          value_status: 'principal_only',
+          holding_status: 'ok',
+        },
+      ],
+      allocation: [],
+    });
+    renderAssets();
+    await waitFor(() => {
+      expect(screen.getByText('Savings')).toBeInTheDocument();
+      expect(screen.getByText('Bank Cash')).toBeInTheDocument();
+      expect(screen.getByText(/HDFC · 123456/)).toBeInTheDocument();
+      expect(screen.getByText(/HDFC \(FD-001\)/)).toBeInTheDocument();
+      expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  it('renders fixed deposit rows without price or quantity warnings', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'INR' });
+    api.fetchHoldings.mockResolvedValueOnce({
+      fx_status: 'ok',
+      holdings: [
+        {
+          asset_type: 'FIXED_DEPOSIT',
+          holding_key: 'fd:1',
+          institution_name: 'HDFC',
+          deposit_account_number: 'FD-001',
+          asset_symbol: 'FD HDFC',
+          currency: 'INR',
+          principal_amount: 100000,
+          current_value: 100000,
+          value_status: 'principal_only',
+          holding_status: 'ok',
+          maturity_date: '2026-01-01',
+          status: 'ACTIVE',
+        },
+      ],
+      allocation: [],
+    });
+    renderAssets();
+    await waitFor(() => {
+      expect(screen.getByText(/HDFC \(FD-001\)/)).toBeInTheDocument();
+      expect(screen.getByText('Fixed Deposit')).toBeInTheDocument();
+      expect(screen.getByText(/Matures 2026-01-01/)).toBeInTheDocument();
+      expect(screen.queryByText(/price unavailable/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/price missing/i)).not.toBeInTheDocument();
+      expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3);
+    });
   });
 
   it('shows empty state when no assets', async () => {

@@ -1437,6 +1437,7 @@ def build_portfolio_performance_metrics(
     display_currency: str,
     benchmark_symbol: str | None = None,
     today: date | None = None,
+    user=None,
 ) -> PerformanceMetricsResult:
     today = today or portfolio_dates.current_date()
     warnings: list[str] = []
@@ -1449,8 +1450,13 @@ def build_portfolio_performance_metrics(
     by_mf = transactions_by_mf_holding(queryset) if all_txns else {}
     disp_ccy = norm_display_currency(display_currency)
 
+    from debt.portfolio_value import value_timeseries_inception_date
+
     if not all_txns:
-        if not scope_has_cash_ledger_entries(scope):
+        fd_bank_start = (
+            value_timeseries_inception_date(user, scope, today=today) if user else None
+        )
+        if not scope_has_cash_ledger_entries(scope) and not fd_bank_start:
             warnings.append("No transactions in portfolio scope.")
             return PerformanceMetricsResult(
                 payload=_empty_payload(
@@ -1462,9 +1468,19 @@ def build_portfolio_performance_metrics(
                     benchmark_symbol=benchmark_symbol,
                 )
             )
-        inception = cash_ledger_inception_date(scope) or today
+        inception_candidates = [today]
+        if fd_bank_start:
+            inception_candidates.append(fd_bank_start)
+        if scope_has_cash_ledger_entries(scope):
+            inception_candidates.append(cash_ledger_inception_date(scope) or today)
+        inception = min(inception_candidates)
     else:
+        fd_bank_start = (
+            value_timeseries_inception_date(user, scope, today=today) if user else None
+        )
         inception = min(t.date for t in all_txns)
+        if fd_bank_start:
+            inception = min(inception, fd_bank_start)
 
     emit_start = (
         None
@@ -1482,6 +1498,7 @@ def build_portfolio_performance_metrics(
         disp_ccy=disp_ccy,
         emit_start=emit_start,
         today=today,
+        user=user,
     )
     warnings.extend(ts_warnings)
     if not timeseries_full:
@@ -1523,10 +1540,10 @@ def build_portfolio_performance_metrics(
         warnings.append("Portfolio values are unavailable for the selected range.")
 
     flows_by_date, flows_unknown_from = (
-        build_all_scope_external_flows(scope, disp_ccy)
+        build_all_scope_external_flows(scope, disp_ccy, user=user)
         if scope.kind == "all_active"
         else portfolio_external_flows_for_scope(
-            scope, all_txns=all_txns, calculation_currency=disp_ccy
+            scope, all_txns=all_txns, calculation_currency=disp_ccy, user=user
         )
     )
     if flows_unknown_from is not None:
@@ -1542,7 +1559,9 @@ def build_portfolio_performance_metrics(
     if valid_count < 2:
         warnings.append("Insufficient daily returns to compute risk metrics.")
 
-    xirr_detail = compute_scope_xirr_detail(scope, display_currency=display_currency)
+    xirr_detail = compute_scope_xirr_detail(
+        scope, display_currency=display_currency, user=user
+    )
     xirr_val = xirr_detail.value
     warnings.extend(xirr_detail.warnings)
 

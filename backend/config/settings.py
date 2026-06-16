@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     "accounts.apps.AccountsConfig",
     "portfolios",
     "cash",
+    "debt",
     "transactions",
     "market_data",
     "fx",

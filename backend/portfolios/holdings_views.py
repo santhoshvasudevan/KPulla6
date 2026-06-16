@@ -44,7 +44,9 @@ class PortfolioHoldingsView(APIView):
         except PortfolioNotFoundError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
 
-        result = build_holdings(scope=scope, display_currency=display_currency)
+        result = build_holdings(
+            scope=scope, display_currency=display_currency, user=request.user
+        )
         payload = {
             "fx_status": result.fx_status,
             "holdings": result.holdings,

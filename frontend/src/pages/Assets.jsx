@@ -37,6 +37,25 @@ function formatQuantity(qty) {
   return Number(qty || 0).toFixed(4);
 }
 
+function isFixedDepositHolding(h) {
+  return h?.asset_type === 'FIXED_DEPOSIT';
+}
+
+function isBankCashHolding(h) {
+  return h?.asset_type === 'BANK_CASH';
+}
+
+function isActiveHolding(h) {
+  if (h.holding_status === 'closed') return false;
+  if (isBankCashHolding(h)) {
+    return Number(h.current_value || 0) > 0;
+  }
+  if (isFixedDepositHolding(h)) {
+    return h.value_status === 'principal_only' && Number(h.current_value || 0) > 0;
+  }
+  return Number(h.quantity || 0) > 0;
+}
+
 function avgCostValue(h) {
   if (h.avg_cost_per_share != null && !Number.isNaN(Number(h.avg_cost_per_share))) {
     return Number(h.avg_cost_per_share);
@@ -67,22 +86,19 @@ export default function Assets() {
   const [apiWarnings, setApiWarnings] = useState([]);
 
   const activeHoldings = useMemo(
-    () =>
-      holdings.filter(
-        (h) => h.holding_status !== 'closed' && Number(h.quantity || 0) > 0
-      ),
+    () => holdings.filter(isActiveHolding),
     [holdings]
   );
   const previousHoldings = useMemo(
-    () =>
-      holdings.filter(
-        (h) => h.holding_status === 'closed' || Number(h.quantity || 0) === 0
-      ),
+    () => holdings.filter((h) => !isActiveHolding(h)),
     [holdings]
   );
 
   const cashAllocationRows = useMemo(
-    () => allocation.filter((row) => row.is_cash || row.asset_type === 'CASH'),
+    () =>
+      allocation.filter(
+        (row) => row.is_cash || row.asset_type === 'CASH' || row.asset_type === 'BANK_CASH'
+      ),
     [allocation]
   );
 
@@ -171,7 +187,9 @@ export default function Assets() {
     );
   }
 
-  const hasMissingPrices = activeHoldings.some((h) => h.price_status === 'price_missing');
+  const hasMissingPrices = activeHoldings.some(
+    (h) => !isFixedDepositHolding(h) && h.price_status === 'price_missing'
+  );
 
   const headerSubtitle = [
     selectedPortfolioName || 'All Portfolios',
@@ -296,17 +314,47 @@ export default function Assets() {
                     const avgCost = avgCostValue(h);
                     const unrealizedTone = plTone(h.unrealized_pl);
                     const isMf = h.asset_type === 'MUTUAL_FUND';
+                    const isFd = isFixedDepositHolding(h);
+                    const isBankCash = isBankCashHolding(h);
                     const rowKey = holdingRowKey(h);
 
                     return (
                       <tr
                         key={rowKey}
-                        className="assets-table__row-clickable"
-                        onClick={() => navigate(`/assets/${h.asset_symbol}`)}
+                        className={
+                          isFd || isBankCash ? undefined : 'assets-table__row-clickable'
+                        }
+                        onClick={
+                          isFd || isBankCash
+                            ? undefined
+                            : () => navigate(`/assets/${h.asset_symbol}`)
+                        }
                       >
                         <td className="symbol-col">
                           <div className="assets-table__symbol-cell">
                             <span>{holdingSymbolLabel(h)}</span>
+                            {isBankCash ? (
+                              <>
+                                <span className="assets-table__symbol-meta">Bank Cash</span>
+                                {h.institution_name ? (
+                                  <span className="assets-table__symbol-meta">
+                                    {h.institution_name}
+                                    {h.account_number ? ` · ${h.account_number}` : ''}
+                                  </span>
+                                ) : null}
+                              </>
+                            ) : null}
+                            {isFd ? (
+                              <>
+                                <span className="assets-table__symbol-meta">Fixed Deposit</span>
+                                {h.maturity_date ? (
+                                  <span className="assets-table__symbol-meta">
+                                    Matures {h.maturity_date}
+                                    {h.status && h.status !== 'ACTIVE' ? ` · ${h.status}` : ''}
+                                  </span>
+                                ) : null}
+                              </>
+                            ) : null}
                             {isMf && h.scheme_code && h.scheme_name ? (
                               <span className="assets-table__symbol-meta">{h.scheme_code}</span>
                             ) : null}
@@ -327,16 +375,22 @@ export default function Assets() {
                             )}
                           </div>
                         </td>
-                        <td className="num-col">{formatQuantity(h.quantity)}</td>
                         <td className="num-col">
-                          {avgCost == null || Number(h.quantity || 0) <= 0 ? (
+                          {isFd || isBankCash ? '—' : formatQuantity(h.quantity)}
+                        </td>
+                        <td className="num-col">
+                          {isFd || isBankCash ? (
+                            '—'
+                          ) : avgCost == null || Number(h.quantity || 0) <= 0 ? (
                             '—'
                           ) : (
                             <CurrencyValue value={avgCost} currency={currency} />
                           )}
                         </td>
                         <td className="num-col">
-                          {h.price_status === 'price_missing' ? (
+                          {isFd || isBankCash ? (
+                            '—'
+                          ) : h.price_status === 'price_missing' ? (
                             <StatusBadge
                               status="price_missing"
                               label="Price missing — run refresh to fetch latest price"
@@ -351,15 +405,19 @@ export default function Assets() {
                           <CurrencyValue value={h.current_value} currency={currency} />
                         </td>
                         <td className="num-col">
-                          <CurrencyValue
-                            value={h.unrealized_pl}
-                            currency={currency}
-                            tone={unrealizedTone}
-                            showSign
-                          />
+                          {isFd || isBankCash ? (
+                            '—'
+                          ) : (
+                            <CurrencyValue
+                              value={h.unrealized_pl}
+                              currency={currency}
+                              tone={unrealizedTone}
+                              showSign
+                            />
+                          )}
                         </td>
                         <td className="num-col">
-                          <PercentValue value={h.xirr} />
+                          {isFd || isBankCash ? '—' : <PercentValue value={h.xirr} />}
                         </td>
                       </tr>
                     );

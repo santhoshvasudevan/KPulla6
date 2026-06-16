@@ -52,12 +52,15 @@ export async function fetchWithHandling(path, options = {}) {
           : errorData.message || '';
     if (!message && typeof errorData === 'object') {
       const fieldMsgs = Object.entries(errorData)
-        .filter(([key]) => key !== 'detail' && key !== 'message')
+        .filter(([key]) => key !== 'detail' && key !== 'message' && key !== 'hint')
         .map(([key, val]) => {
           const text = Array.isArray(val) ? val.join(', ') : String(val);
           return `${key}: ${text}`;
         });
       if (fieldMsgs.length) message = fieldMsgs.join('; ');
+    }
+    if (typeof errorData.hint === 'string' && errorData.hint) {
+      message = message ? `${message} ${errorData.hint}` : errorData.hint;
     }
     if (!message) message = `Request failed (${response.status})`;
     throw new Error(message);
@@ -680,4 +683,143 @@ export async function applyCashBulkEntries(payload) {
     ...buildCashBulkEntriesBody(payload),
     confirmed: true,
   });
+}
+
+/** GET /api/v1/bank-accounts */
+export async function fetchBankAccounts() {
+  return fetchWithHandling('/bank-accounts');
+}
+
+/** POST /api/v1/bank-accounts */
+export async function createBankAccount(payload) {
+  return fetchWithHandling('/bank-accounts', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** PUT /api/v1/bank-accounts/{id} */
+export async function updateBankAccount(id, payload) {
+  return fetchWithHandling(`/bank-accounts/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** DELETE /api/v1/bank-accounts/{id} — soft deactivate */
+export async function deleteBankAccount(id) {
+  return fetchWithHandling(`/bank-accounts/${id}`, { method: 'DELETE' });
+}
+
+/** POST /api/v1/bank-accounts/{id}/seed-opening-balance */
+export async function seedBankAccountOpeningBalance(id) {
+  return fetchWithHandling(`/bank-accounts/${id}/seed-opening-balance`, {
+    method: 'POST',
+  });
+}
+
+/** GET /api/v1/cash-movements */
+export async function fetchCashMovements(params = {}) {
+  const search = new URLSearchParams();
+  if (params.bank_account_id != null) {
+    search.set('bank_account_id', String(params.bank_account_id));
+  }
+  if (params.page != null) search.set('page', String(params.page));
+  if (params.page_size != null) search.set('page_size', String(params.page_size));
+  const qs = search.toString();
+  return fetchWithHandling(qs ? `/cash-movements?${qs}` : '/cash-movements');
+}
+
+/** POST /api/v1/cash-movements */
+export async function createCashMovement(payload) {
+  return fetchWithHandling('/cash-movements', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+function withFdScopeParams(params, scopeParams) {
+  const out = new URLSearchParams(params || {});
+  if (scopeParams?.portfolio_id != null) {
+    out.set('portfolio_id', String(scopeParams.portfolio_id));
+  } else {
+    out.set('portfolio_scope', 'all');
+  }
+  return out;
+}
+
+/** GET /api/v1/fixed-deposits */
+export async function fetchFixedDeposits(scopeParams = null) {
+  const params = withFdScopeParams({}, scopeParams);
+  return fetchWithHandling(`/fixed-deposits?${params.toString()}`);
+}
+
+/** POST /api/v1/fixed-deposits */
+export async function createFixedDeposit(payload) {
+  return fetchWithHandling('/fixed-deposits', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** PUT /api/v1/fixed-deposits/{id} */
+export async function updateFixedDeposit(id, payload) {
+  return fetchWithHandling(`/fixed-deposits/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** DELETE /api/v1/fixed-deposits/{id} — soft deactivate */
+export async function deleteFixedDeposit(id) {
+  return fetchWithHandling(`/fixed-deposits/${id}`, { method: 'DELETE' });
+}
+
+/** GET /api/v1/fixed-deposits/{id}/interest-payments */
+export async function fetchFixedDepositInterestPayments(fdId) {
+  return fetchWithHandling(`/fixed-deposits/${fdId}/interest-payments`);
+}
+
+/** POST /api/v1/fixed-deposits/{id}/interest-payments */
+export async function createFixedDepositInterestPayment(fdId, payload) {
+  return fetchWithHandling(`/fixed-deposits/${fdId}/interest-payments`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** GET /api/v1/fixed-deposit-interest-payments/{payment_id} */
+export async function fetchFixedDepositInterestPayment(paymentId) {
+  return fetchWithHandling(`/fixed-deposit-interest-payments/${paymentId}`);
+}
+
+/** POST /api/v1/fixed-deposits/{id}/mark-matured */
+export async function markFixedDepositMatured(fdId) {
+  return fetchWithHandling(`/fixed-deposits/${fdId}/mark-matured`, { method: 'POST' });
+}
+
+/** POST /api/v1/fixed-deposits/{id}/settle */
+export async function settleFixedDeposit(fdId, payload) {
+  return fetchWithHandling(`/fixed-deposits/${fdId}/settle`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** POST /api/v1/fixed-deposits/{id}/renew */
+export async function renewFixedDeposit(fdId, payload) {
+  return fetchWithHandling(`/fixed-deposits/${fdId}/renew`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** GET /api/v1/fixed-deposits/{id}/settlements */
+export async function fetchFixedDepositSettlements(fdId) {
+  return fetchWithHandling(`/fixed-deposits/${fdId}/settlements`);
+}
+
+/** GET /api/v1/fixed-deposit-settlements/{settlement_id} */
+export async function fetchFixedDepositSettlement(settlementId) {
+  return fetchWithHandling(`/fixed-deposit-settlements/${settlementId}`);
 }

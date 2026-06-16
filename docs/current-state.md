@@ -1,7 +1,7 @@
 # Current State — KPulla6 (Portfolio Insight)
 
 ## Last Updated
-2026-06-07 (CASH-UI-1 — Cash page layout + ledger details)
+2026-06-14 (FD-ACC-9 — FD accounting stabilization and audit)
 
 **Documentation index:** [README.md](./README.md)
 
@@ -18,6 +18,8 @@
 - Same- and cross-currency **portfolio transfers**
 - **Bulk Cash Entries** for historical funding (backfill wizard/APIs **removed**)
 - Stock + mutual fund transactions, CSV import, holdings, dashboard performance
+- **Fixed Deposits (FD MVP):** bank accounts, fixed deposit CRUD, principal-only summary/holdings integration, dashboard allocation buckets — see [fixed-deposits.md](./fixed-deposits.md)
+- **FD Accounting Phase 1 (FD-ACC-1..8C):** bank cash ledger, mandatory FD opening debit, interest/TDS, maturity/settlement, renewal, opt-in bank cash in portfolio value, value history + return metrics — [fixed-deposits-accounting.md](./fixed-deposits-accounting.md); **implemented and audited (FD-ACC-9)**
 
 Product rules index: [product-rules.md](./product-rules.md). Release checklist: [mvp-release-checklist.md](./mvp-release-checklist.md). API contract index: [api-contracts.md](./api-contracts.md).
 
@@ -237,10 +239,41 @@ Design doc: [cash-ledger.md](./cash-ledger.md).
 
 **Next recommended phase:** transfer fees (Cash-8C); optional bulk quarterly/yearly frequencies.
 
+## Fixed Deposits — Accounting (FD-ACC-1..9)
+
+Design doc: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md). MVP: [fixed-deposits.md](./fixed-deposits.md).
+
+| Phase | Scope | Status |
+|-------|--------|--------|
+| **FD-ACC-0** | Architecture + API proposal docs | **Done** |
+| **FD-ACC-0.1** | Approved product decisions (status flow, rollover, balances, inclusion rules) | **Done** |
+| **FD-ACC-1** | `CashMovement` model + bank ledger balance + APIs | **Done** |
+| **FD-ACC-2** | Manual cash movements UI | **Done** |
+| **FD-ACC-3** | Mandatory FD opening bank debit | **Done** |
+| **FD-ACC-3.1** | FD opening as-of-date UX/docs | **Done** |
+| **FD-ACC-4** | FD interest payments | **Done** |
+| **FD-ACC-5** | FD maturity / closure settlement | **Done** |
+| **FD-ACC-6** | FD renewal workflow | **Done** |
+| **FD-ACC-7** | Optional bank cash in portfolio value | **Done** |
+| **FD-ACC-8A** | FD/bank cash performance design review | **Done** (docs only) |
+| **FD-ACC-8B** | Value history — FD principal + included bank cash in `metric=value` | **Done** |
+| **FD-ACC-8C** | Cashflow-aware XIRR/TWROR for FD/bank events | **Done** |
+| **FD-ACC-9** | Stabilization, E2E audit, docs verification, Graphify refresh | **Done** |
+
+**Performance:** Summary/holdings, **`metric=value`**, **XIRR**, **TWROR**, and **cumulative return** include FD principal + opt-in bank cash where applicable (FD-ACC-8B/8C). Internal FD/bank movements are excluded from external-flow maps; manual deposits/withdrawals and opening-balance seeds are external.
+
+**E2E audit (FD-ACC-9):** `test_fixed_deposit_end_to_end_accounting.py` — full lifecycle, renewal, excluded bank cash, unseeded balance, portfolio scope.
+
+---
+
 ## Deferred / Not Yet Implemented
 
 | Topic | Status |
 |-------|--------|
+| FD bank cash ledger (FD-ACC-1) | **Done** — `CashMovement`, `/cash-movements`, seed opening balance |
+| Manual cash movement UI (FD-ACC-2) | **Done** — Settings bank account ledger panel |
+| FD opening bank debit (FD-ACC-3) | **Done** — atomic on FD create; ledger balance as of `investment_date`; legacy FDs unchanged |
+| FD interest/maturity/renewal (FD-ACC-5+) | **Done** (FD-ACC-4..6) |
 | Transfer fees (Cash-8C) | Deferred |
 | Same-portfolio FX conversion | Deferred |
 | Display-currency cash totals on `/cash` page | Deferred |
@@ -321,10 +354,10 @@ Design doc: [mutual-funds.md](./mutual-funds.md). **MF-1 schema, MF-2 NAV sync, 
 - All sync tests mock providers — no real network calls
 
 ## Test Status
-- Backend: `make test-backend` — **840 passed** (`DJANGO_TEST_USE_SQLITE=1`)
-- Frontend: `make test-frontend` — **384 passed**; `npm run build` passes
+- Backend: `make test-backend` — **1052 passed** (`DJANGO_TEST_USE_SQLITE=1`)
+- Frontend: `make test-frontend` — **447 passed**; `npm run build` passes
 - **STAB-3 targets:** `make test-fast` · `make test-critical` · `make test-all` — all green (STAB-6 verified 2026-06-06)
-- Graphify: `make graphify` → `graphify update .`; `graphify-out/GRAPH_REPORT.md` tracked
+- Graphify: `make graphify` → `graphify update .`; `graphify-out/GRAPH_REPORT.md` tracked (refreshed FD-ACC-9 2026-06-14)
 
 ## MVP release QA (STAB-6 — 2026-06-06)
 

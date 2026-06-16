@@ -1,5 +1,306 @@
 # Changelog — KPulla6
 
+## 2026-06-14 — FD-ACC-9: FD accounting stabilization and audit
+
+### Added
+- `backend/tests/test_fixed_deposit_end_to_end_accounting.py` — five E2E scenario audits (full lifecycle, renewal, excluded bank cash, unseeded balance, portfolio scope)
+
+### Verified (no product feature changes)
+- End-to-end FD accounting: opening debit, interest/TDS, mark matured, settlement, renewal
+- Bank cash ledger vs manual/reference balance; as-of-date validation
+- Portfolio summary, holdings, allocation, `metric=value`, XIRR, TWROR, Metric Sheet alignment
+- API user/portfolio scoping; immutable ledger rows; dashboard banner copy
+- Frontend: Bank Accounts, Fixed Deposits, Dashboard, Assets smoke/regression tests
+
+### Documentation
+- `current-state.md`, `fixed-deposits.md`, `fixed-deposits-accounting.md`, `database.md`, `decisions.md` — removed outdated “design only” / “not implemented” FD accounting statements
+- Graphify refreshed via `make graphify`
+
+### Deferred (unchanged)
+- Reversals/corrections, transfer workflows, tax reporting, standalone FD IRR, accrued interest valuation, automatic bank cash inclusion, portfolio-specific bank sub-balances, via-bank renewal path
+
+---
+
+### Added
+- `backend/debt/cash_ledger_flows.py` — classifies bank `CashMovement` rows for return metrics
+- XIRR terminal includes FD principal + opt-in included bank cash ledger balance
+- TWROR/cumulative return daily PV extended via FD-ACC-8B merge; bank external flows merged
+- Backend tests: `test_fd_cash_flow_classification.py` (9 cases)
+
+### Changed
+- `portfolios/xirr_service.py` — wealth-pool terminal + bank XIRR flows (FD-ACC-8C)
+- `portfolios/external_flows_service.py` — bank TWROR external flows when user scoped
+- `portfolios/performance_service.py` — return timeseries includes FD/bank; flow maps extended
+- `analytics/services.py` + views — pass `user` for Metric Sheet alignment
+- Dashboard banner updated: return metrics now include FD/bank cash
+
+### Cash-flow classification (included bank accounts)
+- **Internal:** `FD_OPENING`, settlement principal, renewals, transfers
+- **Income/return:** `FD_INTEREST`, settlement interest (PV increase, not external flow)
+- **External contribution:** `MANUAL_DEPOSIT`, `OPENING_BALANCE` seed, `ADJUSTMENT` CREDIT
+- **External withdrawal:** `MANUAL_WITHDRAWAL`, `ADJUSTMENT` DEBIT
+
+### Unchanged / deferred
+- Accrued interest valuation, standalone FD IRR, transfer/reversal workflows, tax reporting
+- Bank excluded from portfolio value: FD open/settle remain step-based PV changes only
+
+---
+
+## 2026-06-14 — FD-ACC-8B: FD principal + included bank cash in value history
+
+### Added
+- `build_fd_value_timeseries`, `build_bank_cash_value_timeseries`, `merge_fd_bank_into_value_timeseries` in `debt/portfolio_value.py`
+- `metric=value` performance series and summary timeseries (when requested) include FD principal + opt-in ledger bank cash
+- Backend tests: `test_fd_performance_timeseries_api.py` (17 cases)
+
+### Changed
+- `portfolios/performance_service.py` — merge FD/bank into value metric only; pass `user` from performance view
+- `portfolios/summary_service.py` — FD/bank merge on single-portfolio and all-scope timeseries
+- Dashboard value-chart info banner: value chart includes FD/bank cash; return metrics note for FD-ACC-8C
+- `test_fixed_deposit_summary_api.py` — performance value aligns with summary for FD principal
+
+### Unchanged
+- XIRR, TWROR, cumulative return formulas, analytics Metric Sheet flows, external-flow classification (deferred **FD-ACC-8C**)
+- No accrued-interest FD valuation; no standalone FD IRR
+
+### Date rules (value series)
+- FD principal: inclusive from `investment_date`; exclusive from `settlement_date` when settled
+- Bank cash: ledger balance as-of each date; FD-ACC-7 scope attribution
+
+---
+
+## 2026-06-14 — FD-ACC-8A: FD / bank cash performance design review
+
+### Added
+- **FD-ACC-8 performance/timeseries design** section in `fixed-deposits-accounting.md` — answers contribution vs internal transfer, settlement, interest, accrued interest, API scope, options A/B/C, risks, 8B test plan
+- Phase split: **FD-ACC-8B** (value history) · **FD-ACC-8C** (XIRR/TWROR cashflow classification)
+
+### Changed
+- `architecture.md`, `decisions.md`, `current-state.md`, `fixed-deposits.md` — cross-links and status updates
+
+### Unchanged
+- **No runtime code** — performance API, XIRR, TWROR, summary behavior identical to FD-ACC-7
+
+### Recommendation
+- **Option B** for 8B: align `metric=value` with summary (FD principal + included bank cash) before touching external-flow maps
+
+---
+
+## 2026-06-14 — FD-ACC-7: Optional bank cash in portfolio value
+
+### Added
+- Opt-in `include_in_portfolio_value` wiring: ledger-derived bank balance in summary `current_value`, holdings, and **Cash / Bank Cash** allocation bucket
+- Portfolio scope rules: included accounts once in `all`; single portfolio only when FD/movement associations resolve to that portfolio alone
+- Settings → Bank accounts: include toggle with ledger-seed warning
+- Backend tests in `test_fixed_deposit_summary_api.py` (FD create/settle/interest stability, scope, FX)
+- Frontend tests: `BankAccountManagement`, `Assets`, `Dashboard`
+
+### Changed
+- `debt/portfolio_value.py` — bank cash aggregation, attribution, allocation bucket
+- Summary/holdings services merge included bank cash when `include_in_portfolio_value=true` and ledger exists
+
+### Unchanged
+- FD accounting movements, stock/MF valuation, FD performance/XIRR (FD-ACC-8), transfer/reversal workflows
+- Manual/reference `current_balance` excluded until seeded into ledger
+
+### Documentation
+- `fixed-deposits-accounting.md`, `fixed-deposits.md`, `database.md`, `api-design.md`, `current-state.md`, `decisions.md`, `frontend-design.md`, `page-layouts.md`
+
+---
+
+## 2026-06-14 — FD-ACC-6: Fixed Deposit renewal workflow
+
+### Added
+- `FixedDepositRenewalGroup` model — renewal audit trail (old/new FD, settlement, payout breakdown)
+- API: `POST /fixed-deposits/{id}/renew` — direct rollover + partial cash payout
+- Renewed FD created without `FD_OPENING` debit; normal FD create unchanged
+- Fixed Deposits UI: Renew modal for `ACTIVE`/`MATURED`; `has_renewal` on FD list
+- Backend tests: `test_fixed_deposit_renewals_api.py` (17 cases)
+- Frontend tests: renewal actions, modal, payload, validation in `FixedDeposits.test.jsx`; `renewFixedDeposit` in `api.test.js`
+
+### Changed
+- Portfolio Debt allocation swaps old settled principal for new renewed principal (no double count)
+
+### Unchanged
+- Bank cash in portfolio value (FD-ACC-7), FD performance/XIRR (FD-ACC-8), transfer/reversal workflows
+
+### Documentation
+- `fixed-deposits.md`, `fixed-deposits-accounting.md`, `database.md`, `api-design.md`, `current-state.md`, `decisions.md`, `frontend-design.md`
+
+---
+
+## 2026-06-14 — FD-ACC-5: Fixed Deposit maturity / closure settlement
+
+### Added
+- `MATURED_SETTLED` FD status; `FixedDepositSettlement` model with principal/interest ledger credits
+- Cash movement types: `FD_MATURITY_PRINCIPAL`, `FD_MATURITY_INTEREST`, `FD_CLOSURE_PRINCIPAL`, `FD_CLOSURE_INTEREST`
+- APIs: `POST /fixed-deposits/{id}/mark-matured`, `POST /fixed-deposits/{id}/settle`, `GET /fixed-deposits/{id}/settlements`, `GET /fixed-deposit-settlements/{id}`; **405** on update/delete
+- Fixed Deposits UI: Mark matured, Settle/Close modal, settlement movement labels
+- Backend tests: `test_fixed_deposit_settlements_api.py`
+
+### Changed
+- Portfolio summary excludes `MATURED_SETTLED` and `CLOSED` FD principal; bank proceeds still excluded from portfolio value
+
+### Unchanged
+- Renewal, bank cash in portfolio value, FD performance/XIRR, transfer/reversal workflows
+
+### Documentation
+- `fixed-deposits.md`, `fixed-deposits-accounting.md`, `database.md`, `api-design.md`, `current-state.md`, `decisions.md`, `frontend-design.md`, `page-layouts.md`
+
+---
+
+## 2026-06-14 — FD-ACC-4: Fixed Deposit interest payments
+
+### Added
+- `FixedDepositInterestPayment` model — gross interest, tax withheld, net interest, linked `CashMovement`
+- `CashMovementType.FD_INTEREST` — SYSTEM CREDIT for net interest received into linked bank account
+- APIs: `GET/POST /fixed-deposits/{id}/interest-payments`, `GET /fixed-deposit-interest-payments/{payment_id}`; **405** on PUT/PATCH/DELETE
+- COMPOUNDED FD soft `warning` on POST (does not block)
+- Fixed Deposits page: Record interest modal, expandable interest payments list
+- `CashMovementManagement` labels `FD_INTEREST` as “FD interest”
+- Backend tests: `test_fixed_deposit_interest_payments_api.py`
+
+### Unchanged
+- FD portfolio value remains **principal-only**; interest does not increase summary `current_value`
+- Bank cash still excluded from portfolio value
+- Maturity/closure/renewal still deferred
+
+### Documentation
+- `fixed-deposits.md`, `fixed-deposits-accounting.md`, `database.md`, `api-design.md`, `current-state.md`, `decisions.md`, `frontend-design.md`
+
+---
+
+## 2026-06-14 — FD-ACC-3.1: FD opening balance as-of-date UX
+
+### Changed
+- Fixed Deposits create modal explains that bank balance is validated **as of the FD investment date**
+- Backdated FD guidance when ledger exists and investment date is set
+- Insufficient-balance errors label API `available` as as-of investment date and include backdated FD hint
+- Backend FD create insufficient-balance response includes backdated hint when ledger exists but balance is short
+
+### Documentation
+- `fixed-deposits.md`, `fixed-deposits-accounting.md`, `current-state.md` — seed/movement dates vs backdated FD investment dates
+
+---
+
+## 2026-06-14 — FD-ACC-3 fix: unseeded opening balance UI mismatch
+
+### Fixed
+- Fixed Deposits create modal now shows **ledger balance available for FD** (0 when no cash movements), not misleading manual `current_balance`
+- Warning when `opening_balance > 0` but not seeded; Create disabled until ledger balance covers principal
+- FD create insufficient-balance API response includes `hint` when opening balance is not seeded
+
+---
+
+## 2026-06-14 — FD-ACC-3: Mandatory FD opening bank cash outflow
+
+### Added
+- `CashMovementType.FD_OPENING` — system DEBIT on new fixed deposit create
+- `create_fd_opening_cash_movement` service; atomic FD + opening movement in `create_fixed_deposit`
+- FD API fields: `has_opening_cash_movement`, `opening_cash_movement_id`
+- Immutable FD fields after opening movement: `principal_amount`, `bank_account_id`, `currency`, `investment_date`, `portfolio_id`
+- Backend tests in `test_fixed_deposits_api.py`; `tests/debt_test_helpers.py` (`fund_bank_account`)
+- Frontend: FD create modal debit explainer, bank balance display, immutable field disable on edit
+
+### Changed
+- New FD creation requires sufficient linked bank account balance; returns structured 400 on shortfall
+- Existing legacy FDs without opening movement remain valid and editable
+
+### Deferred
+- FD interest payments (FD-ACC-4), maturity/closure proceeds (FD-ACC-5), renewal, bank cash in portfolio value, backfill wizard
+
+---
+
+## 2026-06-14 — FD-ACC-2: Manual cash movement UI
+
+### Added
+- `CashMovementManagement.jsx` — per-bank-account movement history and create modal (Settings → Bank accounts)
+- Manual movement types in UI: `MANUAL_DEPOSIT`, `MANUAL_WITHDRAWAL`, `ADJUSTMENT`
+- Frontend API client tests for `fetchCashMovements` / `createCashMovement`
+- Component tests: `CashMovementManagement.test.jsx`; extended `BankAccountManagement.test.jsx`
+
+### Changed
+- Settings → Bank accounts: **View movements** expands ledger panel; seed opening balance refreshes movement list when expanded
+- Docs: `fixed-deposits-accounting.md`, `frontend-design.md`, `page-layouts.md`, `current-state.md`
+
+### Notes
+- Ledger rows are immutable in UI (no edit/delete)
+- Bank cash remains excluded from portfolio value
+- FD interest, FD opening movements, maturity/closure, renewal, transfer/reversal workflows remain deferred
+
+---
+
+## 2026-06-14 — FD-ACC-1: Bank CashMovement ledger foundation
+
+### Added
+- `CashMovement` model + migration `debt/migrations/0002_cash_movement.py`
+- `finance/bank_cash.py`, `debt/bank_ledger_services.py`
+- APIs: `GET/POST /api/v1/cash-movements`, `GET /api/v1/cash-movements/{id}`, `POST /api/v1/bank-accounts/{id}/seed-opening-balance`
+- Bank account API fields: `has_ledger_entries`, `opening_balance_seeded`, `balance_source`
+- Settings UI: ledger-derived balance display, seed opening balance action
+- Tests: `test_cash_movements_api.py`, `test_bank_ledger_services.py`, `test_finance_bank_cash.py`, `BankAccountManagement.test.jsx`
+
+### Changed
+- `PUT /bank-accounts/{id}` rejects manual `current_balance` when ledger exists
+
+### Deferred
+- FD interest/open/mature/renewal, bank cash in portfolio value, cash movement list UI (FD-ACC-2+)
+
+---
+
+## 2026-06-14 — FD-ACC-0.1: FD Accounting approved product decisions (design only)
+
+### Updated
+- `docs/fixed-deposits-accounting.md` — resolved open questions: status lifecycle (`MATURED` → settle → `MATURED_SETTLED`), direct rollover partial payout, negative balance rule, opening balance opt-in, `current_balance` PUT rejection, `COMPOUNDED` warning, `include_in_portfolio_value` multi-portfolio restrictions
+- `docs/fixed-deposits.md`, `docs/database.md`, `docs/api-design.md`, `docs/current-state.md`, `docs/architecture.md`, `docs/decisions.md`
+
+### Runtime
+- **No code, migrations, API, UI, or test changes** — documentation only
+
+---
+
+## 2026-06-14 — FD-ACC-0: Fixed Deposit Accounting Phase 1 (design only)
+
+### Added
+- `docs/fixed-deposits-accounting.md` — bank cash ledger, interest payments, maturity/closure/renewal workflows, API proposal, phased implementation plan (FD-ACC-1..7)
+
+### Updated
+- `docs/fixed-deposits.md` — link to accounting design; clarify MVP vs future accounting
+- `docs/database.md` — planned FD accounting tables (design only)
+- `docs/api-design.md` — planned FD accounting endpoints (not implemented)
+- `docs/current-state.md` — FD-ACC-0 status
+- `docs/architecture.md` — debt / bank ledger module note
+- `docs/decisions.md` — FD-ACC-0 architecture decisions
+
+### Runtime
+- **No code, migrations, API, UI, or test changes** — documentation only
+
+---
+
+## 2026-06-14 — FD: Fixed Deposits / Debt investments MVP
+
+### Added
+- `debt` Django app — `BankAccount`, `FixedDeposit` models and migration `0001_initial`
+- APIs: `GET/POST/PUT/DELETE /api/v1/bank-accounts`, `GET/POST/PUT/DELETE /api/v1/fixed-deposits`
+- Pure helper `finance/fixed_deposits.py` — principal-only value + optional maturity estimate
+- Portfolio summary/holdings integration (principal-only; FD unrealized P/L = 0)
+- Summary `allocation_buckets` (Equity / Debt / Other) for dashboard pie chart
+- Settings bank account management; `/fixed-deposits` page and sidebar nav
+- `docs/fixed-deposits.md`
+
+### Updated
+- `docs/database.md`, `docs/api-design.md`, `docs/current-state.md`, `docs/frontend-design.md`, `docs/page-layouts.md`
+
+### Tests
+- Backend: `test_bank_accounts_api.py`, `test_fixed_deposits_api.py`, `test_finance_fixed_deposits.py`, `test_fixed_deposit_summary_api.py`
+- Frontend: `FixedDeposits.test.jsx`, `Dashboard.test.jsx` (allocation chart), `api.test.js`
+
+### Deferred
+- Interest payments, cash movements, maturity/closure accounting, renewal accounting
+- Bank account cash balance in portfolio value; accrued interest in portfolio value
+
+---
+
 ## 2026-06-08 — CASH-SELL-1B: Actual SELL proceeds + TAX_WITHHELD ledger row
 
 ### Added

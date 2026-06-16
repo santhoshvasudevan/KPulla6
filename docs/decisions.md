@@ -1,5 +1,42 @@
 # Architecture Decisions — KPulla6
 
+## 2026-06-14 — FD-ACC-8C: FD / bank cash return metrics alignment
+
+- XIRR terminal and TWROR/cumulative-return PV include FD + included bank cash (FD-ACC-8B series).
+- `debt/cash_ledger_flows.py` classifies bank movements: internal vs external vs income.
+- Opening balance seed = external contribution; FD system movements = internal.
+- Accrued interest and standalone FD IRR remain deferred.
+
+## 2026-06-14 — FD-ACC-8B: FD / bank cash in value history
+
+- Implemented **Option B**: `metric=value` includes FD principal + included bank cash ledger balance over time.
+- Helpers: `build_fd_value_timeseries`, `build_bank_cash_value_timeseries`, `merge_fd_bank_into_value_timeseries`.
+- FD principal step series (no accrued interest); settlement date exclusive; renewal avoids same-day double count.
+- **FD-ACC-8C** deferred: XIRR/TWROR/external-flow classification unchanged.
+
+## 2026-06-14 — FD-ACC-8A: FD / bank cash performance design review
+
+**Docs only — no runtime changes.**
+
+- Approved **Option B** for **FD-ACC-8B**: include FD principal + included bank cash in `metric=value` history first.
+- **FD-ACC-8C**: XIRR/TWROR cashflow classification (internal vs external) after PV alignment is tested.
+- **FD opening** with bank cash included = internal transfer (zero external flow); bank excluded = valuation step (not contribution).
+- **Settlement** with bank included = internal transfer; bank excluded = valuation step-down (not withdrawal).
+- **Interest**: net credited to included bank cash increases PV (income); tax withheld already excluded from ledger.
+- **No accrued interest** daily valuation.
+- Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md) § FD-ACC-8.
+
+## 2026-06-14 — FD-ACC-7: Optional bank cash in portfolio value
+
+- **Opt-in only:** `include_in_portfolio_value` default **false**; existing accounts excluded until user enables.
+- **Ledger only:** included value uses ledger-derived `current_balance`; manual/reference balances excluded until seeded (`balance_source=ledger`).
+- **Scope `all`:** each eligible included account counted once (no double-count across portfolios).
+- **Single portfolio:** include bank cash only when FD + portfolio-tagged movement associations resolve to that portfolio alone; otherwise exclude (conservative — no portfolio-specific ledger sub-balances yet).
+- **Allocation:** new **Cash / Bank Cash** bucket; portfolio broker cash remains in **Other**.
+- **Holdings:** `asset_type=BANK_CASH`; `invested_amount=current_value`; unrealized P/L = 0; no quantity/price.
+- **FD stability:** when both FD principal and bank cash included, FD open/settle reclassifies cash ↔ debt without unexpected headline drops (principal); interest increases cash.
+- **Performance/XIRR:** unchanged in FD-ACC-1..7 runtime; **FD-ACC-8A** design approved — **8B** value history, **8C** returns.
+
 ## 2026-05-19 — Greenfield stack
 - **Django + DRF** replace FastAPI for HTTP and ORM
 - **PostgreSQL** (Docker Compose) replaces SQLite file persistence
@@ -202,3 +239,59 @@ Consolidated rules for ongoing Cash phases (detail in [cash-ledger.md](./cash-le
 - **`sync_market_data` / `force-sync`** include MF NAV sync by default; `--skip-mutual-funds` opts out.
 - **MF provider failure** does not fail stock/benchmark/FX success on full sync.
 - Live provider implementation completed in MF-10.
+
+## 2026-06-14 — FD-ACC-0: Fixed Deposit Accounting Phase 1 (design only)
+
+- **Bank cash ledger is separate from portfolio cash ledger.** Planned `CashMovement` (user/bank-scoped) must not reuse `CashLedgerEntry` (portfolio-scoped broker cash). Cross-ledger transfers are not auto-created in FD-ACC-1.
+- **FD portfolio value stays principal-only** until a separately approved valuation phase; accrued interest is never added to FD `current_value` in FD-ACC-1..6.
+- **Ledger is source of truth** for bank `current_balance`; cached balance updated on write; manual balance edits deprecated once ledger is live.
+- **Interest accounting:** `FixedDepositInterestPayment` stores gross / tax_withheld / net; `CashMovement` credits **net only** (TDS pattern mirrors portfolio `TAX_WITHHELD` on SELL). **Implemented FD-ACC-4** — immutable interest payment rows; COMPOUNDED FD soft warning.
+- **Legacy FDs:** MVP records remain valid without backfilled movements; lifecycle APIs accept `create_cash_movements=false` for optional reconciliation.
+- **Settlement model:** maturity/closure via **status transition + generated movements** — mark `MATURED` without movements, then settle to `MATURED_SETTLED`/`CLOSED`; **implemented FD-ACC-5**; settlements immutable.
+- **Renewal:** new `FixedDeposit` with `renewal_of`; optional `FixedDepositRenewalGroup`; **direct rollover** skips bank movements for reinvested principal; **movements only for cash payout portion**.
+- **`CashMovement.portfolio`:** nullable FK; required and validated when linked to an FD (must match FD portfolio).
+- **Performance/XIRR:** integrated in **FD-ACC-8B/8C** — value history + return metrics include FD principal and opt-in bank cash.
+- **Runtime:** FD-ACC-0 is docs-only — no migrations, APIs, or UI. See [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
+
+## 2026-06-14 — FD-ACC-0.1: Approved FD accounting product decisions (docs only)
+
+- **Maturity status flow:** `ACTIVE` → `MATURED` (unsettled; principal still contributes) → `MATURED_SETTLED` or `CLOSED` on settlement. **Do not** skip to direct `CLOSED` on maturity date alone.
+- **Direct rollover + partial payout:** new `FixedDeposit` with `renewal_of`; **no bank movement** for rolled principal; movement **only for `cash_payout_amount`**; `FixedDepositRenewalGroup.direct_reinvest_amount` records direct reinvestment.
+- **Negative bank balances:** disallowed in FD-ACC-1; overdraft deferred to future explicit bank setting.
+- **Opening balance:** `opening_balance` → `OPENING_BALANCE` movement **opt-in wizard only**; never auto-backfill existing accounts.
+- **`current_balance` on PUT:** rejected or ignored once ledger exists; corrections via `ADJUSTMENT` / reversal movements.
+- **`COMPOUNDED` interest payout:** soft API/UI warning; do not block.
+- **`include_in_portfolio_value` (FD-ACC-6):** allow only when bank cash is unambiguously one-portfolio or portfolio-specific balances computable; block/warn on multi-portfolio movement history.
+- **Runtime:** docs-only — no code/migrations/API/UI changes.
+
+## 2026-06-14 — FD-ACC-1: Bank CashMovement ledger foundation
+
+- **`CashMovement` model** in `debt` app — positive `amount` + `direction` (`CREDIT`/`DEBIT`); table `cash_movements`.
+- **Ledger authoritative** for `BankAccount.current_balance` (cached on write); `finance/bank_cash.py` pure helpers.
+- **APIs:** `GET/POST /cash-movements`, `GET /cash-movements/{id}`; `POST /bank-accounts/{id}/seed-opening-balance`.
+- **Manual types only** on POST: `MANUAL_DEPOSIT`, `MANUAL_WITHDRAWAL`, `ADJUSTMENT`; opening balance via seed endpoint only.
+- **Immutable ledger:** PUT/DELETE on movements return **405**; no hard deletes in FD-ACC-1.
+- **Overdraft disallowed;** PUT `current_balance` rejected when ledger exists.
+- **Portfolio summary unchanged** — bank cash not included; FD principal unchanged.
+- **Frontend:** Settings bank accounts — read-only ledger balance, seed opening balance button, explanatory note.
+- **Deferred:** FD renewal movements, reversal API (FD-ACC-6+).
+
+## 2026-06-14 — FD-ACC-3: Mandatory FD opening bank cash outflow
+
+- **New FD create** atomically records `FD_OPENING` system DEBIT (`CashMovement`) from linked bank account for `principal_amount` on `investment_date`.
+- **Insufficient bank balance** rejects FD create (**400**) with `required`, `available`, `shortfall`, `currency`; no FD row persisted.
+- **Legacy FDs** without opening movement remain valid; no auto-backfill.
+- **Immutable after opening movement:** `principal_amount`, `bank_account_id`, `currency`, `investment_date`, `portfolio_id` on PUT.
+- **API response:** `has_opening_cash_movement`, `opening_cash_movement_id` on FD list/detail/create.
+- **Portfolio summary unchanged** — FD principal included; bank cash excluded.
+- **Deferred:** bank cash in portfolio value (FD-ACC-7), backfill wizard.
+
+## 2026-06-14 — FD-ACC-6: Fixed Deposit renewal workflow
+
+- **`FixedDepositRenewalGroup`** audit model links old FD, new FD, settlement, and payout breakdown (`direct_reinvest_amount`, `cash_payout_amount`, interest fields).
+- **`POST /fixed-deposits/{id}/renew`** atomically: old FD → `MATURED_SETTLED` with maturity settlement; new FD `ACTIVE` with `renewal_of`.
+- **Direct rollover:** no bank `CashMovement` for reinvested principal; renewed FD uses internal `skip_opening_debit=True` on `create_fixed_deposit` — normal `POST /fixed-deposits` still creates `FD_OPENING` debit.
+- **Cash payout:** `cash_payout_amount` → `FD_MATURITY_PRINCIPAL` CREDIT only (not full old principal). Net final interest → `FD_MATURITY_INTEREST` CREDIT when `gross_interest − tax_withheld > 0`.
+- **Settlement record:** `principal_returned` = old principal (economic); `principal_cash_movement` only when `cash_payout_amount > 0`.
+- **Portfolio:** old settled FD excluded; new renewed FD principal included; bank cash still excluded (FD-ACC-7).
+- **Deferred:** bank cash in portfolio value (FD-ACC-7), performance/XIRR (FD-ACC-8), reversals.

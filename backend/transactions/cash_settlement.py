@@ -176,6 +176,44 @@ def _mf_settlement_specs(
     return []
 
 
+def _primary_settlement_spec(specs: list[SettlementSpec]) -> SettlementSpec:
+    """First BUY/SELL settlement spec; empty spec when none apply."""
+    for spec in specs:
+        if spec.entry_type in (
+            CashEntryType.BUY_SETTLEMENT,
+            CashEntryType.SELL_SETTLEMENT,
+        ):
+            return spec
+    return SettlementSpec(None, None, None, None)
+
+
+def _stock_settlement_spec(txn: Transaction) -> SettlementSpec:
+    """Primary settlement spec for stock/ETF transactions (sync/diagnostics)."""
+    return _primary_settlement_spec(_stock_settlement_specs(txn))
+
+
+def _mf_settlement_spec(
+    txn: Transaction, detail: MutualFundTransactionDetail
+) -> SettlementSpec:
+    """Primary settlement spec for mutual fund transactions (sync/diagnostics)."""
+    return _primary_settlement_spec(_mf_settlement_specs(txn, detail))
+
+
+def _get_linked_settlement(txn: Transaction) -> CashLedgerEntry | None:
+    """Primary linked BUY/SELL settlement row (excludes TAX_WITHHELD)."""
+    return (
+        CashLedgerEntry.objects.filter(
+            linked_transaction_id=txn.pk,
+            entry_type__in=(
+                CashEntryType.BUY_SETTLEMENT,
+                CashEntryType.SELL_SETTLEMENT,
+            ),
+        )
+        .order_by("id")
+        .first()
+    )
+
+
 def _delete_surplus_linked_entries(
     entries: list[CashLedgerEntry],
 ) -> None:

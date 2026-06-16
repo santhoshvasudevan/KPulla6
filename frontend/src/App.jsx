@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard';
 import Transactions from './pages/Transactions';
 import Cash from './pages/Cash';
 import Assets from './pages/Assets';
+import FixedDeposits from './pages/FixedDeposits';
 import Settings from './pages/Settings';
 import AssetDetail from './pages/AssetDetail';
 import Compare from './pages/Compare';
@@ -50,6 +51,7 @@ function AppRoutes() {
             <Route path="transactions" element={<Transactions />} />
             <Route path="cash" element={<Cash />} />
             <Route path="assets" element={<Assets />} />
+            <Route path="fixed-deposits" element={<FixedDeposits />} />
             <Route path="assets/:assetSymbol" element={<AssetDetail />} />
             <Route path="compare" element={<Compare />} />
             <Route path="settings" element={<Settings />} />
