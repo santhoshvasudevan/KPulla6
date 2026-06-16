@@ -43,6 +43,10 @@ from portfolios.summary_service import (
     transactions_by_mf_holding,
     transactions_by_symbol,
 )
+from debt.portfolio_value import (
+    merge_fd_bank_into_value_timeseries,
+    value_timeseries_inception_date,
+)
 from transactions.models import Transaction as TransactionModel
 
 RETURN_FLOWS_FX_WARNING = (
@@ -111,6 +115,41 @@ def _convert_investment_ts_to_display(
     return converted
 
 
+def _apply_fd_bank_to_return_timeseries(
+    timeseries: list[dict],
+    *,
+    user,
+    scope: ResolvedPortfolioScope,
+    disp_ccy: str,
+    today: date,
+    emit_start: date | None,
+    include_fd: bool = True,
+    include_bank: bool = True,
+) -> tuple[list[dict], list[str]]:
+    if user is None or (not include_fd and not include_bank):
+        return timeseries, []
+    fd_bank_start = value_timeseries_inception_date(user, scope, today=today)
+    if not timeseries and not fd_bank_start:
+        return timeseries, []
+    if timeseries:
+        ts_start = date.fromisoformat(timeseries[0]["date"])
+        ts_end = date.fromisoformat(timeseries[-1]["date"])
+        loop_start = min(ts_start, fd_bank_start) if fd_bank_start else ts_start
+    else:
+        ts_end = today
+        loop_start = emit_start if emit_start is not None else (fd_bank_start or today)
+    return merge_fd_bank_into_value_timeseries(
+        timeseries,
+        user=user,
+        scope=scope,
+        display_currency=disp_ccy,
+        start_date=loop_start,
+        end_date=ts_end,
+        include_fd=include_fd,
+        include_bank=include_bank,
+    )
+
+
 def build_return_value_timeseries(
     *,
     scope: ResolvedPortfolioScope,
@@ -120,6 +159,7 @@ def build_return_value_timeseries(
     disp_ccy: str,
     emit_start: date | None,
     today: date,
+    user=None,
 ) -> tuple[list[dict], list[str]]:
     """
     Daily portfolio values for TWROR / cumulative_return.
@@ -167,11 +207,36 @@ def build_return_value_timeseries(
                     end_date=today,
                 )
                 warnings.extend(cash_warnings)
+                merged, fb_warnings = _apply_fd_bank_to_return_timeseries(
+                    merged,
+                    user=user,
+                    scope=child_scope,
+                    disp_ccy=disp_ccy,
+                    today=today,
+                    emit_start=emit_start,
+                    include_fd=True,
+                    include_bank=False,
+                )
+                warnings.extend(fb_warnings)
                 child_series.append(merged)
                 continue
 
             if not child_txns:
+                merged, fb_warnings = _apply_fd_bank_to_return_timeseries(
+                    [],
+                    user=user,
+                    scope=child_scope,
+                    disp_ccy=disp_ccy,
+                    today=today,
+                    emit_start=emit_start,
+                    include_fd=True,
+                    include_bank=False,
+                )
+                if merged:
+                    warnings.extend(fb_warnings)
+                    child_series.append(merged)
                 continue
+
             portfolio_base = portfolio_base_currency(child_txns)
             raw_ts = build_portfolio_value_timeseries(
                 child_txns,
@@ -181,15 +246,36 @@ def build_return_value_timeseries(
             )
             if not raw_ts:
                 continue
-            child_series.append(
-                _convert_investment_ts_to_display(
-                    raw_ts,
-                    portfolio_base=portfolio_base,
-                    disp_ccy=disp_ccy,
-                    emit_start=emit_start,
-                )
+            converted = _convert_investment_ts_to_display(
+                raw_ts,
+                portfolio_base=portfolio_base,
+                disp_ccy=disp_ccy,
+                emit_start=emit_start,
             )
-        return _aggregate_timeseries_lists(child_series), warnings
+            merged, fb_warnings = _apply_fd_bank_to_return_timeseries(
+                converted,
+                user=user,
+                scope=child_scope,
+                disp_ccy=disp_ccy,
+                today=today,
+                emit_start=emit_start,
+                include_fd=True,
+                include_bank=False,
+            )
+            warnings.extend(fb_warnings)
+            child_series.append(merged)
+        aggregated, agg_warnings = _aggregate_timeseries_lists(child_series), warnings
+        merged, bank_warnings = _apply_fd_bank_to_return_timeseries(
+            aggregated,
+            user=user,
+            scope=scope,
+            disp_ccy=disp_ccy,
+            today=today,
+            emit_start=emit_start,
+            include_fd=False,
+            include_bank=True,
+        )
+        return merged, agg_warnings + bank_warnings
 
     portfolio = Portfolio.objects.filter(pk=scope.portfolio_ids[0]).first()
     if portfolio is None:
@@ -212,23 +298,47 @@ def build_return_value_timeseries(
             end_date=today,
         )
         warnings.extend(cash_warnings)
+        merged, fb_warnings = _apply_fd_bank_to_return_timeseries(
+            merged,
+            user=user,
+            scope=scope,
+            disp_ccy=disp_ccy,
+            today=today,
+            emit_start=emit_start,
+        )
+        warnings.extend(fb_warnings)
         return merged, warnings
 
     if not all_txns:
-        return [], warnings
+        merged, fb_warnings = _apply_fd_bank_to_return_timeseries(
+            [],
+            user=user,
+            scope=scope,
+            disp_ccy=disp_ccy,
+            today=today,
+            emit_start=emit_start,
+        )
+        return merged, warnings + fb_warnings
+
     raw_ts = build_portfolio_value_timeseries(
         all_txns, by_symbol, by_mf, emit_start_date=emit_start
     )
     portfolio_base = portfolio_base_currency(all_txns)
-    return (
-        _convert_investment_ts_to_display(
-            raw_ts,
-            portfolio_base=portfolio_base,
-            disp_ccy=disp_ccy,
-            emit_start=emit_start,
-        ),
-        warnings,
+    converted = _convert_investment_ts_to_display(
+        raw_ts,
+        portfolio_base=portfolio_base,
+        disp_ccy=disp_ccy,
+        emit_start=emit_start,
     )
+    merged, fb_warnings = _apply_fd_bank_to_return_timeseries(
+        converted,
+        user=user,
+        scope=scope,
+        disp_ccy=disp_ccy,
+        today=today,
+        emit_start=emit_start,
+    )
+    return merged, warnings + fb_warnings
 
 
 def _to_response_point(pt: PerformancePoint, *, label: str | None = None) -> dict:
@@ -307,6 +417,26 @@ def _cumulative_return_points(
     return out
 
 
+def _merge_fd_bank_for_value_series(
+    timeseries_full: list[dict],
+    *,
+    user,
+    scope: ResolvedPortfolioScope,
+    disp_ccy: str,
+    start_date: date,
+    end_date: date,
+) -> tuple[list[dict], list[str]]:
+    """FD-ACC-8B: add FD principal and included bank cash to value metric only."""
+    return merge_fd_bank_into_value_timeseries(
+        timeseries_full,
+        user=user,
+        scope=scope,
+        display_currency=disp_ccy,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
 def build_portfolio_performance(
     *,
     scope: ResolvedPortfolioScope,
@@ -314,6 +444,7 @@ def build_portfolio_performance(
     range_code: str,
     display_currency: str,
     today: date | None = None,
+    user=None,
 ) -> PerformanceSeriesResult:
     today = today or portfolio_dates.current_date()
     queryset = fifo_eligible_queryset(scope.portfolio_ids)
@@ -326,13 +457,20 @@ def build_portfolio_performance(
         cash_aware_only = (
             scope.kind == "all_active" or _single_portfolio_cash_aware_returns(scope)
         )
-        if metric == "value" and has_cash:
+        if metric == "value":
+            fd_bank_start = value_timeseries_inception_date(user, scope, today=today) if user else None
             cash_inception = cash_ledger_inception_date(scope) or today
+            inception_candidates = [today]
+            if fd_bank_start:
+                inception_candidates.append(fd_bank_start)
+            if has_cash:
+                inception_candidates.append(cash_inception)
+            series_inception = min(inception_candidates)
             range_start = resolve_performance_range_start(
-                range_code, today, cash_inception
+                range_code, today, series_inception
             )
             emit_start = None if range_code == "ALL" else range_start
-            loop_start = emit_start if emit_start is not None else cash_inception
+            loop_start = emit_start if emit_start is not None else series_inception
             timeseries_full, value_warnings = merge_cash_into_value_timeseries(
                 [],
                 scope=scope,
@@ -340,6 +478,15 @@ def build_portfolio_performance(
                 start_date=loop_start,
                 end_date=today,
             )
+            timeseries_full, fb_warnings = _merge_fd_bank_for_value_series(
+                timeseries_full,
+                user=user,
+                scope=scope,
+                disp_ccy=disp_ccy,
+                start_date=loop_start,
+                end_date=today,
+            )
+            value_warnings = list(value_warnings) + list(fb_warnings)
             if not timeseries_full:
                 return PerformanceSeriesResult(points=[])
             range_start_iso = range_start.isoformat()
@@ -357,10 +504,21 @@ def build_portfolio_performance(
                     )
                 )
             return PerformanceSeriesResult(points=out, warnings=value_warnings)
-        if metric in {"twror", "cumulative_return"} and has_cash and cash_aware_only:
+        if metric in {"twror", "cumulative_return"}:
+            fd_bank_start = (
+                value_timeseries_inception_date(user, scope, today=today) if user else None
+            )
             cash_inception = cash_ledger_inception_date(scope) or today
+            inception_candidates = [today]
+            if fd_bank_start:
+                inception_candidates.append(fd_bank_start)
+            if has_cash:
+                inception_candidates.append(cash_inception)
+            series_inception = min(inception_candidates)
+            if not (has_cash and cash_aware_only) and not fd_bank_start:
+                return PerformanceSeriesResult(points=[])
             range_start = resolve_performance_range_start(
-                range_code, today, cash_inception
+                range_code, today, series_inception
             )
             emit_start = None if range_code == "ALL" else range_start
             timeseries_full, return_warnings = build_return_value_timeseries(
@@ -371,17 +529,21 @@ def build_portfolio_performance(
                 disp_ccy=disp_ccy,
                 emit_start=emit_start,
                 today=today,
+                user=user,
             )
             if not timeseries_full:
                 return PerformanceSeriesResult(points=[], warnings=return_warnings)
             range_start_iso = range_start.isoformat()
             if use_all_scope_display:
                 flows_by_date, flows_unknown_from = build_all_scope_external_flows(
-                    scope, disp_ccy
+                    scope, disp_ccy, user=user
                 )
             else:
                 flows_by_date, flows_unknown_from = portfolio_external_flows_for_scope(
-                    scope, all_txns=all_txns, calculation_currency=disp_ccy
+                    scope,
+                    all_txns=all_txns,
+                    calculation_currency=disp_ccy,
+                    user=user,
                 )
             metric_warnings = list(return_warnings)
             if flows_unknown_from is not None:
@@ -422,7 +584,11 @@ def build_portfolio_performance(
     base_currency = portfolio_base_currency(all_txns)
 
     inception = min(t.date for t in all_txns)
-    range_start = resolve_performance_range_start(range_code, today, inception)
+    fd_bank_start = (
+        value_timeseries_inception_date(user, scope, today=today) if user else None
+    )
+    series_inception = min(inception, fd_bank_start) if fd_bank_start else inception
+    range_start = resolve_performance_range_start(range_code, today, series_inception)
     range_start_iso = range_start.isoformat()
     emit_start = None if range_code == "ALL" else range_start
     value_warnings: list[str] = []
@@ -440,16 +606,22 @@ def build_portfolio_performance(
         if inv_ts:
             ts_start = date.fromisoformat(inv_ts[0]["date"])
             ts_end = date.fromisoformat(inv_ts[-1]["date"])
+            loop_start = min(ts_start, fd_bank_start) if fd_bank_start else ts_start
             timeseries_full, value_warnings = merge_cash_into_value_timeseries(
                 inv_ts,
                 scope=scope,
                 display_currency=disp_ccy,
-                start_date=ts_start,
+                start_date=loop_start,
                 end_date=ts_end,
             )
         else:
             cash_start = cash_ledger_inception_date(scope) or today
-            loop_start = emit_start if emit_start is not None else cash_start
+            loop_start_candidates = [cash_start]
+            if fd_bank_start:
+                loop_start_candidates.append(fd_bank_start)
+            loop_start = min(loop_start_candidates)
+            if emit_start is not None:
+                loop_start = min(loop_start, emit_start)
             timeseries_full, value_warnings = merge_cash_into_value_timeseries(
                 [],
                 scope=scope,
@@ -457,6 +629,23 @@ def build_portfolio_performance(
                 start_date=loop_start,
                 end_date=today,
             )
+        ts_end = (
+            date.fromisoformat(timeseries_full[-1]["date"])
+            if timeseries_full
+            else today
+        )
+        ts_start = (
+            date.fromisoformat(timeseries_full[0]["date"]) if timeseries_full else loop_start
+        )
+        timeseries_full, fb_warnings = _merge_fd_bank_for_value_series(
+            timeseries_full,
+            user=user,
+            scope=scope,
+            disp_ccy=disp_ccy,
+            start_date=ts_start,
+            end_date=ts_end,
+        )
+        value_warnings = list(value_warnings) + list(fb_warnings)
         if not timeseries_full:
             return PerformanceSeriesResult(points=[])
 
@@ -500,6 +689,7 @@ def build_portfolio_performance(
         disp_ccy=disp_ccy,
         emit_start=emit_start,
         today=today,
+        user=user,
     )
     if not timeseries_full:
         return PerformanceSeriesResult(points=[], warnings=return_warnings)
@@ -508,16 +698,20 @@ def build_portfolio_performance(
         scope.kind == "all_active"
         or _single_portfolio_cash_aware_returns(scope)
     )
-    if use_all_scope_display or cash_aware_returns:
+    has_fd_bank_wealth = (
+        user is not None
+        and value_timeseries_inception_date(user, scope, today=today) is not None
+    )
+    if use_all_scope_display or cash_aware_returns or has_fd_bank_wealth:
         flows_by_date, flows_unknown_from = build_all_scope_external_flows(
-            scope, disp_ccy
+            scope, disp_ccy, user=user
         ) if use_all_scope_display else portfolio_external_flows_for_scope(
-            scope, all_txns=all_txns, calculation_currency=disp_ccy
+            scope, all_txns=all_txns, calculation_currency=disp_ccy, user=user
         )
         metric_currency = disp_ccy
     else:
         flows_by_date, flows_unknown_from = portfolio_external_flows_for_scope(
-            scope, all_txns=all_txns, calculation_currency=base_currency
+            scope, all_txns=all_txns, calculation_currency=base_currency, user=user
         )
         metric_currency = base_currency
 
@@ -566,6 +760,7 @@ def build_portfolio_performance_with_benchmarks(
     range_code: str,
     display_currency: str,
     today: date | None = None,
+    user=None,
 ) -> PerformanceComparisonResult:
     cfg = _get_benchmark_config(benchmark_symbol)
     if not cfg:
@@ -579,6 +774,7 @@ def build_portfolio_performance_with_benchmarks(
         range_code=range_code,
         display_currency=display_currency,
         today=today,
+        user=user,
     )
     pts = result.points
 

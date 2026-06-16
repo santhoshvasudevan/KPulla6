@@ -32,6 +32,9 @@ make bootstrap  # db + migrate + seed
 | `mutual_fund_transaction_details` | `MutualFundTransactionDetail` | `transactions` (MF-1) |
 | `cash_ledger_entries` | `CashLedgerEntry` | `cash` (Cash-1) |
 | `cash_transfer_groups` | `CashTransferGroup` | `cash` (Cash-1) |
+| `bank_accounts` | `BankAccount` | `debt` (FD-1) |
+| `fixed_deposits` | `FixedDeposit` | `debt` (FD-2) |
+| `cash_movements` | `CashMovement` | `debt` (FD-ACC-1) |
 
 ### Portfolio
 - Real portfolios only; **`All Portfolios` is virtual** and must not be stored (`Portfolio.clean()` rejects that name).
@@ -274,3 +277,75 @@ Ledger stores **native currency balances**; display conversion uses cached `fx_r
 **`linked_transaction`:** `PROTECT` on `transactions.Transaction`.
 
 **Signed `amount`:** positive increases cash; `clean()` validates sign by `entry_type`.
+
+---
+
+## Fixed Deposits (FD-1 / FD-2 — implemented)
+
+Full MVP spec: [fixed-deposits.md](./fixed-deposits.md).
+
+| Table | Model | App |
+|-------|--------|-----|
+| `bank_accounts` | `BankAccount` | `debt` |
+| `fixed_deposits` | `FixedDeposit` | `debt` |
+
+Migration: `debt/migrations/0001_initial.py`
+
+**MVP valuation:** FD principal only — no interest accrual in portfolio value. `BankAccount.current_balance` is **ledger-derived** when `cash_movements` exist (FD-ACC-1+).
+
+---
+
+## Fixed Deposits — Accounting (FD-ACC-1..8C implemented)
+
+Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
+
+### `cash_movements` — `CashMovement` (FD-ACC-1)
+
+| Column | Notes |
+|--------|--------|
+| `user_id` | FK → `auth.User` |
+| `bank_account_id` | FK → `bank_accounts` (`PROTECT`) |
+| `portfolio_id` | Nullable FK → `portfolios` |
+| `movement_type` | `OPENING_BALANCE`, `MANUAL_DEPOSIT`, `MANUAL_WITHDRAWAL`, `FD_OPENING`, `FD_INTEREST`, `FD_MATURITY_*`, `FD_CLOSURE_*`, `TRANSFER_IN`, `TRANSFER_OUT`, `ADJUSTMENT` |
+| `amount` | Positive decimal |
+| `direction` | `CREDIT` / `DEBIT` |
+| `currency` | Must match bank account |
+| `movement_date` | Effective date |
+| `linked_fixed_deposit_id` | Nullable; reserved |
+| `source` | `MANUAL` / `SYSTEM` |
+| `is_reversal` / `reverses_id` | Optional reversal chain |
+
+Migration: `debt/migrations/0002_cash_movement.py`
+
+**Balance:** `BankAccount.current_balance` cached from ledger sum (`debt/bank_ledger_services.py`, `finance/bank_cash.py`). Manual `current_balance` PUT rejected when ledger rows exist.
+
+---
+
+## Implemented — FD Accounting Phase 1 (FD-ACC-1..8C)
+
+Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
+
+Bank-account cash ledger is **separate** from portfolio `cash_ledger_entries` (user-scoped vs portfolio-scoped).
+
+### Tables (FD-ACC-1..6)
+
+| Table | Model | Purpose |
+|-------|--------|---------|
+| `cash_movements` | `CashMovement` | **Done** (FD-ACC-1) |
+| `fixed_deposit_interest_payments` | `FixedDepositInterestPayment` | **Done** (FD-ACC-4) — gross/tax/net; OneToOne `cash_movement` |
+| `fixed_deposit_settlements` | `FixedDepositSettlement` | **Done** (FD-ACC-5) — maturity/closure proceeds |
+| `fixed_deposit_renewal_groups` | `FixedDepositRenewalGroup` | **Done** (FD-ACC-6) — renewal audit trail |
+
+### `FixedDeposit.status` — `MATURED_SETTLED` (FD-ACC-5)
+
+| Status | Notes |
+|--------|--------|
+| `MATURED_SETTLED` | Maturity settlement recorded; principal no longer contributes |
+
+### `BankAccount` behavior (FD-ACC-1..7)
+
+| Column | After FD-ACC-1 |
+|--------|----------------|
+| `current_balance` | Cached from `CashMovement` sum; **`PUT` rejects or ignores manual edits** once ledger exists |
+| `opening_balance` | Seed/display only; conversion to `OPENING_BALANCE` movement via **opt-in wizard only** — never auto-backfill |
+| `include_in_portfolio_value` | Default **false**; when **true**, ledger `current_balance` included in summary/holdings/allocation per scope rules (FD-ACC-7) |

@@ -134,6 +134,131 @@ describe('API Service', () => {
     expect(data).toEqual(mockResponse);
   });
 
+  it('fetchBankAccounts calls the correct endpoint', async () => {
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => [] });
+    await api.fetchBankAccounts();
+    expect(global.fetch).toHaveBeenCalledWith('/api/v1/bank-accounts', expect.objectContaining(defaultFetchOptions));
+  });
+
+  it('fetchCashMovements calls the correct endpoint with bank_account_id filter', async () => {
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ items: [], total: 0 }) });
+    await api.fetchCashMovements({ bank_account_id: 3, page: 1, page_size: 20 });
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/cash-movements?bank_account_id=3&page=1&page_size=20',
+      expect.objectContaining(defaultFetchOptions)
+    );
+  });
+
+  it('createCashMovement posts to cash-movements', async () => {
+    const payload = {
+      bank_account_id: 1,
+      movement_type: 'MANUAL_DEPOSIT',
+      amount: '100.00',
+      movement_date: '2026-06-01',
+    };
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 1, ...payload }) });
+    await api.createCashMovement(payload);
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/cash-movements',
+      expect.objectContaining({
+        ...defaultFetchOptions,
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+    );
+  });
+
+  it('fetchFixedDeposits calls the correct endpoint with portfolio scope', async () => {
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => [] });
+    await api.fetchFixedDeposits({ portfolio_id: 2, display_currency: 'INR' });
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/fixed-deposits?portfolio_id=2',
+      expect.objectContaining(defaultFetchOptions)
+    );
+  });
+
+  it('fetchFixedDepositInterestPayments calls nested FD endpoint', async () => {
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => [] });
+    await api.fetchFixedDepositInterestPayments(7);
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/fixed-deposits/7/interest-payments',
+      expect.objectContaining(defaultFetchOptions)
+    );
+  });
+
+  it('createFixedDepositInterestPayment posts to nested FD endpoint', async () => {
+    const payload = {
+      payment_date: '2024-04-01',
+      gross_interest: '1000',
+      tax_withheld: '100',
+    };
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 1, ...payload }) });
+    await api.createFixedDepositInterestPayment(7, payload);
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/fixed-deposits/7/interest-payments',
+      expect.objectContaining({
+        ...defaultFetchOptions,
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+    );
+  });
+
+  it('markFixedDepositMatured posts to mark-matured endpoint', async () => {
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 7, status: 'MATURED' }) });
+    await api.markFixedDepositMatured(7);
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/fixed-deposits/7/mark-matured',
+      expect.objectContaining({ ...defaultFetchOptions, method: 'POST' })
+    );
+  });
+
+  it('settleFixedDeposit posts to settle endpoint', async () => {
+    const payload = {
+      settlement_type: 'MATURITY',
+      settlement_date: '2026-01-01',
+      principal_returned: '100000',
+      gross_interest: '5000',
+      tax_withheld: '500',
+    };
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 1, ...payload }) });
+    await api.settleFixedDeposit(7, payload);
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/fixed-deposits/7/settle',
+      expect.objectContaining({
+        ...defaultFetchOptions,
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+    );
+  });
+
+  it('renewFixedDeposit posts to renew endpoint', async () => {
+    const payload = {
+      renewal_date: '2026-01-01',
+      new_deposit_account_number: 'FD-002',
+      new_principal_amount: '100000',
+      new_interest_rate_percent: '7.5',
+      new_interest_payout_frequency: 'QUARTERLY',
+      new_investment_date: '2026-01-01',
+      new_maturity_date: '2028-01-01',
+      cash_payout_amount: '0',
+    };
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ renewal_id: 1, old_fixed_deposit: { id: 7, status: 'MATURED_SETTLED' } }),
+    });
+    await api.renewFixedDeposit(7, payload);
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/fixed-deposits/7/renew',
+      expect.objectContaining({
+        ...defaultFetchOptions,
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+    );
+  });
+
   it('withScopeParams uses portfolio_id for real portfolio', () => {
     const params = api.withScopeParams({ page: 1 }, { portfolio_id: 2, display_currency: 'USD' });
     expect(params.get('portfolio_id')).toBe('2');

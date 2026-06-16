@@ -180,3 +180,151 @@
     grid-template-columns: 1fr;
   }
 }
+
+.bank-account-table-wrap {
+  overflow-x: auto;
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.bank-account-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  text-align: left;
+}
+
+.bank-account-table th,
+.bank-account-table td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.bank-account-table th {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.bank-account-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.bank-account-form {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.bank-account-form__title {
+  margin: 0 0 var(--space-3);
+  font-size: 1rem;
+}
+
+.bank-account-form__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.cash-movement-management {
+  margin: var(--space-5) 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-raised);
+}
+
+.cash-movement-management__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.cash-movement-management__title {
+  margin: 0 0 var(--space-2);
+  font-size: 1rem;
+}
+
+.cash-movement-management__meta {
+  margin: 0 0 var(--space-2);
+}
+
+.cash-movement-management__balance {
+  margin: 0 0 var(--space-2);
+  font-size: 0.9375rem;
+}
+
+.cash-movement-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.cash-movement-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  text-align: left;
+}
+
+.cash-movement-table th,
+.cash-movement-table td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.cash-movement-table th {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.cash-movement-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.cash-movement-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: var(--space-4);
+}
+
+.cash-movement-modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  width: 100%;
+  max-width: 440px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.cash-movement-modal h2 {
+  margin: 0 0 var(--space-4);
+  font-size: 1.125rem;
+}
+
+.cash-movement-modal__actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}
+
+@media (max-width: 640px) {
+  .cash-movement-management__header {
+    flex-direction: column;
+  }
+}

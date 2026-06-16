@@ -39,6 +39,9 @@ import {
   BarChart,
   Bar,
   Legend,
+  PieChart,
+  Pie,
+  Cell,
 } from 'recharts';
 import {
   getSeriesColor,
@@ -258,6 +261,17 @@ export default function Dashboard() {
     ];
   }, [summary]);
 
+  const allocationChartData = useMemo(() => {
+    const buckets = summary?.allocation_buckets?.buckets;
+    if (!Array.isArray(buckets)) return [];
+    return buckets.filter((b) => Number(b.value) > 0);
+  }, [summary]);
+
+  const allocationTotal = useMemo(
+    () => allocationChartData.reduce((sum, b) => sum + (Number(b.value) || 0), 0),
+    [allocationChartData]
+  );
+
   const currentBarFill = summary
     ? getComparisonBarFill(summary.current_value, summary.total_invested)
     : getComparisonBarFill(0, 0);
@@ -408,11 +422,54 @@ export default function Dashboard() {
         />
       ) : null}
 
+      {allocationChartData.length > 0 && allocationTotal > 0 ? (
+        <ChartCard
+          title="Asset allocation"
+          subtitle="Equity / Debt / Other from backend summary"
+          className="dashboard-allocation-card"
+          compact
+        >
+          <div className="dashboard-allocation-panel">
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie
+                  data={allocationChartData}
+                  dataKey="value"
+                  nameKey="label"
+                  outerRadius={80}
+                  label={({ label, percent }) =>
+                    `${label} ${(percent * 100).toFixed(0)}%`
+                  }
+                >
+                  {allocationChartData.map((entry, index) => (
+                    <Cell key={entry.label} fill={getSeriesColor(index)} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(val) =>
+                    formatCurrency(Number(val), summary.allocation_buckets?.currency || displayCurrency)
+                  }
+                  contentStyle={getChartTooltipStyle()}
+                />
+                <Legend wrapperStyle={getChartLegendStyle()} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </ChartCard>
+      ) : null}
+
       <div className="dashboard-charts">
         <ChartCard
           title={chartTitle}
           footer={chartFooter}
         >
+          {metric === 'value' && summary.has_fixed_deposits ? (
+            <WarningBanner
+              severity="info"
+              message="Value chart and return metrics include Fixed Deposits and included Bank Cash where applicable."
+              className="dashboard-banner"
+            />
+          ) : null}
           <div className="dashboard-chart-controls">
             <SegmentedControl
               ariaLabel="performance-metric"

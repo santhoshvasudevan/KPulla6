@@ -163,6 +163,14 @@ function Layout() {
             Assets
           </NavLink>
           <NavLink
+            to="/fixed-deposits"
+            className={({ isActive }) =>
+              `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
+            }
+          >
+            Fixed Deposits
+          </NavLink>
+          <NavLink
             to="/compare"
             className={({ isActive }) =>
               `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`

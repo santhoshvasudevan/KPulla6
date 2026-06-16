@@ -6,6 +6,10 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
+from debt.cash_ledger_flows import (
+    build_bank_cash_twror_external_flows,
+    build_bank_cash_xirr_external_flows,
+)
 from portfolios.cash_ledger_flows import build_cash_aware_twror_external_flows
 from portfolios.models import Portfolio
 from portfolios.scope import ResolvedPortfolioScope
@@ -139,18 +143,33 @@ def portfolio_external_flows(
     base_currency: str,
     *,
     portfolio: Portfolio | None = None,
+    user=None,
+    scope: ResolvedPortfolioScope | None = None,
 ) -> tuple[dict[date, Decimal], Optional[date]]:
     """
     Net external flows by date for TWROR / cumulative return.
 
     Legacy portfolios: BUY/SELL (+ MF paid_value) in ``base_currency``.
     Cash-aware portfolios: cash ledger deposits/withdrawals (+ unlinked ADJUSTMENT).
+    Included bank cash: manual deposits/withdrawals/opening balance (FD-ACC-8C).
     """
+    parts: list[tuple[dict[date, Decimal], Optional[date]]] = []
     if portfolio is not None and portfolio.cash_aware_enabled:
-        return build_cash_aware_twror_external_flows(
-            portfolio.id, calculation_currency=base_currency
+        parts.append(
+            build_cash_aware_twror_external_flows(
+                portfolio.id, calculation_currency=base_currency
+            )
         )
-    return build_legacy_transaction_external_flows(all_txns, base_currency)
+    else:
+        parts.append(build_legacy_transaction_external_flows(all_txns, base_currency))
+
+    if user is not None and scope is not None:
+        bank_flows, bank_unknown = build_bank_cash_twror_external_flows(
+            user, scope, calculation_currency=base_currency
+        )
+        if bank_flows or bank_unknown is not None:
+            parts.append((bank_flows, bank_unknown))
+    return merge_external_flow_maps(parts)
 
 
 def portfolio_external_flows_for_scope(
@@ -158,21 +177,33 @@ def portfolio_external_flows_for_scope(
     *,
     all_txns: list[TransactionModel],
     calculation_currency: str,
+    user=None,
 ) -> tuple[dict[date, Decimal], Optional[date]]:
     """External flows for a single-portfolio scope."""
     calc_ccy = norm_display_currency(calculation_currency)
     portfolio = Portfolio.objects.filter(pk=scope.portfolio_ids[0]).first()
     if portfolio is None:
         return {}, None
-    if not all_txns and not portfolio.cash_aware_enabled:
+    if not all_txns and not portfolio.cash_aware_enabled and user is None:
         return {}, None
-    flow_ccy = calc_ccy if portfolio.cash_aware_enabled else portfolio_base_currency(all_txns)
-    return portfolio_external_flows(all_txns, flow_ccy, portfolio=portfolio)
+    if portfolio.cash_aware_enabled or not all_txns:
+        flow_ccy = calc_ccy
+    else:
+        flow_ccy = portfolio_base_currency(all_txns)
+    return portfolio_external_flows(
+        all_txns,
+        flow_ccy,
+        portfolio=portfolio,
+        user=user,
+        scope=scope,
+    )
 
 
 def build_all_scope_external_flows(
     scope: ResolvedPortfolioScope,
     display_currency: str,
+    *,
+    user=None,
 ) -> tuple[dict[date, Decimal], Optional[date]]:
     """
     Per-portfolio external flows (cash-aware or legacy), converted to display currency.
@@ -228,6 +259,12 @@ def build_all_scope_external_flows(
                     continue
                 converted[flow_date] = converted.get(flow_date, Decimal("0")) + cv
         parts.append((converted, unknown_from))
+    if user is not None:
+        bank_flows, bank_unknown = build_bank_cash_twror_external_flows(
+            user, scope, calculation_currency=disp_ccy
+        )
+        if bank_flows or bank_unknown is not None:
+            parts.append((bank_flows, bank_unknown))
     return merge_external_flow_maps(parts)
 
 

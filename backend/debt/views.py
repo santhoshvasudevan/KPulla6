@@ -1,0 +1,501 @@
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from debt.serializers import (
+    BankAccountCreateSerializer,
+    BankAccountSerializer,
+    BankAccountUpdateSerializer,
+    CashMovementCreateSerializer,
+    CashMovementSerializer,
+    FixedDepositInterestPaymentSerializer,
+    FixedDepositInterestPaymentWriteSerializer,
+    FixedDepositSerializer,
+    FixedDepositSettlementSerializer,
+    FixedDepositRenewalWriteSerializer,
+    FixedDepositSettlementWriteSerializer,
+    FixedDepositUpdateSerializer,
+    FixedDepositWriteSerializer,
+)
+from debt.bank_ledger_services import (
+    CashMovementNotFoundError,
+    CashMovementValidationError,
+    InsufficientBankBalanceError,
+    OpeningBalanceAlreadySeededError,
+    create_manual_cash_movement,
+    get_cash_movement,
+    list_cash_movements,
+    seed_opening_balance,
+)
+from debt.services import (
+    BankAccountNotFoundError,
+    BankAccountValidationError,
+    FixedDepositNotFoundError,
+    FixedDepositValidationError,
+    create_bank_account,
+    create_fixed_deposit,
+    deactivate_bank_account,
+    deactivate_fixed_deposit,
+    list_active_bank_accounts,
+    list_fixed_deposits,
+    get_bank_account,
+    get_fixed_deposit,
+    update_bank_account,
+    update_fixed_deposit,
+)
+from debt.interest_payment_services import (
+    InterestPaymentNotFoundError,
+    InterestPaymentValidationError,
+    create_fixed_deposit_interest_payment,
+    get_fixed_deposit_interest_payment,
+    list_fixed_deposit_interest_payments,
+)
+from debt.renewal_services import RenewalValidationError, renew_fixed_deposit
+from debt.settlement_services import (
+    SettlementNotFoundError,
+    SettlementValidationError,
+    create_fixed_deposit_settlement,
+    get_fixed_deposit_settlement,
+    list_fixed_deposit_settlements,
+    mark_fixed_deposit_matured,
+)
+from portfolios.scope import PortfolioScopeError, resolve_portfolio_scope
+from portfolios.services import PortfolioNotFoundError
+
+
+def _parse_portfolio_id(request) -> int | None:
+    raw = request.query_params.get("portfolio_id")
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        raise ValueError("portfolio_id must be an integer")
+
+
+class BankAccountListCreateView(APIView):
+    def get(self, request):
+        accounts = list_active_bank_accounts(request.user)
+        return Response(BankAccountSerializer(accounts, many=True).data)
+
+    def post(self, request):
+        serializer = BankAccountCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            account = create_bank_account(request.user, **serializer.validated_data)
+        except BankAccountValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            BankAccountSerializer(account).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class BankAccountDetailView(APIView):
+    def get(self, request, account_id: int):
+        try:
+            account = get_bank_account(request.user, account_id)
+        except BankAccountNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        return Response(BankAccountSerializer(account).data)
+
+    def put(self, request, account_id: int):
+        serializer = BankAccountUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            account = update_bank_account(
+                request.user, account_id, **serializer.validated_data
+            )
+        except BankAccountNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except BankAccountValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(BankAccountSerializer(account).data)
+
+    def delete(self, request, account_id: int):
+        try:
+            account = deactivate_bank_account(request.user, account_id)
+        except BankAccountNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        return Response(BankAccountSerializer(account).data)
+
+
+class FixedDepositListCreateView(APIView):
+    def get(self, request):
+        try:
+            portfolio_id = _parse_portfolio_id(request)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            scope = resolve_portfolio_scope(
+                request.user,
+                portfolio_scope=request.query_params.get("portfolio_scope"),
+                portfolio_id=portfolio_id,
+            )
+        except PortfolioScopeError as exc:
+            return Response(
+                {"detail": str(exc)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY
+            )
+        except PortfolioNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+
+        fds = list_fixed_deposits(
+            request.user, portfolio_ids=scope.portfolio_ids
+        )
+        return Response(FixedDepositSerializer(fds, many=True).data)
+
+    def post(self, request):
+        serializer = FixedDepositWriteSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            fd = create_fixed_deposit(request.user, **serializer.validated_data)
+        except InsufficientBankBalanceError as exc:
+            return _insufficient_bank_balance_response(exc)
+        except FixedDepositValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except (BankAccountNotFoundError, FixedDepositNotFoundError) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        return Response(
+            FixedDepositSerializer(fd).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class FixedDepositDetailView(APIView):
+    def get(self, request, fd_id: int):
+        try:
+            fd = get_fixed_deposit(request.user, fd_id)
+        except FixedDepositNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        return Response(FixedDepositSerializer(fd).data)
+
+    def put(self, request, fd_id: int):
+        serializer = FixedDepositUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            fd = update_fixed_deposit(
+                request.user, fd_id, **serializer.validated_data
+            )
+        except FixedDepositNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except FixedDepositValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except (BankAccountNotFoundError,) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        return Response(FixedDepositSerializer(fd).data)
+
+    def delete(self, request, fd_id: int):
+        try:
+            fd = deactivate_fixed_deposit(request.user, fd_id)
+        except FixedDepositNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        return Response(FixedDepositSerializer(fd).data)
+
+
+class FixedDepositInterestPaymentListCreateView(APIView):
+    def get(self, request, fd_id: int):
+        try:
+            payments = list_fixed_deposit_interest_payments(request.user, fd_id)
+        except FixedDepositNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        return Response(FixedDepositInterestPaymentSerializer(payments, many=True).data)
+
+    def post(self, request, fd_id: int):
+        serializer = FixedDepositInterestPaymentWriteSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            result = create_fixed_deposit_interest_payment(
+                request.user,
+                fd_id,
+                **serializer.validated_data,
+            )
+        except FixedDepositNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except InterestPaymentValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        body = FixedDepositInterestPaymentSerializer(result.payment).data
+        if result.warning:
+            body["warning"] = result.warning
+        return Response(body, status=status.HTTP_201_CREATED)
+
+
+class FixedDepositInterestPaymentDetailView(APIView):
+    def get(self, request, payment_id: int):
+        try:
+            payment = get_fixed_deposit_interest_payment(request.user, payment_id)
+        except InterestPaymentNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        return Response(FixedDepositInterestPaymentSerializer(payment).data)
+
+    def put(self, request, payment_id: int):
+        return Response(
+            {
+                "detail": (
+                    "Fixed deposit interest payments are immutable. "
+                    "Use ADJUSTMENT entries to correct."
+                )
+            },
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def patch(self, request, payment_id: int):
+        return self.put(request, payment_id)
+
+    def delete(self, request, payment_id: int):
+        return Response(
+            {
+                "detail": (
+                    "Fixed deposit interest payments cannot be deleted. "
+                    "Use ADJUSTMENT entries to correct."
+                )
+            },
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+
+class FixedDepositMarkMaturedView(APIView):
+    def post(self, request, fd_id: int):
+        try:
+            fd = mark_fixed_deposit_matured(request.user, fd_id)
+        except FixedDepositNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except SettlementValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(FixedDepositSerializer(fd).data)
+
+
+class FixedDepositSettlementListView(APIView):
+    def get(self, request, fd_id: int):
+        try:
+            settlements = list_fixed_deposit_settlements(request.user, fd_id)
+        except FixedDepositNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        return Response(FixedDepositSettlementSerializer(settlements, many=True).data)
+
+
+class FixedDepositSettleView(APIView):
+    def post(self, request, fd_id: int):
+        serializer = FixedDepositSettlementWriteSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            result = create_fixed_deposit_settlement(
+                request.user,
+                fd_id,
+                **serializer.validated_data,
+            )
+        except FixedDepositNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except SettlementValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        body = FixedDepositSettlementSerializer(result.settlement).data
+        body["fixed_deposit_status"] = result.fixed_deposit.status
+        return Response(body, status=status.HTTP_201_CREATED)
+
+
+class FixedDepositRenewView(APIView):
+    def post(self, request, fd_id: int):
+        serializer = FixedDepositRenewalWriteSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            result = renew_fixed_deposit(request.user, fd_id, **serializer.validated_data)
+        except FixedDepositNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except RenewalValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                "renewal_id": result.renewal_group.id,
+                "old_fixed_deposit": {
+                    "id": result.old_fixed_deposit.id,
+                    "status": result.old_fixed_deposit.status,
+                },
+                "new_fixed_deposit": {
+                    "id": result.new_fixed_deposit.id,
+                    "status": result.new_fixed_deposit.status,
+                },
+                "settlement_id": result.settlement.id,
+                "direct_reinvest_amount": float(result.renewal_group.direct_reinvest_amount),
+                "cash_payout_amount": float(result.renewal_group.cash_payout_amount),
+                "gross_interest": float(result.renewal_group.gross_interest),
+                "tax_withheld": float(result.renewal_group.tax_withheld),
+                "net_interest": float(result.renewal_group.net_interest),
+                "cash_movement_ids": result.cash_movement_ids,
+                "currency": result.renewal_group.currency,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class FixedDepositSettlementDetailView(APIView):
+    def get(self, request, settlement_id: int):
+        try:
+            settlement = get_fixed_deposit_settlement(request.user, settlement_id)
+        except SettlementNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        return Response(FixedDepositSettlementSerializer(settlement).data)
+
+    def put(self, request, settlement_id: int):
+        return Response(
+            {
+                "detail": (
+                    "Fixed deposit settlements are immutable. "
+                    "Use ADJUSTMENT entries to correct."
+                )
+            },
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def patch(self, request, settlement_id: int):
+        return self.put(request, settlement_id)
+
+    def delete(self, request, settlement_id: int):
+        return Response(
+            {
+                "detail": (
+                    "Fixed deposit settlements cannot be deleted. "
+                    "Use ADJUSTMENT entries to correct."
+                )
+            },
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+
+def _insufficient_bank_balance_response(exc: InsufficientBankBalanceError) -> Response:
+    body = {
+        "detail": str(exc),
+        "required": float(exc.required),
+        "available": float(exc.available),
+        "shortfall": float(exc.shortfall),
+        "currency": exc.currency,
+    }
+    if exc.hint:
+        body["hint"] = exc.hint
+    return Response(body, status=status.HTTP_400_BAD_REQUEST)
+
+
+def _cash_movement_error_response(exc: Exception) -> Response | None:
+    if isinstance(exc, (CashMovementNotFoundError, BankAccountNotFoundError)):
+        return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+    if isinstance(exc, OpeningBalanceAlreadySeededError):
+        return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+    if isinstance(exc, InsufficientBankBalanceError):
+        return _insufficient_bank_balance_response(exc)
+    if isinstance(exc, (CashMovementValidationError, BankAccountValidationError)):
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    return None
+
+
+class BankAccountSeedOpeningBalanceView(APIView):
+    def post(self, request, account_id: int):
+        try:
+            movement = seed_opening_balance(request.user, account_id)
+        except Exception as exc:
+            response = _cash_movement_error_response(exc)
+            if response is not None:
+                return response
+            raise
+        account = get_bank_account(request.user, account_id)
+        return Response(
+            {
+                "bank_account": BankAccountSerializer(account).data,
+                "cash_movement": CashMovementSerializer(movement).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class CashMovementListCreateView(APIView):
+    def get(self, request):
+        bank_account_id = request.query_params.get("bank_account_id")
+        parsed_bank_id = None
+        if bank_account_id is not None:
+            try:
+                parsed_bank_id = int(bank_account_id)
+            except (TypeError, ValueError):
+                return Response(
+                    {"detail": "bank_account_id must be an integer"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        try:
+            page = int(request.query_params.get("page", 1))
+            page_size = int(request.query_params.get("page_size", 20))
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "page and page_size must be integers"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        result = list_cash_movements(
+            request.user,
+            bank_account_id=parsed_bank_id,
+            page=page,
+            page_size=page_size,
+        )
+        return Response(
+            {
+                "items": CashMovementSerializer(result.items, many=True).data,
+                "total": result.total,
+                "page": result.page,
+                "page_size": result.page_size,
+                "pages": result.pages,
+            }
+        )
+
+    def post(self, request):
+        serializer = CashMovementCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        data = serializer.validated_data
+        try:
+            movement = create_manual_cash_movement(
+                request.user,
+                bank_account_id=data["bank_account_id"],
+                movement_type=data["movement_type"],
+                amount=data["amount"],
+                movement_date=data["movement_date"],
+                direction=data.get("direction"),
+                portfolio_id=data.get("portfolio_id"),
+                description=data.get("description", ""),
+            )
+        except Exception as exc:
+            response = _cash_movement_error_response(exc)
+            if response is not None:
+                return response
+            raise
+        return Response(
+            CashMovementSerializer(movement).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class CashMovementDetailView(APIView):
+    def get(self, request, movement_id: int):
+        try:
+            movement = get_cash_movement(request.user, movement_id)
+        except CashMovementNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        return Response(CashMovementSerializer(movement).data)
+
+    def put(self, request, movement_id: int):
+        return Response(
+            {"detail": "Cash movements are immutable. Use ADJUSTMENT entries to correct."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def patch(self, request, movement_id: int):
+        return self.put(request, movement_id)
+
+    def delete(self, request, movement_id: int):
+        return Response(
+            {"detail": "Cash movements cannot be deleted. Use ADJUSTMENT entries to correct."},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )

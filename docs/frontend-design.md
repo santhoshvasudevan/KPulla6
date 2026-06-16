@@ -82,6 +82,7 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 - Full-width performance chart is the visual centerpiece (~400px+)
 - Controls grouped in chart toolbar: metric, range, benchmark
 - FX and benchmark warnings directly under chart
+- When `has_fixed_deposits` and metric is **Value**, info banner: value chart and return metrics include Fixed Deposits and included Bank Cash
 - Omit redundant invested-vs-current bar chart (later phase)
 
 ### Assets
@@ -108,10 +109,24 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 
 ### Settings
 
-- Section cards: Display & tax; **Portfolios** (CRUD for real portfolios); Data & sync (explainer)
+- Section cards: Display & tax; **Portfolios** (CRUD for real portfolios); **Bank accounts** (`BankAccountManagement` + `CashMovementManagement`); Data & sync (explainer)
 - Portfolio table: name, base currency, default flag; create form (name, optional description, base currency default EUR); edit modal; deactivate for non-default only
+- Bank accounts: list active accounts; create/edit with full account number display; deactivate (soft); **ledger-derived `current_balance`** (read-only once ledger exists); **Seed opening balance** when `opening_balance > 0` and not yet seeded; **View movements** expands per-account ledger panel (movement table + record modal for manual deposit/withdrawal/adjustment); ledger rows immutable (no edit/delete); **Include this bank cash in portfolio value** toggle (default off; warning when ledger unseeded)
 - Display currency must stay in sync with sidebar selector
 - **All Portfolios** remains virtual — not created or assignable as a target portfolio
+
+### Fixed Deposits (`/fixed-deposits`)
+
+- Table lists backend FD fields only (no interest or portfolio value calculations in React)
+- Add/Edit modal: portfolio and bank account dropdowns (active records only); currency read-only from selected bank account
+- **Create:** explainer that principal debits linked bank account; shows bank `current_balance` from API; backend rejects insufficient balance
+- **Edit:** when `has_opening_cash_movement`, principal/bank/currency/investment date/portfolio fields disabled; backend enforces immutability
+- Principal, rate, dates, status displayed from API; deactivate via DELETE (soft)
+- **Record interest (FD-ACC-4):** modal with payment date, gross interest, tax withheld, display-only net; expandable per-FD interest payment list from API
+- **Mark matured / Settle (FD-ACC-5):** mark matured for `ACTIVE` FDs; Settle/Close modal with principal, final interest, TDS; settled/closed rows hide settlement actions
+- **Renew (FD-ACC-6):** Renew action for `ACTIVE`/`MATURED` (hidden when settled or `has_renewal`); modal with new FD terms, gross/tax/cash payout, direct rollover and bank-cash warnings; no `FD_OPENING` implied for renewal
+- Interest/settlement credits bank ledger; when bank cash is included in portfolio value, headline total stays stable for principal (cash ↔ FD reclassification)
+- Dashboard allocation pie chart renders `summary.allocation_buckets` from backend only
 
 ## Component Catalog
 

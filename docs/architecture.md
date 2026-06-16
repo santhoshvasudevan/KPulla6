@@ -14,6 +14,7 @@ Local-first portfolio tracker. **KPulla6** uses Django + DRF + PostgreSQL + Reac
   - `market_data` — `HistoricalPrice`, benchmarks, MF NAV cache + sync
   - `fx` — `FXRate` cache + sync
   - `settings_app` — `AppSettings`
+  - `debt` — `BankAccount`, `FixedDeposit`, `CashMovement`, interest/settlement/renewal (FD-ACC-1..8C)
   - `api` — HTTP routing (`/api/v1/*`)
 - **Finance logic:** `backend/finance/` — framework-independent pure calculations (FIFO, splits, XIRR, TWROR, returns, risk, drawdowns, comparison)
   - Django adapter: `transactions/finance_adapter.py` (DTO mapping only)
@@ -190,6 +191,22 @@ Full specification: [cash-ledger.md](./cash-ledger.md). Product rules: [product-
 - **Transfers:** same- and cross-currency portfolio transfers (Cash-8A/8B); user-entered amounts; no market FX lookup.
 - **Historical funding:** manual deposits/withdrawals or **Bulk Cash Entries** (Cash-7D). Shortfall **backfill APIs removed** from product flow.
 - **APIs:** `/api/v1/cash/*` — see [api-design.md](./api-design.md).
+
+## Fixed Deposits & bank cash (FD-ACC-1..8)
+
+| Layer | Role |
+|-------|------|
+| **FD MVP + accounting (implemented)** | `debt` app — `BankAccount`, `FixedDeposit`, `CashMovement`, interest/settlement/renewal |
+| **Portfolio value (FD-ACC-7)** | Summary/holdings/allocation include FD principal + opt-in ledger bank cash |
+| **Portfolio cash (implemented)** | `cash` app — `CashLedgerEntry` per **portfolio**; broker/brokerage cash |
+| **Performance (value history)** | **FD-ACC-8B** — `metric=value` includes FD principal + opt-in ledger bank cash (step series; no accrued interest) |
+| **Performance (returns)** | **FD-ACC-8C** — TWROR/XIRR/cumulative return use FD-ACC-8B PV + bank external-flow classifier |
+
+Design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md) § **FD-ACC-8 performance/timeseries design** · MVP: [fixed-deposits.md](./fixed-deposits.md).
+
+**FD-ACC-8C (2026-06-14):** return metrics aligned via `debt/cash_ledger_flows.py` classifier and extended XIRR terminal.
+
+**Module boundary:** bank ledger in `debt/` + `finance/bank_cash.py` — do not store bank movements in `cash_ledger_entries`.
 
 ## Constraints
 - Do not modify KPulla5

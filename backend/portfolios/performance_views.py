@@ -90,6 +90,7 @@ class PortfolioPerformanceView(APIView):
                 metric="value",
                 range_code=range_code,
                 display_currency=display_currency,
+                user=request.user,
             )
             if result.warnings:
                 return Response(
@@ -108,6 +109,7 @@ class PortfolioPerformanceView(APIView):
                     benchmark_symbol=bench,
                     range_code=range_code,
                     display_currency=display_currency,
+                    user=request.user,
                 )
             except BenchmarkConfigError as exc:
                 return Response({"detail": str(exc)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
@@ -121,6 +123,7 @@ class PortfolioPerformanceView(APIView):
             metric=metric,  # type: ignore[arg-type]
             range_code=range_code,
             display_currency=display_currency,
+            user=request.user,
         )
         if result.warnings:
             return Response(

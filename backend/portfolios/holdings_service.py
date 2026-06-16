@@ -9,6 +9,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import QuerySet
 
 from cash.services import build_cash_display_summary, cash_allocation_rows
+from debt.portfolio_value import build_bank_cash_holding_rows, build_fd_holding_rows
 from finance.fifo import calculate_fifo_cost_basis_metrics
 from finance.oversell import detect_oversell
 from finance.types import TransactionType
@@ -349,6 +350,7 @@ def build_holdings(
     *,
     scope: ResolvedPortfolioScope,
     display_currency: str = "EUR",
+    user=None,
 ) -> HoldingsResult:
     display_currency = _norm_ccy(display_currency)
     queryset = _fifo_eligible_queryset(scope.portfolio_ids)
@@ -387,6 +389,25 @@ def build_holdings(
             any_fx_missing = True
         holdings.append(item)
 
+    fd_rows = build_fd_holding_rows(scope, display_currency=display_currency)
+    for item in fd_rows:
+        if item.pop("_fx_missing", False):
+            any_fx_missing = True
+        if display_currency != item["currency"]:
+            any_fx_missing = True
+        holdings.append(item)
+
+    if user is not None:
+        bank_rows = build_bank_cash_holding_rows(
+            user, scope, display_currency=display_currency
+        )
+        for item in bank_rows:
+            if item.pop("_fx_missing", False):
+                any_fx_missing = True
+            if display_currency != item["currency"]:
+                any_fx_missing = True
+            holdings.append(item)
+
     fx_status = "fx_unavailable" if any_fx_missing else "ok"
 
     cash_display = build_cash_display_summary(scope, display_currency)
@@ -400,6 +421,16 @@ def build_holdings(
     for item in holdings:
         qty = Decimal(str(item.get("quantity") or 0))
         cv = Decimal(str(item.get("current_value") or 0))
+        if item.get("asset_type") == "FIXED_DEPOSIT":
+            if item.get("holding_status") == "closed" or cv <= 0:
+                continue
+            allocation.append({k: v for k, v in item.items() if not k.startswith("_")})
+            continue
+        if item.get("asset_type") == "BANK_CASH":
+            if item.get("holding_status") == "closed" or cv <= 0:
+                continue
+            allocation.append({k: v for k, v in item.items() if not k.startswith("_")})
+            continue
         if item.get("holding_status") == "closed" or qty <= 0 or cv <= 0:
             continue
         allocation.append({k: v for k, v in item.items() if not k.startswith("_")})

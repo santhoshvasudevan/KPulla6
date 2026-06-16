@@ -73,6 +73,14 @@ export function holdingRowKey(h) {
 
 export function holdingSymbolLabel(h) {
   if (!h) return '';
+  if (h.asset_type === 'BANK_CASH') {
+    return h.bank_account_name || h.asset_symbol || 'Bank Cash';
+  }
+  if (h.asset_type === 'FIXED_DEPOSIT') {
+    const inst = h.institution_name || 'Fixed Deposit';
+    const acct = h.deposit_account_number;
+    return acct ? `${inst} (${acct})` : inst;
+  }
   if (h.asset_type === 'MUTUAL_FUND') {
     const name = h.scheme_name || h.scheme_code || h.asset_symbol || '';
     const code = h.scheme_code || h.asset_symbol;

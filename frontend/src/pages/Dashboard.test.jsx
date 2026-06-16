@@ -43,6 +43,8 @@ vi.mock('recharts', async () => {
       const formatted = formatter ? formatter(987.654) : '';
       return <div data-testid="chart-tooltip">{Array.isArray(formatted) ? formatted[0] : formatted}</div>;
     },
+    PieChart: ({ children }) => <div data-testid="pie-chart">{children}</div>,
+    Pie: ({ children }) => <div data-testid="pie">{children}</div>,
   };
 });
 
@@ -62,7 +64,16 @@ const mockSummary = {
   timeseries: [
     { date: '2026-05-01', portfolio_value: 18000, invested_amount: 15000 },
     { date: '2026-05-02', portfolio_value: 18500, invested_amount: 15000 }
-  ]
+  ],
+  allocation_buckets: {
+    currency: 'EUR',
+    fx_status: 'ok',
+    buckets: [
+      { label: 'Equity', value: 12000 },
+      { label: 'Debt', value: 5000 },
+      { label: 'Other', value: 1500 },
+    ],
+  },
 };
 
 const mockPerf = [
@@ -149,6 +160,70 @@ describe('Dashboard Component', () => {
       expect(screen.getByText(/€18,500\.00/)).toBeInTheDocument();
       expect(screen.getByText(/€3,500\.00/)).toBeInTheDocument();
     });
+  });
+
+  it('renders Cash / Bank Cash allocation bucket from backend', async () => {
+    api.fetchDashboardSummary.mockResolvedValueOnce({
+      ...mockSummary,
+      allocation_buckets: {
+        currency: 'EUR',
+        fx_status: 'ok',
+        buckets: [
+          { label: 'Equity', value: 12000 },
+          { label: 'Debt', value: 5000 },
+          { label: 'Cash / Bank Cash', value: 2500 },
+          { label: 'Other', value: 1500 },
+        ],
+      },
+    });
+    api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+    render(
+      <PortfolioProvider>
+        <Dashboard />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Asset allocation')).toBeInTheDocument();
+      expect(screen.getByTestId('pie-chart')).toBeInTheDocument();
+    });
+  });
+
+  it('renders allocation chart from backend allocation_buckets', async () => {
+    api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
+    api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+    render(
+      <PortfolioProvider>
+        <Dashboard />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Asset allocation')).toBeInTheDocument();
+      expect(screen.getByTestId('pie-chart')).toBeInTheDocument();
+    });
+  });
+
+  it('shows FD value-chart note when summary has FDs', async () => {
+    api.fetchDashboardSummary.mockResolvedValueOnce({
+      ...mockSummary,
+      has_fixed_deposits: true,
+    });
+    api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+    render(
+      <PortfolioProvider>
+        <Dashboard />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/value chart and return metrics include fixed deposits/i)
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByText(/return metrics may still exclude/i)
+    ).not.toBeInTheDocument();
   });
 
   it('displays XIRR as a percentage', async () => {
@@ -467,7 +542,7 @@ describe('Dashboard Component', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Cumulative Return' }));
 
     await waitFor(() => {
-      expect(screen.getByTestId('chart-legend')).toBeInTheDocument();
+      expect(screen.getAllByTestId('chart-legend').length).toBeGreaterThanOrEqual(1);
     });
   });
 

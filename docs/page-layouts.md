@@ -141,11 +141,12 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 | **Header** | `PageHeader` “Settings” |
 | **Display & tax** | `SectionCard` — tax rate input, display currency select, hint linking to sidebar selector, Save `Button` |
 | **Portfolios** | `SectionCard` + `PortfolioManagement` — table with Cash-aware On/Off, **Enable cash-aware** for legacy rows, create form, edit modal, deactivate (non-default) |
+| **Bank accounts** | `SectionCard` + `BankAccountManagement` — list, create/edit forms, deactivate, seed opening balance; **Include in portfolio value** toggle; **View movements** expands `CashMovementManagement` (ledger table, record modal, immutable rows) |
 | **Feedback** | Success / error `WarningBanner` after save |
 
 **States:** `LoadingState` · `ErrorState` on initial load failure.
 
-**APIs:** `getSettings` · `updateSettings` (also updates `portfolioContext` display currency) · `createPortfolio` / `updatePortfolio` / `deletePortfolio` via `PortfolioManagement` + `reloadPortfolios()`.
+**APIs:** `getSettings` · `updateSettings` (also updates `portfolioContext` display currency) · `createPortfolio` / `updatePortfolio` / `deletePortfolio` via `PortfolioManagement` + `reloadPortfolios()` · `fetchBankAccounts` / bank CRUD · `fetchCashMovements` / `createCashMovement` via `CashMovementManagement`.
 
 **Note:** Cached-data explainer lives in app shell sidebar footer, not on this page.
 
@@ -190,7 +191,8 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 | `/assets/:assetSymbol` | `pages/AssetDetail.jsx` | `AssetDetail.css` | PageHeader, MetricCard, SectionCard, StatusBadge, `.ui-txn-type` | asset detail | **Implemented** |
 | `/transactions` | `pages/Transactions.jsx` | `Transactions.css` | PageHeader, Button, WarningBanner, TransactionModal, `.ui-txn-type` | transactions CRUD, CSV import, bulk assign | **Implemented** |
 | `/cash` | `pages/Cash.jsx` | `Cash.css` | PageHeader, SectionCard, Button, EmptyState, CurrencyValue, deposit/withdrawal modals | cash balances, ledger, deposits, withdrawals | **Implemented** |
-| `/settings` | `pages/Settings.jsx` | `Settings.css` | PageHeader, SectionCard, PortfolioManagement, Button, WarningBanner | settings GET/PUT, portfolio CRUD | **Implemented** |
+| `/fixed-deposits` | `pages/FixedDeposits.jsx` | `FixedDeposits.css` | PageHeader, SectionCard, Button, WarningBanner, CurrencyValue, create/edit/interest/settlement/renewal modals | bank-accounts, fixed-deposits, interest-payments, settlements, renew, portfolios | **Implemented** |
+| `/settings` | `pages/Settings.jsx` | `Settings.css` | PageHeader, SectionCard, PortfolioManagement, BankAccountManagement, CashMovementManagement, Button, WarningBanner | settings GET/PUT, portfolio CRUD, bank-accounts, cash-movements | **Implemented** |
 | (shell) | `components/Layout.jsx` | `Layout.css` | WarningBanner, nav, selectors | portfolios, settings (context) | **Implemented** |
 
 **Shared:** `components/ui/*` · `components/charts/chartTheme.js` · `portfolioContext.jsx`
@@ -295,7 +297,7 @@ After stock/MF **BUY** shortfall (cash-aware portfolio):
 ### Dashboard / Assets impact (Cash-6)
 
 - **Dashboard KPI row:** optional “Cash” `MetricCard` when API includes cash in `current_value` breakdown.
-- **Assets allocation chart:** additional slices `Cash {currency}` — labels from API only.
+- **Assets allocation chart:** additional slices `Cash {currency}` (broker cash) and `Bank Cash` rows from API (`asset_type=BANK_CASH`).
 
 **Approval status:** Proposed (Cash-0 documentation only).
 

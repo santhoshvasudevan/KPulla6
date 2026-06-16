@@ -26,6 +26,18 @@ Quick reference for MVP endpoints. Detail sections below. Product rules: [produc
 | POST | `/api/v1/cash/transfers` | Same- or cross-currency portfolio transfer | `createCashTransfer` | `test_cash_api.py` |
 | POST | `/api/v1/cash/bulk-entries/preview` | Bulk schedule preview | `previewCashBulkEntries` | `test_cash_bulk_entries_api.py` |
 | POST | `/api/v1/cash/bulk-entries/apply` | Confirmed bulk manual entries | `applyCashBulkEntries` | `test_cash_bulk_entries_api.py` |
+| GET | `/api/v1/bank-accounts` | List active user bank accounts | `fetchBankAccounts` | `test_bank_accounts_api.py` |
+| POST | `/api/v1/bank-accounts` | Create bank account | `createBankAccount` | `test_bank_accounts_api.py` |
+| PUT | `/api/v1/bank-accounts/{id}` | Update bank account | `updateBankAccount` | `test_bank_accounts_api.py` |
+| DELETE | `/api/v1/bank-accounts/{id}` | Soft deactivate bank account | `deleteBankAccount` | `test_bank_accounts_api.py` |
+| POST | `/api/v1/bank-accounts/{id}/seed-opening-balance` | Seed `OPENING_BALANCE` from `opening_balance` | `seedBankAccountOpeningBalance` | `test_cash_movements_api.py` |
+| GET | `/api/v1/cash-movements` | List bank cash movements (paginated) | `fetchCashMovements` | `test_cash_movements_api.py` |
+| POST | `/api/v1/cash-movements` | Create manual movement | `createCashMovement` | `test_cash_movements_api.py` |
+| GET | `/api/v1/cash-movements/{id}` | Movement detail | — | `test_cash_movements_api.py` |
+| GET | `/api/v1/fixed-deposits` | List active fixed deposits (portfolio scope) | `fetchFixedDeposits` | `test_fixed_deposits_api.py` |
+| POST | `/api/v1/fixed-deposits` | Create fixed deposit | `createFixedDeposit` | `test_fixed_deposits_api.py` |
+| PUT | `/api/v1/fixed-deposits/{id}` | Update fixed deposit | `updateFixedDeposit` | `test_fixed_deposits_api.py` |
+| DELETE | `/api/v1/fixed-deposits/{id}` | Soft deactivate fixed deposit | `deleteFixedDeposit` | `test_fixed_deposits_api.py` |
 | GET | `/api/v1/transactions` | Paginated asset transactions | `fetchTransactions` | `test_transactions_api.py` |
 | POST | `/api/v1/transactions` | Create stock/MF transaction | `createTransaction` | `test_transactions_api.py`, `test_cash_aware_transactions_api.py` |
 | PUT | `/api/v1/transactions/{id}` | Update transaction | `updateTransaction` | `test_transactions_api.py`, `test_cash_aware_transactions_api.py` |
@@ -1138,6 +1150,77 @@ When `portfolio.cash_aware_enabled` is **true**, `POST` / `PUT` / `DELETE` `/api
 **Cash-4A.1:** New portfolios and registration defaults use `cash_aware_enabled=true`; existing rows are not migrated.
 
 **Summary/performance/allocation (Cash-6):** Cash-6A implemented on summary `current_value` and holdings `allocation`; performance/value history/TWROR/XIRR deferred to Cash-6B/6C. No breaking changes to stock/MF fields.
+
+---
+
+## Fixed Deposits — Bank cash ledger (implemented — FD-ACC-1)
+
+Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
+
+| Method | Path | Notes |
+|--------|------|--------|
+| GET | `/api/v1/cash-movements` | **Done** — paginated; filter `bank_account_id` |
+| POST | `/api/v1/cash-movements` | **Done** — `MANUAL_DEPOSIT`, `MANUAL_WITHDRAWAL`, `ADJUSTMENT` only |
+| GET | `/api/v1/cash-movements/{id}` | **Done** |
+| PUT/PATCH/DELETE | `/api/v1/cash-movements/{id}` | **405** — immutable ledger in FD-ACC-1 |
+| POST | `/api/v1/bank-accounts/{id}/seed-opening-balance` | **Done** — opt-in opening balance seed |
+
+**Bank account response extensions:** `has_ledger_entries`, `opening_balance_seeded`, `balance_source` (`manual` \| `ledger`).
+
+**PUT `/bank-accounts/{id}`:** rejects `current_balance` when ledger exists (**400**).
+
+**Deferred (FD-ACC-9+):** reversal endpoint, `TRANSFER_IN`/`OUT` manual API, via-bank renewal path. **FD-ACC-7/8 done:** opt-in bank cash in portfolio summary/holdings/allocation/performance/returns.
+
+### FD interest payments (FD-ACC-4)
+
+| Method | Path | Notes |
+|--------|------|--------|
+| GET | `/api/v1/fixed-deposits/{id}/interest-payments` | **Done** — list payments for FD (user-scoped) |
+| POST | `/api/v1/fixed-deposits/{id}/interest-payments` | **Done** — `{ payment_date, gross_interest, tax_withheld?, comment? }`; atomically creates `FixedDepositInterestPayment` + `FD_INTEREST` CREDIT for **net**; optional `warning` for COMPOUNDED FD |
+| GET | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | **Done** |
+| PUT/PATCH/DELETE | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | **405** — immutable; corrections via future ADJUSTMENT/reversal |
+
+**Rejected:** interest payment on `CLOSED` FD (**400**). `ACTIVE` and `MATURED` allowed. Bank account taken from FD (not client-supplied).
+
+**Portfolio:** FD principal summary unchanged; bank ledger credit does not increase portfolio `current_value`.
+
+### FD maturity / closure settlement (FD-ACC-5)
+
+| Method | Path | Notes |
+|--------|------|--------|
+| POST | `/api/v1/fixed-deposits/{id}/mark-matured` | **Done** — `ACTIVE` → `MATURED`; no cash movements; idempotent if already `MATURED` |
+| POST | `/api/v1/fixed-deposits/{id}/settle` | **Done** — `{ settlement_type, settlement_date, principal_returned?, gross_interest?, tax_withheld?, comment? }` |
+| GET | `/api/v1/fixed-deposits/{id}/settlements` | **Done** |
+| GET | `/api/v1/fixed-deposit-settlements/{settlement_id}` | **Done** |
+| PUT/PATCH/DELETE | `/api/v1/fixed-deposit-settlements/{settlement_id}` | **405** — immutable |
+
+**Outcomes:** `MATURITY` → `MATURED_SETTLED`; `CLOSURE` → `CLOSED`. Zero net interest → no interest movement. Portfolio summary excludes settled principal; included bank cash rises when `include_in_portfolio_value=true` (FD-ACC-7).
+
+### FD renewal (FD-ACC-6)
+
+| Method | Path | Notes |
+|--------|------|--------|
+| POST | `/api/v1/fixed-deposits/{id}/renew` | **Done** — settle old FD + create renewed FD atomically |
+
+**Request:** `renewal_date`, `new_deposit_account_number`, `new_principal_amount`, `new_interest_rate_percent`, `new_interest_payout_frequency`, `new_maturity_date`, optional `new_institution_name`, `new_investment_date` (defaults `renewal_date`), `nominee_name`, `comment`, `gross_interest`, `tax_withheld`, `cash_payout_amount`, optional `direct_reinvest_amount` (defaults `new_principal_amount`).
+
+**Response (201):** `renewal_id`, `old_fixed_deposit`, `new_fixed_deposit`, `settlement_id`, `direct_reinvest_amount`, `cash_payout_amount`, `gross_interest`, `tax_withheld`, `net_interest`, `cash_movement_ids`, `currency`.
+
+**Accounting:** Direct rollover — no bank movement for reinvested principal; renewed FD has no `FD_OPENING` debit. `cash_payout_amount` → `FD_MATURITY_PRINCIPAL` CREDIT; net final interest → `FD_MATURITY_INTEREST` CREDIT. Normal `POST /fixed-deposits` still creates `FD_OPENING` debit.
+
+**Rejected:** `CLOSED`/`MATURED_SETTLED` FD; already renewed FD; foreign FD (**404**); invalid dates/amounts (**400**).
+
+### FD create — mandatory opening debit (FD-ACC-3)
+
+| Method | Path | Notes |
+|--------|------|--------|
+| POST | `/api/v1/fixed-deposits` | **Done** — atomically creates `FD_OPENING` `CashMovement` (SYSTEM DEBIT); **400** on insufficient bank balance with `required`, `available`, `shortfall`, `currency` |
+
+**FD response extensions:** `has_opening_cash_movement`, `opening_cash_movement_id`.
+
+**PUT `/fixed-deposits/{id}`:** rejects changes to `principal_amount`, `bank_account_id`, `currency`, `investment_date`, `portfolio_id` when opening movement exists (**400**). Legacy FDs without opening movement remain fully editable.
+
+**Lifecycle:** `ACTIVE` → `MATURED` (mark-matured) → `MATURED_SETTLED` or `CLOSED` (settle) — **implemented FD-ACC-5**.
 
 ---
 

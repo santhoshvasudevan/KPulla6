@@ -10,6 +10,7 @@ import {
   WarningBanner,
 } from '../components/ui';
 import PortfolioManagement from '../components/PortfolioManagement';
+import BankAccountManagement from '../components/BankAccountManagement';
 import './Settings.css';
 
 export default function Settings() {
@@ -108,6 +109,13 @@ export default function Settings() {
 
       <SectionCard title="Portfolios">
         <PortfolioManagement />
+      </SectionCard>
+
+      <SectionCard title="Bank accounts">
+        <p className="settings-hint">
+          Link bank accounts to fixed deposits. Account numbers are stored and displayed as entered.
+        </p>
+        <BankAccountManagement />
       </SectionCard>
 
       <SectionCard title="Data & sync">

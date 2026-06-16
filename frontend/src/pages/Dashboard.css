@@ -13,6 +13,14 @@
   margin-bottom: var(--space-4);
 }
 
+.dashboard-allocation-card {
+  margin-bottom: var(--space-5);
+}
+
+.dashboard-allocation-panel {
+  min-height: 220px;
+}
+
 .dashboard-charts {
   display: flex;
   flex-direction: column;

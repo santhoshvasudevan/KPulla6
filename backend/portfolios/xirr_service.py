@@ -8,6 +8,11 @@ from decimal import Decimal
 from typing import Optional
 
 from cash.services import build_cash_display_summary
+from debt.cash_ledger_flows import build_bank_cash_xirr_external_flows
+from debt.portfolio_value import (
+    calculate_bank_cash_for_scope,
+    calculate_fd_holdings_for_scope,
+)
 from portfolios.cash_ledger_flows import build_cash_aware_xirr_external_flows
 from finance.mutual_fund_cashflows import build_legacy_portfolio_xirr_flows
 from finance.splits import apply_stock_split_adjustments
@@ -111,11 +116,53 @@ def _build_legacy_transaction_flows(
     )
 
 
+def _fd_terminal_for_scope(
+    scope: ResolvedPortfolioScope,
+    *,
+    calculation_currency: str,
+    today: date,
+) -> tuple[Decimal, bool, list[str]]:
+    fd = calculate_fd_holdings_for_scope(
+        scope, display_currency=calculation_currency, as_of_date=today
+    )
+    return fd.current_value, fd.any_fx_missing, list(fd.warnings)
+
+
+def _bank_terminal_for_scope(
+    user,
+    scope: ResolvedPortfolioScope,
+    *,
+    calculation_currency: str,
+    today: date,
+) -> tuple[Decimal, bool, list[str]]:
+    if user is None:
+        return Decimal("0"), False, []
+    bank = calculate_bank_cash_for_scope(
+        user, scope, display_currency=calculation_currency, as_of_date=today
+    )
+    return bank.current_value, bank.any_fx_missing, list(bank.warnings)
+
+
+def _merge_xirr_flow_maps(
+    parts: list[tuple[dict[date, Decimal], bool]],
+) -> tuple[dict[date, Decimal], bool]:
+    merged: dict[date, Decimal] = {}
+    fx_missing = False
+    for flows, part_fx_missing in parts:
+        fx_missing = fx_missing or part_fx_missing
+        for d, amt in flows.items():
+            merged[d] = merged.get(d, Decimal("0")) + amt
+    return merged, fx_missing
+
+
 def _portfolio_xirr_inputs(
     portfolio: Portfolio,
     *,
     calculation_currency: str,
     today: date,
+    user=None,
+    include_bank_terminal: bool = False,
+    include_bank_flows: bool = False,
 ) -> _PortfolioXirrInputs:
     child_scope = ResolvedPortfolioScope(
         kind="single", portfolio_ids=[portfolio.id]
@@ -125,10 +172,12 @@ def _portfolio_xirr_inputs(
     calc_ccy = norm_display_currency(calculation_currency)
     portfolio_base = _portfolio_base_currency(all_txns) if all_txns else calc_ccy
 
+    flow_parts: list[tuple[dict[date, Decimal], bool]] = []
     if portfolio.cash_aware_enabled:
-        flows, fx_missing = build_cash_aware_xirr_external_flows(
+        broker_flows, broker_fx_missing = build_cash_aware_xirr_external_flows(
             portfolio.id, calculation_currency=calc_ccy
         )
+        flow_parts.append((broker_flows, broker_fx_missing))
         holdings_terminal = _holdings_terminal_for_scope(
             child_scope, portfolio_base=portfolio_base
         )
@@ -151,9 +200,10 @@ def _portfolio_xirr_inputs(
         if holdings_fx_missing:
             holdings_in_calc = None
     else:
-        flows, fx_missing = _build_legacy_transaction_flows(
+        legacy_flows, legacy_fx_missing = _build_legacy_transaction_flows(
             child_scope, calculation_currency=calc_ccy
         )
+        flow_parts.append((legacy_flows, legacy_fx_missing))
         holdings_terminal = _holdings_terminal_for_scope(
             child_scope, portfolio_base=portfolio_base
         )
@@ -167,14 +217,38 @@ def _portfolio_xirr_inputs(
         warnings = []
         terminal = holdings_in_calc or Decimal("0")
 
+    fd_terminal, fd_fx_missing, fd_warnings = _fd_terminal_for_scope(
+        child_scope, calculation_currency=calc_ccy, today=today
+    )
+    terminal += fd_terminal
+    warnings.extend(fd_warnings)
+
+    bank_fx_missing = False
+    if include_bank_terminal and user is not None:
+        bank_terminal, bank_fx_missing, bank_warnings = _bank_terminal_for_scope(
+            user, child_scope, calculation_currency=calc_ccy, today=today
+        )
+        terminal += bank_terminal
+        warnings.extend(bank_warnings)
+
+    if include_bank_flows and user is not None:
+        bank_flows, bank_flows_fx_missing = build_bank_cash_xirr_external_flows(
+            user, child_scope, calculation_currency=calc_ccy
+        )
+        flow_parts.append((bank_flows, bank_flows_fx_missing))
+
+    flows_by_date, flows_fx_missing = _merge_xirr_flow_maps(flow_parts)
+
     combined_fx_missing = (
-        fx_missing
+        flows_fx_missing
         or holdings_fx_missing
         or cash_fx_missing
+        or fd_fx_missing
+        or bank_fx_missing
         or holdings_in_calc is None
     )
     return _PortfolioXirrInputs(
-        flows_by_date=flows,
+        flows_by_date=flows_by_date,
         terminal_value=terminal,
         fx_missing=combined_fx_missing,
         warnings=warnings,
@@ -208,13 +282,17 @@ def compute_scope_xirr_detail(
     scope: ResolvedPortfolioScope,
     *,
     display_currency: str | None = None,
+    user=None,
 ) -> ScopeXirrResult:
     """
     Money-weighted portfolio XIRR for the full scope (inception through today).
 
-    Legacy portfolios: BUY/SELL (+ MF paid_value) external flows; terminal = holdings only.
+    Legacy portfolios: BUY/SELL (+ MF paid_value) external flows; terminal = holdings
+    + FD principal + included bank cash.
     Cash-aware portfolios: CASH_DEPOSIT / CASH_WITHDRAWAL (+ unlinked ADJUSTMENT);
-    BUY/SELL settlements excluded; terminal = holdings + cash.
+    BUY/SELL settlements excluded; terminal = holdings + broker cash + FD + bank.
+    Included bank cash: manual deposits/withdrawals/opening balance are external flows;
+    FD system movements are internal (FD-ACC-8C).
 
     All Portfolios: per-portfolio rules above; flows converted to ``display_currency``
     and merged by date. Legacy and cash-aware portfolios may be mixed.
@@ -239,7 +317,12 @@ def compute_scope_xirr_detail(
             if portfolio is None:
                 continue
             inputs = _portfolio_xirr_inputs(
-                portfolio, calculation_currency=calc_ccy, today=today
+                portfolio,
+                calculation_currency=calc_ccy,
+                today=today,
+                user=user,
+                include_bank_terminal=False,
+                include_bank_flows=False,
             )
             warnings.extend(inputs.warnings)
             if inputs.fx_missing:
@@ -248,6 +331,21 @@ def compute_scope_xirr_detail(
             for d, amt in inputs.flows_by_date.items():
                 merged_flows[d] = merged_flows.get(d, Decimal("0")) + amt
             terminal_total += inputs.terminal_value
+
+        if user is not None:
+            bank_terminal, bank_fx_missing, bank_warnings = _bank_terminal_for_scope(
+                user, scope, calculation_currency=calc_ccy, today=today
+            )
+            bank_flows, bank_flows_fx_missing = build_bank_cash_xirr_external_flows(
+                user, scope, calculation_currency=calc_ccy
+            )
+            warnings.extend(bank_warnings)
+            if bank_fx_missing or bank_flows_fx_missing:
+                any_fx_block = True
+            else:
+                terminal_total += bank_terminal
+                for d, amt in bank_flows.items():
+                    merged_flows[d] = merged_flows.get(d, Decimal("0")) + amt
 
         if any_fx_block:
             return ScopeXirrResult(
@@ -276,7 +374,12 @@ def compute_scope_xirr_detail(
         else norm_display_currency(display_currency or "EUR")
     )
     inputs = _portfolio_xirr_inputs(
-        portfolio, calculation_currency=calc_ccy, today=today
+        portfolio,
+        calculation_currency=calc_ccy,
+        today=today,
+        user=user,
+        include_bank_terminal=True,
+        include_bank_flows=True,
     )
     return _solve_from_inputs(inputs, today=today)
 
@@ -285,8 +388,9 @@ def compute_scope_xirr(
     scope: ResolvedPortfolioScope,
     *,
     display_currency: str | None = None,
+    user=None,
 ) -> Optional[float]:
     """Return annualized XIRR or None (see ``compute_scope_xirr_detail`` for warnings)."""
     return compute_scope_xirr_detail(
-        scope, display_currency=display_currency
+        scope, display_currency=display_currency, user=user
     ).value

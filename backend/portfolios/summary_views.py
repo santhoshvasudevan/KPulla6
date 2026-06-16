@@ -75,4 +75,8 @@ class PortfolioSummaryView(APIView):
             payload["warnings"] = result.warnings
         if result.cash_summary is not None:
             payload["cash_summary"] = result.cash_summary
+        if result.allocation_buckets is not None:
+            payload["allocation_buckets"] = result.allocation_buckets
+        if result.has_fixed_deposits:
+            payload["has_fixed_deposits"] = True
         return Response(payload)
