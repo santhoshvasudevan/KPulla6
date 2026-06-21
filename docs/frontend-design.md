@@ -5,7 +5,7 @@
 KPulla6 is a premium portfolio analytics dashboard: professional, calm, data-rich, and trustworthy.
 Visual direction: institutional wealth analytics, not a terminal toy or casual budgeting app.
 
-**Page layouts:** per-page structure and layout governance live in [page-layouts.md](./page-layouts.md). Propose layout changes there before coding.
+**Page layouts:** per-page structure, API usage, route state, warnings, empty states, and redesign preservation contracts live in [page-layouts.md](./page-layouts.md). Propose layout/API/state changes there before coding.
 
 ## Core Principles
 
@@ -83,7 +83,7 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 - Controls grouped in chart toolbar: metric, range, benchmark
 - FX and benchmark warnings directly under chart
 - When `has_fixed_deposits` and metric is **Value**, info banner: value chart and return metrics include Fixed Deposits and included Bank Cash
-- Omit redundant invested-vs-current bar chart (later phase)
+- Current implemented behavior preserves the compact **Invested vs Current** secondary chart from backend summary totals. Any future removal must be proposed in [page-layouts.md](./page-layouts.md) first and approved before implementation.
 
 ### Assets
 
@@ -389,7 +389,7 @@ Backend supplies balances and ledger rows. React **displays only** — no cash b
 
 **Removed:** Cash shortfall backfill (Cash-7A/7B/7C) — no UI or API. Historical funding via manual entries or **Add Bulk Cash Entries**.
 
-Page layout: [page-layouts.md](./page-layouts.md) §12. Design: [cash-ledger.md](./cash-ledger.md).
+Page layout: [page-layouts.md](./page-layouts.md) §8. Design: [cash-ledger.md](./cash-ledger.md).
 
 ## Future — Cash Ledger UI (remaining phases)
 

@@ -17,6 +17,7 @@ Closer to institutional wealth analytics than a terminal UI or casual expense tr
 - **`/cash`** page: balances, ledger, deposit/withdrawal, **Transfer Cash**, **Bulk Cash Entries**; manual ledger edit/delete. No client-side balance math.
 - Display formatting (currency, percent, axis labels, pie tooltip %) is allowed.
 - Preserve existing API contracts unless explicitly requested.
+- Preserve session cookies, CSRF behavior, auth redirects, public/protected route behavior, and logout behavior during frontend redesigns.
 - Do not modify backend or KPulla5.
 
 ## Visual System — Institutional Slate
@@ -40,9 +41,10 @@ Full spec: `docs/frontend-design.md`.
 
 ## Required Components (Phase 1+ — prefer reuse over one-off markup)
 
-- PageHeader, MetricCard, ChartCard, SectionCard, DataTable
+- PageHeader, MetricCard, ChartCard, SectionCard
 - StatusBadge, WarningBanner, EmptyState
 - CurrencyValue, PercentValue, SegmentedControl, Button
+- `DataTable` is deferred/optional. Existing page-local table CSS is acceptable until `DataTable` is explicitly approved and implemented.
 
 Before adding inline styles or new CSS classes on a page, check whether an existing or planned component fits.
 
@@ -51,10 +53,11 @@ Before adding inline styles or new CSS classes on a page, check whether an exist
 Before changing any page layout, page structure, or major page-level UI:
 
 1. Read `docs/page-layouts.md`.
-2. Propose the layout change in `docs/page-layouts.md` first (use the template there).
-3. Mark the proposed change as **Proposed**.
-4. Do **not** implement code changes until the user approves the markdown change.
-5. After approval: implement the code change, update tests, update `docs/changelog.md`, and mark the layout change as **Implemented**.
+2. Before redesigning any route, preserve every listed API call, query param, loading state, warning, empty state, and user action unless `docs/page-layouts.md` is updated first.
+3. Propose the layout/API/state/action change in `docs/page-layouts.md` first (use the template there).
+4. Mark the proposed change as **Proposed**.
+5. Do **not** implement code changes until the user approves the markdown change.
+6. After approval: implement the code change, update tests, update `docs/changelog.md`, and mark the layout change as **Implemented**.
 
 Per-page layout spec: `docs/page-layouts.md`.
 

@@ -1,8 +1,8 @@
 # Page Layouts — KPulla6
 
-Source of truth for **page structure and layout decisions** after the Institutional Slate migration (Phases 0–8B).
+Source of truth for **current page structure, page information, API usage, and redesign preservation contracts** after the Institutional Slate migration.
 
-Related: [frontend-design.md](./frontend-design.md) (tokens, components, color semantics), [api-design.md](./api-design.md) (API contracts).
+Related: [frontend-design.md](./frontend-design.md) (tokens, components, color semantics), [api-design.md](./api-design.md) (API contracts), [auth.md](./auth.md) (session auth), and `frontend/src/api.js` (frontend API wrapper truth).
 
 ---
 
@@ -10,11 +10,13 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 | Rule | Detail |
 |------|--------|
-| **Authority** | This file defines intended layout for each routed page. |
-| **Change order** | Propose layout changes here **first** → human approval → then code. |
-| **API-driven UI** | React renders `/api/v1` values only. |
-| **Forbidden in React** | FIFO, FX conversion, valuation, XIRR, TWROR, benchmark math, performance calculations. Display formatting (currency, percent, chart axis labels, pie tooltip %) is allowed. |
-| **Design system** | Use UI primitives in `frontend/src/components/ui/`; see [frontend-design.md](./frontend-design.md). |
+| **Authority** | This file defines intended layout and preservation requirements for every current routed frontend page. |
+| **Change order** | Propose route, layout, API-call, state, warning, empty-state, or user-action changes here **first** -> human approval -> then code. |
+| **API-driven UI** | React renders `/api/v1` values only. `frontend/src/api.js` is the frontend wrapper source of truth. |
+| **Forbidden in React** | FIFO, FX conversion, valuation, XIRR, TWROR, benchmark math, Sharpe, Sortino, drawdown, and performance calculations. Display formatting (currency, percent, chart axis labels, pie tooltip %) is allowed. |
+| **Auth/session** | Redesigns must preserve session cookies, CSRF handling, protected/public route behavior, and 401 redirects. |
+| **Scope/currency** | Data pages must preserve `portfolioContext.apiQuery` propagation and wait for `settingsLoaded && apiQuery` where current pages do so. |
+| **Design system** | Use UI primitives in `frontend/src/components/ui/`; see [frontend-design.md](./frontend-design.md). `DataTable` is deferred/optional, not mandatory. |
 
 ---
 
@@ -25,146 +27,289 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 - **Primitives** — `PageHeader`, `MetricCard`, `ChartCard`, `SectionCard`, `StatusBadge`, `WarningBanner`, `EmptyState`, `LoadingState`, `ErrorState`, `CurrencyValue`, `PercentValue`, `Button`, `SegmentedControl`.
 - **Numbers** — right-aligned in tables (`num-col`); tabular nums via `--font-metric`.
 - **Status** — `StatusBadge` / `WarningBanner`; never rely on color alone.
-- **Scope** — portfolio view and display currency from `portfolioContext` (`apiQuery`) apply to all data pages once `settingsLoaded` is true.
+- **Warnings** — backend `warnings`, `price_status`, `fx_status`, `holding_status`, NAV, benchmark, cash shortfall, and future-impact messages must remain visible.
+- **Read paths** — no frontend or read-path external market/NAV/FX provider calls; all values come from API responses backed by cached data.
 
 ---
 
 ## 3. App shell layout
 
-**File:** `frontend/src/components/Layout.jsx` · **CSS:** `Layout.css`
+**Files:** `frontend/src/App.jsx` · `frontend/src/components/Layout.jsx` · `frontend/src/components/Layout.css`  
+**Providers:** `ThemeProvider` -> `AuthProvider` -> `BrowserRouter`; protected app pages wrap `PortfolioProvider` and `ProtectedRoute`.
 
 | Zone | Content |
 |------|---------|
-| **Brand** | “Portfolio Insight” + subtitle |
-| **Nav** | Dashboard, Transactions, Assets, Settings (active: left accent + raised surface) |
-| **Controls (bottom)** | Portfolio View select (`all` / single portfolio); Display Currency select (syncs with settings API) |
-| **Notice** | `WarningBanner` if portfolio list fetch fails |
-| **Footer** | Cached prices/FX note |
-| **Main** | `<Outlet />` in `app-main__inner` (max-width ~1400px, padded) |
+| **Brand** | “Portfolio Insight” + subtitle. |
+| **Sidebar controls** | Portfolio View select (`All Portfolios` virtual + active real portfolios) and Display Currency select (`EUR`, `USD`, `INR`, `GBP`, `CHF`) directly below brand. |
+| **Nav** | Dashboard (`/`), Transactions (`/transactions`), Cash (`/cash`), Assets (`/assets`), Fixed Deposits (`/fixed-deposits`), Compare (`/compare`), Settings (`/settings`). Active route uses left accent + raised surface. |
+| **Notice** | `WarningBanner` if portfolio list fetch fails; shell falls back to All Portfolios copy. |
+| **Footer** | Cached prices/FX note. |
+| **Top header** | `ThemeSelector` (System / Light / Dark), signed-in user label (`email` or `username`), Log out button. |
+| **Main** | `<Outlet />` in `app-main__inner` (max-width ~1400px, padded). |
 
-**Responsive:** Sidebar stacks above main below 900px; nav 2-column grid below 540px; footer hidden on narrow sidebar.
+**Route behavior:** `/login`, `/register`, and `/forgot-password` are public-only routes. `/`, `/transactions`, `/cash`, `/assets`, `/assets/:assetSymbol`, `/fixed-deposits`, `/compare`, and `/settings` are protected routes. `/dashboard` redirects to `/`; unknown routes redirect to `/`.
 
-**Context APIs:** `fetchPortfolios`, `getSettings` / `updateSettings` (via `portfolioContext`).
+**Auth/session preservation:** `AuthProvider` calls `ensureCsrfCookie()` then `fetchCurrentUser()` on load. Login/register call CSRF first, then auth APIs. `setUnauthorizedHandler()` redirects non-auth `/api/v1/*` 401 responses to `/login`. Logout calls `POST /auth/logout`, clears user state, and navigates to `/login`.
+
+**Context/API preservation:** `PortfolioProvider` loads `fetchPortfolios()` and `getSettings()`. `apiQuery` is `null` until settings are loaded and a display currency exists; data pages that currently wait for `settingsLoaded && apiQuery` must keep that gate. Sidebar display currency is disabled while settings load and persists through `updateSettings()`.
+
+**Tests:** `App.test.jsx`, `Layout.test.jsx`, `auth.test.js`, `portfolioContext.test.jsx`, `themeContext.test.jsx`, `theme/themeStorage.test.js`.
 
 ---
 
 ## 4. Dashboard (`/`)
 
-**Files:** `Dashboard.jsx` · `Dashboard.css`
+**Files:** `pages/Dashboard.jsx` · `pages/Dashboard.css`
 
 | Section | Layout |
 |---------|--------|
-| **Header** | `PageHeader` — title “Portfolio Overview”; subtitle: portfolio name · display currency |
-| **KPI row** | Grid of `MetricCard`: Current Value (hero), Total Invested, Total P/L, XIRR; optional Realized/Unrealized P/L when API provides. Values use fluid typography (`clamp()` + `nowrap`) so large INR amounts stay inside card bounds. |
-| **FX warning** | `WarningBanner` if `summary.fx_status === 'fx_unavailable'` |
-| **Primary chart** | `ChartCard` — performance line chart (~300px); toolbar: benchmark select (return metrics only); controls: metric (`value` / `cumulative_return` / `twror`) + range pills (`7D`–`ALL`); footer: loading + benchmark warnings; empty: `EmptyState` |
-| **Secondary chart** | Compact `ChartCard` “Invested vs Current” — horizontal bar comparison |
+| **Header** | `PageHeader` — title “Portfolio Overview”; subtitle: portfolio name · display currency. |
+| **KPI row** | Grid of `MetricCard`: Current Value (hero), Total Invested, Total P/L, XIRR; optional Realized/Unrealized P/L when API provides. |
+| **FX warning** | `WarningBanner` if `summary.fx_status === 'fx_unavailable'`. |
+| **Primary chart** | `ChartCard` performance chart; metric (`value` / `cumulative_return` / `twror`), range pills (`7D`-`ALL`), benchmark selector for return metrics, benchmark warnings, empty state. |
+| **Metric Sheet** | Portfolio Metric Sheet section below the performance chart; independent loading/error state; summary cards, risk/return, benchmark, periodic returns, yearly return chart, drawdown chart/table, monthly heatmap. |
+| **Secondary chart** | Compact `ChartCard` “Invested vs Current” — horizontal bar comparison from backend summary totals. |
 
-**States:** `LoadingState` · `ErrorState` · chart empty when no series points.
+**States:** `LoadingState`, `ErrorState`, chart empty state, Metric Sheet section-local error, backend warnings, stale-response guards when scope/currency/range/benchmark changes.
 
-**APIs:** `fetchDashboardSummary(apiQuery)` · `fetchPortfolioPerformance(metric, benchmark, range, apiQuery)` · `fetchBenchmarkIndices()` (when benchmark picker shown).
+**APIs:** `fetchDashboardSummary(apiQuery, { includeTimeseries: false })`, `fetchPortfolioPerformance(metric, benchmark, range, apiQuery)`, `fetchBenchmarkIndices()`, `getPortfolioMetricSheet(params)`.
 
-**Notes:** Chart merges comparison series for display only; no client-side performance math.
+**Preserve in redesign:** current behavior includes the Invested vs Current chart. Any future removal must be proposed in this file and approved before implementation. Dashboard must not request summary timeseries for KPI-only load and must not compute performance, FX, allocation, or Metric Sheet values in React.
+
+**Tests:** `Dashboard.test.jsx`, `metricSheet.test.jsx`, `api.test.js`.
 
 ---
 
 ## 5. Assets (`/assets`)
 
-**Files:** `Assets.jsx` · `Assets.css`
+**Files:** `pages/Assets.jsx` · `pages/Assets.css`
 
 | Section | Layout |
 |---------|--------|
-| **Header** | `PageHeader` + short description (cached prices / `make refresh`) |
-| **FX warning** | When display currency ≠ holding currencies and `fx_status === 'fx_unavailable'` |
-| **Main grid** | ~65% table (primary) · ~35% allocation donut (`ChartCard`) on desktop; chart stacks first on mobile |
-| **Active table** | Sortable columns: Symbol, Qty, Avg Cost, Latest Price, Current Value, Unrealized P/L, XIRR; `StatusBadge` for oversold / price_missing; row click → asset detail |
-| **Allocation chart** | Donut from active holdings `current_value`; tooltip shows API value + display-only % of sum |
-| **Closed holdings** | `SectionCard` “Previous holdings” — **collapsed by default**; toggle reveals table (closed badge, zero qty) |
+| **Header** | `PageHeader` + cached prices / `make refresh` guidance. |
+| **FX warning** | Warning when display currency differs from holdings and `fx_status === 'fx_unavailable'`. |
+| **Main grid** | Holdings table primary, allocation donut supporting analysis. |
+| **Active holdings** | Rows for stock/MF/FD investment assets; status badges for oversold, price missing, closed; row click -> asset detail where applicable. |
+| **Allocation** | Donut from backend `allocation`; includes cash/bank cash/FD allocation rows from API. |
+| **Closed holdings** | “Previous holdings” collapsed by default. |
 
-**States:** `LoadingState` · `ErrorState` · table `EmptyState` · chart empty states (no holdings / no prices).
-
-**Behavior:** Client-side sort only; filters `closed` / zero-qty to previous section; navigation to `/assets/:symbol`.
+**States:** loading, API error, empty assets, chart empty when all current values are zero, price/NAV/FX warnings.
 
 **API:** `fetchHoldings(apiQuery)`.
+
+**Preserve in redesign:** cash rows may appear in allocation/cash balance sections but must not become clickable investment rows or Compare subjects. React may calculate display-only chart percentages, but not valuations.
+
+**Tests:** `Assets.test.jsx`.
 
 ---
 
 ## 6. Asset Detail (`/assets/:assetSymbol`)
 
-**Files:** `AssetDetail.jsx` · `AssetDetail.css`
+**Files:** `pages/AssetDetail.jsx` · `pages/AssetDetail.css`
 
 | Section | Layout |
 |---------|--------|
-| **Header** | `PageHeader` — symbol title; breadcrumb link to Assets; subtitle: scope · currency |
-| **Warnings** | FX + API `warnings[]` banners |
-| **Hero KPIs** | Grid: Current Value (hero), Quantity, Unrealized P/L, XIRR |
-| **Position / Cost Basis** | `SectionCard` — invested (FIFO), avg cost, realized P/L, quantity |
-| **Market / Valuation** | `SectionCard` — latest price, current value, currency |
-| **Data Quality** | `SectionCard` — `StatusBadge` for holding, price, FX status |
-| **Transaction History** | `SectionCard` — table with `.ui-txn-type` badges; numeric cols right-aligned; split ratio column |
+| **Header** | `PageHeader` with symbol/scheme title, breadcrumb to Assets, scope/currency subtitle. |
+| **Warnings** | FX and API `warnings[]` banners. |
+| **Hero KPIs** | Current Value, Quantity/Units, Unrealized P/L, XIRR. |
+| **Metric Sheet** | Asset Metric Sheet below hero KPIs; local range and benchmark controls; passes `folio_number` when asset detail payload includes it. |
+| **Position / Cost Basis** | FIFO/invested/avg cost/realized/quantity fields from API. |
+| **Market / Valuation** | Latest price/NAV, current value, currency. |
+| **Data Quality** | Holding, price/NAV, FX status badges. |
+| **Transaction History** | Scoped transaction table with `.ui-txn-type` badges and split ratio column. |
 
-**States:** `LoadingState` · `ErrorState` · empty transaction `EmptyState`.
+**States:** waits for `settingsLoaded && apiQuery`, loading, API error, empty transaction history, Metric Sheet section-local error, folio guidance when backend requires `folio_number`.
 
-**API:** `fetchAssetDetails(assetSymbol, apiQuery)`.
+**APIs:** `fetchAssetDetails(assetSymbol, apiQuery)`, `getAssetMetricSheet(assetSymbol, params)`.
+
+**Preserve in redesign:** MF folio-specific behavior, backend warnings, split/price/NAV data quality, and no client-side FIFO/XIRR/Metric Sheet math.
+
+**Tests:** `AssetDetail.test.jsx`, `metricSheet.test.jsx`.
 
 ---
 
 ## 7. Transactions (`/transactions`)
 
-**Files:** `Transactions.jsx` · `Transactions.css` · `TransactionModal.jsx` / `.css`
+**Files:** `pages/Transactions.jsx` · `pages/Transactions.css` · `components/TransactionModal.jsx` · `components/TransactionModal.css`
 
 | Section | Layout |
 |---------|--------|
-| **Header** | `PageHeader` — record count subtitle; actions: hidden file input + Import CSV + Add Transaction |
-| **Cash-aware** | `CashAwarePortfolioStatus` (Cash-4A.2) — status + enable when one portfolio selected; per-portfolio note in All Portfolios scope |
-| **Import info** | Info `WarningBanner` (target portfolio, stock split/SWAP rules); expandable “Supported CSV formats” (stock + MF columns, rules, MF example, sample MF download) |
-| **Import feedback** | Success/warning banner; error block with row-level list |
-| **Table** | Checkbox, Portfolio, Symbol, Date, Type (`.ui-txn-type`), Qty, Price, Fees, Total, Actions (edit/delete icon buttons) |
-| **Bulk actions** | Toolbar when rows selected: portfolio dropdown (active real only), Apply, Clear; partial failure banner |
-| **Modal** | `TransactionModal` — add: **Record type** Cash / Stock / Mutual Fund; cash → `POST /cash/deposits` or `/cash/withdrawals` (not `/transactions`); stock/MF unchanged; **SELL** optional actual cash received + settlement note; edit asset rows only (cash edit on `/cash`); success banner + link to Cash page after cash add; edit blocked → `CashFutureImpactDisplay` or BUY shortfall panel |
-| **Delete impact** | Inline `CashFutureImpactDisplay` when delete blocked by linked settlement future-impact (**409**); generic delete errors → `WarningBanner` |
+| **Header** | `PageHeader` with record count; actions: hidden file input, Import CSV, Add Transaction. |
+| **Cash-aware** | `CashAwarePortfolioStatus`; enable button for single legacy portfolio; all-scope note otherwise. |
+| **Filters** | `TransactionFilterBar`: portfolio dropdown, searchable symbol multi-select, date modes Earlier than / Later than / Between, active chips, Clear filters. |
+| **CSV guidance** | Expandable stock and MF CSV format guidance, MF sample download, target portfolio / split/SWAP notes. |
+| **CSV cash preview** | On file select, `previewCsvImportCash`; shortfall modal with proposed deposits; confirmed import sends `create_cash_deposits=true` and `cash_preview_confirmed=true`. |
+| **Import feedback** | Success/warning banner and row-level error list. |
+| **Table** | Checkbox, Portfolio, Symbol/Scheme, Folio/NAV status for MF rows, Date, Type, Qty/Units, Price/NAV, Fees, Total, Actions. |
+| **Pagination** | `page_size` 20/50/100; Previous/Next when `total > page_size`; filters persist across pagination. |
+| **Bulk assign** | Selected visible rows -> toolbar with real-portfolio dropdown; full PUT payload per selected row; preserves stock, MF, and `STOCK_SPLIT` fields; partial failure banner. |
+| **Edit/delete** | Edit opens `TransactionModal`; delete confirms; future-impact 409 renders `CashFutureImpactDisplay`; generic errors use `WarningBanner`. |
+| **Modal** | Add record type Cash / Stock / Mutual Fund. Stock supports BUY/SELL/DIVIDEND/STOCK_SPLIT; MF uses backend field names; cash posts to `/cash/*` and is edited on `/cash`. |
 
-**States:** `LoadingState` · `ErrorState` · table `EmptyState`.
+**States:** loading, API error, empty table, invalid Between date suppresses request, import success/error, CSV cash preview modal, delete future-impact, bulk partial failure, cash shortfall/add-and-continue states.
 
-**Behavior:** Paginated list (`page`, `page_size` 20/50/100); Previous/Next when `total > page_size`; resets to page 1 on portfolio scope change and after CSV import; delete confirms; modal refresh on success; bulk assign uses `buildTransactionUpdatePayload` + `updateTransaction` per selected row; line total = display-only `qty × price + fees` (not for splits).
+**APIs:** `fetchTransactions(page, pageSize, apiQuery, filters)`, `fetchTransactionFilterOptions(apiQuery)`, `createTransaction`, `updateTransaction`, `deleteTransaction`, `previewCsvImportCash`, `importTransactionsCsv`, `createCashDeposit`, `createCashWithdrawal`.
 
-**APIs:** `fetchTransactions` · `createTransaction` / `updateTransaction` · `deleteTransaction` · `importTransactionsCsv`.
+**Preserve in redesign:** filters apply before backend pagination; `portfolio_scope=all` and `portfolio_id` must not be sent together; MF CSV/manual fields must keep backend names; CSV cash deposits require user confirmation; cash is never posted as `asset_type=CASH`; no client-side cash balance/future-impact simulation. SELL proceeds preview is display-only; backend computes settlements and tax-withheld rows.
+
+**Tests:** `Transactions.test.jsx`, `TransactionModal.test.jsx`, `csvImportGuidance.test.js`, `transactionPayload.test.js`, `transactionDisplay.test.js`, `purchaseShortfallHelpers.test.js`, `api.test.js`.
 
 ---
 
-## 8. Settings (`/settings`)
+## 8. Cash (`/cash`)
 
-**Files:** `Settings.jsx` · `Settings.css`
+**Files:** `pages/Cash.jsx` · `pages/Cash.css` · `components/CashBulkEntriesWizard.jsx`
 
 | Section | Layout |
 |---------|--------|
-| **Header** | `PageHeader` “Settings” |
-| **Display & tax** | `SectionCard` — tax rate input, display currency select, hint linking to sidebar selector, Save `Button` |
-| **Portfolios** | `SectionCard` + `PortfolioManagement` — table with Cash-aware On/Off, **Enable cash-aware** for legacy rows, create form, edit modal, deactivate (non-default) |
-| **Bank accounts** | `SectionCard` + `BankAccountManagement` — list, create/edit forms, deactivate, seed opening balance; **Include in portfolio value** toggle; **View movements** expands `CashMovementManagement` (ledger table, record modal, immutable rows) |
-| **Feedback** | Success / error `WarningBanner` after save |
+| **Header** | `PageHeader` — native balances by portfolio/currency; no display-currency cash totals on this page. |
+| **Cash-aware** | `CashAwarePortfolioStatus`; enable for selected legacy portfolio; all-scope explanatory note. |
+| **Actions** | Add Deposit, Add Withdrawal, Add Bulk Cash Entries, Transfer Cash. |
+| **Balances** | Full-width `SectionCard`; balance table by portfolio/currency; `totals_by_currency` for all scope when API returns it. |
+| **Ledger** | Full-width `SectionCard`; filters for currency, entry type, date from/to; backend pagination; Details column from API. |
+| **Manual edit/delete** | Manual deposit/withdrawal rows only; edit modal reuses cash fields; delete confirm; future-impact 409 panel; linked/system/transfer rows are protected. |
+| **Bulk cash entries** | Configure -> `previewCashBulkEntries`; Review schedule/warnings/totals -> `applyCashBulkEntries`; Result summary; refresh balances + ledger. |
+| **Transfer Cash** | Same- or cross-currency transfer; user-entered target amount; implied rate informational only; no market FX. |
 
-**States:** `LoadingState` · `ErrorState` on initial load failure.
+**States:** balance loading/error/empty, ledger loading/error/empty, write success/error, withdrawal shortfall, future-impact panel, transfer shortfall/future-impact, bulk preview warnings/result.
 
-**APIs:** `getSettings` · `updateSettings` (also updates `portfolioContext` display currency) · `createPortfolio` / `updatePortfolio` / `deletePortfolio` via `PortfolioManagement` + `reloadPortfolios()` · `fetchBankAccounts` / bank CRUD · `fetchCashMovements` / `createCashMovement` via `CashMovementManagement`.
+**APIs:** `fetchCashBalances`, `fetchCashLedger`, `createCashDeposit`, `createCashWithdrawal`, `createCashTransfer`, `updateCashLedgerEntry`, `deleteCashLedgerEntry`, `previewCashBulkEntries`, `applyCashBulkEntries`.
 
-**Note:** Cached-data explainer lives in app shell sidebar footer, not on this page.
+**Preserve in redesign:** React displays backend cash balances, ledger rows, details, shortfalls, and future-impact payloads only. Do not compute running balances, join cash and asset transactions client-side, silently create deposits, or add implicit FX conversion.
+
+**Tests:** `Cash.test.jsx`, `CashAwarePortfolioStatus.test.jsx`, `api.test.js`.
 
 ---
 
-## 9. Layout change process
+## 9. Fixed Deposits (`/fixed-deposits`)
 
-1. **Update** this file with the proposed layout change.
+**Files:** `pages/FixedDeposits.jsx` · `pages/FixedDeposits.css`
+
+| Section | Layout |
+|---------|--------|
+| **Header** | `PageHeader` with FD/debt workflow context and Add Fixed Deposit action. |
+| **Table/list** | Backend FD fields: institution, deposit account, principal, rate, investment/maturity dates, payout frequency, status, linked portfolio/bank account, lifecycle flags. |
+| **Bank account dependency** | Fetches active bank accounts and portfolios. Create is blocked/guided when no active bank account exists. |
+| **Create modal** | Portfolio and bank account dropdowns; currency read-only from selected bank account; principal/rate/dates/status; shows ledger balance from API and as-of-date/backdated guidance. |
+| **Edit modal** | Existing FD fields; principal/bank/currency/investment date/portfolio disabled when `has_opening_cash_movement`; backend errors remain visible. |
+| **Deactivate** | `DELETE /fixed-deposits/{id}` soft deactivates where allowed. |
+| **Interest payments** | Expand/list per-FD payments; Record Interest modal with payment date, gross interest, tax withheld, display-only net; backend warnings (e.g. compounded FD) shown. |
+| **Maturity/settlement** | Mark Matured for active FDs; Settle/Close modal with principal returned, gross final interest, tax withheld, display-only net/total; settled/closed rows hide settlement actions. |
+| **Renewal** | Renew action for eligible ACTIVE/MATURED FDs; modal with new terms, direct rollover, cash payout, tax fields, bank cash warnings; hidden when settled or already renewed. |
+
+**States:** waits for `settingsLoaded && apiQuery`, loading, API error, empty list, no-bank-account warning, unseeded opening balance warning, insufficient ledger warning/error, lifecycle success/error banners.
+
+**APIs:** `fetchFixedDeposits(apiQuery)`, `fetchPortfolios`, `fetchBankAccounts`, `createFixedDeposit`, `updateFixedDeposit`, `deleteFixedDeposit`, `fetchFixedDepositInterestPayments`, `createFixedDepositInterestPayment`, `markFixedDepositMatured`, `settleFixedDeposit`, `renewFixedDeposit`.
+
+**Exported but not currently page-used:** `fetchFixedDepositInterestPayment`, `fetchFixedDepositSettlements`, `fetchFixedDepositSettlement` are API-client helpers for implemented detail endpoints and should be treated as intentional available wrappers unless removed in a future API cleanup.
+
+**Accounting/cash display rules:** React displays backend FD principal, ledger balance, warning, lifecycle, and cash-impact fields only. No accrued interest, FD IRR, bank cash, settlement, tax, or portfolio value calculations in React. Interest/settlement credits and included bank cash behavior are backend-owned.
+
+**Tests:** `FixedDeposits.test.jsx`, `BankAccountManagement.test.jsx`, `CashMovementManagement.test.jsx`, `api.test.js`.
+
+**Preserve in redesign:** bank account dependency, ledger-derived balance copy, opening movement immutability, lifecycle action visibility, renewal constraints, backend warnings, and no frontend accounting math.
+
+---
+
+## 10. Compare (`/compare`)
+
+**Files:** `pages/Compare.jsx` · `pages/Compare.css` · `components/metricSheet/*`
+
+| Section | Layout |
+|---------|--------|
+| **Header** | `PageHeader` with selected portfolio scope and display currency. |
+| **Subject pickers** | Two dropdowns built from `fetchHoldings(apiQuery)` via `buildCompareAssetOptions`; active holdings first; closed holdings labeled `(closed)`; same-asset validation. |
+| **Cash exclusion** | Cash and bank cash rows (`is_cash`, `asset_type=CASH` / `BANK_CASH`) are excluded from comparison subjects. |
+| **Controls** | Range segmented control and optional benchmark selector from `fetchBenchmarkIndices()`. |
+| **Normalized chart** | `CompareNormalizedChart` renders backend `normalized_series` as percent axis/tooltips; no client-side normalization/math beyond display mapping. |
+| **Metric comparison** | `CompareMetricTable` side-by-side return, risk, drawdown, and optional benchmark metrics; subtle better/worse highlighting is display-only. |
+| **Periodic/drawdown sections** | `ComparePeriodicReturnsSection` (yearly side-by-side) and `CompareDrawdownPeriodsSection` (per subject worst drawdowns). |
+| **Warnings/context** | `MetricSheetWarnings`, subject-level warnings, common overlap note from `common_start_date` / `common_end_date`, requested-vs-common range copy. |
+
+**States:** waits for `settingsLoaded && apiQuery`, holdings loading/error, fewer-than-two holdings empty state, same-subject validation, compare loading/error, normalized chart empty, backend warnings, calm MF multi-folio error when backend requires folio selection.
+
+**APIs:** `fetchHoldings(apiQuery)`, `fetchBenchmarkIndices()`, `getCompareMetricSheet({ subjects, range, benchmark, portfolio scope, display_currency })`.
+
+**Preserve in redesign:** exactly two asset subjects, no cash subjects, current MF multi-folio backend-error handling, backend common-window semantics, XIRR full-scope note, benchmark propagation, and no frontend Sharpe/beta/return/drawdown calculations.
+
+**Tests:** `Compare.test.jsx`, `metricSheet.test.jsx`, `compareMetricRanking.test.js`, `compareHoldings.test.js`, `metricSheetCopy.test.js`, `api.test.js`.
+
+---
+
+## 11. Settings (`/settings`)
+
+**Files:** `pages/Settings.jsx` · `pages/Settings.css` · `components/PortfolioManagement.jsx` · `components/BankAccountManagement.jsx` · `components/CashMovementManagement.jsx`
+
+| Section | Layout |
+|---------|--------|
+| **Header** | `PageHeader` “Settings”. |
+| **Display & tax** | `SectionCard` with tax rate input, display currency select, sidebar sync hint, Save button. |
+| **Portfolios** | Real portfolio CRUD, max active portfolio enforcement, default portfolio protected, Cash-aware On/Off and Enable action for legacy rows. |
+| **Bank accounts** | Active account list, create/edit/deactivate, full account number display, ledger-derived current balance, seed opening balance, include-in-portfolio-value toggle. |
+| **Cash movements** | Per-account expandable ledger via `CashMovementManagement`; manual deposit/withdrawal/adjustment modal; immutable rows. |
+| **Feedback** | Success/error `WarningBanner` after writes. |
+
+**States:** initial loading/error, settings save success/error, portfolio validation errors, bank-account ledger/unseeded warnings, cash movement errors.
+
+**APIs:** `getSettings`, `updateSettings`, `createPortfolio`, `updatePortfolio`, `deletePortfolio`, `fetchBankAccounts`, `createBankAccount`, `updateBankAccount`, `deleteBankAccount`, `seedBankAccountOpeningBalance`, `fetchCashMovements`, `createCashMovement`, `reloadPortfolios()`.
+
+**Preserve in redesign:** display currency must stay synchronized with sidebar context; All Portfolios remains virtual and cannot be created/assigned; default portfolio cannot be deactivated; bank ledger/current balance rules are backend-owned.
+
+**Tests:** `Settings.test.jsx`, `BankAccountManagement.test.jsx`, `CashMovementManagement.test.jsx`, `Layout.test.jsx`.
+
+---
+
+## 12. Auth pages (`/login`, `/register`, `/forgot-password`)
+
+**Files:** `pages/auth/Login.jsx` · `pages/auth/Register.jsx` · `pages/auth/ForgotPassword.jsx` · `pages/auth/AuthShell.jsx` · `pages/auth/Auth.css`
+
+| Route | Layout and behavior |
+|-------|---------------------|
+| `/login` | Public-only auth shell; email/username + password form; submit calls `useAuth().login`; success navigates to `/`; error shown inline; links to forgot password and register; Google sign-in button. |
+| `/register` | Public-only auth shell; registration form; submit calls `useAuth().register`; success navigates to `/`; backend validation errors shown; Google sign-in button. |
+| `/forgot-password` | Public-only auth shell; email form; submit calls `requestPasswordReset`; success/detail message shown; errors shown; link back to login. |
+
+**Google OAuth:** `GoogleSignInButton` calls `window.location.assign('/accounts/google/login/?process=login')`; Vite proxies `/accounts` to Django/allauth. Successful allauth login redirects to `FRONTEND_URL/`.
+
+**CSRF/session:** `AuthProvider` ensures CSRF cookie on app load and before login/register. `fetchWithHandling` uses `credentials: 'include'` and adds `X-CSRFToken` for unsafe methods when the `csrftoken` cookie exists.
+
+**401 redirect:** non-auth API 401 responses call the unauthorized handler and navigate to `/login`.
+
+**States:** auth loading in protected/public route wrappers, form submitting, inline error messages, password reset success/detail message.
+
+**Tests:** `App.test.jsx`, `auth.test.js`, `Register.test.jsx`, `AuthShell.test.jsx`. Current gap before a major redesign: add direct `Login.jsx` and `ForgotPassword.jsx` page tests.
+
+**Preserve in redesign:** session-cookie auth, CSRF bootstrap, public-only auth pages, protected app redirects, post-login/register redirect to dashboard, Google OAuth path, and visible backend validation messages.
+
+---
+
+## 13. Frontend Redesign API Preservation Checklist
+
+- `frontend/src/api.js` is the source of frontend API wrapper truth; do not infer endpoint usage from visual pages alone.
+- Before redesigning a route, map every API wrapper it uses to a page/feature in this document.
+- Exported but unused wrappers must be marked intentional, planned/deferred, or removed in an approved cleanup. Current intentionally available wrappers include `fetchHealth`, `refreshPrices`, `forceSyncPortfolio`, `fetchFixedDepositInterestPayment`, `fetchFixedDepositSettlements`, and `fetchFixedDepositSettlement`.
+- Redesign work must not silently drop API calls, query params, warning fields, empty states, loading gates, or user actions documented here.
+- Preserve `credentials: 'include'`, CSRF header behavior, auth endpoints, `setUnauthorizedHandler`, and protected/public route behavior.
+- Preserve `portfolio_scope=all` vs `portfolio_id` exclusivity and `display_currency` propagation through `apiQuery`.
+- Preserve `settingsLoaded` readiness gates where current pages wait before fetching scoped APIs.
+- Preserve no-read-path external provider rules: no yfinance, AMFI/MFAPI, live FX, NAV, or benchmark provider calls from frontend/read pages.
+- Preserve the no-frontend-finance rule: no FIFO, valuation, FX conversion, XIRR, TWROR, Sharpe, Sortino, beta, alpha, drawdown, cash balance, or future-impact calculations in React.
+
+---
+
+## 14. Layout change process
+
+1. **Update** this file with the proposed layout/API/state/action change.
 2. **Mark** the change **Proposed** (use template below).
 3. **Wait** for user approval.
 4. **Implement** approved change in React/CSS only after approval.
-5. **Update** Vitest/RTL tests if structure, roles, or visible text change.
+5. **Update** Vitest/RTL tests if structure, roles, visible text, API params, or state behavior changes.
 6. **Record** in `docs/changelog.md`.
 7. **Mark** the change **Implemented** in this file.
 
 ---
 
-## 10. Proposed change template
+## 15. Proposed change template
 
 ```markdown
 ### [Short title]
@@ -173,8 +318,8 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 - **Current layout:** (brief)
 - **Proposed layout change:** (brief)
 - **Reason:** (why)
-- **API impact:** None | describe endpoint/field changes
-- **Frontend state impact:** None | describe
+- **API impact:** None | describe endpoint/field/query-param changes
+- **Frontend state impact:** None | describe loading/error/empty/warning/action changes
 - **Components affected:** (list)
 - **Tests required:** (list)
 - **Approval status:** Proposed | Approved | Implemented
@@ -182,124 +327,24 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 ---
 
-## 11. Page ownership table
+## 16. Page ownership table
 
 | Route | React | CSS | Primary components | API calls | Layout status |
 |-------|-------|-----|-------------------|-----------|---------------|
-| `/` | `pages/Dashboard.jsx` | `Dashboard.css` | PageHeader, MetricCard, ChartCard, SegmentedControl, WarningBanner, EmptyState | summary, performance, benchmarks | **Implemented** |
-| `/assets` | `pages/Assets.jsx` | `Assets.css` | PageHeader, ChartCard, SectionCard, StatusBadge, CurrencyValue, PercentValue | holdings | **Implemented** |
-| `/assets/:assetSymbol` | `pages/AssetDetail.jsx` | `AssetDetail.css` | PageHeader, MetricCard, SectionCard, StatusBadge, `.ui-txn-type` | asset detail | **Implemented** |
-| `/transactions` | `pages/Transactions.jsx` | `Transactions.css` | PageHeader, Button, WarningBanner, TransactionModal, `.ui-txn-type` | transactions CRUD, CSV import, bulk assign | **Implemented** |
-| `/cash` | `pages/Cash.jsx` | `Cash.css` | PageHeader, SectionCard, Button, EmptyState, CurrencyValue, deposit/withdrawal modals | cash balances, ledger, deposits, withdrawals | **Implemented** |
-| `/fixed-deposits` | `pages/FixedDeposits.jsx` | `FixedDeposits.css` | PageHeader, SectionCard, Button, WarningBanner, CurrencyValue, create/edit/interest/settlement/renewal modals | bank-accounts, fixed-deposits, interest-payments, settlements, renew, portfolios | **Implemented** |
-| `/settings` | `pages/Settings.jsx` | `Settings.css` | PageHeader, SectionCard, PortfolioManagement, BankAccountManagement, CashMovementManagement, Button, WarningBanner | settings GET/PUT, portfolio CRUD, bank-accounts, cash-movements | **Implemented** |
-| (shell) | `components/Layout.jsx` | `Layout.css` | WarningBanner, nav, selectors | portfolios, settings (context) | **Implemented** |
+| `/login` | `pages/auth/Login.jsx` | `auth/Auth.css` | AuthShell, GoogleSignInButton, Button | auth login via `useAuth`, CSRF | **Implemented** |
+| `/register` | `pages/auth/Register.jsx` | `auth/Auth.css` | AuthShell, GoogleSignInButton, Button | auth register via `useAuth`, CSRF | **Implemented** |
+| `/forgot-password` | `pages/auth/ForgotPassword.jsx` | `auth/Auth.css` | AuthShell, Button | password reset | **Implemented** |
+| `/` | `pages/Dashboard.jsx` | `Dashboard.css` | PageHeader, MetricCard, ChartCard, Metric Sheet, SegmentedControl | summary, performance, benchmarks, portfolio Metric Sheet | **Implemented** |
+| `/transactions` | `pages/Transactions.jsx` | `Transactions.css` | PageHeader, TransactionModal, filter bar, WarningBanner | transactions CRUD, filter options, CSV import, CSV cash preview | **Implemented** |
+| `/cash` | `pages/Cash.jsx` | `Cash.css` | PageHeader, SectionCard, CashBulkEntriesWizard, CashAwarePortfolioStatus | cash balances, ledger, deposits, withdrawals, transfers, bulk entries | **Implemented** |
+| `/assets` | `pages/Assets.jsx` | `Assets.css` | PageHeader, ChartCard, SectionCard, StatusBadge | holdings/allocation | **Implemented** |
+| `/assets/:assetSymbol` | `pages/AssetDetail.jsx` | `AssetDetail.css` | PageHeader, MetricCard, AssetDetailMetricSheet, SectionCard | asset detail, asset Metric Sheet | **Implemented** |
+| `/fixed-deposits` | `pages/FixedDeposits.jsx` | `FixedDeposits.css` | PageHeader, SectionCard, lifecycle modals | fixed deposits, portfolios, bank accounts, interest, settlement, renewal | **Implemented** |
+| `/compare` | `pages/Compare.jsx` | `Compare.css` | PageHeader, CompareNormalizedChart, CompareMetricTable, MetricSheetWarnings | holdings, benchmarks, compare Metric Sheet | **Implemented** |
+| `/settings` | `pages/Settings.jsx` | `Settings.css` | PageHeader, PortfolioManagement, BankAccountManagement, CashMovementManagement | settings, portfolios, bank accounts, cash movements | **Implemented** |
+| `(shell)` | `components/Layout.jsx` | `components/Layout.css` | nav, selectors, ThemeSelector, WarningBanner | portfolios, settings, auth logout | **Implemented** |
 
-**Shared:** `components/ui/*` · `components/charts/chartTheme.js` · `portfolioContext.jsx`
-
----
-
-## 12. Cash page (`/cash`) — **Implemented** (Cash-3B)
-
-| Field | Value |
-|-------|--------|
-| Route | `/cash` |
-| Component | `pages/Cash.jsx` |
-| Styles | `pages/Cash.css` |
-| Primitives | `PageHeader`, `SectionCard`, `Button`, `EmptyState`, `LoadingState`, `ErrorState`, `WarningBanner`, `CurrencyValue` |
-| APIs | `GET /cash/balances`, `GET /cash/ledger`, `POST /cash/deposits`, `POST /cash/withdrawals`, `POST /cash/transfers` |
-
-Design: [cash-ledger.md](./cash-ledger.md).
-
-| Section | Layout |
-|---------|--------|
-| **Header** | `PageHeader` — title **Cash**; subtitle: native balances by portfolio and currency (no display-currency conversion on this page) |
-| **Cash-aware** | `CashAwarePortfolioStatus` — status + enable for selected portfolio; All Portfolios note only |
-| **Actions** | **Add Deposit** (primary), **Add Withdrawal** (secondary), **Add Bulk Cash Entries** (secondary), **Transfer Cash** (secondary); deposit/withdrawal/transfer modals; `CashBulkEntriesWizard` |
-| **Balances** | `SectionCard` (`cash-page__section`) — **full content width**; table: Portfolio (all scope), Currency, Balance; optional **Totals by currency** list from API |
-| **Ledger** | `SectionCard` (`cash-page__section`) — **full content width**; filters: currency, entry type, date from/to; table: Date, Portfolio (all scope), Type, Currency, Amount, **Details** (backend `details`), **Actions**; backend pagination |
-| **Ledger actions** | Manual deposit/withdrawal only: Edit (modal) / Delete (confirm). System/linked/**transfer** rows show em dash with tooltip |
-| **Edit modal** | Reuses deposit/withdrawal modal — **Edit Deposit** / **Edit Withdrawal**; portfolio read-only; `PUT /cash/ledger/{id}` |
-| **Delete** | Confirm: “Delete this cash entry? This will update cash balances.” → `DELETE /cash/ledger/{id}` |
-| **Future impact (Cash-4D)** | **409** shows `CashFutureImpactDisplay`: earliest negative date, lowest balance, affected entries (incl. linked `asset_symbol`); helper to fix manually — no cascade delete |
-| **Empty states** | No balances / no ledger entries |
-| **Success / errors** | `WarningBanner` success after write/edit/delete; modal errors; insufficient withdrawal / future-impact rejection from API |
-
-**Not on this page:** transfer fees, same-portfolio FX conversion, display-currency cash totals, portfolio change on edit.
-
-### Transfer Cash modal (Cash-8A/8B) **Implemented**
-
-Modal from **Transfer Cash**. Fields: source portfolio, target portfolio (excludes source), date, source currency, source amount, target currency, target amount, note.
-
-| Scope | Source portfolio |
-|-------|------------------|
-| Single portfolio | Preselected from Portfolio View |
-| All Portfolios | Required dropdown |
-
-Same-currency convenience: when source and target currency match, target amount copies from source amount. Cross-currency: user enters received target amount manually — **no market FX rate is applied**. Optional implied rate shown before submit (informational only). On success: close modal, refresh balances + ledger; cross-currency success may include implied rate in banner.
-
-### Bulk cash entries (`CashBulkEntriesWizard` — Cash-7D) **Implemented**
-
-Modal from **Add Bulk Cash Entries**. Server generates schedule; React displays preview/apply only.
-
-| Step | Content |
-|------|---------|
-| 1 **Configure** | Portfolio, deposit/withdrawal, currency, amount, start/end dates, once/monthly, source, note → **Preview schedule** |
-| 2 **Review** | Entry count, totals, scheduled rows table, warnings (duplicates, withdrawal negative balance) → **Apply bulk entries** |
-| 3 **Result** | `created_count`, `skipped_existing_count`, created rows; refresh balances + ledger |
-
-**Not on this page:** shortfall backfill (Cash-7A/7B/7C removed). Historical funding via bulk entries or manual deposits.
-
-### Planned — Cash balances on Dashboard / Settings (Cash-6+)
-
-### CSV import cash preview (Cash-5) **Implemented**
-
-Embedded in **Transactions** import flow after file select:
-
-| Section | Layout |
-|---------|--------|
-| **Preview API** | `POST /transactions/import-csv/preview-cash` — simulation; no writes |
-| **Modal** | “This import requires additional cash.” — totals by currency, proposed deposits table, shortfall details |
-| **Primary action** | **Add required cash deposits and import all rows** — `create_cash_deposits` + `cash_preview_confirmed` |
-| **Secondary** | **Cancel import** — no deposits, no transactions |
-| **Legacy** | `cash_aware=false` — preview passes through; import unchanged |
-| **No silent path** | Cash-aware shortfall without confirm → **409**; frontend shows modal |
-
-### Transaction modal — insufficient cash (Cash-4B / Cash-4E) **Implemented**
-
-On stock or mutual fund **BUY** when `POST`/`PUT /transactions` returns **400** with shortfall fields (cash-aware portfolio):
-
-| Element | Behavior |
-|---------|----------|
-| Error banner | **Insufficient cash balance for purchase.** |
-| Shortfall panel | `CashShortfallDisplay` — Required / Available / Shortfall via `CurrencyValue` (backend values only) |
-| Same-currency guidance | Purchases require cash in the transaction currency; add or edit `{currency}` cash in this portfolio, then retry. Another currency is **not** used automatically (no FX conversion in this phase). |
-| Helper | Link to `/cash` — **Open Cash page** |
-| Scope | BUY only; not SELL, `STOCK_SPLIT`, or generic validation errors |
-
-Cash record type: withdrawal shortfall unchanged (`CashApiError` in `CashEntryFormFields`) — amounts only, no purchase wording.
-
-### Transaction modal — add missing cash and continue (Cash-4C) **Implemented**
-
-After stock/MF **BUY** shortfall (cash-aware portfolio):
-
-| Element | Behavior |
-|---------|----------|
-| Shortfall panel | `CashShortfallDisplay` + same-currency purchase guidance (Cash-4E) |
-| **Recommended action** | Title + copy: add missing `{currency}` deposit and continue |
-| Fields | Source of funds (text), Note (optional) |
-| Primary action | **Add missing cash and continue** — `POST /cash/deposits` with backend `shortfall` / `currency`; stock date = transaction date; MF date = `investment_date`; then retry original BUY |
-| Loading | Disables Save + action button; status **Adding cash and recording purchase…** |
-| Success | Close modal; banner **Cash deposit added and purchase recorded.**; refresh transactions |
-| Partial success | Deposit created; modal stays open; warning if retry fails (deposit not reversed) |
-| Excluded | SELL, withdrawal shortfall, errors without shortfall fields |
-
-### Dashboard / Assets impact (Cash-6)
-
-- **Dashboard KPI row:** optional “Cash” `MetricCard` when API includes cash in `current_value` breakdown.
-- **Assets allocation chart:** additional slices `Cash {currency}` (broker cash) and `Bank Cash` rows from API (`asset_type=BANK_CASH`).
-
-**Approval status:** Proposed (Cash-0 documentation only).
+**Shared:** `components/ui/*`, `components/metricSheet/*`, `components/charts/chartTheme.js`, `frontend/src/api.js`, `portfolioContext.jsx`, `authContext.jsx`, `themeContext.jsx`.
 
 ---
 
@@ -309,3 +354,4 @@ After stock/MF **BUY** shortfall (cash-aware portfolio):
 |------|--------|--------|
 | 2026-05-25 | Initial layout spec post design migration | Implemented |
 | 2026-05-27 | Settings portfolio CRUD; Transactions bulk assign | Implemented |
+| 2026-06-19 | Frontend redesign readiness governance expansion: app shell, auth, Compare, Cash, Fixed Deposits, Transactions, API preservation checklist | Implemented |

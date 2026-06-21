@@ -51,6 +51,7 @@ backups/
 !frontend/**/*.csv
 !backend/**/*.csv
 !docs/**/*.csv
+design-explorations/
 
 # Graphify generated artifacts
 graphify-out/cache/

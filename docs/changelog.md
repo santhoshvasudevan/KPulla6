@@ -1,5 +1,32 @@
 # Changelog — KPulla6
 
+## 2026-06-21 — Docs: Frontend redesign PRD
+
+### Added
+- `docs/frontend-redesign-references.md` — Product Requirement Document for the future **KPulla6 Executive Portfolio OS**, based on Ghostfolio UI benchmarking, chart benchmarking, and Direction 5 exploration.
+
+### Changed
+- `docs/dashboard-redesign-directions.md` — added a short note that Direction 5 is the preferred reference direction.
+
+### Notes
+- Documentation only; no runtime behavior changes.
+- No frontend code, backend code, API client code, tests, migrations, database data, or KPulla5 files changed.
+
+---
+
+## 2026-06-19 — Docs: Frontend redesign readiness governance
+
+### Updated
+- `docs/page-layouts.md` — expanded app shell, auth pages, Compare, Cash, Fixed Deposits, Transactions, and frontend API preservation contracts for future redesign work.
+- `docs/frontend-design.md` — resolved Dashboard chart documentation conflict; current Invested vs Current chart remains preserved unless a future `page-layouts.md` proposal is approved.
+- `.cursor/rules/200-frontend-design.mdc` — added redesign preservation, auth/session, and optional `DataTable` guidance.
+
+### Notes
+- Documentation/rules only; no runtime behavior changes.
+- No app code, backend code, tests, API client code, migrations, or database data changed.
+
+---
+
 ## 2026-06-14 — FD-ACC-9: FD accounting stabilization and audit
 
 ### Added
