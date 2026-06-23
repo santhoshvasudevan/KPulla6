@@ -9,15 +9,16 @@ import {
   ResponsiveContainer,
   Cell,
 } from 'recharts';
-import { ChartCard } from '../ui';
 import {
+  ChartFrame,
   getChartGridProps,
   getChartAxisStroke,
   getChartAxisTick,
   getChartTooltipStyle,
   getChartGainColor,
   getChartLossColor,
-} from '../charts/chartTheme';
+  getChartCrosshairCursorProps,
+} from '../charts';
 import { formatMetricPercentFraction } from '../../utils/metricFormatters';
 import { buildYearlyReturnChartData } from './metricSheetChartHelpers';
 import './metricSheet.css';
@@ -34,55 +35,49 @@ export default function MetricSheetYearlyReturnChart({ yearly = [], className = 
   const chartData = useMemo(() => buildYearlyReturnChartData(yearly), [yearly]);
 
   return (
-    <ChartCard
+    <ChartFrame
       title="Calendar-Year Return"
       subtitle="Cash-flow adjusted return using daily TWROR."
       className={['metric-sheet-yearly-chart', className].filter(Boolean).join(' ')}
+      panelClassName="metric-sheet-chart-panel"
       compact
+      density="analysis"
+      empty={!chartData.length}
+      emptyVariant="inline"
+      emptyDescription="No calendar-year return data available for this range."
     >
-      {!chartData.length ? (
-        <p className="metric-sheet__empty-inline">
-          No calendar-year return data available for this range.
-        </p>
-      ) : (
-        <div className="metric-sheet-chart-panel">
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
-              <CartesianGrid {...getChartGridProps()} vertical={false} />
-              <XAxis
-                dataKey="period"
-                stroke={getChartAxisStroke()}
-                tick={getChartAxisTick()}
+      <ResponsiveContainer width="100%" height={220}>
+        <BarChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
+          <CartesianGrid {...getChartGridProps()} vertical={false} />
+          <XAxis dataKey="period" stroke={getChartAxisStroke()} tick={getChartAxisTick()} />
+          <YAxis
+            stroke={getChartAxisStroke()}
+            tick={getChartAxisTick()}
+            tickFormatter={formatPercentAxis}
+          />
+          <Tooltip
+            contentStyle={getChartTooltipStyle()}
+            cursor={getChartCrosshairCursorProps('analysis')}
+            formatter={(value) => [
+              formatMetricPercentFraction(value, { showSign: true }),
+              'Return',
+            ]}
+            labelFormatter={(label) => `Year ${label}`}
+          />
+          <Bar dataKey="return" radius={[4, 4, 0, 0]} isAnimationActive={false}>
+            {chartData.map((entry) => (
+              <Cell
+                key={entry.period}
+                fill={
+                  entry.return != null && Number(entry.return) < 0
+                    ? getChartLossColor()
+                    : getChartGainColor()
+                }
               />
-              <YAxis
-                stroke={getChartAxisStroke()}
-                tick={getChartAxisTick()}
-                tickFormatter={formatPercentAxis}
-              />
-              <Tooltip
-                contentStyle={getChartTooltipStyle()}
-                formatter={(value) => [
-                  formatMetricPercentFraction(value, { showSign: true }),
-                  'Return',
-                ]}
-                labelFormatter={(label) => `Year ${label}`}
-              />
-              <Bar dataKey="return" radius={[4, 4, 0, 0]} isAnimationActive={false}>
-                {chartData.map((entry) => (
-                  <Cell
-                    key={entry.period}
-                    fill={
-                      entry.return != null && Number(entry.return) < 0
-                        ? getChartLossColor()
-                        : getChartGainColor()
-                    }
-                  />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-    </ChartCard>
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartFrame>
   );
 }

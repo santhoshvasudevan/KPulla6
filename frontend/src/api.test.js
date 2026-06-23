@@ -25,6 +25,34 @@ describe('API Service', () => {
     expect(data).toEqual(mockResponse);
   });
 
+  it('fetchTransactionFilterOptions scopes by portfolio without display_currency', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ portfolios: [], symbols: [] }),
+    });
+
+    await api.fetchTransactionFilterOptions({ portfolio_id: 2, display_currency: 'INR' });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/transactions/filter-options?portfolio_id=2',
+      expect.objectContaining(defaultFetchOptions)
+    );
+  });
+
+  it('fetchTransactionFilterOptions keeps all-portfolio scope without display_currency', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ portfolios: [], symbols: [] }),
+    });
+
+    await api.fetchTransactionFilterOptions({ portfolio_scope: 'all', display_currency: 'USD' });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/transactions/filter-options?portfolio_scope=all',
+      expect.objectContaining(defaultFetchOptions)
+    );
+  });
+
   it('fetchDashboardSummary calls the correct endpoint', async () => {
     const mockResponse = { total_invested: 15000 };
     global.fetch.mockResolvedValueOnce({
@@ -296,6 +324,25 @@ describe('API Service', () => {
     expect(opts.body).toBeInstanceOf(FormData);
     expect(opts.body.get('file')).toBe(file);
     expect(global.fetch.mock.calls[0][0]).toContain('portfolio_id=1');
+  });
+
+  it('importTransactionsCsv sends cash preview confirmation flags only when confirmed', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ success: true, imported_count: 1, errors: [] }),
+    });
+    const file = new File(['a'], 'cash-aware.csv', { type: 'text/csv' });
+
+    await api.importTransactionsCsv(file, 2, {
+      createCashDeposits: true,
+      cashPreviewConfirmed: true,
+    });
+
+    const url = global.fetch.mock.calls[0][0];
+    expect(url).toContain('/api/v1/transactions/import-csv?');
+    expect(url).toContain('portfolio_id=2');
+    expect(url).toContain('create_cash_deposits=true');
+    expect(url).toContain('cash_preview_confirmed=true');
   });
 
   it('throws an error on non-ok response', async () => {

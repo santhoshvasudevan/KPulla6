@@ -5,25 +5,40 @@ import { formatCurrency, formatPercent } from '../utils/formatters';
 import { PieChart, Pie, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import {
   PageHeader,
+  DataTableShell,
+  AppTable,
+  AppTableCell,
+  AppTableHeaderCell,
   WarningBanner,
   LoadingState,
   ErrorState,
   EmptyState,
   StatusBadge,
+  AssetClassPill,
   CurrencyValue,
   PercentValue,
   ChartCard,
-  SectionCard,
+  AppCard,
   Button,
+  KpiCard,
 } from '../components/ui';
 import {
   getSeriesColor,
   getChartTooltipStyle,
   getChartLegendStyle,
 } from '../components/charts/chartTheme';
-import { holdingRowKey, holdingSymbolLabel } from '../utils/transactionDisplay';
+import {
+  holdingRowKey,
+  holdingSymbolLabel,
+  holdingAssetClassVariant,
+} from '../utils/transactionDisplay';
 import './Assets.css';
 import { usePortfolio } from '../portfolioContext';
+
+const ASSETS_SECTION_NAV = [
+  { href: '#assets-holdings', label: 'Holdings' },
+  { href: '#assets-allocation', label: 'Allocation' },
+];
 
 function plTone(val) {
   if (val == null || Number.isNaN(Number(val))) return 'neutral';
@@ -70,6 +85,138 @@ function avgCostValue(h) {
 function sortAvgCost(h) {
   const avg = avgCostValue(h);
   return avg == null ? 0 : avg;
+}
+
+function SortableHeader({ label, sortKey, sort, onSort, numeric = false }) {
+  return (
+    <AppTableHeaderCell
+      numeric={numeric}
+      className="assets-table__sortable"
+      onClick={() => onSort(sortKey)}
+      aria-sort={
+        sort.key === sortKey
+          ? sort.direction === 'asc'
+            ? 'ascending'
+            : 'descending'
+          : 'none'
+      }
+    >
+      {label}
+    </AppTableHeaderCell>
+  );
+}
+
+function HoldingSymbolCell({ holding: h }) {
+  const isMf = h.asset_type === 'MUTUAL_FUND';
+  const isFd = isFixedDepositHolding(h);
+  const isBankCash = isBankCashHolding(h);
+
+  return (
+    <div className="assets-table__symbol-cell">
+      <div className="assets-table__symbol-primary">
+        <AssetClassPill variant={holdingAssetClassVariant(h)} />
+        <span>{holdingSymbolLabel(h)}</span>
+      </div>
+      {isBankCash ? (
+        <>
+          <span className="assets-table__symbol-meta">Bank Cash</span>
+          {h.institution_name ? (
+            <span className="assets-table__symbol-meta">
+              {h.institution_name}
+              {h.account_number ? ` · ${h.account_number}` : ''}
+            </span>
+          ) : null}
+        </>
+      ) : null}
+      {isFd ? (
+        h.maturity_date ? (
+          <span className="assets-table__symbol-meta">
+            Matures {h.maturity_date}
+            {h.status && h.status !== 'ACTIVE' ? ` · ${h.status}` : ''}
+          </span>
+        ) : null
+      ) : null}
+      {isMf && h.scheme_code && h.scheme_name ? (
+        <span className="assets-table__symbol-meta">{h.scheme_code}</span>
+      ) : null}
+      {isMf && h.folio_number ? (
+        <span className="assets-table__symbol-meta">Folio {h.folio_number}</span>
+      ) : null}
+      {h.holding_status === 'oversold' ? (
+        <div className="assets-table__badges">
+          <span title={h.warnings?.join(' ') || 'Sell quantity exceeded available lots'}>
+            <StatusBadge status="oversold" />
+          </span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function renderHoldingRow(h, navigate) {
+  const currency = h.currency || 'EUR';
+  const avgCost = avgCostValue(h);
+  const unrealizedTone = plTone(h.unrealized_pl);
+  const isFd = isFixedDepositHolding(h);
+  const isBankCash = isBankCashHolding(h);
+  const rowKey = holdingRowKey(h);
+  const clickable = !isFd && !isBankCash;
+
+  return (
+    <tr
+      key={rowKey}
+      className={clickable ? 'assets-table__row-clickable' : undefined}
+      onClick={clickable ? () => navigate(`/assets/${h.asset_symbol}`) : undefined}
+    >
+      <AppTableCell className="assets-table__symbol">
+        <HoldingSymbolCell holding={h} />
+      </AppTableCell>
+      <AppTableCell numeric>
+        {isFd || isBankCash ? '—' : formatQuantity(h.quantity)}
+      </AppTableCell>
+      <AppTableCell numeric>
+        {isFd || isBankCash ? (
+          '—'
+        ) : avgCost == null || Number(h.quantity || 0) <= 0 ? (
+          '—'
+        ) : (
+          <CurrencyValue value={avgCost} currency={currency} />
+        )}
+      </AppTableCell>
+      <AppTableCell numeric>
+        {isFd || isBankCash ? (
+          '—'
+        ) : h.price_status === 'price_missing' ? (
+          <StatusBadge
+            status="price_missing"
+            label="Price missing — run refresh to fetch latest price"
+          />
+        ) : h.current_price != null ? (
+          <CurrencyValue value={h.current_price} currency={currency} />
+        ) : (
+          <StatusBadge status="warning" label="Price unavailable" />
+        )}
+      </AppTableCell>
+      <AppTableCell numeric>
+        <CurrencyValue value={h.current_value} currency={currency} />
+      </AppTableCell>
+      <AppTableCell numeric>
+        {isFd || isBankCash ? (
+          '—'
+        ) : (
+          <CurrencyValue
+            value={h.unrealized_pl}
+            currency={currency}
+            tone={unrealizedTone}
+            showSign
+          />
+        )}
+      </AppTableCell>
+      <AppTableCell numeric>
+        {isFd || isBankCash ? '—' : <PercentValue value={h.xirr} />}
+      </AppTableCell>
+    </tr>
+  );
 }
 
 export default function Assets() {
@@ -194,15 +341,40 @@ export default function Assets() {
   const headerSubtitle = [
     selectedPortfolioName || 'All Portfolios',
     selectedDisplayCurrency,
+    `${activeHoldings.length} active ${activeHoldings.length === 1 ? 'position' : 'positions'}`,
   ].join(' · ');
 
   return (
     <div className="assets-page">
       <PageHeader title="Assets Overview" subtitle={headerSubtitle} />
+
       <p className="assets-page__description">
-        A breakdown of all assets currently held in your portfolio. Latest prices come from cached
+        Holdings and allocation from the backend portfolio view. Latest prices come from cached
         historical data — run <code>make refresh</code> or use the backend refresh endpoint to sync.
       </p>
+
+      <div className="assets-page__overview" aria-label="Holdings overview">
+        <KpiCard
+          label="Active positions"
+          value={String(activeHoldings.length)}
+          helperText="Open holdings with quantity or value"
+          size="compact"
+        />
+        <KpiCard
+          label="Allocation slices"
+          value={String(chartHoldings.length)}
+          helperText="Positions included in allocation chart"
+          size="compact"
+        />
+        {cashAllocationRows.length > 0 ? (
+          <KpiCard
+            label="Cash currencies"
+            value={String(cashAllocationRows.length)}
+            helperText="Portfolio cash rows from API"
+            size="compact"
+          />
+        ) : null}
+      </div>
 
       {showFxWarning ? (
         <WarningBanner
@@ -217,218 +389,123 @@ export default function Assets() {
       ))}
 
       {cashAllocationRows.length > 0 ? (
-        <SectionCard
+        <DataTableShell
           className="assets-cash-balances"
           title="Cash balances"
           subtitle="Portfolio cash by currency — not an investment asset"
-          compact
+          dense
         >
-          <div className="assets-table-wrapper">
-            <table className="assets-table assets-cash-table">
-              <thead>
-                <tr>
-                  <th>Currency</th>
-                  <th className="num-col">Native balance</th>
-                  <th className="num-col">Display value</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cashAllocationRows.map((row) => {
-                  const nativeCurrency = row.native_currency || row.currency || 'EUR';
-                  const displayCurrency = row.currency || selectedDisplayCurrency || 'EUR';
-                  return (
-                    <tr key={`cash-${nativeCurrency}`} className="assets-cash-table__row">
-                      <td className="symbol-col">{row.asset_symbol || `Cash ${nativeCurrency}`}</td>
-                      <td className="num-col">
-                        <CurrencyValue
-                          value={row.native_balance ?? row.current_value}
-                          currency={nativeCurrency}
-                        />
-                      </td>
-                      <td className="num-col">
-                        <CurrencyValue value={row.current_value} currency={displayCurrency} />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </SectionCard>
+          <AppTable compact className="assets-cash-table">
+            <thead>
+              <tr>
+                <AppTableHeaderCell>Currency</AppTableHeaderCell>
+                <AppTableHeaderCell numeric>Native balance</AppTableHeaderCell>
+                <AppTableHeaderCell numeric>Display value</AppTableHeaderCell>
+              </tr>
+            </thead>
+            <tbody>
+              {cashAllocationRows.map((row) => {
+                const nativeCurrency = row.native_currency || row.currency || 'EUR';
+                const displayCurrency = row.currency || selectedDisplayCurrency || 'EUR';
+                return (
+                  <tr key={`cash-${nativeCurrency}`} className="assets-cash-table__row">
+                    <AppTableCell>
+                      <div className="assets-table__symbol-primary">
+                        <AssetClassPill variant="cash" />
+                        <span>{row.asset_symbol || `Cash ${nativeCurrency}`}</span>
+                      </div>
+                    </AppTableCell>
+                    <AppTableCell numeric>
+                      <CurrencyValue
+                        value={row.native_balance ?? row.current_value}
+                        currency={nativeCurrency}
+                      />
+                    </AppTableCell>
+                    <AppTableCell numeric>
+                      <CurrencyValue value={row.current_value} currency={displayCurrency} />
+                    </AppTableCell>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </AppTable>
+        </DataTableShell>
       ) : null}
 
+      <nav className="assets-section-nav" aria-label="Assets section navigation">
+        {ASSETS_SECTION_NAV.map((item) => (
+          <a key={item.href} className="assets-section-nav__link" href={item.href}>
+            {item.label}
+          </a>
+        ))}
+      </nav>
+
       <div className="assets-main">
-        <div className="assets-main__table">
-          {activeHoldings.length === 0 ? (
-            <EmptyState
-              title="No assets found in portfolio."
-              className="assets-page__table-empty"
-            />
-          ) : (
-            <div className="assets-table-wrapper">
-              <table className="assets-table">
+        <div className="assets-main__table" id="assets-holdings">
+          <DataTableShell
+            title="Holdings"
+            subtitle="Click a row to open asset detail"
+            dense
+            empty={activeHoldings.length === 0}
+            emptyTitle="No assets found in portfolio."
+          >
+            {activeHoldings.length > 0 ? (
+              <AppTable compact className="assets-table">
                 <thead>
                   <tr>
-                    <th
-                      className="assets-table__sortable"
-                      onClick={() => toggleSort('asset_symbol')}
-                    >
-                      Symbol
-                    </th>
-                    <th
-                      className="num-col assets-table__sortable"
-                      onClick={() => toggleSort('quantity')}
-                    >
-                      Quantity
-                    </th>
-                    <th
-                      className="num-col assets-table__sortable"
-                      onClick={() => toggleSort('avg_cost')}
-                    >
-                      Avg Cost
-                    </th>
-                    <th
-                      className="num-col assets-table__sortable"
-                      onClick={() => toggleSort('current_price')}
-                    >
-                      Latest Price
-                    </th>
-                    <th
-                      className="num-col assets-table__sortable"
-                      onClick={() => toggleSort('current_value')}
-                    >
-                      Current Value
-                    </th>
-                    <th
-                      className="num-col assets-table__sortable"
-                      onClick={() => toggleSort('unrealized_pl')}
-                    >
-                      Unrealized P/L
-                    </th>
-                    <th className="num-col">XIRR</th>
+                    <SortableHeader
+                      label="Symbol"
+                      sortKey="asset_symbol"
+                      sort={sort}
+                      onSort={toggleSort}
+                    />
+                    <SortableHeader
+                      label="Quantity"
+                      sortKey="quantity"
+                      sort={sort}
+                      onSort={toggleSort}
+                      numeric
+                    />
+                    <SortableHeader
+                      label="Avg Cost"
+                      sortKey="avg_cost"
+                      sort={sort}
+                      onSort={toggleSort}
+                      numeric
+                    />
+                    <SortableHeader
+                      label="Latest Price"
+                      sortKey="current_price"
+                      sort={sort}
+                      onSort={toggleSort}
+                      numeric
+                    />
+                    <SortableHeader
+                      label="Current Value"
+                      sortKey="current_value"
+                      sort={sort}
+                      onSort={toggleSort}
+                      numeric
+                    />
+                    <SortableHeader
+                      label="Unrealized P/L"
+                      sortKey="unrealized_pl"
+                      sort={sort}
+                      onSort={toggleSort}
+                      numeric
+                    />
+                    <AppTableHeaderCell numeric>XIRR</AppTableHeaderCell>
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedHoldings.map((h) => {
-                    const currency = h.currency || 'EUR';
-                    const avgCost = avgCostValue(h);
-                    const unrealizedTone = plTone(h.unrealized_pl);
-                    const isMf = h.asset_type === 'MUTUAL_FUND';
-                    const isFd = isFixedDepositHolding(h);
-                    const isBankCash = isBankCashHolding(h);
-                    const rowKey = holdingRowKey(h);
-
-                    return (
-                      <tr
-                        key={rowKey}
-                        className={
-                          isFd || isBankCash ? undefined : 'assets-table__row-clickable'
-                        }
-                        onClick={
-                          isFd || isBankCash
-                            ? undefined
-                            : () => navigate(`/assets/${h.asset_symbol}`)
-                        }
-                      >
-                        <td className="symbol-col">
-                          <div className="assets-table__symbol-cell">
-                            <span>{holdingSymbolLabel(h)}</span>
-                            {isBankCash ? (
-                              <>
-                                <span className="assets-table__symbol-meta">Bank Cash</span>
-                                {h.institution_name ? (
-                                  <span className="assets-table__symbol-meta">
-                                    {h.institution_name}
-                                    {h.account_number ? ` · ${h.account_number}` : ''}
-                                  </span>
-                                ) : null}
-                              </>
-                            ) : null}
-                            {isFd ? (
-                              <>
-                                <span className="assets-table__symbol-meta">Fixed Deposit</span>
-                                {h.maturity_date ? (
-                                  <span className="assets-table__symbol-meta">
-                                    Matures {h.maturity_date}
-                                    {h.status && h.status !== 'ACTIVE' ? ` · ${h.status}` : ''}
-                                  </span>
-                                ) : null}
-                              </>
-                            ) : null}
-                            {isMf && h.scheme_code && h.scheme_name ? (
-                              <span className="assets-table__symbol-meta">{h.scheme_code}</span>
-                            ) : null}
-                            {isMf && h.folio_number ? (
-                              <span className="assets-table__symbol-meta">Folio {h.folio_number}</span>
-                            ) : null}
-                            {(h.holding_status === 'oversold') && (
-                              <div className="assets-table__badges">
-                                <span
-                                  title={
-                                    h.warnings?.join(' ') ||
-                                    'Sell quantity exceeded available lots'
-                                  }
-                                >
-                                  <StatusBadge status="oversold" />
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="num-col">
-                          {isFd || isBankCash ? '—' : formatQuantity(h.quantity)}
-                        </td>
-                        <td className="num-col">
-                          {isFd || isBankCash ? (
-                            '—'
-                          ) : avgCost == null || Number(h.quantity || 0) <= 0 ? (
-                            '—'
-                          ) : (
-                            <CurrencyValue value={avgCost} currency={currency} />
-                          )}
-                        </td>
-                        <td className="num-col">
-                          {isFd || isBankCash ? (
-                            '—'
-                          ) : h.price_status === 'price_missing' ? (
-                            <StatusBadge
-                              status="price_missing"
-                              label="Price missing — run refresh to fetch latest price"
-                            />
-                          ) : h.current_price != null ? (
-                            <CurrencyValue value={h.current_price} currency={currency} />
-                          ) : (
-                            <StatusBadge status="warning" label="Price unavailable" />
-                          )}
-                        </td>
-                        <td className="num-col">
-                          <CurrencyValue value={h.current_value} currency={currency} />
-                        </td>
-                        <td className="num-col">
-                          {isFd || isBankCash ? (
-                            '—'
-                          ) : (
-                            <CurrencyValue
-                              value={h.unrealized_pl}
-                              currency={currency}
-                              tone={unrealizedTone}
-                              showSign
-                            />
-                          )}
-                        </td>
-                        <td className="num-col">
-                          {isFd || isBankCash ? '—' : <PercentValue value={h.xirr} />}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {sortedHoldings.map((h) => renderHoldingRow(h, navigate))}
                 </tbody>
-              </table>
-            </div>
-          )}
+              </AppTable>
+            ) : null}
+          </DataTableShell>
         </div>
 
-        <aside className="assets-main__chart">
+        <aside className="assets-main__chart" id="assets-allocation">
           <ChartCard
             title="Allocation by Current Value"
             subtitle="Active holdings with available current value"
@@ -488,8 +565,8 @@ export default function Assets() {
         </aside>
       </div>
 
-      {previousHoldings.length > 0 && (
-        <SectionCard
+      {previousHoldings.length > 0 ? (
+        <AppCard
           className="assets-previous"
           title="Previous holdings"
           subtitle={`${previousHoldings.length} closed or zero-quantity ${previousHoldings.length === 1 ? 'position' : 'positions'}`}
@@ -501,16 +578,16 @@ export default function Assets() {
           compact
         >
           {showPrevious ? (
-            <div className="assets-table-wrapper assets-previous__table">
-              <table className="assets-table">
+            <DataTableShell className="assets-previous__table" dense>
+              <AppTable compact className="assets-table">
                 <thead>
                   <tr>
-                    <th>Symbol</th>
-                    <th className="num-col">Quantity</th>
-                    <th className="num-col">Invested</th>
-                    <th className="num-col">Realized P/L</th>
-                    <th className="num-col">Current Value</th>
-                    <th className="num-col">XIRR</th>
+                    <AppTableHeaderCell>Symbol</AppTableHeaderCell>
+                    <AppTableHeaderCell numeric>Quantity</AppTableHeaderCell>
+                    <AppTableHeaderCell numeric>Invested</AppTableHeaderCell>
+                    <AppTableHeaderCell numeric>Realized P/L</AppTableHeaderCell>
+                    <AppTableHeaderCell numeric>Current Value</AppTableHeaderCell>
+                    <AppTableHeaderCell numeric>XIRR</AppTableHeaderCell>
                   </tr>
                 </thead>
                 <tbody>
@@ -519,11 +596,16 @@ export default function Assets() {
                     const isMf = h.asset_type === 'MUTUAL_FUND';
                     return (
                       <tr key={`closed-${holdingRowKey(h)}`}>
-                        <td className="symbol-col">
+                        <AppTableCell>
                           <div className="assets-table__symbol-cell">
-                            <span>{holdingSymbolLabel(h)}</span>
+                            <div className="assets-table__symbol-primary">
+                              <AssetClassPill variant={holdingAssetClassVariant(h)} />
+                              <span>{holdingSymbolLabel(h)}</span>
+                            </div>
                             {isMf && h.folio_number ? (
-                              <span className="assets-table__symbol-meta">Folio {h.folio_number}</span>
+                              <span className="assets-table__symbol-meta">
+                                Folio {h.folio_number}
+                              </span>
                             ) : null}
                             {h.holding_status === 'closed' ? (
                               <div className="assets-table__badges">
@@ -531,34 +613,34 @@ export default function Assets() {
                               </div>
                             ) : null}
                           </div>
-                        </td>
-                        <td className="num-col">0.0000</td>
-                        <td className="num-col">
+                        </AppTableCell>
+                        <AppTableCell numeric>0.0000</AppTableCell>
+                        <AppTableCell numeric>
                           <CurrencyValue value={h.invested || 0} currency={currency} />
-                        </td>
-                        <td className="num-col">
+                        </AppTableCell>
+                        <AppTableCell numeric>
                           <CurrencyValue
                             value={h.realized_pl || 0}
                             currency={currency}
                             tone={plTone(h.realized_pl)}
                             showSign
                           />
-                        </td>
-                        <td className="num-col">
+                        </AppTableCell>
+                        <AppTableCell numeric>
                           <CurrencyValue value={0} currency={currency} />
-                        </td>
-                        <td className="num-col">
+                        </AppTableCell>
+                        <AppTableCell numeric>
                           <PercentValue value={h.xirr} />
-                        </td>
+                        </AppTableCell>
                       </tr>
                     );
                   })}
                 </tbody>
-              </table>
-            </div>
+              </AppTable>
+            </DataTableShell>
           ) : null}
-        </SectionCard>
-      )}
+        </AppCard>
+      ) : null}
     </div>
   );
 }

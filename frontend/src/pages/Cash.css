@@ -1,86 +1,54 @@
-.cash-page__section.ui-section-card {
+.cash-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.cash-page__section {
   max-width: none;
   width: 100%;
 }
 
 .cash-page__banner {
-  margin-bottom: var(--space-4);
+  margin-bottom: 0;
 }
 
-.cash-page__actions {
+.cash-page__header-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-3);
-  margin-bottom: var(--space-5);
+  gap: var(--space-2);
+  justify-content: flex-end;
 }
 
-.cash-balances-table-wrapper,
-.cash-ledger-table-wrapper {
-  overflow-x: auto;
+.cash-page__overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--space-3);
+}
+
+.cash-page__ledger-subtitle {
+  margin: calc(var(--space-2) * -1) 0 var(--space-4);
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.cash-page__ledger-table.ui-data-table-shell {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+.cash-page__ledger-table .ui-data-table-shell__scroller {
+  padding: 0;
 }
 
 .cash-balances-table,
 .cash-ledger-table {
   width: 100%;
-  border-collapse: collapse;
-  font-size: 0.875rem;
 }
 
-.cash-balances-table th,
-.cash-balances-table td,
-.cash-ledger-table th,
-.cash-ledger-table td {
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--border-subtle);
-  text-align: left;
-}
-
-.cash-balances-table th.num-col,
-.cash-balances-table td.num-col,
-.cash-ledger-table th.num-col,
-.cash-ledger-table td.num-col {
-  text-align: right;
-  font-family: var(--font-metric);
-  font-variant-numeric: tabular-nums;
-}
-
-.cash-balances-table thead th,
-.cash-ledger-table thead th {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-secondary);
-}
-
-.cash-balances-totals {
-  margin-top: var(--space-4);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border-subtle);
-}
-
-.cash-balances-totals__title {
-  margin: 0 0 var(--space-2);
-  font-size: 0.6875rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-secondary);
-}
-
-.cash-balances-totals__list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3) var(--space-5);
-}
-
-.cash-balances-totals__item {
-  font-family: var(--font-metric);
-  font-variant-numeric: tabular-nums;
-  color: var(--text-primary);
+.cash-ledger-table-wrapper {
+  width: 100%;
 }
 
 .cash-ledger-filters {
@@ -226,6 +194,7 @@
 .cash-ledger-table__actions-col {
   width: 6rem;
   white-space: nowrap;
+  text-align: right;
 }
 
 .cash-ledger-actions {

@@ -9,6 +9,7 @@ import {
   navVerificationBadgeStatus,
   holdingRowKey,
   holdingSymbolLabel,
+  holdingAssetClassVariant,
 } from './transactionDisplay';
 
 describe('transactionDisplay', () => {
@@ -62,5 +63,12 @@ describe('transactionDisplay', () => {
     };
     expect(holdingRowKey(h)).toBe('120503:F1');
     expect(holdingSymbolLabel(h)).toBe('Growth Fund');
+  });
+
+  it('maps holding asset class pill variants', () => {
+    expect(holdingAssetClassVariant({ asset_type: 'MUTUAL_FUND' })).toBe('mutualFund');
+    expect(holdingAssetClassVariant({ asset_type: 'FIXED_DEPOSIT' })).toBe('fixedDeposit');
+    expect(holdingAssetClassVariant({ asset_type: 'BANK_CASH' })).toBe('cash');
+    expect(holdingAssetClassVariant({ asset_symbol: 'AAPL' })).toBe('stock');
   });
 });

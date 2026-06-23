@@ -1,5 +1,152 @@
 # Changelog — KPulla6
 
+## 2026-06-23 — P11: Final frontend redesign audit
+
+### Audit
+- Verified all 11 routed pages redesigned (P4–P10): Dashboard, Transactions, Cash, Assets, Asset Detail, Fixed Deposits, Compare, Settings, Login, Register, Forgot Password.
+- Verified single top nav, no permanent left sidebar, auth shell isolation, API/CSRF/session preservation, and no new frontend finance calculations.
+- Aligned `docs/page-layouts.md` and `docs/frontend-design.md` with implemented shell, primitives, and phase status.
+
+### Changed (minor)
+- `Settings.jsx` — display currency hint label: “Header selector” (was “Sidebar selector”).
+
+### Tests
+- No test weakening; `make test-frontend` 534/534 at audit time.
+
+### Notes
+- Executive Portfolio OS frontend redesign **complete**. Deferred items documented in `page-layouts.md` §17.
+
+---
+
+## 2026-06-23 — P10: Auth pages and global polish
+
+### Changed
+- **Auth pages** — Executive Portfolio OS `AuthShell`: KPulla6 brand mark, elevated auth panel, token-based form fields, primary submit buttons, alert/status roles for errors and success.
+- **Global responsive** — sticky section-nav horizontal scroll on small screens; header nav scrollbar styling; KPI grid gap tightening on mobile.
+- **Global dark-mode** — refined card/chart/table shell borders in dark theme; shared `focus-visible` on links and section nav.
+
+### Tests
+- `Login.test.jsx` — KPulla6 brand identity on login shell.
+- `Register.test.jsx` — registration form fields and actions.
+- `ForgotPassword.test.jsx` — KPulla6 brand on reset page.
+- `AuthShell.test.jsx` — brand identity and panel title.
+
+### Notes
+- No route, API, backend, database, auth/session, or finance-calculation changes.
+- Business pages unchanged structurally (CSS polish only).
+
+---
+
+## 2026-06-23 — P9: Settings page redesign
+
+### Changed
+- **Settings** — Executive Portfolio OS workspace: `PageHeader` with subtitle, sticky Display/Portfolios/Bank Accounts/Data Sync section nav, full-width `AppCard` sections replacing `SectionCard`, responsive display/tax form grid.
+- **Settings.css** — centered column layout, section nav, form grid; child component table styles preserved.
+
+### Tests
+- `Settings.test.jsx` — page header, section nav, main section headings.
+
+### Notes
+- No route, API, backend, database, auth/session, or finance-calculation changes.
+- Portfolio, bank account, and cash movement child components unchanged in behavior.
+- P4R left-heavy layout deferred item resolved.
+
+---
+
+## 2026-06-23 — P8: Compare page redesign
+
+### Changed
+- **Compare** — Executive Portfolio OS analytics layout: `AppCard` setup panel with asset pickers, selected-subject chips, and `ChartControls`; sticky section nav; `KpiCard` summary strip from backend metrics; `ChartFrame` + `ChartLegend` wrapping `CompareNormalizedChart`; `AppCard` metric comparison section.
+- **compareDisplay** — Display-only helpers: `compareOptionLabel`, `compareBenchmarkLabel`, `compareChartLegendItems`, `compareSubjectSummaryKpis`.
+- **CompareNormalizedChart** — Optional `hideLegend` prop for external `ChartLegend`.
+
+### Tests
+- `Compare.test.jsx` — setup panel, section nav, subject chips, chart frame, KPI summary.
+- `compareDisplay.test.js` — label resolution, legend items, KPI extraction.
+
+### Notes
+- No route, API, backend, database, auth/session, or finance-calculation changes.
+- Dashboard, Transactions, Cash, Assets, Fixed Deposits, Settings, and auth pages unchanged.
+
+---
+
+## 2026-06-23 — P7: Fixed Deposits redesign
+
+### Changed
+- **Fixed Deposits** — Executive Portfolio OS layout: `KpiCard` overview counts (backend status only), sticky Overview/Deposits section nav, `DataTableShell` + `AppTable` holdings table with `StatusBadge` lifecycle labels, right-aligned currency/rate columns, readable maturity dates and payout labels.
+- **fdDisplay** — Display-only helpers: `fdStatusBadgeProps`, `fdPayoutLabel`, `fdStatusCounts`.
+
+### Tests
+- `FixedDeposits.test.jsx` — page header, KPI overview, section nav, status badge, payout label.
+- `fdDisplay.test.js` — status badge mapping, payout labels, status counts.
+
+### Notes
+- No route, API, backend, database, auth/session, or finance-calculation changes.
+- Dashboard, Transactions, Cash, Assets, Compare, Settings, and auth pages unchanged.
+
+---
+
+## 2026-06-23 — P6: Assets and Asset Detail redesign
+
+### Changed
+- **Assets** — Holdings hub layout: `KpiCard` overview counts, sticky Holdings/Allocation section nav, `DataTableShell` + `AppTable` holdings table with `AssetClassPill` and sortable columns, cash balances table, `ChartCard` allocation donut, `AppCard` previous holdings.
+- **Asset Detail** — Tear-sheet layout: `AssetClassPill` header eyebrow, `KpiCard` hero strip, sticky Overview/Metrics/Details/Transactions nav, `AppCard` detail grid, `DataTableShell` transaction history.
+- **transactionDisplay** — `holdingAssetClassVariant()` display-only helper for asset class pills.
+
+### Tests
+- `Assets.test.jsx` — page header, section nav, asset class pills, Holdings section heading.
+- `AssetDetail.test.jsx` — tear-sheet header, section nav, transaction history section.
+- `transactionDisplay.test.js` — asset class variant mapping.
+
+### Notes
+- No route, API, backend, database, auth/session, or finance-calculation changes.
+- Dashboard, Transactions, Cash, and other pages unchanged.
+
+---
+
+## 2026-06-23 — P5: Transactions and Cash redesign
+
+### Changed
+- **Transactions** — Premium activity ledger layout: `AppCard` filter section, `DataTableShell` + `AppTable` for the transaction table, right-aligned numeric columns, preserved type/NAV badges, filters, pagination, CSV import/cash preview, bulk assign, and CRUD flows.
+- **Cash** — Cash ledger/overview layout: header primary actions, `KpiCard` balance overview from backend totals, `DataTableShell` balances table, `AppCard` ledger section with `StatusBadge` entry types and `AppTable` ledger rows.
+- **TransactionFilterBar** — `embedded` mode for use inside `AppCard` without duplicate chrome.
+- **cashDisplay** — `cashEntryBadgeStatus()` display-only helper for ledger type badges.
+
+### Tests
+- `Transactions.test.jsx` — page header and Activity ledger section coverage.
+- `Cash.test.jsx` — updated for KpiCard overview and premium section structure.
+
+### Notes
+- No route, API, backend, database, auth/session, or finance-calculation changes.
+- Dashboard, Assets, Settings, and other pages unchanged.
+
+---
+
+## 2026-06-22 — P4R: Dashboard anchor scroll offset and shell review
+
+### Changed
+- **Dashboard** — Section anchor targets use `--dashboard-anchor-offset` (`scroll-margin-top`) to clear sticky header and sticky section nav; Metric Sheet anchor moved to `MetricSheetSection` so its heading is the scroll target.
+- **Layout** — Shell CSS variables `--shell-sticky-offset` and `--dashboard-anchor-offset` for consistent anchor behavior.
+
+### Notes
+- Settings page left-heavy layout deferred to Settings redesign (P9); no Settings page redesign in P4R.
+- No route, API, backend, database, or auth/session behavior changes.
+
+---
+
+## 2026-06-22 — P4.4: Navigation architecture unified
+
+### Changed
+- **Layout** — Removed permanent left context sidebar (`CONTEXT_NAV`); single global top navigation for all routes.
+- **Layout** — Main content centered globally with max-width ~1520px; cached-data note moved to compact header line.
+- **Dashboard** — Section nav is in-page anchors only (Overview, Performance, Allocation, Health, Metric Sheet); no cross-route duplicate labels.
+
+### Notes
+- No route, API, backend, database, or auth/session behavior changes.
+- Future Settings/Assets section navigation can be added during those page redesign phases.
+
+---
+
 ## 2026-06-21 — Docs: Frontend redesign PRD
 
 ### Added

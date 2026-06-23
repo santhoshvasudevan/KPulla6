@@ -7,14 +7,24 @@ import {
 import { usePortfolio } from '../portfolioContext';
 import { buildCompareAssetOptions } from '../utils/compareHoldings';
 import {
+  compareBenchmarkLabel,
+  compareChartLegendItems,
+  compareOptionLabel,
+  compareSubjectSummaryKpis,
+} from '../utils/compareDisplay';
+import {
   PageHeader,
+  AppCard,
+  SectionHeader,
   SegmentedControl,
-  ChartCard,
+  KpiCard,
+  PercentValue,
   LoadingState,
   ErrorState,
   EmptyState,
   WarningBanner,
 } from '../components/ui';
+import { ChartFrame, ChartControls, ChartLegend } from '../components/charts';
 import {
   MetricSheetWarnings,
   CompareNormalizedChart,
@@ -27,6 +37,14 @@ import './Compare.css';
 import '../components/metricSheet/compareMetricSheet.css';
 
 const RANGE_OPTIONS = ['7D', '30D', 'YTD', '1Y', '3Y', '5Y', 'ALL'];
+
+const COMPARE_SECTION_NAV = [
+  { href: '#compare-setup', label: 'Setup' },
+  { href: '#compare-chart', label: 'Chart' },
+  { href: '#compare-metrics', label: 'Metrics' },
+  { href: '#compare-periods', label: 'Periods' },
+  { href: '#compare-drawdowns', label: 'Drawdowns' },
+];
 
 function CompareAssetOptions({ options, excludeSymbol, placeholder }) {
   const active = options.filter((o) => o.active);
@@ -64,6 +82,20 @@ function isMultiFolioCompareError(message) {
 
 function buildCompareSubjectsParam(assetA, assetB) {
   return `asset:${assetA},asset:${assetB}`;
+}
+
+function plTone(val) {
+  if (val == null || Number.isNaN(Number(val))) return 'neutral';
+  const n = Number(val);
+  if (n > 0) return 'positive';
+  if (n < 0) return 'negative';
+  return 'neutral';
+}
+
+function kpiVariantFromTone(tone) {
+  if (tone === 'positive') return 'gain';
+  if (tone === 'negative') return 'loss';
+  return undefined;
 }
 
 export default function Compare() {
@@ -169,12 +201,27 @@ export default function Compare() {
   const headerSubtitle = [
     selectedPortfolioName || 'All Portfolios',
     (selectedDisplayCurrency || 'EUR').toUpperCase(),
+    'Side-by-side quantitative comparison',
   ].join(' · ');
 
   const rangeContextNote = useMemo(
     () => formatCompareRangeContext(timeRange, compareData),
     [timeRange, compareData]
   );
+
+  const subjectKpis = useMemo(
+    () => compareSubjectSummaryKpis(compareData?.subjects),
+    [compareData]
+  );
+
+  const chartLegendItems = useMemo(
+    () => compareChartLegendItems(compareData?.subjects, compareData?.normalized_series),
+    [compareData]
+  );
+
+  const assetALabel = compareOptionLabel(assetOptions, assetA);
+  const assetBLabel = compareOptionLabel(assetOptions, assetB);
+  const benchmarkLabel = compareBenchmarkLabel(benchmarkOptions, selectedBenchmark);
 
   const mfFolioMessage =
     'This mutual fund has multiple folios. Compare by folio is not available yet.';
@@ -219,43 +266,98 @@ export default function Compare() {
         eyebrow="Quantitative Statistics"
       />
 
-      <div className="compare-page__pickers">
-        <div className="compare-page__field">
-          <label className="compare-page__label" htmlFor="compare-asset-a">
-            Asset A
-          </label>
-          <select
-            id="compare-asset-a"
-            aria-label="compare-asset-a"
-            className="compare-page__select"
-            value={assetA}
-            onChange={(e) => setAssetA(e.target.value)}
-          >
-            <CompareAssetOptions
-              options={assetOptions}
-              excludeSymbol={assetB}
-              placeholder="Select asset…"
-            />
-          </select>
-        </div>
-        <div className="compare-page__field">
-          <label className="compare-page__label" htmlFor="compare-asset-b">
-            Asset B
-          </label>
-          <select
-            id="compare-asset-b"
-            aria-label="compare-asset-b"
-            className="compare-page__select"
-            value={assetB}
-            onChange={(e) => setAssetB(e.target.value)}
-          >
-            <CompareAssetOptions
-              options={assetOptions}
-              excludeSymbol={assetA}
-              placeholder="Select asset…"
-            />
-          </select>
-        </div>
+      <div id="compare-setup">
+        <AppCard
+          className="compare-page__setup"
+          title="Comparison setup"
+          subtitle="Select two assets, time range, and optional benchmark"
+        >
+          <div className="compare-page__pickers">
+            <div className="compare-page__field">
+              <label className="compare-page__label" htmlFor="compare-asset-a">
+                Asset A
+              </label>
+              <select
+                id="compare-asset-a"
+                aria-label="compare-asset-a"
+                className="compare-page__select"
+                value={assetA}
+                onChange={(e) => setAssetA(e.target.value)}
+              >
+                <CompareAssetOptions
+                  options={assetOptions}
+                  excludeSymbol={assetB}
+                  placeholder="Select asset…"
+                />
+              </select>
+            </div>
+            <div className="compare-page__field">
+              <label className="compare-page__label" htmlFor="compare-asset-b">
+                Asset B
+              </label>
+              <select
+                id="compare-asset-b"
+                aria-label="compare-asset-b"
+                className="compare-page__select"
+                value={assetB}
+                onChange={(e) => setAssetB(e.target.value)}
+              >
+                <CompareAssetOptions
+                  options={assetOptions}
+                  excludeSymbol={assetA}
+                  placeholder="Select asset…"
+                />
+              </select>
+            </div>
+          </div>
+
+          {assetA || assetB || selectedBenchmark ? (
+            <div className="compare-page__chips" aria-label="Selected comparison subjects">
+              {assetA ? (
+                <span className="compare-page__chip compare-page__chip--a">Asset A: {assetALabel}</span>
+              ) : null}
+              {assetB ? (
+                <span className="compare-page__chip compare-page__chip--b">Asset B: {assetBLabel}</span>
+              ) : null}
+              {selectedBenchmark ? (
+                <span className="compare-page__chip compare-page__chip--benchmark">
+                  Benchmark: {benchmarkLabel}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+
+          <ChartControls className="compare-page__controls" ariaLabel="Comparison controls">
+            <div className="compare-page__control-group">
+              <span className="compare-page__label">Time range</span>
+              <SegmentedControl
+                ariaLabel="compare-time-range"
+                options={rangeOptions}
+                value={timeRange}
+                onChange={setTimeRange}
+              />
+            </div>
+            <div className="compare-page__field compare-page__field--benchmark">
+              <label className="compare-page__label" htmlFor="compare-benchmark">
+                Benchmark
+              </label>
+              <select
+                id="compare-benchmark"
+                aria-label="compare-benchmark"
+                className="compare-page__benchmark-select"
+                value={selectedBenchmark}
+                onChange={(e) => setSelectedBenchmark(e.target.value)}
+              >
+                <option value="">No benchmark</option>
+                {benchmarkOptions.map((b) => (
+                  <option key={b.symbol} value={b.symbol}>
+                    {b.name || b.display_name || b.symbol}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </ChartControls>
+        </AppCard>
       </div>
 
       {sameAssetSelected ? (
@@ -265,27 +367,13 @@ export default function Compare() {
         />
       ) : null}
 
-      <div className="compare-page__toolbar">
-        <SegmentedControl
-          ariaLabel="compare-time-range"
-          options={rangeOptions}
-          value={timeRange}
-          onChange={setTimeRange}
-        />
-        <select
-          aria-label="compare-benchmark"
-          className="compare-page__benchmark-select"
-          value={selectedBenchmark}
-          onChange={(e) => setSelectedBenchmark(e.target.value)}
-        >
-          <option value="">No benchmark</option>
-          {benchmarkOptions.map((b) => (
-            <option key={b.symbol} value={b.symbol}>
-              {b.name || b.display_name || b.symbol}
-            </option>
-          ))}
-        </select>
-      </div>
+      <nav className="compare-section-nav" aria-label="Compare section navigation">
+        {COMPARE_SECTION_NAV.map((item) => (
+          <a key={item.href} className="compare-section-nav__link" href={item.href}>
+            {item.label}
+          </a>
+        ))}
+      </nav>
 
       {!assetA || !assetB ? (
         <EmptyState
@@ -310,24 +398,79 @@ export default function Compare() {
             </p>
           ) : null}
 
-          <ChartCard title="Normalized Cumulative Return" subtitle="First common date = 0%">
-            <CompareNormalizedChart
-              normalizedSeries={compareData.normalized_series}
-              subjects={compareData.subjects}
-              shortRange={shortChartRange}
-            />
-          </ChartCard>
+          {subjectKpis.length > 0 ? (
+            <div
+              className="compare-page__kpi-strip"
+              id="compare-overview"
+              aria-label="Comparison summary"
+            >
+              {subjectKpis.map((kpi) => (
+                <KpiCard
+                  key={kpi.id}
+                  label={kpi.label}
+                  size="compact"
+                  helperText="Cumulative return"
+                  variant={kpiVariantFromTone(plTone(kpi.cumulativeReturn))}
+                  value={
+                    <PercentValue
+                      value={kpi.cumulativeReturn}
+                      tone={plTone(kpi.cumulativeReturn)}
+                      showSign
+                    />
+                  }
+                />
+              ))}
+              {compareData.common_point_count != null ? (
+                <KpiCard
+                  label="Common points"
+                  size="compact"
+                  helperText="Overlapping dates"
+                  value={String(compareData.common_point_count)}
+                />
+              ) : null}
+            </div>
+          ) : null}
 
-          <section className="compare-page__metrics" aria-label="Side-by-side metrics">
-            <h2 className="compare-page__metrics-title">Metric Sheet comparison</h2>
-            <CompareMetricTable
-              subjects={compareData.subjects}
-              showBenchmark={Boolean(selectedBenchmark)}
-            />
-          </section>
+          <div id="compare-chart">
+            <ChartFrame
+              title="Normalized Cumulative Return"
+              subtitle="First common date = 0%"
+              density="analysis"
+              className="compare-page__chart"
+              legend={
+                chartLegendItems.length ? <ChartLegend items={chartLegendItems} /> : null
+              }
+            >
+              <CompareNormalizedChart
+                normalizedSeries={compareData.normalized_series}
+                subjects={compareData.subjects}
+                shortRange={shortChartRange}
+                hideLegend
+              />
+            </ChartFrame>
+          </div>
 
-          <ComparePeriodicReturnsSection subjects={compareData.subjects} />
-          <CompareDrawdownPeriodsSection subjects={compareData.subjects} />
+          <div id="compare-metrics">
+            <AppCard className="compare-page__metrics">
+              <SectionHeader
+                title="Metric Sheet comparison"
+                headingLevel={2}
+                className="compare-page__metrics-header"
+              />
+              <CompareMetricTable
+                subjects={compareData.subjects}
+                showBenchmark={Boolean(selectedBenchmark)}
+              />
+            </AppCard>
+          </div>
+
+          <div id="compare-periods">
+            <ComparePeriodicReturnsSection subjects={compareData.subjects} />
+          </div>
+
+          <div id="compare-drawdowns">
+            <CompareDrawdownPeriodsSection subjects={compareData.subjects} />
+          </div>
 
           {(compareData.subjects || []).some((s) => s.warnings?.length) ? (
             <div className="compare-page__subject-warnings">

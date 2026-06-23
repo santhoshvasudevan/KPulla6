@@ -13,6 +13,7 @@ import { usePortfolio } from '../portfolioContext';
 import { SUPPORTED_CASH_CURRENCIES } from '../constants/cashCurrencies';
 import {
   amountTone,
+  cashEntryBadgeStatus,
   cashEntryTypeLabel,
   isManualEditableCashEntry,
   LEDGER_ENTRY_TYPE_OPTIONS,
@@ -20,13 +21,19 @@ import {
 import { Edit2, Trash2 } from 'lucide-react';
 import {
   PageHeader,
-  SectionCard,
+  AppCard,
+  DataTableShell,
+  AppTable,
+  AppTableCell,
+  AppTableHeaderCell,
+  KpiCard,
   Button,
   LoadingState,
   ErrorState,
   EmptyState,
   WarningBanner,
   CurrencyValue,
+  StatusBadge,
 } from '../components/ui';
 import CashAwarePortfolioStatus from '../components/CashAwarePortfolioStatus';
 import CashBulkEntriesWizard from '../components/CashBulkEntriesWizard';
@@ -904,79 +911,66 @@ export default function Cash() {
     setEditingEntry(null);
   };
 
-  if (!settingsLoaded) {
-    return <LoadingState message="Loading cash…" />;
-  }
-
   const balanceRows = balancesData?.balances ?? [];
   const totalsByCurrency = balancesData?.totals_by_currency ?? [];
   const showPortfolioColumn = isAllScope || balancesData?.portfolio_scope === 'all';
   const ledgerItems = ledgerData?.items ?? [];
   const ledgerPages = ledgerData?.pages ?? 1;
 
-  const renderBalancesBody = () => {
-    if (balancesLoading && !balancesData) {
-      return <LoadingState message="Loading balances…" />;
+  const balanceOverviewCards = useMemo(() => {
+    if (totalsByCurrency.length > 0) {
+      return totalsByCurrency.map((row) => ({
+        key: row.currency,
+        label: isAllScope ? `Total ${row.currency}` : `${row.currency} balance`,
+        value: <CurrencyValue value={row.balance} currency={row.currency} />,
+        helperText: isAllScope ? 'Across active portfolios' : selectedPortfolioName || 'Selected portfolio',
+      }));
     }
-    if (balancesError) {
-      return <ErrorState title="Could not load balances" message={balancesError} />;
+    if (balanceRows.length > 0 && !isAllScope) {
+      return balanceRows.map((row) => ({
+        key: row.currency,
+        label: `${row.currency} balance`,
+        value: <CurrencyValue value={row.balance} currency={row.currency} />,
+        helperText: selectedPortfolioName || 'Selected portfolio',
+      }));
     }
-    if (balanceRows.length === 0) {
-      return (
-        <EmptyState
-          title="No cash balances"
-          description="Record a deposit to add cash in a portfolio currency."
-        />
-      );
-    }
+    return [];
+  }, [totalsByCurrency, balanceRows, isAllScope, selectedPortfolioName]);
 
-    return (
-      <>
-        <div className="cash-balances-table-wrapper">
-          <table className="cash-balances-table">
-            <thead>
-              <tr>
-                {showPortfolioColumn ? <th>Portfolio</th> : null}
-                <th>Currency</th>
-                <th className="num-col">Balance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {balanceRows.map((row) => {
-                const key = showPortfolioColumn
-                  ? `${row.portfolio_id}-${row.currency}`
-                  : row.currency;
-                const portfolioLabel =
-                  row.portfolio_name ||
-                  (row.portfolio_id != null ? `#${row.portfolio_id}` : '');
-                return (
-                  <tr key={key}>
-                    {showPortfolioColumn ? <td>{portfolioLabel}</td> : null}
-                    <td>{row.currency}</td>
-                    <td className="num-col">
-                      <CurrencyValue value={row.balance} currency={row.currency} />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        {totalsByCurrency.length > 0 ? (
-          <div className="cash-balances-totals">
-            <p className="cash-balances-totals__title">Totals by currency</p>
-            <ul className="cash-balances-totals__list">
-              {totalsByCurrency.map((t) => (
-                <li key={t.currency} className="cash-balances-totals__item">
-                  {t.currency}: <CurrencyValue value={t.balance} currency={t.currency} />
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-      </>
-    );
-  };
+  if (!settingsLoaded) {
+    return <LoadingState message="Loading cash…" />;
+  }
+
+  const renderBalancesTable = () => (
+    <AppTable compact className="cash-balances-table">
+      <thead>
+        <tr>
+          {showPortfolioColumn ? <AppTableHeaderCell>Portfolio</AppTableHeaderCell> : null}
+          <AppTableHeaderCell>Currency</AppTableHeaderCell>
+          <AppTableHeaderCell numeric>Balance</AppTableHeaderCell>
+        </tr>
+      </thead>
+      <tbody>
+        {balanceRows.map((row) => {
+          const key = showPortfolioColumn
+            ? `${row.portfolio_id}-${row.currency}`
+            : row.currency;
+          const portfolioLabel =
+            row.portfolio_name ||
+            (row.portfolio_id != null ? `#${row.portfolio_id}` : '');
+          return (
+            <tr key={key}>
+              {showPortfolioColumn ? <AppTableCell>{portfolioLabel}</AppTableCell> : null}
+              <AppTableCell>{row.currency}</AppTableCell>
+              <AppTableCell numeric>
+                <CurrencyValue value={row.balance} currency={row.currency} />
+              </AppTableCell>
+            </tr>
+          );
+        })}
+      </tbody>
+    </AppTable>
+  );
 
   const renderLedgerBody = () => {
     if (dateRangeInvalid) {
@@ -1009,16 +1003,20 @@ export default function Cash() {
           className={`cash-ledger-table-wrapper${ledgerLoading ? ' cash-ledger-table-wrapper--loading' : ''}`}
           aria-busy={ledgerLoading}
         >
-          <table className="cash-ledger-table">
+          <AppTable compact className="cash-ledger-table">
             <thead>
               <tr>
-                <th>Date</th>
-                {isAllScope ? <th>Portfolio</th> : null}
-                <th>Type</th>
-                <th>Currency</th>
-                <th className="num-col">Amount</th>
-                <th className="cash-ledger-table__details-col">Details</th>
-                <th className="cash-ledger-table__actions-col">Actions</th>
+                <AppTableHeaderCell>Date</AppTableHeaderCell>
+                {isAllScope ? <AppTableHeaderCell>Portfolio</AppTableHeaderCell> : null}
+                <AppTableHeaderCell>Type</AppTableHeaderCell>
+                <AppTableHeaderCell>Currency</AppTableHeaderCell>
+                <AppTableHeaderCell numeric>Amount</AppTableHeaderCell>
+                <AppTableHeaderCell className="cash-ledger-table__details-col">
+                  Details
+                </AppTableHeaderCell>
+                <AppTableHeaderCell className="cash-ledger-table__actions-col">
+                  Actions
+                </AppTableHeaderCell>
               </tr>
             </thead>
             <tbody>
@@ -1026,26 +1024,31 @@ export default function Cash() {
                 const editable = isManualEditableCashEntry(entry);
                 return (
                   <tr key={entry.id}>
-                    <td>{entry.date}</td>
+                    <AppTableCell>{entry.date}</AppTableCell>
                     {isAllScope ? (
-                      <td>
+                      <AppTableCell>
                         {entry.portfolio_name ||
                           (entry.portfolio_id != null ? `#${entry.portfolio_id}` : '—')}
-                      </td>
+                      </AppTableCell>
                     ) : null}
-                    <td>{cashEntryTypeLabel(entry.entry_type)}</td>
-                    <td>{entry.currency}</td>
-                    <td className="num-col">
+                    <AppTableCell>
+                      <StatusBadge
+                        status={cashEntryBadgeStatus(entry.entry_type)}
+                        label={cashEntryTypeLabel(entry.entry_type)}
+                      />
+                    </AppTableCell>
+                    <AppTableCell>{entry.currency}</AppTableCell>
+                    <AppTableCell numeric>
                       <CurrencyValue
                         value={entry.amount}
                         currency={entry.currency}
                         tone={amountTone(entry.amount)}
                       />
-                    </td>
-                    <td className="cash-ledger-table__details-col">
+                    </AppTableCell>
+                    <AppTableCell className="cash-ledger-table__details-col">
                       {entry.details || entry.note || entry.source_of_funds || '—'}
-                    </td>
-                    <td className="cash-ledger-table__actions-col">
+                    </AppTableCell>
+                    <AppTableCell className="cash-ledger-table__actions-col">
                       {editable ? (
                         <div className="cash-ledger-actions">
                           <Button
@@ -1073,12 +1076,12 @@ export default function Cash() {
                           —
                         </span>
                       )}
-                    </td>
+                    </AppTableCell>
                   </tr>
                 );
               })}
             </tbody>
-          </table>
+          </AppTable>
         </div>
         {ledgerData && ledgerData.total > 0 ? (
           <div className="cash-ledger-pagination">
@@ -1112,6 +1115,34 @@ export default function Cash() {
       <PageHeader
         title="Cash"
         subtitle="Native cash balances by portfolio and currency. Amounts are stored in each currency — not converted for display on this page."
+        actions={
+          <div className="cash-page__header-actions">
+            <Button
+              variant="primary"
+              onClick={() => {
+                setEditingEntry(null);
+                setDepositOpen(true);
+              }}
+            >
+              Add Deposit
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setEditingEntry(null);
+                setWithdrawalOpen(true);
+              }}
+            >
+              Add Withdrawal
+            </Button>
+            <Button variant="secondary" onClick={() => setBulkOpen(true)}>
+              Add Bulk Cash Entries
+            </Button>
+            <Button variant="secondary" onClick={() => setTransferOpen(true)}>
+              Transfer Cash
+            </Button>
+          </div>
+        }
       />
 
       <CashAwarePortfolioStatus className="cash-page__cash-aware" />
@@ -1138,34 +1169,21 @@ export default function Cash() {
         />
       ) : null}
 
-      <div className="cash-page__actions">
-        <Button
-          variant="primary"
-          onClick={() => {
-            setEditingEntry(null);
-            setDepositOpen(true);
-          }}
-        >
-          Add Deposit
-        </Button>
-        <Button
-          variant="secondary"
-          onClick={() => {
-            setEditingEntry(null);
-            setWithdrawalOpen(true);
-          }}
-        >
-          Add Withdrawal
-        </Button>
-        <Button variant="secondary" onClick={() => setBulkOpen(true)}>
-          Add Bulk Cash Entries
-        </Button>
-        <Button variant="secondary" onClick={() => setTransferOpen(true)}>
-          Transfer Cash
-        </Button>
-      </div>
+      {balanceOverviewCards.length > 0 ? (
+        <div className="cash-page__overview" aria-label="Cash balance overview">
+          {balanceOverviewCards.map((card) => (
+            <KpiCard
+              key={card.key}
+              label={card.label}
+              value={card.value}
+              helperText={card.helperText}
+              size="compact"
+            />
+          ))}
+        </div>
+      ) : null}
 
-      <SectionCard
+      <DataTableShell
         className="cash-page__section cash-page__balances"
         title="Cash balances"
         subtitle={
@@ -1173,15 +1191,20 @@ export default function Cash() {
             ? 'All active portfolios'
             : selectedPortfolioName || 'Selected portfolio'
         }
+        loading={balancesLoading && !balancesData}
+        loadingMessage="Loading balances…"
+        error={balancesError && !balancesData ? balancesError : undefined}
+        errorTitle="Could not load balances"
+        empty={!balancesLoading && !balancesError && balanceRows.length === 0}
+        emptyTitle="No cash balances"
+        emptyDescription="Record a deposit to add cash in a portfolio currency."
+        dense
       >
-        {renderBalancesBody()}
-      </SectionCard>
+        {!balancesLoading && !balancesError && balanceRows.length > 0 ? renderBalancesTable() : null}
+      </DataTableShell>
 
-      <SectionCard
-        className="cash-page__section cash-page__ledger"
-        title="Cash ledger"
-        subtitle="Deposits, withdrawals, and settlements"
-      >
+      <AppCard className="cash-page__section cash-page__ledger" title="Cash ledger" compact>
+        <p className="cash-page__ledger-subtitle">Deposits, withdrawals, and settlements</p>
         <div className="cash-ledger-filters">
           <div className="form-group">
             <label htmlFor="cash-filter-currency">Currency</label>
@@ -1231,8 +1254,10 @@ export default function Cash() {
             />
           </div>
         </div>
-        {renderLedgerBody()}
-      </SectionCard>
+        <DataTableShell className="cash-page__ledger-table" dense>
+          {renderLedgerBody()}
+        </DataTableShell>
+      </AppCard>
 
       <CashEntryModal
         mode="deposit"

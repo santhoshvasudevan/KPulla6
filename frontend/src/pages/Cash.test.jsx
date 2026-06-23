@@ -205,6 +205,14 @@ describe('Cash page', () => {
     window.confirm = vi.fn(() => true);
   });
 
+  it('shows page header with title and subtitle', async () => {
+    renderCash();
+    expect(await screen.findByRole('heading', { name: /^cash$/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(/native cash balances by portfolio and currency/i)
+    ).toBeInTheDocument();
+  });
+
   it('shows per-portfolio cash-aware note in All Portfolios scope', async () => {
     renderCash({ initialSelection: { mode: 'all', id: null, name: 'All Portfolios' } });
     expect(
@@ -262,9 +270,9 @@ describe('Cash page', () => {
     expect(screen.getAllByText('IndianMF').length).toBeGreaterThan(0);
     expect(screen.getAllByText('€12,500.00').length).toBeGreaterThan(0);
     expect(screen.getAllByText('₹50,000.00').length).toBeGreaterThan(0);
-    expect(screen.getByText('Totals by currency')).toBeInTheDocument();
-    expect(screen.getByText(/EUR:/)).toBeInTheDocument();
-    expect(screen.getByText(/INR:/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Cash balance overview')).toBeInTheDocument();
+    expect(screen.getByText('Total EUR')).toBeInTheDocument();
+    expect(screen.getByText('Total INR')).toBeInTheDocument();
     expect(screen.queryByText('62,500')).not.toBeInTheDocument();
   });
 
@@ -281,12 +289,12 @@ describe('Cash page', () => {
     expect(screen.getByText('Page 1 of 1 · 2 entries')).toBeInTheDocument();
   });
 
-  it('uses full-width section cards for balances and ledger', async () => {
+  it('uses premium ledger sections for balances and ledger', async () => {
     const { container } = renderCash();
     await screen.findByText('Cash balances');
-    expect(container.querySelectorAll('.cash-page__section.ui-section-card')).toHaveLength(2);
-    expect(container.querySelector('.cash-page__balances.cash-page__section')).toBeTruthy();
-    expect(container.querySelector('.cash-page__ledger.cash-page__section')).toBeTruthy();
+    expect(container.querySelectorAll('.cash-page__section')).toHaveLength(2);
+    expect(container.querySelector('.cash-page__balances.ui-data-table-shell')).toBeTruthy();
+    expect(container.querySelector('.cash-page__ledger.ui-app-card')).toBeTruthy();
   });
 
   it('renders TAX_WITHHELD row with protected actions', async () => {
@@ -441,7 +449,7 @@ describe('Cash page', () => {
 
   it('all-portfolios scope requires portfolio selection in deposit modal', async () => {
     renderCash({ initialSelection: { mode: 'all', id: null, name: 'All Portfolios' } });
-    await waitFor(() => expect(screen.getByText('Totals by currency')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Cash balances')).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole('button', { name: /add deposit/i }));
     const dialog = await screen.findByRole('dialog');
@@ -611,7 +619,7 @@ describe('Cash page', () => {
 
   it('does not show Backfill Cash button', async () => {
     renderCash();
-    await waitFor(() => expect(screen.getByText('Totals by currency')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Cash balances')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: /backfill cash/i })).not.toBeInTheDocument();
   });
 
@@ -624,7 +632,7 @@ describe('Cash page', () => {
 
   it('bulk wizard opens modal when button clicked', async () => {
     renderCash();
-    await waitFor(() => expect(screen.getByText('Totals by currency')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Cash balances')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /add bulk cash entries/i }));
     expect(
       await screen.findByRole('dialog', { name: /add bulk cash entries/i })
@@ -654,7 +662,7 @@ describe('Cash page', () => {
 
   it('transfer modal all-portfolios requires source portfolio', async () => {
     renderCash({ initialSelection: { mode: 'all', id: null, name: 'All Portfolios' } });
-    await waitFor(() => expect(screen.getByText('Totals by currency')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Cash balances')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /transfer cash/i }));
     const dialog = await screen.findByRole('dialog', { name: /transfer cash/i });
     expect(within(dialog).getByLabelText(/source portfolio/i)).toBeInTheDocument();
@@ -670,7 +678,7 @@ describe('Cash page', () => {
 
   it('transfer modal target excludes source portfolio', async () => {
     renderCash({ initialSelection: { mode: 'all', id: null, name: 'All Portfolios' } });
-    await waitFor(() => expect(screen.getByText('Totals by currency')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Cash balances')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /transfer cash/i }));
     const dialog = await screen.findByRole('dialog', { name: /transfer cash/i });
     fireEvent.change(within(dialog).getByLabelText(/source portfolio/i), {
@@ -847,7 +855,7 @@ describe('Cash page', () => {
 
   it('bulk wizard all-portfolios requires portfolio selection', async () => {
     renderCash({ initialSelection: { mode: 'all', id: null, name: 'All Portfolios' } });
-    await waitFor(() => expect(screen.getByText('Totals by currency')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Cash balances')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /add bulk cash entries/i }));
     const dialog = await screen.findByRole('dialog', { name: /add bulk cash entries/i });
     fireEvent.change(within(dialog).getByLabelText(/amount/i), { target: { value: '900' } });

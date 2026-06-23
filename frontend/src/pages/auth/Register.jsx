@@ -93,8 +93,8 @@ export default function Register() {
             required
           />
         </div>
-        {error ? <p className="auth-form__error">{error}</p> : null}
-        <Button type="submit" disabled={submitting}>
+        {error ? <p className="auth-form__error" role="alert">{error}</p> : null}
+        <Button type="submit" variant="primary" className="auth-form__submit" disabled={submitting}>
           {submitting ? 'Creating account…' : 'Register'}
         </Button>
         <div className="auth-form__divider">or</div>

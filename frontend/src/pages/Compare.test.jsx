@@ -83,11 +83,27 @@ describe('Compare page', () => {
     renderCompare();
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /compare assets/i })).toBeInTheDocument();
+      expect(screen.getByText('Comparison setup')).toBeInTheDocument();
     });
     expect(screen.getByLabelText('compare-asset-a')).toBeInTheDocument();
     expect(screen.getByLabelText('compare-asset-b')).toBeInTheDocument();
     expect(screen.getByLabelText('compare-asset-a')).toHaveTextContent('AAPL');
     expect(screen.getByLabelText('compare-asset-b')).toHaveTextContent('MSFT');
+    expect(screen.getByRole('link', { name: /setup/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /^chart$/i })).toBeInTheDocument();
+  });
+
+  it('shows selected subject chips after picking assets', async () => {
+    renderCompare();
+    await waitFor(() => expect(screen.getByLabelText('compare-asset-a')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('compare-asset-a'), { target: { value: 'AAPL' } });
+    fireEvent.change(screen.getByLabelText('compare-asset-b'), { target: { value: 'MSFT' } });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/selected comparison subjects/i)).toBeInTheDocument();
+      expect(screen.getByText(/asset a: aapl/i)).toBeInTheDocument();
+      expect(screen.getByText(/asset b: msft/i)).toBeInTheDocument();
+    });
   });
 
   it('calls getCompareMetricSheet with asset subjects when two assets selected', async () => {
@@ -129,6 +145,8 @@ describe('Compare page', () => {
     fireEvent.change(screen.getByLabelText('compare-asset-b'), { target: { value: 'MSFT' } });
 
     await waitFor(() => expect(screen.getByTestId('compare-line-chart')).toBeInTheDocument());
+    expect(screen.getByText('Normalized Cumulative Return')).toBeInTheDocument();
+    expect(screen.getByLabelText(/comparison summary/i)).toBeInTheDocument();
     expect(screen.getByTestId('compare-line-chart')).toHaveAttribute('data-points', '2');
     expect(screen.getByTestId('line-asset:AAPL')).toHaveAttribute('data-name', 'Apple Inc.');
     expect(screen.getByTestId('chart-tooltip')).toHaveTextContent('+12.34%');
@@ -156,7 +174,7 @@ describe('Compare page', () => {
 
     await waitFor(() => expect(screen.getByText('Metric Sheet comparison')).toBeInTheDocument());
     expect(screen.getAllByText('+12.34%').length).toBeGreaterThan(0);
-    expect(screen.getByText('+5.67%')).toBeInTheDocument();
+    expect(screen.getAllByText('+5.67%').length).toBeGreaterThan(0);
     expect(screen.getByText('1.10')).toBeInTheDocument();
   });
 
@@ -208,7 +226,9 @@ describe('Compare page', () => {
     const withBench = api.getCompareMetricSheet.mock.calls.find((c) => c[0].benchmark === '^GSPC');
     expect(withBench).toBeTruthy();
 
-    await waitFor(() => expect(screen.getByText('Benchmark')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Benchmark', level: 4 })).toBeInTheDocument()
+    );
     expect(screen.getAllByText('1.05').length).toBeGreaterThan(0);
   });
 

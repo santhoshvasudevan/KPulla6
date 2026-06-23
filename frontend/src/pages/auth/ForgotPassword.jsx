@@ -43,9 +43,9 @@ export default function ForgotPassword() {
             required
           />
         </div>
-        {error ? <p className="auth-form__error">{error}</p> : null}
-        {message ? <p className="auth-shell__success">{message}</p> : null}
-        <Button type="submit" disabled={submitting}>
+        {error ? <p className="auth-form__error" role="alert">{error}</p> : null}
+        {message ? <p className="auth-shell__success" role="status">{message}</p> : null}
+        <Button type="submit" variant="primary" className="auth-form__submit" disabled={submitting}>
           {submitting ? 'Sending…' : 'Send reset link'}
         </Button>
       </form>

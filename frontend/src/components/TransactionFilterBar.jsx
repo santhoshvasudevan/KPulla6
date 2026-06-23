@@ -114,6 +114,7 @@ export default function TransactionFilterBar({
   dateRangeInvalid = false,
   hasActiveFilters = false,
   onClearFilters,
+  embedded = false,
 }) {
   const portfolioName = useMemo(() => {
     const match = portfolios.find((p) => String(p.id) === String(filterPortfolioId));
@@ -130,12 +131,17 @@ export default function TransactionFilterBar({
   }, [dateMode, dateValue, dateFrom, dateTo]);
 
   return (
-    <section className="txn-filter" aria-label="Transaction filters">
+    <section
+      className={`txn-filter${embedded ? ' txn-filter--embedded' : ''}`}
+      aria-label="Transaction filters"
+    >
       <div className="txn-filter__row">
-        <div className="txn-filter__heading">
-          <Filter size={16} aria-hidden="true" />
-          <span>Filters</span>
-        </div>
+        {embedded ? null : (
+          <div className="txn-filter__heading">
+            <Filter size={16} aria-hidden="true" />
+            <span>Filters</span>
+          </div>
+        )}
 
         <div className="txn-filter__control">
           <label className="txn-filter__label" htmlFor="txn-filter-portfolio">

@@ -1,31 +1,80 @@
+.fixed-deposits-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
 .fixed-deposits-page .fd-banner {
-  margin-bottom: var(--space-4);
+  margin-bottom: 0;
 }
 
-.fd-empty {
-  color: var(--text-secondary);
-  margin: 0;
+.fixed-deposits-page__overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-3);
 }
 
-.fd-table-wrap {
-  overflow-x: auto;
-}
-
-.fd-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.875rem;
-}
-
-.fd-table th,
-.fd-table td {
-  padding: 0.5rem 0.75rem;
+.fd-section-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  position: sticky;
+  top: var(--shell-sticky-offset, 5.75rem);
+  z-index: 12;
+  padding: var(--space-2) 0;
   border-bottom: 1px solid var(--border-subtle);
-  text-align: left;
+  background: color-mix(in srgb, var(--bg-app) 90%, transparent);
+  backdrop-filter: blur(10px);
 }
 
-.fd-table .num-col {
-  text-align: right;
+.fd-section-nav__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.fd-section-nav__link:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-raised);
+  border-color: var(--border-subtle);
+}
+
+#fd-overview,
+#fd-deposits {
+  scroll-margin-top: calc(var(--shell-sticky-offset, 5.75rem) + 3rem);
+}
+
+.fixed-deposits-page__table {
+  margin-bottom: 0;
+}
+
+.fd-table__account {
+  font-family: var(--font-metric);
+  font-size: 0.8125rem;
+}
+
+.fd-table__maturity {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fd-table__actions-col {
+  min-width: 12rem;
+}
+
+.fd-table__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
 }
 
 .fd-modal-backdrop {
@@ -109,22 +158,9 @@
 
 .fd-interest-payments-row td {
   background: var(--bg-subtle, rgba(0, 0, 0, 0.02));
+  padding: var(--space-3) var(--space-4);
 }
 
 .fd-interest-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.8125rem;
-  margin-bottom: 0.5rem;
-}
-
-.fd-interest-table th,
-.fd-interest-table td {
-  padding: 0.35rem 0.5rem;
-  border-bottom: 1px solid var(--border-subtle);
-  text-align: left;
-}
-
-.fd-interest-table .num-col {
-  text-align: right;
+  margin-bottom: var(--space-2);
 }

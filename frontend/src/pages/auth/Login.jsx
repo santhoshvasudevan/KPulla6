@@ -57,9 +57,9 @@ export default function Login() {
             required
           />
         </div>
-        {error ? <p className="auth-form__error">{error}</p> : null}
+        {error ? <p className="auth-form__error" role="alert">{error}</p> : null}
         <AuthLinks register />
-        <Button type="submit" disabled={submitting}>
+        <Button type="submit" variant="primary" className="auth-form__submit" disabled={submitting}>
           {submitting ? 'Signing in…' : 'Sign in'}
         </Button>
         <div className="auth-form__divider">or</div>

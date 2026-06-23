@@ -72,6 +72,19 @@ describe('Transactions Page', () => {
     api.fetchTransactionFilterOptions.mockResolvedValue({ portfolios: [], symbols: [] });
   });
 
+  it('shows page header with title and subtitle', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'USD' });
+    api.fetchTransactions.mockResolvedValue(mockTransactions);
+    render(
+      <PortfolioProvider>
+        <Transactions />
+      </PortfolioProvider>
+    );
+    expect(await screen.findByRole('heading', { name: /^transactions$/i })).toBeInTheDocument();
+    expect(screen.getByText(/source-of-truth activity ledger/i)).toBeInTheDocument();
+  });
+
   it('renders transaction rows after data loads', async () => {
     api.fetchPortfolios.mockResolvedValueOnce([]);
     api.getSettings.mockResolvedValueOnce({ display_currency: 'USD' });
@@ -776,12 +789,13 @@ describe('Transactions Page', () => {
       });
     });
 
-    it('renders filter controls', async () => {
+    it('renders filter controls and activity ledger section', async () => {
       renderWithFilters();
       await waitFor(() => expect(screen.getByText('AAPL')).toBeInTheDocument());
       expect(screen.getByLabelText('Filter by portfolio')).toBeInTheDocument();
       expect(screen.getByLabelText('Filter by symbol')).toBeInTheDocument();
       expect(screen.getByLabelText('Date filter mode')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Activity ledger' })).toBeInTheDocument();
     });
 
     it('selecting a portfolio filter calls API with portfolio_id and resets to page 1', async () => {

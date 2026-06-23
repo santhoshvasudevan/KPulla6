@@ -2,6 +2,8 @@ export default function ChartCard({
   title,
   subtitle,
   toolbar,
+  status,
+  legend,
   children,
   footer,
   className = '',
@@ -15,7 +17,7 @@ export default function ChartCard({
     .filter(Boolean)
     .join(' ');
 
-  const showHeader = title || subtitle || toolbar;
+  const showHeader = title || subtitle || toolbar || status;
 
   return (
     <section className={classes}>
@@ -25,9 +27,15 @@ export default function ChartCard({
             {title ? <h3 className="ui-chart-card__title">{title}</h3> : null}
             {subtitle ? <p className="ui-chart-card__subtitle">{subtitle}</p> : null}
           </div>
-          {toolbar ? <div className="ui-chart-card__toolbar">{toolbar}</div> : null}
+          {toolbar || status ? (
+            <div className="ui-chart-card__toolbar">
+              {status ? <div className="ui-chart-card__status">{status}</div> : null}
+              {toolbar}
+            </div>
+          ) : null}
         </div>
       ) : null}
+      {legend ? <div className="ui-chart-card__legend">{legend}</div> : null}
       <div className="ui-chart-card__body">{children}</div>
       {footer ? <div className="ui-chart-card__footer">{footer}</div> : null}
     </section>

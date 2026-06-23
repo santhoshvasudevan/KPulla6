@@ -1,18 +1,119 @@
 .compare-page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-4);
 }
 
-.compare-page__metrics-title {
-  margin: 0;
-  font-size: 1.125rem;
-  font-weight: 600;
+.compare-page__setup {
+  margin-bottom: 0;
+}
+
+.compare-page__controls {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.compare-page__control-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.compare-page__field--benchmark {
+  min-width: 12rem;
+  flex: 0 1 auto;
+}
+
+.compare-page__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.compare-page__chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.75rem;
+  padding: 0 var(--space-3);
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-raised);
   color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.compare-page__chip--benchmark {
+  color: var(--text-secondary);
+  font-weight: 550;
+}
+
+.compare-section-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  position: sticky;
+  top: var(--shell-sticky-offset, 5.75rem);
+  z-index: 12;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-app) 90%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.compare-section-nav__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.compare-section-nav__link:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-raised);
+  border-color: var(--border-subtle);
+}
+
+#compare-setup,
+#compare-chart,
+#compare-metrics,
+#compare-periods,
+#compare-drawdowns,
+#compare-overview {
+  scroll-margin-top: calc(var(--shell-sticky-offset, 5.75rem) + 3rem);
+}
+
+.compare-page__kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-3);
+}
+
+.compare-page__chart {
+  margin-bottom: 0;
 }
 
 .compare-page__metrics {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+
+.compare-page__metrics-header {
+  margin-bottom: 0;
+}
+
+.compare-page__alignment {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
 }

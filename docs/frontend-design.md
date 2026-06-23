@@ -66,14 +66,16 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 
 ## Layout Rules
 
-### App shell
+### App shell (Executive Portfolio OS — P4.4+)
 
-- Fixed sidebar (~260px): brand, portfolio/currency selectors directly below brand, main navigation, optional data note in footer
-- Top header (main column): theme selector, signed-in user label, log out — always visible without scrolling the sidebar
-- Main content: `--bg-app` background, inner padding (`--space-5` / `--space-6`), max-width ~1400px
-- Active nav: left accent border + raised surface (not inverted high-contrast)
-- Selectors: raised surface, strong border, accent focus ring
-- Responsive: sidebar stacks above main below 900px; nav grid on very narrow screens
+- **No permanent left sidebar.** Brand, global navigation, portfolio/currency selectors, theme, account, and logout live in a **sticky top header** (`Layout.jsx`).
+- **Brand:** KPulla6 mark + “Executive Portfolio OS” subtitle; compact cached-data note in header.
+- **Top nav:** Dashboard, Transactions, Cash, Assets, Fixed Deposits, Compare, Settings — single authoritative route menu.
+- **Main content:** centered `app-main__inner` (max-width ~1520px), `--bg-app` background, responsive padding.
+- **Page-local nav:** in-page section anchors only (Dashboard, Assets, Asset Detail, Fixed Deposits, Compare, Settings) — not duplicate global routes.
+- **Selectors:** portfolio view and display currency in header; raised surface, strong border, accent focus ring.
+- **Responsive:** header stacks on narrow viewports; nav horizontal scroll; controls wrap; section-nav scroll on mobile (P10).
+- **Auth routes:** Login, Register, Forgot Password use standalone `AuthShell` — no authenticated header.
 
 ### Dashboard
 
@@ -109,10 +111,10 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 
 ### Settings
 
-- Section cards: Display & tax; **Portfolios** (CRUD for real portfolios); **Bank accounts** (`BankAccountManagement` + `CashMovementManagement`); Data & sync (explainer)
-- Portfolio table: name, base currency, default flag; create form (name, optional description, base currency default EUR); edit modal; deactivate for non-default only
-- Bank accounts: list active accounts; create/edit with full account number display; deactivate (soft); **ledger-derived `current_balance`** (read-only once ledger exists); **Seed opening balance** when `opening_balance > 0` and not yet seeded; **View movements** expands per-account ledger panel (movement table + record modal for manual deposit/withdrawal/adjustment); ledger rows immutable (no edit/delete); **Include this bank cash in portfolio value** toggle (default off; warning when ledger unseeded)
-- Display currency must stay in sync with sidebar selector
+- `AppCard` sections with sticky section nav: Display & tax; **Portfolios** (CRUD); **Bank accounts** (`BankAccountManagement` + nested `CashMovementManagement`); Data & sync (explainer)
+- Portfolio table: name, base currency, default flag; create form; edit modal; deactivate for non-default only
+- Bank accounts: list active accounts; create/edit; ledger-derived `current_balance`; seed opening balance; per-account cash movements
+- Display currency must stay in sync with **header** display-currency selector
 - **All Portfolios** remains virtual — not created or assignable as a target portfolio
 
 ### Fixed Deposits (`/fixed-deposits`)
@@ -130,17 +132,23 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 
 ## Component Catalog
 
-Implemented in `frontend/src/components/ui/` (Phase 1–3B):
+Implemented in `frontend/src/components/ui/` (Phase 1–3B) and extended in P4–P10:
 
 | Component | Props (summary) |
 |-----------|-----------------|
 | `Button` | `variant`: primary \| secondary \| ghost \| danger; `disabled`, `type`, `onClick` |
 | `PageHeader` | `title`, `subtitle`, `eyebrow`, `breadcrumb`, `actions` |
+| `KpiCard` | `label`, `value`, `helperText`, `variant`, `size` |
 | `MetricCard` | `label`, `value`, `helperText`, `tone`, `size`, `icon`, `trend` |
-| `SectionCard` | `title`, `subtitle`, `actions`, `children`, `compact` |
-| `ChartCard` | `title`, `subtitle`, `toolbar`, `children`, `footer`, `compact` |
+| `AppCard` | `title`, `subtitle`, `eyebrow`, `actions`, `footer`, `compact`, `elevated` |
+| `SectionHeader` | `title`, `subtitle`, `eyebrow`, `actions`, `headingLevel` |
+| `DataTableShell` | `title`, `subtitle`, `loading`, `error`, `empty`, `dense`, `children` |
+| `AppTable` / `AppTableCell` / `AppTableHeaderCell` | table primitives; `numeric` alignment |
+| `SectionCard` | `title`, `subtitle`, `actions`, `children`, `compact` (legacy; prefer `AppCard`) |
+| `ChartCard` | `title`, `subtitle`, `toolbar`, `legend`, `footer`, `compact` |
 | `SegmentedControl` | `ariaLabel`, `options`, `value`, `onChange` |
 | `StatusBadge` | `status`, optional `label` |
+| `AssetClassPill` | `variant` for asset class display |
 | `WarningBanner` | `severity`: info \| warning \| error \| success; `title`, `message`, `action` |
 | `EmptyState` | `title`, `description`, `action`, `icon` |
 | `LoadingState` | `message`, `variant`: spinner \| skeleton |
@@ -148,17 +156,9 @@ Implemented in `frontend/src/components/ui/` (Phase 1–3B):
 | `CurrencyValue` | `value`, `currency`, `tone`, `fallback`, `showSign` |
 | `PercentValue` | `value`, `tone`, `fallback`, `showSign` |
 
-Shared table styling (not a component): page-local table CSS; `DataTable` deferred.
+Chart shell (`frontend/src/components/charts/`): `ChartFrame`, `ChartLegend`, `ChartControls`, `ChartEmptyState`, `ChartLoadingState`, `ChartErrorState`; theme via `chartTheme.js`.
 
-Transaction type badges: `.ui-txn-type` + modifiers in `ui.css` (BUY / SELL / DIVIDEND / STOCK_SPLIT).
-
-Chart theme: `frontend/src/components/charts/chartTheme.js`
-
-Planned for later phases:
-
-| Component | Responsibility |
-|-----------|----------------|
-| `DataTable` | Sortable table, numeric alignment, empty state |
+Shared table styling: page-local CSS where needed; generic `DataTable` component deferred — use `DataTableShell` + `AppTable`.
 
 ## Color Semantics
 
@@ -211,7 +211,7 @@ Pages are wired on **Dashboard** (Phase 8B) and **Asset Detail** (Phase 8C). **C
 
 ### Compare page (Phase 8D — implemented)
 
-- Route `/compare` with sidebar nav **Compare**.
+- Route `/compare` with **top nav** entry **Compare** (global navigation).
 - Subject pickers: two dropdowns from `fetchHoldings` (unique symbols); same-asset validation; empty state when fewer than two holdings.
 - `getCompareMetricSheet` with `subjects=asset:A,asset:B`, range, benchmark, portfolio scope, display currency.
 - `CompareNormalizedChart` — Recharts line chart from `normalized_series` (fractions; axis/tooltip as percent).

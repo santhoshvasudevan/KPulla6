@@ -16,9 +16,12 @@ import {
   getChartAxisTick,
   getChartTooltipStyle,
   getChartLegendStyle,
-} from '../charts/chartTheme';
+  ChartEmptyState,
+  getChartCrosshairCursorProps,
+  getChartActiveDotProps,
+  getChartMinTickGap,
+} from '../charts';
 import { formatMetricPercentFraction } from '../../utils/metricFormatters';
-import { EmptyState } from '../ui';
 
 /** Map backend normalized_series to Recharts rows (fractions unchanged). */
 export function mergeNormalizedCompareSeries(normalizedSeries) {
@@ -66,6 +69,7 @@ export default function CompareNormalizedChart({
   subjects = [],
   shortRange = false,
   className = '',
+  hideLegend = false,
 }) {
   const { chartData, subjectIds } = useMemo(
     () => mergeNormalizedCompareSeries(normalizedSeries),
@@ -87,7 +91,7 @@ export default function CompareNormalizedChart({
 
   if (!chartData.length) {
     return (
-      <EmptyState
+      <ChartEmptyState
         title="No comparison chart data"
         description="The backend returned no normalized cumulative return series for this selection."
       />
@@ -105,7 +109,7 @@ export default function CompareNormalizedChart({
             tick={getChartAxisTick()}
             tickFormatter={axisDateFormatter}
             interval="preserveStartEnd"
-            minTickGap={shortRange ? 8 : 24}
+            minTickGap={getChartMinTickGap('analysis', shortRange)}
           />
           <YAxis
             stroke={getChartAxisStroke()}
@@ -114,10 +118,13 @@ export default function CompareNormalizedChart({
           />
           <Tooltip
             contentStyle={getChartTooltipStyle()}
+            cursor={getChartCrosshairCursorProps('analysis')}
             formatter={(value) => formatMetricPercentFraction(value, { showSign: true })}
             labelFormatter={(l) => axisDateFormatter(l)}
           />
-          {lines.length > 1 ? <Legend wrapperStyle={getChartLegendStyle()} /> : null}
+          {lines.length > 1 && !hideLegend ? (
+            <Legend wrapperStyle={getChartLegendStyle()} />
+          ) : null}
           {lines.map((line) => (
             <Line
               key={line.dataKey}
@@ -126,6 +133,7 @@ export default function CompareNormalizedChart({
               name={line.name}
               stroke={line.stroke}
               dot={false}
+              activeDot={getChartActiveDotProps('secondary')}
               isAnimationActive={false}
             />
           ))}

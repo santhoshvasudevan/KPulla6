@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, it, expect, vi } from 'vitest';
 import Layout from './Layout';
@@ -46,17 +46,85 @@ describe('Layout component', () => {
       expect(screen.getByLabelText('display-currency')).not.toBeDisabled();
     });
 
-    expect(screen.getByText(/dashboard/i)).toBeInTheDocument();
-    expect(screen.getByText(/transactions/i)).toBeInTheDocument();
-    expect(screen.getByText(/^cash$/i)).toBeInTheDocument();
-    expect(screen.getByText(/assets/i)).toBeInTheDocument();
-    expect(screen.getByText(/^compare$/i)).toBeInTheDocument();
-    expect(screen.getByText(/settings/i)).toBeInTheDocument();
+    const primaryNav = screen.getByLabelText('Main navigation');
+    expect(within(primaryNav).getByText(/dashboard/i)).toBeInTheDocument();
+    expect(within(primaryNav).getByText(/transactions/i)).toBeInTheDocument();
+    expect(within(primaryNav).getByText(/^cash$/i)).toBeInTheDocument();
+    expect(within(primaryNav).getByText(/assets/i)).toBeInTheDocument();
+    expect(within(primaryNav).getByText(/fixed deposits/i)).toBeInTheDocument();
+    expect(within(primaryNav).getByText(/^compare$/i)).toBeInTheDocument();
+    expect(within(primaryNav).getByText(/settings/i)).toBeInTheDocument();
     expect(screen.getByText(/portfolio view/i)).toBeInTheDocument();
     expect(screen.getByLabelText('portfolio-view')).toBeInTheDocument();
     expect(screen.getByText(/display currency/i)).toBeInTheDocument();
     expect(screen.getByLabelText('display-currency')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Secondary navigation')).not.toBeInTheDocument();
     expect(screen.getByTestId('child')).toBeInTheDocument();
+  });
+
+  it('centers main content globally without a context sidebar', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });
+    renderLayout(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<div data-testid="child">Child Content</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('display-currency')).not.toBeDisabled();
+    });
+
+    const main = document.querySelector('.app-main');
+    const inner = document.getElementById('main-content');
+    expect(main).toBeInTheDocument();
+    expect(inner).toHaveClass('app-main__inner');
+    expect(screen.queryByLabelText('Secondary navigation')).not.toBeInTheDocument();
+  });
+
+  it('does not render secondary context navigation on non-dashboard routes', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });
+    renderLayout(
+      <MemoryRouter initialEntries={['/cash']}>
+        <Routes>
+          <Route path="/cash" element={<Layout />}>
+            <Route index element={<div data-testid="child">Cash child</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('display-currency')).not.toBeDisabled();
+    });
+    expect(screen.queryByLabelText('Secondary navigation')).not.toBeInTheDocument();
+    expect(screen.getByTestId('child')).toBeInTheDocument();
+    expect(document.getElementById('main-content')).toHaveClass('app-main__inner');
+  });
+
+  it('shows compact cached-data note in the application header', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });
+    renderLayout(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<div data-testid="child">Child</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/cached prices, navs, benchmarks, and fx from the database/i)
+      ).toBeInTheDocument();
+    });
   });
 
   it('shows account and logout in the top header', async () => {
@@ -100,7 +168,7 @@ describe('Layout component', () => {
     expect(screen.getByLabelText('Theme preference')).toHaveValue('system');
   });
 
-  it('renders portfolio and currency controls before navigation links', async () => {
+  it('renders primary navigation before portfolio and currency controls in the top shell', async () => {
     api.fetchPortfolios.mockResolvedValueOnce([]);
     api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });
     renderLayout(
@@ -122,10 +190,10 @@ describe('Layout component', () => {
     const dashboardLink = screen.getByRole('link', { name: /dashboard/i });
 
     expect(
-      portfolioView.compareDocumentPosition(dashboardLink) & Node.DOCUMENT_POSITION_FOLLOWING
+      dashboardLink.compareDocumentPosition(portfolioView) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
     expect(
-      displayCurrency.compareDocumentPosition(dashboardLink) & Node.DOCUMENT_POSITION_FOLLOWING
+      dashboardLink.compareDocumentPosition(displayCurrency) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
   });
 
@@ -198,6 +266,27 @@ describe('Layout component', () => {
       expect(screen.getByRole('option', { name: 'Renamed Portfolio' })).toBeInTheDocument();
     });
     expect(screen.queryByRole('option', { name: 'Old Name' })).not.toBeInTheDocument();
+  });
+
+  it('renders seven primary navigation links in the authenticated shell', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });
+    renderLayout(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<div data-testid="child">Child</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('display-currency')).not.toBeDisabled();
+    });
+
+    const primaryNav = screen.getByLabelText('Main navigation');
+    expect(within(primaryNav).getAllByRole('link')).toHaveLength(7);
   });
 
   it('highlights Cash nav link on /cash route', async () => {

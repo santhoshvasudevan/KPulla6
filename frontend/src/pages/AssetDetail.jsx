@@ -6,8 +6,13 @@ import { formatCurrency } from '../utils/formatters';
 import { AssetDetailMetricSheet } from '../components/metricSheet';
 import {
   PageHeader,
-  MetricCard,
-  SectionCard,
+  KpiCard,
+  AppCard,
+  DataTableShell,
+  AppTable,
+  AppTableCell,
+  AppTableHeaderCell,
+  AssetClassPill,
   StatusBadge,
   WarningBanner,
   LoadingState,
@@ -16,7 +21,15 @@ import {
   CurrencyValue,
   PercentValue,
 } from '../components/ui';
+import { holdingAssetClassVariant } from '../utils/transactionDisplay';
 import './AssetDetail.css';
+
+const ASSET_DETAIL_SECTION_NAV = [
+  { href: '#asset-overview', label: 'Overview' },
+  { href: '#asset-metrics', label: 'Metrics' },
+  { href: '#asset-details', label: 'Details' },
+  { href: '#asset-transactions', label: 'Transactions' },
+];
 
 function plTone(val) {
   if (val == null || Number.isNaN(Number(val))) return 'neutral';
@@ -26,8 +39,22 @@ function plTone(val) {
   return 'neutral';
 }
 
+function kpiVariantFromTone(tone) {
+  if (tone === 'positive') return 'gain';
+  if (tone === 'negative') return 'loss';
+  return 'neutral';
+}
+
 function formatQuantity(qty) {
   return Number(qty || 0).toFixed(4);
+}
+
+function assetClassFromDetail(data) {
+  return holdingAssetClassVariant({
+    asset_type: data?.asset_type,
+    is_cash: data?.is_cash,
+    primary_asset_class: data?.primary_asset_class,
+  });
 }
 
 function DetailRow({ label, children }) {
@@ -93,23 +120,29 @@ export default function AssetDetail() {
   const sortedTransactions = [...transactions].sort((a, b) =>
     String(b.date).localeCompare(String(a.date))
   );
+  const unrealizedTone = plTone(data.unrealized_pl);
+  const xirrTone = plTone(data.xirr);
 
   const headerSubtitle = [
     selectedPortfolioName || 'All Portfolios',
     selectedDisplayCurrency,
+    data.scheme_name || data.asset_type || 'Investment asset',
   ].join(' · ');
 
   return (
     <div className="asset-detail">
-      <PageHeader
-        title={data.asset_symbol}
-        subtitle={headerSubtitle}
-        breadcrumb={
-          <Link to="/assets" className="asset-detail__breadcrumb-link">
-            Assets
-          </Link>
-        }
-      />
+      <header className="asset-detail__hero" id="asset-overview">
+        <PageHeader
+          eyebrow={<AssetClassPill variant={assetClassFromDetail(data)} />}
+          title={data.asset_symbol}
+          subtitle={headerSubtitle}
+          breadcrumb={
+            <Link to="/assets" className="asset-detail__breadcrumb-link">
+              Assets
+            </Link>
+          }
+        />
+      </header>
 
       {data.fx_status === 'fx_unavailable' ? (
         <WarningBanner
@@ -128,171 +161,177 @@ export default function AssetDetail() {
       ))}
 
       <div className="asset-detail-kpi-grid">
-        <MetricCard
+        <KpiCard
           label="Current Value"
           size="hero"
-          value={
-            <CurrencyValue value={data.current_value} currency={currency} />
-          }
+          value={<CurrencyValue value={data.current_value} currency={currency} />}
         />
-        <MetricCard
+        <KpiCard
           label="Quantity"
           value={<span className="asset-detail__quantity">{formatQuantity(qty)}</span>}
         />
-        <MetricCard
+        <KpiCard
           label="Unrealized P/L"
-          tone={plTone(data.unrealized_pl)}
+          variant={kpiVariantFromTone(unrealizedTone)}
           value={
             <CurrencyValue
               value={data.unrealized_pl}
               currency={currency}
-              tone={plTone(data.unrealized_pl)}
+              tone={unrealizedTone}
               showSign
             />
           }
         />
-        <MetricCard
+        <KpiCard
           label="XIRR"
-          tone={plTone(data.xirr)}
+          variant={kpiVariantFromTone(xirrTone)}
           value={
-            <PercentValue
-              value={data.xirr}
-              tone={plTone(data.xirr)}
-              showSign
-            />
+            <PercentValue value={data.xirr} tone={xirrTone} showSign />
           }
         />
       </div>
 
-      <AssetDetailMetricSheet
-        assetSymbol={data.asset_symbol || assetSymbol}
-        apiQuery={apiQuery}
-        folioNumber={data.folio_number || null}
-        settingsLoaded={settingsLoaded}
-      />
+      <nav className="asset-detail-section-nav" aria-label="Asset detail section navigation">
+        {ASSET_DETAIL_SECTION_NAV.map((item) => (
+          <a key={item.href} className="asset-detail-section-nav__link" href={item.href}>
+            {item.label}
+          </a>
+        ))}
+      </nav>
 
-      <div className="asset-detail-sections">
-        <SectionCard title="Position / Cost Basis">
-          <dl className="asset-detail__dl">
-            <DetailRow label="Invested (FIFO)">
-              <CurrencyValue
-                value={data.cumulative_invested_amount}
-                currency={currency}
-              />
-            </DetailRow>
-            <DetailRow label="Avg Cost">
-              <CurrencyValue value={data.avg_cost_per_share} currency={currency} />
-            </DetailRow>
-            <DetailRow label="Realized P/L">
-              <CurrencyValue
-                value={data.realized_pl}
-                currency={currency}
-                tone={plTone(data.realized_pl)}
-                showSign
-              />
-            </DetailRow>
-            <DetailRow label="Quantity">
-              <span className="asset-detail__quantity">{formatQuantity(qty)}</span>
-            </DetailRow>
-          </dl>
-        </SectionCard>
+      <div className="asset-detail-metric-sheet" id="asset-metrics">
+        <AssetDetailMetricSheet
+          assetSymbol={data.asset_symbol || assetSymbol}
+          apiQuery={apiQuery}
+          folioNumber={data.folio_number || null}
+          settingsLoaded={settingsLoaded}
+        />
+      </div>
 
-        <SectionCard title="Market / Valuation">
-          <dl className="asset-detail__dl">
-            <DetailRow label="Latest Price">
-              {data.current_price == null ? (
-                '—'
-              ) : (
-                <CurrencyValue value={data.current_price} currency={currency} />
-              )}
-            </DetailRow>
-            <DetailRow label="Current Value">
-              <CurrencyValue value={data.current_value} currency={currency} />
-            </DetailRow>
-            <DetailRow label="Currency">{currency}</DetailRow>
-          </dl>
-        </SectionCard>
+      <div className="asset-detail-sections" id="asset-details">
+        <div className="asset-detail-sections__grid">
+          <AppCard title="Position / Cost Basis" compact>
+            <dl className="asset-detail__dl">
+              <DetailRow label="Invested (FIFO)">
+                <CurrencyValue
+                  value={data.cumulative_invested_amount}
+                  currency={currency}
+                />
+              </DetailRow>
+              <DetailRow label="Avg Cost">
+                <CurrencyValue value={data.avg_cost_per_share} currency={currency} />
+              </DetailRow>
+              <DetailRow label="Realized P/L">
+                <CurrencyValue
+                  value={data.realized_pl}
+                  currency={currency}
+                  tone={plTone(data.realized_pl)}
+                  showSign
+                />
+              </DetailRow>
+              <DetailRow label="Quantity">
+                <span className="asset-detail__quantity">{formatQuantity(qty)}</span>
+              </DetailRow>
+            </dl>
+          </AppCard>
 
-        <SectionCard title="Data Quality / Warnings">
-          <div className="asset-detail__status-row">
-            {data.holding_status ? (
-              <StatusBadge status={data.holding_status} />
-            ) : null}
-            {data.price_status ? (
-              <StatusBadge status={data.price_status} />
-            ) : null}
-            {data.fx_status ? (
-              <StatusBadge status={data.fx_status} />
-            ) : null}
-          </div>
-        </SectionCard>
+          <AppCard title="Market / Valuation" compact>
+            <dl className="asset-detail__dl">
+              <DetailRow label="Latest Price">
+                {data.current_price == null ? (
+                  '—'
+                ) : (
+                  <CurrencyValue value={data.current_price} currency={currency} />
+                )}
+              </DetailRow>
+              <DetailRow label="Current Value">
+                <CurrencyValue value={data.current_value} currency={currency} />
+              </DetailRow>
+              <DetailRow label="Currency">{currency}</DetailRow>
+            </dl>
+          </AppCard>
 
-        <SectionCard
-          title="Transaction History"
+          <AppCard title="Data Quality / Warnings" compact>
+            <div className="asset-detail__status-row">
+              {data.holding_status ? (
+                <StatusBadge status={data.holding_status} />
+              ) : null}
+              {data.price_status ? (
+                <StatusBadge status={data.price_status} />
+              ) : null}
+              {data.fx_status ? (
+                <StatusBadge status={data.fx_status} />
+              ) : null}
+            </div>
+          </AppCard>
+        </div>
+
+        <div id="asset-transactions">
+          <DataTableShell
+            className="asset-detail__transactions"
+            title="Transaction History"
           subtitle={
             transactions.length > 0
               ? `${transactions.length} transaction${transactions.length === 1 ? '' : 's'}`
-              : undefined
+              : 'No transactions in this scope'
           }
+          dense
+          empty={transactions.length === 0}
+          emptyTitle="No transactions"
+          emptyDescription="No transactions for this asset in the selected portfolio scope."
         >
-          {transactions.length === 0 ? (
-            <EmptyState
-              title="No transactions"
-              description="No transactions for this asset in the selected portfolio scope."
-            />
-          ) : (
-            <div className="asset-detail-table-wrapper">
-              <table className="asset-detail-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Type</th>
-                    <th className="num-col">Quantity</th>
-                    <th className="num-col">Price/Share</th>
-                    <th className="num-col">Fees</th>
-                    <th>Currency</th>
-                    <th>Split</th>
+          {transactions.length > 0 ? (
+            <AppTable compact className="asset-detail-table">
+              <thead>
+                <tr>
+                  <AppTableHeaderCell>Date</AppTableHeaderCell>
+                  <AppTableHeaderCell>Type</AppTableHeaderCell>
+                  <AppTableHeaderCell numeric>Quantity</AppTableHeaderCell>
+                  <AppTableHeaderCell numeric>Price/Share</AppTableHeaderCell>
+                  <AppTableHeaderCell numeric>Fees</AppTableHeaderCell>
+                  <AppTableHeaderCell>Currency</AppTableHeaderCell>
+                  <AppTableHeaderCell>Split</AppTableHeaderCell>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedTransactions.map((t) => (
+                  <tr key={t.id}>
+                    <AppTableCell>{t.date}</AppTableCell>
+                    <AppTableCell>
+                      <span
+                        className={`ui-txn-type ui-txn-type--${String(t.type || '').toLowerCase().replace(/_/g, '-')}`}
+                      >
+                        {t.type}
+                      </span>
+                    </AppTableCell>
+                    <AppTableCell numeric>{formatQuantity(t.quantity)}</AppTableCell>
+                    <AppTableCell numeric>
+                      {t.price_per_share == null ? (
+                        '—'
+                      ) : (
+                        formatCurrency(t.price_per_share, t.currency || currency)
+                      )}
+                    </AppTableCell>
+                    <AppTableCell numeric>
+                      {t.fees == null ? (
+                        '—'
+                      ) : (
+                        formatCurrency(t.fees, t.currency || currency)
+                      )}
+                    </AppTableCell>
+                    <AppTableCell>{t.currency || currency}</AppTableCell>
+                    <AppTableCell>
+                      {t.type === 'STOCK_SPLIT' && t.split_from && t.split_to
+                        ? `${t.split_from}:${t.split_to}`
+                        : '—'}
+                    </AppTableCell>
                   </tr>
-                </thead>
-                <tbody>
-                  {sortedTransactions.map((t) => (
-                    <tr key={t.id}>
-                      <td>{t.date}</td>
-                      <td>
-                        <span
-                          className={`ui-txn-type ui-txn-type--${String(t.type || '').toLowerCase().replace(/_/g, '-')}`}
-                        >
-                          {t.type}
-                        </span>
-                      </td>
-                      <td className="num-col">{formatQuantity(t.quantity)}</td>
-                      <td className="num-col">
-                        {t.price_per_share == null ? (
-                          '—'
-                        ) : (
-                          formatCurrency(t.price_per_share, t.currency || currency)
-                        )}
-                      </td>
-                      <td className="num-col">
-                        {t.fees == null ? (
-                          '—'
-                        ) : (
-                          formatCurrency(t.fees, t.currency || currency)
-                        )}
-                      </td>
-                      <td>{t.currency || currency}</td>
-                      <td>
-                        {t.type === 'STOCK_SPLIT' && t.split_from && t.split_to
-                          ? `${t.split_from}:${t.split_to}`
-                          : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </SectionCard>
+                ))}
+              </tbody>
+            </AppTable>
+          ) : null}
+        </DataTableShell>
+        </div>
       </div>
     </div>
   );

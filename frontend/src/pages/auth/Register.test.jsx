@@ -45,6 +45,21 @@ describe('Register page', () => {
     mockNavigate.mockReset();
   });
 
+  it('renders registration form fields and actions', () => {
+    render(
+      <MemoryRouter>
+        <Register />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByLabelText(/^username$/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^email$/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^password$/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/confirm password/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^register$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /google/i })).toBeInTheDocument();
+  });
+
   it('shows backend validation error message', async () => {
     mockRegister.mockRejectedValueOnce(
       new Error('username: A user with that username already exists.')

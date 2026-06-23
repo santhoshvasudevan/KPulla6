@@ -43,6 +43,29 @@ export function amountTone(amount) {
   return n > 0 ? 'gain' : 'loss';
 }
 
+/** Display-only badge tone for ledger entry types — no balance math. */
+export function cashEntryBadgeStatus(entryType) {
+  switch (entryType) {
+    case 'CASH_DEPOSIT':
+    case 'TRANSFER_IN':
+    case 'DIVIDEND_CASH':
+    case 'INTEREST':
+    case 'FX_CONVERSION_IN':
+      return 'gain';
+    case 'CASH_WITHDRAWAL':
+    case 'TRANSFER_OUT':
+    case 'BUY_SETTLEMENT':
+    case 'TAX_WITHHELD':
+    case 'FEE':
+    case 'FX_CONVERSION_OUT':
+      return 'loss';
+    case 'SELL_SETTLEMENT':
+      return 'info';
+    default:
+      return 'neutral';
+  }
+}
+
 export const LEDGER_ENTRY_TYPE_OPTIONS = [
   { value: '', label: 'All types' },
   { value: 'CASH_DEPOSIT', label: 'Deposit' },

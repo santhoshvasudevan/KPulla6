@@ -53,11 +53,34 @@ describe('Settings Page', () => {
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
   });
 
+  it('renders page header and section navigation', async () => {
+    api.getSettings.mockResolvedValueOnce({ tax_rate_percentage: 15.0, display_currency: 'EUR' });
+    renderSettings();
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^settings$/i })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /^display$/i })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /^portfolios$/i })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /bank accounts/i })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /data sync/i })).toBeInTheDocument();
+    });
+  });
+
+  it('renders main settings sections', async () => {
+    api.getSettings.mockResolvedValueOnce({ tax_rate_percentage: 15.0, display_currency: 'EUR' });
+    renderSettings();
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Display & tax' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Portfolios' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Bank accounts' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Data & sync' })).toBeInTheDocument();
+    });
+  });
+
   it('renders the tax rate form after loading', async () => {
     api.getSettings.mockResolvedValueOnce({ tax_rate_percentage: 15.0 });
     renderSettings();
     await waitFor(() => {
-      expect(screen.getByText(/tax rate/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/tax rate/i)).toBeInTheDocument();
       expect(screen.getByDisplayValue('15')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /save settings/i })).toBeInTheDocument();
     });

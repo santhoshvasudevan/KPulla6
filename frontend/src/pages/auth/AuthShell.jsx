@@ -6,12 +6,22 @@ export function AuthShell({ title, subtitle, children, footer }) {
   return (
     <div className="auth-page">
       <div className="auth-shell">
-        <div className="auth-shell__brand">
-          <h1 className="auth-shell__logo">Portfolio Insight</h1>
-          <p className="auth-shell__subtitle">{subtitle || 'Institutional portfolio analytics'}</p>
+        <header className="auth-shell__brand">
+          <div className="auth-shell__brand-mark" aria-hidden="true">
+            K
+          </div>
+          <div className="auth-shell__brand-copy">
+            <p className="auth-shell__eyebrow">Executive Portfolio OS</p>
+            <h1 className="auth-shell__logo">KPulla6</h1>
+            {subtitle ? <p className="auth-shell__tagline">{subtitle}</p> : null}
+          </div>
+        </header>
+
+        <div className="auth-shell__panel">
+          {title ? <h2 className="auth-shell__title">{title}</h2> : null}
+          {children}
         </div>
-        {title ? <h2>{title}</h2> : null}
-        {children}
+
         {footer ? <div className="auth-shell__footer">{footer}</div> : null}
       </div>
     </div>

@@ -24,7 +24,7 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 - **Institutional Slate** — calm, analytics-first; not terminal/neon styling.
 - **Hierarchy** — KPIs and charts lead; tables support comparison; spacing over decoration.
-- **Primitives** — `PageHeader`, `MetricCard`, `ChartCard`, `SectionCard`, `StatusBadge`, `WarningBanner`, `EmptyState`, `LoadingState`, `ErrorState`, `CurrencyValue`, `PercentValue`, `Button`, `SegmentedControl`.
+- **Primitives** — `PageHeader`, `KpiCard`, `MetricCard`, `AppCard`, `ChartCard`, `ChartFrame`, `DataTableShell`, `AppTable`, `SectionCard`, `StatusBadge`, `AssetClassPill`, `WarningBanner`, `EmptyState`, `LoadingState`, `ErrorState`, `CurrencyValue`, `PercentValue`, `Button`, `SegmentedControl`.
 - **Numbers** — right-aligned in tables (`num-col`); tabular nums via `--font-metric`.
 - **Status** — `StatusBadge` / `WarningBanner`; never rely on color alone.
 - **Warnings** — backend `warnings`, `price_status`, `fx_status`, `holding_status`, NAV, benchmark, cash shortfall, and future-impact messages must remain visible.
@@ -39,13 +39,13 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 | Zone | Content |
 |------|---------|
-| **Brand** | “Portfolio Insight” + subtitle. |
-| **Sidebar controls** | Portfolio View select (`All Portfolios` virtual + active real portfolios) and Display Currency select (`EUR`, `USD`, `INR`, `GBP`, `CHF`) directly below brand. |
-| **Nav** | Dashboard (`/`), Transactions (`/transactions`), Cash (`/cash`), Assets (`/assets`), Fixed Deposits (`/fixed-deposits`), Compare (`/compare`), Settings (`/settings`). Active route uses left accent + raised surface. |
+| **Brand** | KPulla6 + “Executive Portfolio OS” subtitle; compact cached-data note (prices, NAVs, benchmarks, FX). |
+| **Top nav** | Dashboard (`/`), Transactions (`/transactions`), Cash (`/cash`), Assets (`/assets`), Fixed Deposits (`/fixed-deposits`), Compare (`/compare`), Settings (`/settings`). Single authoritative global navigation — no duplicate left sidebar. |
+| **Header controls** | Portfolio View select, Display Currency select, Theme selector, signed-in user label, Log out. |
 | **Notice** | `WarningBanner` if portfolio list fetch fails; shell falls back to All Portfolios copy. |
-| **Footer** | Cached prices/FX note. |
-| **Top header** | `ThemeSelector` (System / Light / Dark), signed-in user label (`email` or `username`), Log out button. |
-| **Main** | `<Outlet />` in `app-main__inner` (max-width ~1400px, padded). |
+| **Main** | Centered `<Outlet />` in `app-main__inner` (max-width ~1520px, padded). No permanent left context sidebar. |
+
+**Navigation architecture (P4.4):** One global top nav for all routes. Page-local navigation is in-page section anchors only (Dashboard, Assets, Asset Detail, Fixed Deposits, Compare, Settings) — not duplicate global route menus.
 
 **Route behavior:** `/login`, `/register`, and `/forgot-password` are public-only routes. `/`, `/transactions`, `/cash`, `/assets`, `/assets/:assetSymbol`, `/fixed-deposits`, `/compare`, and `/settings` are protected routes. `/dashboard` redirects to `/`; unknown routes redirect to `/`.
 
@@ -61,14 +61,17 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 **Files:** `pages/Dashboard.jsx` · `pages/Dashboard.css`
 
+**Layout status:** **Implemented (P4)** — Executive Portfolio OS overview with performance center and Metric Sheet.
+
 | Section | Layout |
 |---------|--------|
-| **Header** | `PageHeader` — title “Portfolio Overview”; subtitle: portfolio name · display currency. |
-| **KPI row** | Grid of `MetricCard`: Current Value (hero), Total Invested, Total P/L, XIRR; optional Realized/Unrealized P/L when API provides. |
+| **Header** | `PageHeader` — title “Portfolio Overview”; subtitle: portfolio name · display currency · cached data note. |
+| **Section nav** | Sticky in-page anchors: Overview, Performance, Allocation, Health, Metric Sheet. Anchor targets use shell offset (`scroll-margin-top`) so headings clear the sticky header and section nav. |
+| **KPI row** | Grid of `KpiCard`: Current Value (hero), Total Invested, Total P/L, XIRR; optional Realized/Unrealized P/L when API provides. |
 | **FX warning** | `WarningBanner` if `summary.fx_status === 'fx_unavailable'`. |
-| **Primary chart** | `ChartCard` performance chart; metric (`value` / `cumulative_return` / `twror`), range pills (`7D`-`ALL`), benchmark selector for return metrics, benchmark warnings, empty state. |
+| **Primary chart** | `ChartFrame` performance chart; metric (`value` / `cumulative_return` / `twror`), range pills (`7D`-`ALL`), benchmark selector for return metrics, benchmark warnings, empty state. |
 | **Metric Sheet** | Portfolio Metric Sheet section below the performance chart; independent loading/error state; summary cards, risk/return, benchmark, periodic returns, yearly return chart, drawdown chart/table, monthly heatmap. |
-| **Secondary chart** | Compact `ChartCard` “Invested vs Current” — horizontal bar comparison from backend summary totals. |
+| **Secondary chart** | Compact `ChartFrame` “Invested vs Current” — horizontal bar comparison from backend summary totals. |
 
 **States:** `LoadingState`, `ErrorState`, chart empty state, Metric Sheet section-local error, backend warnings, stale-response guards when scope/currency/range/benchmark changes.
 
@@ -84,14 +87,18 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 **Files:** `pages/Assets.jsx` · `pages/Assets.css`
 
+**Layout status:** **Implemented (P6)** — holdings and allocation hub using Executive Portfolio OS primitives.
+
 | Section | Layout |
 |---------|--------|
-| **Header** | `PageHeader` + cached prices / `make refresh` guidance. |
+| **Header** | `PageHeader` — title “Assets Overview”; subtitle with portfolio, display currency, active position count; cached-price guidance note. |
+| **Overview** | Compact `KpiCard` strip: active positions, allocation slices, cash currency count (display-only counts from API arrays). |
 | **FX warning** | Warning when display currency differs from holdings and `fx_status === 'fx_unavailable'`. |
-| **Main grid** | Holdings table primary, allocation donut supporting analysis. |
-| **Active holdings** | Rows for stock/MF/FD investment assets; status badges for oversold, price missing, closed; row click -> asset detail where applicable. |
-| **Allocation** | Donut from backend `allocation`; includes cash/bank cash/FD allocation rows from API. |
-| **Closed holdings** | “Previous holdings” collapsed by default. |
+| **Cash balances** | `DataTableShell` + `AppTable` with `AssetClassPill` for cash rows; not clickable to asset detail. |
+| **Section nav** | Sticky in-page anchors: Holdings, Allocation. |
+| **Holdings** | `DataTableShell` + sortable `AppTable`: `AssetClassPill`, status badges, right-aligned numerics, row click → asset detail (except FD/bank cash). |
+| **Allocation** | `ChartCard` donut from backend `allocation`; display-only tooltip percentages. |
+| **Closed holdings** | `AppCard` + nested `DataTableShell` for previous holdings; collapsed by default. |
 
 **States:** loading, API error, empty assets, chart empty when all current values are zero, price/NAV/FX warnings.
 
@@ -99,7 +106,7 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 **Preserve in redesign:** cash rows may appear in allocation/cash balance sections but must not become clickable investment rows or Compare subjects. React may calculate display-only chart percentages, but not valuations.
 
-**Tests:** `Assets.test.jsx`.
+**Tests:** `Assets.test.jsx`, `transactionDisplay.test.js`.
 
 ---
 
@@ -107,16 +114,17 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 **Files:** `pages/AssetDetail.jsx` · `pages/AssetDetail.css`
 
+**Layout status:** **Implemented (P6)** — premium asset tear-sheet using Executive Portfolio OS primitives.
+
 | Section | Layout |
 |---------|--------|
-| **Header** | `PageHeader` with symbol/scheme title, breadcrumb to Assets, scope/currency subtitle. |
+| **Header** | Tear-sheet `PageHeader` with `AssetClassPill` eyebrow, symbol title, breadcrumb to Assets, scope/currency subtitle. |
 | **Warnings** | FX and API `warnings[]` banners. |
-| **Hero KPIs** | Current Value, Quantity/Units, Unrealized P/L, XIRR. |
-| **Metric Sheet** | Asset Metric Sheet below hero KPIs; local range and benchmark controls; passes `folio_number` when asset detail payload includes it. |
-| **Position / Cost Basis** | FIFO/invested/avg cost/realized/quantity fields from API. |
-| **Market / Valuation** | Latest price/NAV, current value, currency. |
-| **Data Quality** | Holding, price/NAV, FX status badges. |
-| **Transaction History** | Scoped transaction table with `.ui-txn-type` badges and split ratio column. |
+| **Hero KPIs** | `KpiCard` grid: Current Value (hero), Quantity, Unrealized P/L, XIRR — backend values only. |
+| **Section nav** | Sticky in-page anchors: Overview, Metrics, Details, Transactions. |
+| **Metric Sheet** | `AssetDetailMetricSheet` at `#asset-metrics`; local range/benchmark; `folio_number` when present. |
+| **Details** | `AppCard` grid: Position/Cost Basis, Market/Valuation, Data Quality badges. |
+| **Transaction History** | `DataTableShell` + `AppTable` with `.ui-txn-type` badges and split column. |
 
 **States:** waits for `settingsLoaded && apiQuery`, loading, API error, empty transaction history, Metric Sheet section-local error, folio guidance when backend requires `folio_number`.
 
@@ -124,7 +132,7 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 **Preserve in redesign:** MF folio-specific behavior, backend warnings, split/price/NAV data quality, and no client-side FIFO/XIRR/Metric Sheet math.
 
-**Tests:** `AssetDetail.test.jsx`, `metricSheet.test.jsx`.
+**Tests:** `AssetDetail.test.jsx`, `metricSheet.test.jsx`, `transactionDisplay.test.js`.
 
 ---
 
@@ -132,15 +140,17 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 **Files:** `pages/Transactions.jsx` · `pages/Transactions.css` · `components/TransactionModal.jsx` · `components/TransactionModal.css`
 
+**Layout status:** **Implemented (P5)** — premium activity ledger page using Executive Portfolio OS table primitives.
+
 | Section | Layout |
 |---------|--------|
-| **Header** | `PageHeader` with record count; actions: hidden file input, Import CSV, Add Transaction. |
+| **Header** | `PageHeader` — title “Transactions”; subtitle with record count; actions: hidden file input, Import CSV, Add Transaction. |
 | **Cash-aware** | `CashAwarePortfolioStatus`; enable button for single legacy portfolio; all-scope note otherwise. |
-| **Filters** | `TransactionFilterBar`: portfolio dropdown, searchable symbol multi-select, date modes Earlier than / Later than / Between, active chips, Clear filters. |
-| **CSV guidance** | Expandable stock and MF CSV format guidance, MF sample download, target portfolio / split/SWAP notes. |
+| **Import guidance** | Info banner (import target portfolio, stock split/SWAP rules); expandable “Supported CSV formats” with stock vs mutual fund columns, MF sample download. |
+| **Filters** | `AppCard` + `TransactionFilterBar`: portfolio dropdown, searchable symbol multi-select, date modes Earlier than / Later than / Between, active chips, Clear filters. |
 | **CSV cash preview** | On file select, `previewCsvImportCash`; shortfall modal with proposed deposits; confirmed import sends `create_cash_deposits=true` and `cash_preview_confirmed=true`. |
 | **Import feedback** | Success/warning banner and row-level error list. |
-| **Table** | Checkbox, Portfolio, Symbol/Scheme, Folio/NAV status for MF rows, Date, Type, Qty/Units, Price/NAV, Fees, Total, Actions. |
+| **Ledger table** | `DataTableShell` + `AppTable`: checkbox, Portfolio, Symbol/Scheme, Folio/NAV status for MF rows, Date, Type badges (`.ui-txn-type`), Qty/Units, Price/NAV, Fees, Total (`AppTableCell numeric`), Actions. |
 | **Pagination** | `page_size` 20/50/100; Previous/Next when `total > page_size`; filters persist across pagination. |
 | **Bulk assign** | Selected visible rows -> toolbar with real-portfolio dropdown; full PUT payload per selected row; preserves stock, MF, and `STOCK_SPLIT` fields; partial failure banner. |
 | **Edit/delete** | Edit opens `TransactionModal`; delete confirms; future-impact 409 renders `CashFutureImpactDisplay`; generic errors use `WarningBanner`. |
@@ -160,15 +170,17 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 **Files:** `pages/Cash.jsx` · `pages/Cash.css` · `components/CashBulkEntriesWizard.jsx`
 
+**Layout status:** **Implemented (P5)** — cash ledger/overview page using Executive Portfolio OS primitives.
+
 | Section | Layout |
 |---------|--------|
-| **Header** | `PageHeader` — native balances by portfolio/currency; no display-currency cash totals on this page. |
+| **Header** | `PageHeader` — title “Cash”; subtitle explains native per-currency balances; primary actions in header: Add Deposit, Add Withdrawal, Add Bulk Cash Entries, Transfer Cash. |
+| **Overview** | `KpiCard` strip from backend `totals_by_currency` (all scope) or per-currency balance rows (single portfolio) — display only, no client-side totals. |
 | **Cash-aware** | `CashAwarePortfolioStatus`; enable for selected legacy portfolio; all-scope explanatory note. |
-| **Actions** | Add Deposit, Add Withdrawal, Add Bulk Cash Entries, Transfer Cash. |
-| **Balances** | Full-width `SectionCard`; balance table by portfolio/currency; `totals_by_currency` for all scope when API returns it. |
-| **Ledger** | Full-width `SectionCard`; filters for currency, entry type, date from/to; backend pagination; Details column from API. |
+| **Balances** | `DataTableShell` + `AppTable`: balance table by portfolio/currency from `GET /cash/balances`. |
+| **Ledger** | `AppCard` with filter bar (currency, entry type, date from/to) + nested `DataTableShell` + `AppTable`; `StatusBadge` for entry types; backend pagination; Details column from API. |
 | **Manual edit/delete** | Manual deposit/withdrawal rows only; edit modal reuses cash fields; delete confirm; future-impact 409 panel; linked/system/transfer rows are protected. |
-| **Bulk cash entries** | Configure -> `previewCashBulkEntries`; Review schedule/warnings/totals -> `applyCashBulkEntries`; Result summary; refresh balances + ledger. |
+| **Bulk cash entries** | Configure → `previewCashBulkEntries`; Review schedule/warnings/totals → `applyCashBulkEntries`; Result summary; refresh balances + ledger. |
 | **Transfer Cash** | Same- or cross-currency transfer; user-entered target amount; implied rate informational only; no market FX. |
 
 **States:** balance loading/error/empty, ledger loading/error/empty, write success/error, withdrawal shortfall, future-impact panel, transfer shortfall/future-impact, bulk preview warnings/result.
@@ -183,12 +195,17 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 ## 9. Fixed Deposits (`/fixed-deposits`)
 
-**Files:** `pages/FixedDeposits.jsx` · `pages/FixedDeposits.css`
+**Files:** `pages/FixedDeposits.jsx` · `pages/FixedDeposits.css` · `utils/fdDisplay.js`
+
+**Status:** **Redesigned (P7)** — Executive Portfolio OS layout; no backend/API behavior changes.
 
 | Section | Layout |
 |---------|--------|
-| **Header** | `PageHeader` with FD/debt workflow context and Add Fixed Deposit action. |
-| **Table/list** | Backend FD fields: institution, deposit account, principal, rate, investment/maturity dates, payout frequency, status, linked portfolio/bank account, lifecycle flags. |
+| **Header** | `PageHeader` with FD/debt workflow subtitle and Add Fixed Deposit primary action. |
+| **Overview** | `KpiCard` strip: total deposits, active, matured, settled/closed counts from backend status fields only (no finance math). |
+| **Section nav** | Sticky Overview \| Deposits anchor links (`#fd-overview`, `#fd-deposits`). |
+| **Table** | `DataTableShell` + `AppTable`: institution, deposit account, principal (right-aligned), rate, investment/maturity dates, payout frequency (`fdPayoutLabel`), `StatusBadge` lifecycle status, action buttons. |
+| **Interest history** | Expandable nested `AppTable` per FD row; backend payment fields only. |
 | **Bank account dependency** | Fetches active bank accounts and portfolios. Create is blocked/guided when no active bank account exists. |
 | **Create modal** | Portfolio and bank account dropdowns; currency read-only from selected bank account; principal/rate/dates/status; shows ledger balance from API and as-of-date/backdated guidance. |
 | **Edit modal** | Existing FD fields; principal/bank/currency/investment date/portfolio disabled when `has_opening_cash_movement`; backend errors remain visible. |
@@ -213,18 +230,20 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 ## 10. Compare (`/compare`)
 
-**Files:** `pages/Compare.jsx` · `pages/Compare.css` · `components/metricSheet/*`
+**Files:** `pages/Compare.jsx` · `pages/Compare.css` · `utils/compareDisplay.js` · `components/metricSheet/*`
+
+**Status:** **Redesigned (P8)** — Executive Portfolio OS analytics workstation; no backend/API behavior changes.
 
 | Section | Layout |
 |---------|--------|
-| **Header** | `PageHeader` with selected portfolio scope and display currency. |
-| **Subject pickers** | Two dropdowns built from `fetchHoldings(apiQuery)` via `buildCompareAssetOptions`; active holdings first; closed holdings labeled `(closed)`; same-asset validation. |
-| **Cash exclusion** | Cash and bank cash rows (`is_cash`, `asset_type=CASH` / `BANK_CASH`) are excluded from comparison subjects. |
-| **Controls** | Range segmented control and optional benchmark selector from `fetchBenchmarkIndices()`. |
-| **Normalized chart** | `CompareNormalizedChart` renders backend `normalized_series` as percent axis/tooltips; no client-side normalization/math beyond display mapping. |
-| **Metric comparison** | `CompareMetricTable` side-by-side return, risk, drawdown, and optional benchmark metrics; subtle better/worse highlighting is display-only. |
-| **Periodic/drawdown sections** | `ComparePeriodicReturnsSection` (yearly side-by-side) and `CompareDrawdownPeriodsSection` (per subject worst drawdowns). |
-| **Warnings/context** | `MetricSheetWarnings`, subject-level warnings, common overlap note from `common_start_date` / `common_end_date`, requested-vs-common range copy. |
+| **Header** | `PageHeader` with portfolio scope, display currency, and quantitative comparison subtitle. |
+| **Setup panel** | `AppCard` with asset pickers, selected-subject chips, `ChartControls` (range `SegmentedControl` + benchmark selector). |
+| **Section nav** | Sticky Setup \| Chart \| Metrics \| Periods \| Drawdowns anchor links. |
+| **Summary KPIs** | `KpiCard` strip: per-subject cumulative return and common point count from backend payload only. |
+| **Normalized chart** | `ChartFrame` + `ChartLegend` + `CompareNormalizedChart` (`hideLegend`); backend `normalized_series` only. |
+| **Metric comparison** | `AppCard` + `CompareMetricTable` side-by-side return, risk, drawdown, optional benchmark metrics. |
+| **Periodic/drawdown sections** | `ComparePeriodicReturnsSection` and `CompareDrawdownPeriodsSection` unchanged in behavior. |
+| **Warnings/context** | `MetricSheetWarnings`, subject-level warnings, common overlap note. |
 
 **States:** waits for `settingsLoaded && apiQuery`, holdings loading/error, fewer-than-two holdings empty state, same-subject validation, compare loading/error, normalized chart empty, backend warnings, calm MF multi-folio error when backend requires folio selection.
 
@@ -240,14 +259,16 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 **Files:** `pages/Settings.jsx` · `pages/Settings.css` · `components/PortfolioManagement.jsx` · `components/BankAccountManagement.jsx` · `components/CashMovementManagement.jsx`
 
+**Status:** **Redesigned (P9)** — centered settings workspace; no backend/API behavior changes.
+
 | Section | Layout |
 |---------|--------|
-| **Header** | `PageHeader` “Settings”. |
-| **Display & tax** | `SectionCard` with tax rate input, display currency select, sidebar sync hint, Save button. |
-| **Portfolios** | Real portfolio CRUD, max active portfolio enforcement, default portfolio protected, Cash-aware On/Off and Enable action for legacy rows. |
-| **Bank accounts** | Active account list, create/edit/deactivate, full account number display, ledger-derived current balance, seed opening balance, include-in-portfolio-value toggle. |
-| **Cash movements** | Per-account expandable ledger via `CashMovementManagement`; manual deposit/withdrawal/adjustment modal; immutable rows. |
-| **Feedback** | Success/error `WarningBanner` after writes. |
+| **Header** | `PageHeader` with workspace subtitle. |
+| **Section nav** | Sticky Display \| Portfolios \| Bank Accounts \| Data Sync anchor links. |
+| **Display & tax** | `AppCard` with responsive form grid: tax rate, display currency, Save button, success/error banners. |
+| **Portfolios** | `AppCard` wrapping `PortfolioManagement` — CRUD, max active enforcement, cash-aware toggle. |
+| **Bank accounts** | `AppCard` with `BankAccountManagement` and nested `CashMovementManagement`. |
+| **Data & sync** | `AppCard` with cached-data and backend refresh guidance (no live sync UI). |
 
 **States:** initial loading/error, settings save success/error, portfolio validation errors, bank-account ledger/unseeded warnings, cash movement errors.
 
@@ -263,11 +284,15 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 **Files:** `pages/auth/Login.jsx` · `pages/auth/Register.jsx` · `pages/auth/ForgotPassword.jsx` · `pages/auth/AuthShell.jsx` · `pages/auth/Auth.css`
 
-| Route | Layout and behavior |
-|-------|---------------------|
-| `/login` | Public-only auth shell; email/username + password form; submit calls `useAuth().login`; success navigates to `/`; error shown inline; links to forgot password and register; Google sign-in button. |
-| `/register` | Public-only auth shell; registration form; submit calls `useAuth().register`; success navigates to `/`; backend validation errors shown; Google sign-in button. |
-| `/forgot-password` | Public-only auth shell; email form; submit calls `requestPasswordReset`; success/detail message shown; errors shown; link back to login. |
+**Status:** **Redesigned (P10)** — Executive Portfolio OS auth shell; no backend/API behavior changes.
+
+| Route | Layout |
+|-------|--------|
+| `/login` | Centered `AuthShell` with KPulla6 brand, credential form, Google sign-in, forgot/register links. |
+| `/register` | Registration form with validation errors and Google sign-in. |
+| `/forgot-password` | Email reset form with success/error states and back-to-login link. |
+
+**Global polish (P10):** sticky section-nav horizontal scroll on small screens; shared focus-visible states; dark-mode card border refinement; header nav scrollbar styling.
 
 **Google OAuth:** `GoogleSignInButton` calls `window.location.assign('/accounts/google/login/?process=login')`; Vite proxies `/accounts` to Django/allauth. Successful allauth login redirects to `FRONTEND_URL/`.
 
@@ -277,7 +302,7 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 **States:** auth loading in protected/public route wrappers, form submitting, inline error messages, password reset success/detail message.
 
-**Tests:** `App.test.jsx`, `auth.test.js`, `Register.test.jsx`, `AuthShell.test.jsx`. Current gap before a major redesign: add direct `Login.jsx` and `ForgotPassword.jsx` page tests.
+**Tests:** `App.test.jsx`, `auth.test.js`, `Login.test.jsx`, `Register.test.jsx`, `ForgotPassword.test.jsx`, `AuthShell.test.jsx`.
 
 **Preserve in redesign:** session-cookie auth, CSRF bootstrap, public-only auth pages, protected app redirects, post-login/register redirect to dashboard, Google OAuth path, and visible backend validation messages.
 
@@ -331,18 +356,18 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 | Route | React | CSS | Primary components | API calls | Layout status |
 |-------|-------|-----|-------------------|-----------|---------------|
-| `/login` | `pages/auth/Login.jsx` | `auth/Auth.css` | AuthShell, GoogleSignInButton, Button | auth login via `useAuth`, CSRF | **Implemented** |
-| `/register` | `pages/auth/Register.jsx` | `auth/Auth.css` | AuthShell, GoogleSignInButton, Button | auth register via `useAuth`, CSRF | **Implemented** |
-| `/forgot-password` | `pages/auth/ForgotPassword.jsx` | `auth/Auth.css` | AuthShell, Button | password reset | **Implemented** |
-| `/` | `pages/Dashboard.jsx` | `Dashboard.css` | PageHeader, MetricCard, ChartCard, Metric Sheet, SegmentedControl | summary, performance, benchmarks, portfolio Metric Sheet | **Implemented** |
-| `/transactions` | `pages/Transactions.jsx` | `Transactions.css` | PageHeader, TransactionModal, filter bar, WarningBanner | transactions CRUD, filter options, CSV import, CSV cash preview | **Implemented** |
-| `/cash` | `pages/Cash.jsx` | `Cash.css` | PageHeader, SectionCard, CashBulkEntriesWizard, CashAwarePortfolioStatus | cash balances, ledger, deposits, withdrawals, transfers, bulk entries | **Implemented** |
-| `/assets` | `pages/Assets.jsx` | `Assets.css` | PageHeader, ChartCard, SectionCard, StatusBadge | holdings/allocation | **Implemented** |
-| `/assets/:assetSymbol` | `pages/AssetDetail.jsx` | `AssetDetail.css` | PageHeader, MetricCard, AssetDetailMetricSheet, SectionCard | asset detail, asset Metric Sheet | **Implemented** |
-| `/fixed-deposits` | `pages/FixedDeposits.jsx` | `FixedDeposits.css` | PageHeader, SectionCard, lifecycle modals | fixed deposits, portfolios, bank accounts, interest, settlement, renewal | **Implemented** |
-| `/compare` | `pages/Compare.jsx` | `Compare.css` | PageHeader, CompareNormalizedChart, CompareMetricTable, MetricSheetWarnings | holdings, benchmarks, compare Metric Sheet | **Implemented** |
-| `/settings` | `pages/Settings.jsx` | `Settings.css` | PageHeader, PortfolioManagement, BankAccountManagement, CashMovementManagement | settings, portfolios, bank accounts, cash movements | **Implemented** |
-| `(shell)` | `components/Layout.jsx` | `components/Layout.css` | nav, selectors, ThemeSelector, WarningBanner | portfolios, settings, auth logout | **Implemented** |
+| `/login` | `pages/auth/Login.jsx` | `auth/Auth.css` | AuthShell, GoogleSignInButton, Button | auth login via `useAuth`, CSRF | **Implemented (P10)** |
+| `/register` | `pages/auth/Register.jsx` | `auth/Auth.css` | AuthShell, GoogleSignInButton, Button | auth register via `useAuth`, CSRF | **Implemented (P10)** |
+| `/forgot-password` | `pages/auth/ForgotPassword.jsx` | `auth/Auth.css` | AuthShell, Button | password reset | **Implemented (P10)** |
+| `/` | `pages/Dashboard.jsx` | `Dashboard.css` | PageHeader, KpiCard, ChartFrame, Metric Sheet, SegmentedControl | summary, performance, benchmarks, portfolio Metric Sheet | **Implemented (P4)** |
+| `/transactions` | `pages/Transactions.jsx` | `Transactions.css` | PageHeader, AppCard, DataTableShell, AppTable, TransactionModal, filter bar, WarningBanner | transactions CRUD, filter options, CSV import, CSV cash preview | **Implemented (P5)** |
+| `/cash` | `pages/Cash.jsx` | `Cash.css` | PageHeader, KpiCard, AppCard, DataTableShell, AppTable, CashBulkEntriesWizard, CashAwarePortfolioStatus | cash balances, ledger, deposits, withdrawals, transfers, bulk entries | **Implemented (P5)** |
+| `/assets` | `pages/Assets.jsx` | `Assets.css` | PageHeader, KpiCard, DataTableShell, AppTable, AssetClassPill, ChartCard | holdings/allocation | **Implemented (P6)** |
+| `/assets/:assetSymbol` | `pages/AssetDetail.jsx` | `AssetDetail.css` | PageHeader, KpiCard, AppCard, DataTableShell, AssetDetailMetricSheet | asset detail, asset Metric Sheet | **Implemented (P6)** |
+| `/fixed-deposits` | `pages/FixedDeposits.jsx` | `FixedDeposits.css` | PageHeader, KpiCard, DataTableShell, AppTable, StatusBadge, lifecycle modals | fixed deposits, portfolios, bank accounts, interest, settlement, renewal | **Implemented (P7)** |
+| `/compare` | `pages/Compare.jsx` | `Compare.css` | PageHeader, AppCard, ChartFrame, ChartLegend, KpiCard, CompareNormalizedChart, CompareMetricTable | holdings, benchmarks, compare Metric Sheet | **Implemented (P8)** |
+| `/settings` | `pages/Settings.jsx` | `Settings.css` | PageHeader, AppCard, PortfolioManagement, BankAccountManagement, CashMovementManagement | settings, portfolios, bank accounts, cash movements | **Implemented (P9)** |
+| `(shell)` | `components/Layout.jsx` | `components/Layout.css` | nav, selectors, ThemeSelector, WarningBanner | portfolios, settings, auth logout | **Implemented (P4.4)** |
 
 **Shared:** `components/ui/*`, `components/metricSheet/*`, `components/charts/chartTheme.js`, `frontend/src/api.js`, `portfolioContext.jsx`, `authContext.jsx`, `themeContext.jsx`.
 
@@ -355,3 +380,39 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 | 2026-05-25 | Initial layout spec post design migration | Implemented |
 | 2026-05-27 | Settings portfolio CRUD; Transactions bulk assign | Implemented |
 | 2026-06-19 | Frontend redesign readiness governance expansion: app shell, auth, Compare, Cash, Fixed Deposits, Transactions, API preservation checklist | Implemented |
+| 2026-06-22 | P4.4 navigation architecture: single top nav, no duplicate left sidebar, Dashboard in-page anchors only | Implemented |
+| 2026-06-22 | P4R: Dashboard anchor scroll offset; Settings left-heavy layout deferred to P9 | Implemented |
+| 2026-06-23 | P5: Transactions and Cash redesigned as premium ledger/overview pages; no API/backend changes | Implemented |
+| 2026-06-23 | P6: Assets and Asset Detail redesigned as holdings hub and asset tear-sheet; no API/backend changes | Implemented |
+| 2026-06-23 | P7: Fixed Deposits redesigned with KPI overview, lifecycle badges, premium table; no API/backend changes | Implemented |
+| 2026-06-23 | P8: Compare redesigned as analytics workstation with setup panel, ChartFrame, KPI strip; no API/backend changes | Implemented |
+| 2026-06-23 | P9: Settings redesigned as centered workspace with section nav and AppCard sections; no API/backend changes | Implemented |
+| 2026-06-23 | P10: Auth pages redesigned; global responsive/dark-mode polish; no API/backend changes | Implemented |
+| 2026-06-23 | P11: Final frontend redesign audit — all routes verified; docs aligned; redesign complete | Implemented |
+
+---
+
+## 17. Final redesign audit (P11)
+
+**Verdict:** Executive Portfolio OS frontend redesign **complete** for all routed pages (P4–P10). No structural page changes in P11; documentation and minor label polish only.
+
+| Area | Result |
+|------|--------|
+| **Route coverage** | 11/11 routes migrated: Dashboard (P4), Transactions/Cash (P5), Assets/Asset Detail (P6), Fixed Deposits (P7), Compare (P8), Settings (P9), Login/Register/Forgot Password (P10). |
+| **Navigation** | Single top nav (7 authenticated routes); no permanent left sidebar; page-local anchors only; auth routes exclude app shell. |
+| **Design system** | Shared primitives in `components/ui/` and `components/charts/`; token-based light/dark via `index.css` + `ThemeSelector`. |
+| **Behavior/API** | `api.js` contracts unchanged; `settingsLoaded && apiQuery` gates preserved; CSRF/session/401 redirect intact. |
+| **Finance safety** | No new client-side valuation, FIFO, FX, XIRR, drawdown, or benchmark math; display/format/sort/filter only. |
+| **Tests** | `make test-frontend` — 534 passed at P11 audit; route inventory, Layout, auth, and per-page suites cover redesigned surfaces. |
+
+### Deferred (post-redesign, not blockers)
+
+| Item | Notes |
+|------|--------|
+| Compare per-folio MF selection | Backend requires `folio_number`; calm error only — no per-folio picker UX yet. |
+| In-app data sync UI | Settings documents CLI/API refresh; no live sync button by design. |
+| Unused API wrappers | `fetchHealth`, `refreshPrices`, `forceSyncPortfolio`, FD settlement detail helpers — intentional exports. |
+| `DataTable` generic component | Deferred; `DataTableShell` + `AppTable` used instead. |
+| CSS class prefix `app-sidebar__*` | Legacy naming on header controls; behavior is top-nav shell (rename optional cleanup). |
+| `docs/current-state.md` test counts | May lag; trust `make test-frontend` for current totals. |
+

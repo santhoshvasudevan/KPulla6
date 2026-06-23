@@ -1,0 +1,166 @@
+/* Executive Portfolio OS — shared chart primitives */
+
+.ui-chart-frame__panel {
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-chart-frame__panel--dashboard {
+  min-height: 380px;
+}
+
+.ui-chart-frame__panel--analysis {
+  min-height: 320px;
+}
+
+.ui-chart-frame__panel--compact {
+  min-height: 120px;
+}
+
+.ui-chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.ui-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ui-chart-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.ui-chart-legend__item--portfolio {
+  color: var(--text-primary);
+}
+
+.ui-chart-legend__item--benchmark {
+  color: var(--text-secondary);
+}
+
+.ui-chart-legend__swatch {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.ui-chart-legend__item--benchmark .ui-chart-legend__swatch {
+  border-radius: 2px;
+}
+
+.ui-chart-tooltip {
+  min-width: 10rem;
+  max-width: 18rem;
+  padding: var(--space-2) var(--space-3);
+  box-shadow: var(--shadow-card);
+}
+
+.ui-chart-tooltip__label {
+  margin: 0 0 var(--space-2);
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.ui-chart-tooltip__rows {
+  margin: 0;
+}
+
+.ui-chart-tooltip__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0.125rem 0;
+}
+
+.ui-chart-tooltip__term,
+.ui-chart-tooltip__value {
+  margin: 0;
+}
+
+.ui-chart-tooltip__term {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.ui-chart-tooltip__value {
+  color: var(--text-primary);
+  font-family: var(--font-metric);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.ui-chart-tooltip__row--portfolio .ui-chart-tooltip__value {
+  color: var(--text-primary);
+}
+
+.ui-chart-tooltip__row--benchmark .ui-chart-tooltip__value {
+  color: var(--text-secondary);
+}
+
+.ui-chart-tooltip__row--tone-positive .ui-chart-tooltip__value {
+  color: var(--gain);
+}
+
+.ui-chart-tooltip__row--tone-negative .ui-chart-tooltip__value {
+  color: var(--loss);
+}
+
+.ui-chart-tooltip__swatch {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.ui-chart-tooltip__delta {
+  margin: var(--space-2) 0 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-chart-tooltip__delta-label {
+  margin-right: var(--space-1);
+  font-weight: 600;
+}
+
+.ui-chart-empty-state--inline,
+.ui-chart-partial-state {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.ui-chart-empty-state,
+.ui-chart-loading-state,
+.ui-chart-error-state {
+  min-height: 8rem;
+}

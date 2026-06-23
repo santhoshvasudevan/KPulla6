@@ -24,12 +24,14 @@ function readCssVar(name, fallback) {
 
 export function getChartTooltipStyle() {
   return {
-    backgroundColor: readCssVar('--bg-surface', FALLBACK.surface),
+    backgroundColor: readCssVar('--bg-surface-raised', FALLBACK.surface),
     border: `1px solid ${readCssVar('--border-subtle', FALLBACK.border)}`,
     borderRadius: '6px',
     color: readCssVar('--text-primary', FALLBACK.text),
-    fontSize: '0.8125rem',
+    fontSize: '0.75rem',
     fontFamily: CHART_FONT_FAMILY,
+    boxShadow: readCssVar('--shadow-card', '0 1px 3px rgba(0, 0, 0, 0.4)'),
+    padding: 0,
   };
 }
 
@@ -43,7 +45,7 @@ export function getChartLegendStyle() {
 
 export function getChartGridProps() {
   return {
-    strokeDasharray: '3 3',
+    strokeDasharray: '4 8',
     stroke: readCssVar('--border-subtle', FALLBACK.grid),
   };
 }
@@ -80,6 +82,18 @@ export function getChartLossColor() {
 
 export function getChartBarInvestedColor() {
   return readCssVar('--accent', FALLBACK.accent);
+}
+
+export function getChartCrosshairStroke() {
+  return readCssVar('--border-strong', FALLBACK.border);
+}
+
+export function getPortfolioSeriesColor() {
+  return getSeriesColor(0);
+}
+
+export function getBenchmarkSeriesColor() {
+  return getBenchmarkLineColors()[1] ?? getSeriesColor(5);
 }
 
 export function getComparisonBarFill(currentValue, investedValue) {

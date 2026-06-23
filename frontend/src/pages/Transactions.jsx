@@ -18,6 +18,11 @@ import '../components/CashFutureImpactDisplay.css';
 import CsvImportCashPreviewModal from '../components/CsvImportCashPreviewModal';
 import {
   PageHeader,
+  AppCard,
+  DataTableShell,
+  AppTable,
+  AppTableCell,
+  AppTableHeaderCell,
   Button,
   LoadingState,
   ErrorState,
@@ -633,25 +638,33 @@ export default function Transactions() {
         </div>
       ) : null}
 
-      <TransactionFilterBar
-        portfolios={filterOptions.portfolios.length ? filterOptions.portfolios : activePortfolios}
-        symbolOptions={filterOptions.symbols}
-        filterPortfolioId={filterPortfolioId}
-        onPortfolioChange={handleFilterPortfolioChange}
-        symbolFilter={symbolFilter}
-        onSymbolFilterChange={handleSymbolFilterChange}
-        dateMode={dateMode}
-        onDateModeChange={handleDateModeChange}
-        dateValue={dateValue}
-        onDateValueChange={setDateValue}
-        dateFrom={dateFrom}
-        onDateFromChange={setDateFrom}
-        dateTo={dateTo}
-        onDateToChange={setDateTo}
-        dateRangeInvalid={Boolean(dateRangeInvalid)}
-        hasActiveFilters={hasActiveFilters}
-        onClearFilters={handleClearFilters}
-      />
+      <AppCard
+        className="transactions-page__filters"
+        title="Filters"
+        subtitle="Portfolio, symbol, and date constraints apply before pagination"
+        compact
+      >
+        <TransactionFilterBar
+          embedded
+          portfolios={filterOptions.portfolios.length ? filterOptions.portfolios : activePortfolios}
+          symbolOptions={filterOptions.symbols}
+          filterPortfolioId={filterPortfolioId}
+          onPortfolioChange={handleFilterPortfolioChange}
+          symbolFilter={symbolFilter}
+          onSymbolFilterChange={handleSymbolFilterChange}
+          dateMode={dateMode}
+          onDateModeChange={handleDateModeChange}
+          dateValue={dateValue}
+          onDateValueChange={setDateValue}
+          dateFrom={dateFrom}
+          onDateFromChange={setDateFrom}
+          dateTo={dateTo}
+          onDateToChange={setDateTo}
+          dateRangeInvalid={Boolean(dateRangeInvalid)}
+          hasActiveFilters={hasActiveFilters}
+          onClearFilters={handleClearFilters}
+        />
+      </AppCard>
 
       {someVisibleSelected ? (
         <div className="transactions-bulk-toolbar" aria-label="Bulk actions">
@@ -693,140 +706,151 @@ export default function Transactions() {
         </div>
       ) : null}
 
-      {items.length === 0 && !loading ? (
-        <EmptyState
-          title="No transactions found."
-          description="Add a transaction manually or import from CSV."
-        />
-      ) : items.length > 0 ? (
-        <div
-          className={`transactions-table-wrapper${loading ? ' transactions-table-wrapper--loading' : ''}`}
-          aria-busy={loading}
-        >
-          <table className="transactions-table">
-            <thead>
-              <tr>
-                <th className="transactions-table__select-col">
-                  <input
-                    type="checkbox"
-                    aria-label="Select all transactions on this page"
-                    checked={allVisibleSelected}
-                    ref={(el) => {
-                      if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected;
-                    }}
-                    onChange={toggleSelectAll}
-                  />
-                </th>
-                <th>Portfolio</th>
-                <th>Symbol</th>
-                <th>Date</th>
-                <th>Type</th>
-                <th className="num-col">Qty / Units</th>
-                <th className="num-col">Price / NAV</th>
-                <th className="num-col">Fees</th>
-                <th className="num-col">Total</th>
-                <th>NAV status</th>
-                <th className="actions-col">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((txn) => {
-                const isSplit = txn.type === 'STOCK_SPLIT';
-                const isMf = isMutualFundTransaction(txn);
-                const total = transactionLineTotal(txn);
-                const currency = txn.currency || (isMf ? 'INR' : 'EUR');
-                const qty = transactionQuantity(txn);
-                const unitPrice = transactionUnitPrice(txn);
-                const navStatus = txn.nav_verification_status;
+      <DataTableShell
+        className="transactions-page__ledger"
+        title="Activity ledger"
+        subtitle="Portfolio activity with type badges and right-aligned amounts"
+        dense
+      >
+        {items.length === 0 && !loading ? (
+          <EmptyState
+            title="No transactions found."
+            description="Add a transaction manually or import from CSV."
+          />
+        ) : items.length > 0 ? (
+          <div
+            className={`transactions-table-wrapper${loading ? ' transactions-table-wrapper--loading' : ''}`}
+            aria-busy={loading}
+          >
+            <AppTable compact className="transactions-table">
+              <thead>
+                <tr>
+                  <AppTableHeaderCell className="transactions-table__select-col">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all transactions on this page"
+                      checked={allVisibleSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected;
+                      }}
+                      onChange={toggleSelectAll}
+                    />
+                  </AppTableHeaderCell>
+                  <AppTableHeaderCell>Portfolio</AppTableHeaderCell>
+                  <AppTableHeaderCell>Symbol</AppTableHeaderCell>
+                  <AppTableHeaderCell>Date</AppTableHeaderCell>
+                  <AppTableHeaderCell>Type</AppTableHeaderCell>
+                  <AppTableHeaderCell numeric>Qty / Units</AppTableHeaderCell>
+                  <AppTableHeaderCell numeric>Price / NAV</AppTableHeaderCell>
+                  <AppTableHeaderCell numeric>Fees</AppTableHeaderCell>
+                  <AppTableHeaderCell numeric>Total</AppTableHeaderCell>
+                  <AppTableHeaderCell>NAV status</AppTableHeaderCell>
+                  <AppTableHeaderCell className="transactions-table__actions-col">
+                    Actions
+                  </AppTableHeaderCell>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((txn) => {
+                  const isSplit = txn.type === 'STOCK_SPLIT';
+                  const isMf = isMutualFundTransaction(txn);
+                  const lineTotal = transactionLineTotal(txn);
+                  const currency = txn.currency || (isMf ? 'INR' : 'EUR');
+                  const qty = transactionQuantity(txn);
+                  const unitPrice = transactionUnitPrice(txn);
+                  const navStatus = txn.nav_verification_status;
 
-                return (
-                  <tr key={txn.id} className="transactions-table__row">
-                    <td className="transactions-table__select-col">
-                      <input
-                        type="checkbox"
-                        aria-label={`Select transaction ${txn.id}`}
-                        checked={selectedIds.has(txn.id)}
-                        onChange={() => toggleSelectRow(txn.id)}
-                      />
-                    </td>
-                    <td>{txn.portfolio_name || (txn.portfolio_id != null ? `#${txn.portfolio_id}` : '')}</td>
-                    <td className="transactions-table__symbol">
-                      <div className="transactions-table__symbol-cell">
-                        <span>{transactionSymbolLabel(txn)}</span>
-                        {isMf && txn.folio_number ? (
-                          <span className="transactions-table__folio">Folio {txn.folio_number}</span>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td>{isMf ? txn.nav_date || txn.date : txn.date}</td>
-                    <td>
-                      <span
-                        className={`ui-txn-type ui-txn-type--${String(txn.type || '').toLowerCase().replace(/_/g, '-')}`}
-                      >
-                        {txn.type}
-                      </span>
-                    </td>
-                    <td className="num-col">
-                      {isSplit ? `${txn.split_from}:${txn.split_to}` : qty}
-                    </td>
-                    <td className="num-col">
-                      {isSplit || unitPrice == null ? (
-                        '—'
-                      ) : (
-                        <CurrencyValue value={unitPrice} currency={currency} />
-                      )}
-                    </td>
-                    <td className="num-col">
-                      {isSplit ? (
-                        '—'
-                      ) : (
-                        <CurrencyValue value={txn.fees} currency={currency} />
-                      )}
-                    </td>
-                    <td className="num-col">
-                      {isSplit || total == null ? (
-                        '—'
-                      ) : (
-                        <CurrencyValue value={total} currency={currency} />
-                      )}
-                    </td>
-                    <td>
-                      {isMf && navStatus ? (
-                        <StatusBadge
-                          status={navVerificationBadgeStatus(navStatus)}
-                          label={navVerificationLabel(navStatus)}
+                  return (
+                    <tr key={txn.id} className="transactions-table__row">
+                      <AppTableCell className="transactions-table__select-col">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select transaction ${txn.id}`}
+                          checked={selectedIds.has(txn.id)}
+                          onChange={() => toggleSelectRow(txn.id)}
                         />
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td className="actions-col">
-                      <div className="transactions-table__actions">
-                        <Button
-                          variant="ghost"
-                          onClick={() => handleEdit(txn)}
-                          title="Edit"
-                          className="transactions-table__icon-btn"
+                      </AppTableCell>
+                      <AppTableCell>
+                        {txn.portfolio_name || (txn.portfolio_id != null ? `#${txn.portfolio_id}` : '')}
+                      </AppTableCell>
+                      <AppTableCell className="transactions-table__symbol">
+                        <div className="transactions-table__symbol-cell">
+                          <span>{transactionSymbolLabel(txn)}</span>
+                          {isMf && txn.folio_number ? (
+                            <span className="transactions-table__folio">Folio {txn.folio_number}</span>
+                          ) : null}
+                        </div>
+                      </AppTableCell>
+                      <AppTableCell>{isMf ? txn.nav_date || txn.date : txn.date}</AppTableCell>
+                      <AppTableCell>
+                        <span
+                          className={`ui-txn-type ui-txn-type--${String(txn.type || '').toLowerCase().replace(/_/g, '-')}`}
                         >
-                          <Edit2 size={16} aria-hidden="true" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          onClick={() => handleDelete(txn.id)}
-                          title="Delete"
-                          className="transactions-table__icon-btn transactions-table__icon-btn--danger"
-                        >
-                          <Trash2 size={16} aria-hidden="true" />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
+                          {txn.type}
+                        </span>
+                      </AppTableCell>
+                      <AppTableCell numeric>
+                        {isSplit ? `${txn.split_from}:${txn.split_to}` : qty}
+                      </AppTableCell>
+                      <AppTableCell numeric>
+                        {isSplit || unitPrice == null ? (
+                          '—'
+                        ) : (
+                          <CurrencyValue value={unitPrice} currency={currency} />
+                        )}
+                      </AppTableCell>
+                      <AppTableCell numeric>
+                        {isSplit ? (
+                          '—'
+                        ) : (
+                          <CurrencyValue value={txn.fees} currency={currency} />
+                        )}
+                      </AppTableCell>
+                      <AppTableCell numeric>
+                        {isSplit || lineTotal == null ? (
+                          '—'
+                        ) : (
+                          <CurrencyValue value={lineTotal} currency={currency} />
+                        )}
+                      </AppTableCell>
+                      <AppTableCell>
+                        {isMf && navStatus ? (
+                          <StatusBadge
+                            status={navVerificationBadgeStatus(navStatus)}
+                            label={navVerificationLabel(navStatus)}
+                          />
+                        ) : (
+                          '—'
+                        )}
+                      </AppTableCell>
+                      <AppTableCell className="transactions-table__actions-col">
+                        <div className="transactions-table__actions">
+                          <Button
+                            variant="ghost"
+                            onClick={() => handleEdit(txn)}
+                            title="Edit"
+                            className="transactions-table__icon-btn"
+                          >
+                            <Edit2 size={16} aria-hidden="true" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            onClick={() => handleDelete(txn.id)}
+                            title="Delete"
+                            className="transactions-table__icon-btn transactions-table__icon-btn--danger"
+                          >
+                            <Trash2 size={16} aria-hidden="true" />
+                          </Button>
+                        </div>
+                      </AppTableCell>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </AppTable>
+          </div>
+        ) : null}
+      </DataTableShell>
 
       {total > 0 ? (
         <nav className="transactions-pagination" aria-label="Transactions pagination">

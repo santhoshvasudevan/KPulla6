@@ -3,9 +3,14 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   Button,
   PageHeader,
+  SectionHeader,
+  AppCard,
   MetricCard,
+  KpiCard,
   SectionCard,
   StatusBadge,
+  AssetClassPill,
+  TrendBadge,
   WarningBanner,
   EmptyState,
   LoadingState,
@@ -13,6 +18,10 @@ import {
   CurrencyValue,
   PercentValue,
   ChartCard,
+  DataTableShell,
+  AppTable,
+  AppTableCell,
+  AppTableHeaderCell,
   SegmentedControl,
 } from './index';
 
@@ -83,6 +92,48 @@ describe('MetricCard', () => {
   });
 });
 
+describe('Executive OS card primitives', () => {
+  it('renders a reusable section header with title, subtitle, and actions', () => {
+    render(
+      <SectionHeader
+        eyebrow="Portfolio"
+        title="Operating View"
+        subtitle="Tables and diagnostics"
+        actions={<button type="button">Refresh</button>}
+      />
+    );
+    expect(screen.getByText('Portfolio')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Operating View' })).toBeInTheDocument();
+    expect(screen.getByText('Tables and diagnostics')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+  });
+
+  it('renders AppCard header, body, actions, and footer', () => {
+    render(
+      <AppCard
+        title="Portfolio Health"
+        subtitle="X-ray style review"
+        actions={<button type="button">View all</button>}
+        footer={<span>Cached data only</span>}
+      >
+        <p>NAV freshness</p>
+      </AppCard>
+    );
+    expect(screen.getByRole('heading', { name: 'Portfolio Health' })).toBeInTheDocument();
+    expect(screen.getByText('X-ray style review')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View all' })).toBeInTheDocument();
+    expect(screen.getByText('NAV freshness')).toBeInTheDocument();
+    expect(screen.getByText('Cached data only')).toBeInTheDocument();
+  });
+
+  it('keeps KpiCard compatible with MetricCard props', () => {
+    const { container } = render(<KpiCard label="Total P/L" value="+12.5%" variant="gain" />);
+    expect(screen.getByText('Total P/L')).toBeInTheDocument();
+    expect(screen.getByText('+12.5%')).toBeInTheDocument();
+    expect(container.querySelector('.ui-metric-card--positive')).toBeInTheDocument();
+  });
+});
+
 describe('SectionCard', () => {
   it('renders title and children', () => {
     render(
@@ -106,6 +157,49 @@ describe('StatusBadge', () => {
   it('renders custom label', () => {
     render(<StatusBadge status="neutral" label="Custom" />);
     expect(screen.getByText('Custom')).toBeInTheDocument();
+  });
+
+  it('supports semantic variants with accessible labels', () => {
+    render(
+      <>
+        <StatusBadge status="success" label="Current" />
+        <StatusBadge status="danger" label="Action needed" />
+        <StatusBadge status="info" label="Benchmark ready" />
+      </>
+    );
+    expect(screen.getByRole('status', { name: 'Current' })).toHaveTextContent('Current');
+    expect(screen.getByRole('status', { name: 'Action needed' })).toHaveTextContent('Action needed');
+    expect(screen.getByRole('status', { name: 'Benchmark ready' })).toHaveTextContent('Benchmark ready');
+  });
+});
+
+describe('Badge and pill primitives', () => {
+  it('renders asset class variant labels', () => {
+    render(
+      <>
+        <AssetClassPill variant="stock" />
+        <AssetClassPill variant="mutualFund" />
+        <AssetClassPill variant="fixedDeposit" />
+        <AssetClassPill variant="cash" />
+        <AssetClassPill variant="benchmark" />
+      </>
+    );
+    expect(screen.getByLabelText('Asset class: Stock')).toHaveTextContent('Stock');
+    expect(screen.getByLabelText('Asset class: Mutual Fund')).toHaveTextContent('Mutual Fund');
+    expect(screen.getByLabelText('Asset class: Fixed Deposit')).toHaveTextContent('Fixed Deposit');
+    expect(screen.getByLabelText('Asset class: Cash')).toHaveTextContent('Cash');
+    expect(screen.getByLabelText('Asset class: Benchmark')).toHaveTextContent('Benchmark');
+  });
+
+  it('renders trend badge variants with text and accessible labels', () => {
+    render(
+      <>
+        <TrendBadge variant="gain" value="+4.2%" />
+        <TrendBadge variant="loss" value="-1.1%" />
+      </>
+    );
+    expect(screen.getByLabelText('Gain: +4.2%')).toHaveTextContent('+4.2%');
+    expect(screen.getByLabelText('Loss: -1.1%')).toHaveTextContent('-1.1%');
   });
 });
 
@@ -202,6 +296,8 @@ describe('ChartCard', () => {
       <ChartCard
         title="Value History"
         subtitle="Last 12 months"
+        status={<StatusBadge status="info" label="Cached" />}
+        legend={<AssetClassPill variant="benchmark" />}
         toolbar={<button type="button">Export</button>}
         footer={<span>Chart footer</span>}
       >
@@ -210,9 +306,59 @@ describe('ChartCard', () => {
     );
     expect(screen.getByRole('heading', { name: 'Value History' })).toBeInTheDocument();
     expect(screen.getByText('Last 12 months')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Cached' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Asset class: Benchmark')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Export' })).toBeInTheDocument();
     expect(screen.getByText('Chart body')).toBeInTheDocument();
     expect(screen.getByText('Chart footer')).toBeInTheDocument();
+  });
+});
+
+describe('DataTable primitives', () => {
+  it('renders title, subtitle, actions, and numeric cells', () => {
+    const { container } = render(
+      <DataTableShell
+        title="Holdings"
+        subtitle="Active positions"
+        actions={<button type="button">Export</button>}
+        dense
+      >
+        <AppTable>
+          <thead>
+            <tr>
+              <AppTableHeaderCell>Holding</AppTableHeaderCell>
+              <AppTableHeaderCell numeric>Value</AppTableHeaderCell>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <AppTableCell>MSFT</AppTableCell>
+              <AppTableCell numeric>€184.8K</AppTableCell>
+            </tr>
+          </tbody>
+        </AppTable>
+      </DataTableShell>
+    );
+    expect(screen.getByRole('heading', { name: 'Holdings' })).toBeInTheDocument();
+    expect(screen.getByText('Active positions')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Export' })).toBeInTheDocument();
+    expect(screen.getByText('€184.8K')).toHaveClass('ui-app-table__cell--numeric');
+    expect(container.querySelector('.ui-data-table-shell--dense')).toBeInTheDocument();
+  });
+
+  it('renders empty, loading, and error states', () => {
+    const { rerender } = render(
+      <DataTableShell empty emptyTitle="No transactions" emptyDescription="Try another filter." />
+    );
+    expect(screen.getByText('No transactions')).toBeInTheDocument();
+    expect(screen.getByText('Try another filter.')).toBeInTheDocument();
+
+    rerender(<DataTableShell loading loadingMessage="Loading transactions…" />);
+    expect(screen.getByRole('status')).toHaveTextContent('Loading transactions…');
+
+    rerender(<DataTableShell error="Request failed" errorTitle="Table unavailable" />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Table unavailable');
+    expect(screen.getByRole('alert')).toHaveTextContent('Request failed');
   });
 });
 

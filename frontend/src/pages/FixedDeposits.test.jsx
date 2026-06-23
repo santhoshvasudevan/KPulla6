@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import FixedDeposits from './FixedDeposits';
 import * as api from '../api';
@@ -83,12 +83,32 @@ describe('FixedDeposits page', () => {
     api.fetchFixedDepositInterestPayments.mockResolvedValue([]);
   });
 
+  it('renders page header and primary action', async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /fixed deposits/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /add fixed deposit/i })).toBeInTheDocument();
+    });
+  });
+
+  it('renders overview KPI cards and section navigation', async () => {
+    renderPage();
+    await waitFor(() => {
+      const overview = screen.getByLabelText(/fixed deposit overview/i);
+      expect(within(overview).getByText('Total deposits')).toBeInTheDocument();
+      expect(within(overview).getByText('Active')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /overview/i })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /deposits/i })).toBeInTheDocument();
+    });
+  });
+
   it('renders fixed deposit list from API', async () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByText('HDFC')).toBeInTheDocument();
       expect(screen.getByText('FD-001')).toBeInTheDocument();
-      expect(screen.getByText('QUARTERLY')).toBeInTheDocument();
+      expect(screen.getByText('Quarterly')).toBeInTheDocument();
+      expect(screen.getByRole('status', { name: 'Active' })).toBeInTheDocument();
     });
   });
 

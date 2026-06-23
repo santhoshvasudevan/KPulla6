@@ -8,9 +8,11 @@ export default function MetricSheetSection({
   children,
   className = '',
   compact = false,
+  id,
 }) {
   return (
     <SectionCard
+      id={id}
       title={title}
       subtitle={subtitle}
       actions={actions}

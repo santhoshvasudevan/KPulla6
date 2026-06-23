@@ -89,3 +89,13 @@ export function holdingSymbolLabel(h) {
   }
   return h.asset_symbol || '';
 }
+
+/** Display-only asset class pill variant for holdings rows. */
+export function holdingAssetClassVariant(h) {
+  if (!h) return 'neutral';
+  if (h.asset_type === 'MUTUAL_FUND') return 'mutualFund';
+  if (h.asset_type === 'FIXED_DEPOSIT') return 'fixedDeposit';
+  if (h.asset_type === 'BANK_CASH' || h.asset_type === 'CASH' || h.is_cash) return 'cash';
+  if (h.primary_asset_class === 'CASH') return 'cash';
+  return 'stock';
+}

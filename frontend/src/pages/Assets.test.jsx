@@ -65,6 +65,29 @@ function renderAssets() {
 }
 
 describe('Assets Page', () => {
+  it('renders page header and section navigation', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });
+    api.fetchHoldings.mockResolvedValue(mockSummary);
+    renderAssets();
+    await waitFor(() => {
+      expect(screen.getByText('Assets Overview')).toBeInTheDocument();
+      expect(screen.getByRole('navigation', { name: 'Assets section navigation' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Holdings' })).toHaveAttribute('href', '#assets-holdings');
+      expect(screen.getByRole('link', { name: 'Allocation' })).toHaveAttribute('href', '#assets-allocation');
+    });
+  });
+
+  it('renders asset class pills in holdings table', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });
+    api.fetchHoldings.mockResolvedValue(mockSummary);
+    renderAssets();
+    await waitFor(() => {
+      expect(screen.getByLabelText('Asset class: Stock')).toBeInTheDocument();
+    });
+  });
+
   it('shows a loading state initially', () => {
     api.fetchPortfolios.mockResolvedValueOnce([]);
     api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });
@@ -81,6 +104,7 @@ describe('Assets Page', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Assets Overview')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Holdings' })).toBeInTheDocument();
       expect(screen.getByText('AAPL')).toBeInTheDocument();
       expect(screen.queryByText('MSFT')).not.toBeInTheDocument();
       expect(screen.getByText('10.0000')).toBeInTheDocument();
@@ -326,7 +350,7 @@ describe('Assets Page', () => {
   it('renders bank cash rows without quantity or price fields', async () => {
     api.fetchPortfolios.mockResolvedValueOnce([]);
     api.getSettings.mockResolvedValueOnce({ display_currency: 'INR' });
-    api.fetchHoldings.mockResolvedValueOnce({
+    api.fetchHoldings.mockResolvedValue({
       fx_status: 'ok',
       holdings: [
         {
@@ -370,7 +394,7 @@ describe('Assets Page', () => {
   it('renders fixed deposit rows without price or quantity warnings', async () => {
     api.fetchPortfolios.mockResolvedValueOnce([]);
     api.getSettings.mockResolvedValueOnce({ display_currency: 'INR' });
-    api.fetchHoldings.mockResolvedValueOnce({
+    api.fetchHoldings.mockResolvedValue({
       fx_status: 'ok',
       holdings: [
         {
@@ -404,7 +428,7 @@ describe('Assets Page', () => {
   it('shows empty state when no assets', async () => {
     api.fetchPortfolios.mockResolvedValueOnce([]);
     api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });
-    api.fetchHoldings.mockResolvedValueOnce({ holdings: [] });
+    api.fetchHoldings.mockResolvedValue({ holdings: [] });
     renderAssets();
 
     await waitFor(() => {

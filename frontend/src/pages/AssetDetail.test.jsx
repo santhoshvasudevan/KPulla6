@@ -55,6 +55,21 @@ describe('AssetDetail Page', () => {
     ]);
   });
 
+  it('renders tear-sheet header, KPIs, and section navigation', async () => {
+    api.fetchAssetDetails.mockResolvedValueOnce(mockAssetDetail);
+
+    renderDetail();
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'A' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Assets' })).toBeInTheDocument();
+      expect(screen.getByLabelText('Asset class: Stock')).toBeInTheDocument();
+      expect(screen.getByRole('navigation', { name: 'Asset detail section navigation' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Metrics' })).toHaveAttribute('href', '#asset-metrics');
+    });
+    expect(within(document.querySelector('.asset-detail-kpi-grid')).getByText('+12.50%')).toBeInTheDocument();
+  });
+
   it('renders returned metrics', async () => {
     api.fetchAssetDetails.mockResolvedValueOnce(mockAssetDetail);
 
@@ -141,6 +156,7 @@ describe('AssetDetail Page', () => {
     expect(screen.getByText('BUY')).toBeInTheDocument();
     expect(screen.getByText('STOCK_SPLIT')).toBeInTheDocument();
     expect(screen.getByText('1:2')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Transaction History' })).toBeInTheDocument();
   });
 
   describe('Metric Sheet', () => {

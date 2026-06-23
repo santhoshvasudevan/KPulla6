@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   createFixedDeposit,
   createFixedDepositInterestPayment,
@@ -15,14 +15,25 @@ import {
 import { usePortfolio } from '../portfolioContext';
 import {
   PageHeader,
-  SectionCard,
+  DataTableShell,
+  AppTable,
+  AppTableCell,
+  AppTableHeaderCell,
+  KpiCard,
   Button,
   LoadingState,
   ErrorState,
   WarningBanner,
   CurrencyValue,
+  StatusBadge,
 } from '../components/ui';
+import { fdPayoutLabel, fdStatusBadgeProps, fdStatusCounts } from '../utils/fdDisplay';
 import './FixedDeposits.css';
+
+const FD_SECTION_NAV = [
+  { href: '#fd-overview', label: 'Overview' },
+  { href: '#fd-deposits', label: 'Deposits' },
+];
 
 const PAYOUT_FREQUENCIES = [
   { value: 'MONTHLY', label: 'Monthly' },
@@ -192,6 +203,8 @@ export default function FixedDeposits() {
   const [renewalSubmitting, setRenewalSubmitting] = useState(false);
   const [renewalFormError, setRenewalFormError] = useState('');
   const [markingMaturedId, setMarkingMaturedId] = useState(null);
+
+  const statusCounts = useMemo(() => fdStatusCounts(items), [items]);
 
   const loadData = useCallback(async () => {
     if (!settingsLoaded || !apiQuery) return;
@@ -663,61 +676,106 @@ export default function FixedDeposits() {
       {status ? <WarningBanner severity="success" message={status} className="fd-banner" /> : null}
       {error ? <WarningBanner severity="error" message={error} className="fd-banner" /> : null}
 
-      <SectionCard title="Fixed deposit holdings">
-        {items.length === 0 ? (
-          <p className="fd-empty">No active fixed deposits for the current portfolio view.</p>
-        ) : (
-          <div className="fd-table-wrap">
-            <table className="fd-table">
-              <thead>
-                <tr>
-                  <th>Portfolio</th>
-                  <th>Institution</th>
-                  <th>Deposit account</th>
-                  <th>Bank account</th>
-                  <th className="num-col">Principal</th>
-                  <th>Currency</th>
-                  <th className="num-col">Rate %</th>
-                  <th>Payout</th>
-                  <th>Investment</th>
-                  <th>Maturity</th>
-                  <th>Nominee</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((fd) => (
+      <div className="fixed-deposits-page__overview" id="fd-overview" aria-label="Fixed deposit overview">
+        <KpiCard
+          label="Total deposits"
+          value={String(statusCounts.total)}
+          helperText="In current portfolio view"
+          size="compact"
+        />
+        <KpiCard
+          label="Active"
+          value={String(statusCounts.active)}
+          helperText="Principal still in debt allocation"
+          size="compact"
+          variant="gain"
+        />
+        <KpiCard
+          label="Matured"
+          value={String(statusCounts.matured)}
+          helperText="Awaiting settlement or renewal"
+          size="compact"
+          variant="warning"
+        />
+        <KpiCard
+          label="Settled / closed"
+          value={String(statusCounts.settled)}
+          helperText="Lifecycle complete"
+          size="compact"
+        />
+      </div>
+
+      <nav className="fd-section-nav" aria-label="Fixed deposits section navigation">
+        {FD_SECTION_NAV.map((item) => (
+          <a key={item.href} className="fd-section-nav__link" href={item.href}>
+            {item.label}
+          </a>
+        ))}
+      </nav>
+
+      <div id="fd-deposits" className="fixed-deposits-page__deposits">
+      <DataTableShell
+        className="fixed-deposits-page__table"
+        title="Fixed deposit holdings"
+        subtitle="Lifecycle actions and interest history per deposit"
+        dense
+        empty={items.length === 0}
+        emptyTitle="No active fixed deposits"
+        emptyDescription="No active fixed deposits for the current portfolio view."
+      >
+        {items.length > 0 ? (
+          <AppTable compact className="fd-table">
+            <thead>
+              <tr>
+                <AppTableHeaderCell>Portfolio</AppTableHeaderCell>
+                <AppTableHeaderCell>Institution</AppTableHeaderCell>
+                <AppTableHeaderCell>Deposit account</AppTableHeaderCell>
+                <AppTableHeaderCell>Bank account</AppTableHeaderCell>
+                <AppTableHeaderCell numeric>Principal</AppTableHeaderCell>
+                <AppTableHeaderCell>Currency</AppTableHeaderCell>
+                <AppTableHeaderCell numeric>Rate %</AppTableHeaderCell>
+                <AppTableHeaderCell>Payout</AppTableHeaderCell>
+                <AppTableHeaderCell>Investment</AppTableHeaderCell>
+                <AppTableHeaderCell>Maturity</AppTableHeaderCell>
+                <AppTableHeaderCell>Nominee</AppTableHeaderCell>
+                <AppTableHeaderCell>Status</AppTableHeaderCell>
+                <AppTableHeaderCell className="fd-table__actions-col">Actions</AppTableHeaderCell>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((fd) => {
+                const badge = fdStatusBadgeProps(fd.status);
+                return (
                   <Fragment key={fd.id}>
                     <tr>
-                      <td>{fd.portfolio_name}</td>
-                      <td>{fd.institution_name}</td>
-                      <td>{fd.deposit_account_number}</td>
-                      <td>{fd.bank_account_name}</td>
-                      <td className="num-col">
+                      <AppTableCell>{fd.portfolio_name}</AppTableCell>
+                      <AppTableCell>{fd.institution_name}</AppTableCell>
+                      <AppTableCell className="fd-table__account">{fd.deposit_account_number}</AppTableCell>
+                      <AppTableCell>{fd.bank_account_name}</AppTableCell>
+                      <AppTableCell numeric>
                         <CurrencyValue value={fd.principal_amount} currency={fd.currency} />
-                      </td>
-                      <td>{fd.currency}</td>
-                      <td className="num-col">{fd.interest_rate_percent}</td>
-                      <td>{fd.interest_payout_frequency}</td>
-                      <td>{fd.investment_date}</td>
-                      <td>{fd.maturity_date}</td>
-                      <td>{fd.nominee_name || '—'}</td>
-                      <td>{fd.status}</td>
-                      <td>
-                        {!isSettledFd(fd) ? (
-                          <>
+                      </AppTableCell>
+                      <AppTableCell>{fd.currency}</AppTableCell>
+                      <AppTableCell numeric>{fd.interest_rate_percent}</AppTableCell>
+                      <AppTableCell>{fdPayoutLabel(fd.interest_payout_frequency)}</AppTableCell>
+                      <AppTableCell>{fd.investment_date}</AppTableCell>
+                      <AppTableCell className="fd-table__maturity">{fd.maturity_date}</AppTableCell>
+                      <AppTableCell>{fd.nominee_name || '—'}</AppTableCell>
+                      <AppTableCell>
+                        <StatusBadge status={badge.status} label={badge.label} />
+                      </AppTableCell>
+                      <AppTableCell className="fd-table__actions-col">
+                        <div className="fd-table__actions">
+                          {!isSettledFd(fd) ? (
                             <Button
                               variant="secondary"
                               type="button"
                               onClick={() => openInterestModal(fd)}
                             >
                               Record interest
-                            </Button>{' '}
-                          </>
-                        ) : null}
-                        {canMarkMatured(fd) ? (
-                          <>
+                            </Button>
+                          ) : null}
+                          {canMarkMatured(fd) ? (
                             <Button
                               variant="secondary"
                               type="button"
@@ -725,45 +783,41 @@ export default function FixedDeposits() {
                               disabled={markingMaturedId === fd.id}
                             >
                               {markingMaturedId === fd.id ? 'Marking…' : 'Mark matured'}
-                            </Button>{' '}
-                          </>
-                        ) : null}
-                        {canSettle(fd) ? (
-                          <>
+                            </Button>
+                          ) : null}
+                          {canSettle(fd) ? (
                             <Button
                               variant="secondary"
                               type="button"
                               onClick={() => openSettlementModal(fd)}
                             >
                               {fd.status === 'MATURED' ? 'Settle' : 'Settle / Close'}
-                            </Button>{' '}
-                          </>
-                        ) : null}
-                        {canRenew(fd) ? (
-                          <>
+                            </Button>
+                          ) : null}
+                          {canRenew(fd) ? (
                             <Button
                               variant="secondary"
                               type="button"
                               onClick={() => openRenewalModal(fd)}
                             >
                               Renew
-                            </Button>{' '}
-                          </>
-                        ) : null}
-                        <Button variant="secondary" type="button" onClick={() => openEdit(fd)}>
-                          Edit
-                        </Button>{' '}
-                        <Button variant="secondary" type="button" onClick={() => handleDeactivate(fd)}>
-                          Deactivate
-                        </Button>{' '}
-                        <Button
-                          variant="secondary"
-                          type="button"
-                          onClick={() => toggleInterestPayments(fd)}
-                        >
-                          {expandedFdId === fd.id ? 'Hide payments' : 'Interest payments'}
-                        </Button>
-                      </td>
+                            </Button>
+                          ) : null}
+                          <Button variant="secondary" type="button" onClick={() => openEdit(fd)}>
+                            Edit
+                          </Button>
+                          <Button variant="secondary" type="button" onClick={() => handleDeactivate(fd)}>
+                            Deactivate
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            type="button"
+                            onClick={() => toggleInterestPayments(fd)}
+                          >
+                            {expandedFdId === fd.id ? 'Hide payments' : 'Interest payments'}
+                          </Button>
+                        </div>
+                      </AppTableCell>
                     </tr>
                     {expandedFdId === fd.id ? (
                       <tr key={`${fd.id}-payments`} className="fd-interest-payments-row">
@@ -773,34 +827,34 @@ export default function FixedDeposits() {
                           ) : (interestPaymentsByFd[fd.id] || []).length === 0 ? (
                             <p className="settings-hint">No interest payments recorded yet.</p>
                           ) : (
-                            <table className="fd-interest-table">
+                            <AppTable compact className="fd-interest-table">
                               <thead>
                                 <tr>
-                                  <th>Date</th>
-                                  <th className="num-col">Gross</th>
-                                  <th className="num-col">Tax</th>
-                                  <th className="num-col">Net</th>
-                                  <th>Comment</th>
+                                  <AppTableHeaderCell>Date</AppTableHeaderCell>
+                                  <AppTableHeaderCell numeric>Gross</AppTableHeaderCell>
+                                  <AppTableHeaderCell numeric>Tax</AppTableHeaderCell>
+                                  <AppTableHeaderCell numeric>Net</AppTableHeaderCell>
+                                  <AppTableHeaderCell>Comment</AppTableHeaderCell>
                                 </tr>
                               </thead>
                               <tbody>
                                 {(interestPaymentsByFd[fd.id] || []).map((p) => (
                                   <tr key={p.id}>
-                                    <td>{p.payment_date}</td>
-                                    <td className="num-col">
+                                    <AppTableCell>{p.payment_date}</AppTableCell>
+                                    <AppTableCell numeric>
                                       <CurrencyValue value={p.gross_interest} currency={p.currency} />
-                                    </td>
-                                    <td className="num-col">
+                                    </AppTableCell>
+                                    <AppTableCell numeric>
                                       <CurrencyValue value={p.tax_withheld} currency={p.currency} />
-                                    </td>
-                                    <td className="num-col">
+                                    </AppTableCell>
+                                    <AppTableCell numeric>
                                       <CurrencyValue value={p.net_interest} currency={p.currency} />
-                                    </td>
-                                    <td>{p.comment || '—'}</td>
+                                    </AppTableCell>
+                                    <AppTableCell>{p.comment || '—'}</AppTableCell>
                                   </tr>
                                 ))}
                               </tbody>
-                            </table>
+                            </AppTable>
                           )}
                           <p className="settings-hint">
                             Interest credits bank cash only; FD portfolio value remains principal-only.
@@ -809,12 +863,13 @@ export default function FixedDeposits() {
                       </tr>
                     ) : null}
                   </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </SectionCard>
+                );
+              })}
+            </tbody>
+          </AppTable>
+        ) : null}
+      </DataTableShell>
+      </div>
 
       {modalOpen ? (
         <div className="fd-modal-backdrop" role="presentation" onClick={() => setModalOpen(false)}>

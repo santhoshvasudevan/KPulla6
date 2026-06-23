@@ -9,15 +9,15 @@ import { formatCurrency } from '../utils/formatters';
 import { usePortfolio } from '../portfolioContext';
 import {
   PageHeader,
-  MetricCard,
+  KpiCard,
   CurrencyValue,
   PercentValue,
   LoadingState,
   ErrorState,
   WarningBanner,
-  ChartCard,
   SegmentedControl,
   EmptyState,
+  SectionHeader,
 } from '../components/ui';
 import {
   MetricSheetSection,
@@ -28,9 +28,14 @@ import {
   MetricSheetPeriodicReturnsTable,
   MetricSheetDrawdownPeriodsTable,
 } from '../components/metricSheet';
+import DashboardAllocationPreview from '../components/dashboard/DashboardAllocationPreview';
+import DashboardPortfolioHealth, {
+  buildPortfolioHealthItems,
+} from '../components/dashboard/DashboardPortfolioHealth';
 import {
   LineChart,
   Line,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -39,13 +44,16 @@ import {
   BarChart,
   Bar,
   Legend,
-  PieChart,
-  Pie,
-  Cell,
 } from 'recharts';
 import {
-  getSeriesColor,
-  getBenchmarkLineColors,
+  ChartFrame,
+  ChartControls,
+  ChartLegend,
+  ChartEmptyState,
+  getSeriesColorForRole,
+  getSeriesStrokeProps,
+  buildLegendItems,
+  CHART_SERIES_ROLES,
   getComparisonBarFill,
   getChartGridProps,
   getChartAxisStroke,
@@ -53,8 +61,27 @@ import {
   getChartTooltipStyle,
   getChartLegendStyle,
   getChartBarInvestedColor,
-} from '../components/charts/chartTheme';
+  ChartRechartsTooltip,
+  getChartMargin,
+  getChartCrosshairCursorProps,
+  getChartActiveDotProps,
+  getChartMinTickGap,
+  getChartHeight,
+  getChartAnimationProps,
+} from '../components/charts';
+import {
+  buildDashboardPerformanceChartConfig,
+  findLatestValidChartReading,
+} from '../components/dashboard/dashboardPerformanceChart';
 import './Dashboard.css';
+
+const DASHBOARD_SECTION_NAV = [
+  { href: '#dashboard-overview', label: 'Overview' },
+  { href: '#dashboard-performance', label: 'Performance' },
+  { href: '#dashboard-allocation', label: 'Allocation' },
+  { href: '#dashboard-health', label: 'Health' },
+  { href: '#dashboard-metric-sheet', label: 'Metric Sheet' },
+];
 
 const METRIC_OPTIONS = [
   { value: 'value', label: 'Value' },
@@ -64,23 +91,17 @@ const METRIC_OPTIONS = [
 
 const RANGE_OPTIONS = ['7D', '30D', 'YTD', '1Y', '3Y', '5Y', 'ALL'];
 
-function mergeComparisonSeries(payload) {
-  const byDate = new Map();
-  for (const s of payload.series || []) {
-    const key = s.name;
-    for (const pt of s.data || []) {
-      if (!byDate.has(pt.date)) byDate.set(pt.date, { date: pt.date });
-      byDate.get(pt.date)[key] = pt.value;
-    }
-  }
-  return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
-}
-
 function plTone(val) {
   if (val == null || Number.isNaN(Number(val))) return 'neutral';
   const n = Number(val);
   if (n > 0) return 'positive';
   if (n < 0) return 'negative';
+  return 'neutral';
+}
+
+function kpiVariantFromTone(tone) {
+  if (tone === 'positive') return 'gain';
+  if (tone === 'negative') return 'loss';
   return 'neutral';
 }
 
@@ -190,7 +211,7 @@ export default function Dashboard() {
       });
   }, [settingsLoaded, apiQuery, timeRange, selectedBenchmark]);
 
-  const chartTitle =
+  const chartMetricLabel =
     metric === 'value'
       ? 'Value History'
       : metric === 'cumulative_return'
@@ -199,54 +220,15 @@ export default function Dashboard() {
   const isPercentMetric = metric !== 'value';
   const displayCurrency = summary?.display_currency || summary?.base_currency || 'EUR';
 
-  const chartConfig = useMemo(() => {
-    if (!performanceData) {
-      return { chartData: [], lines: [], comparisonWarnings: [] };
-    }
-    const isComparisonPayload =
-      typeof performanceData === 'object' &&
-      !Array.isArray(performanceData) &&
-      Array.isArray(performanceData.series);
-    const isValueWithWarnings =
-      typeof performanceData === 'object' &&
-      !Array.isArray(performanceData) &&
-      Array.isArray(performanceData.points);
-    if (isComparisonPayload) {
-      const chartData = mergeComparisonSeries(performanceData);
-      const benchmarkColors = getBenchmarkLineColors();
-      const lines = (performanceData.series || []).map((s, i) => ({
-        dataKey: s.name,
-        name: s.name,
-        stroke: benchmarkColors[i % benchmarkColors.length],
-      }));
-      return {
-        chartData,
-        lines,
-        comparisonWarnings: performanceData.warnings || [],
-      };
-    }
-    const arr = Array.isArray(performanceData)
-      ? performanceData
-      : isValueWithWarnings
-        ? performanceData.points
-        : [];
-    const chartData = arr.map((p) => ({
-      date: p.date,
-      value: p.value,
-      currency: p.currency || displayCurrency,
-    }));
-    return {
-      chartData,
-      lines: [
-        {
-          dataKey: 'value',
-          name: chartTitle,
-          stroke: getSeriesColor(0),
-        },
-      ],
-      comparisonWarnings: isValueWithWarnings ? performanceData.warnings || [] : [],
-    };
-  }, [performanceData, chartTitle, displayCurrency]);
+  const chartConfig = useMemo(
+    () =>
+      buildDashboardPerformanceChartConfig(performanceData, {
+        metric,
+        chartMetricLabel,
+        displayCurrency,
+      }),
+    [performanceData, metric, chartMetricLabel, displayCurrency]
+  );
 
   const { chartData, lines, comparisonWarnings } = chartConfig;
 
@@ -275,6 +257,18 @@ export default function Dashboard() {
   const currentBarFill = summary
     ? getComparisonBarFill(summary.current_value, summary.total_invested)
     : getComparisonBarFill(0, 0);
+
+  const benchmarkDelta = metricSheetData?.benchmark?.metrics?.active_return;
+
+  const portfolioHealthItems = useMemo(
+    () =>
+      buildPortfolioHealthItems({
+        summary,
+        comparisonWarnings,
+        metricSheetWarnings: metricSheetData?.warnings || [],
+      }),
+    [summary, comparisonWarnings, metricSheetData]
+  );
 
   if (!settingsLoaded || loading) {
     return (
@@ -324,6 +318,7 @@ export default function Dashboard() {
   const headerSubtitle = [
     selectedPortfolioName || 'All Portfolios',
     displayCurrency,
+    'Cached prices, NAVs, benchmarks, and FX',
   ].join(' · ');
 
   const rangeOptions = RANGE_OPTIONS.map((r) => ({ value: r, label: r }));
@@ -331,6 +326,13 @@ export default function Dashboard() {
   const metricSheetSubtitle = metricSheetData?.range
     ? `Quantitative Statistics · ${metricSheetData.range.code} (${metricSheetData.range.start} – ${metricSheetData.range.end})`
     : `Quantitative Statistics · ${timeRange}`;
+
+  const dataStatusLabel =
+    summary.fx_status === 'fx_unavailable' ||
+    (summary.warnings?.length ?? 0) > 0 ||
+    comparisonWarnings.length > 0
+      ? 'Review'
+      : 'Good';
 
   const chartFooter = (
     <>
@@ -343,27 +345,89 @@ export default function Dashboard() {
     </>
   );
 
+  const performanceControls = (
+    <ChartControls>
+      <SegmentedControl
+        ariaLabel="performance-metric"
+        options={METRIC_OPTIONS}
+        value={metric}
+        onChange={setMetric}
+      />
+      <SegmentedControl
+        ariaLabel="performance-time-range"
+        options={rangeOptions}
+        value={timeRange}
+        onChange={setTimeRange}
+      />
+    </ChartControls>
+  );
+
+  const chartLegendItems =
+    lines.length > 1 ? buildLegendItems(lines) : [];
+
+  const portfolioLine =
+    lines.find((ln) => ln.role === CHART_SERIES_ROLES.portfolio) ?? lines[0];
+  const benchmarkDataKeys = lines
+    .filter((ln) => ln.role === CHART_SERIES_ROLES.benchmark)
+    .map((ln) => ln.dataKey);
+  const latestChartReading =
+    portfolioLine && chartData.length
+      ? findLatestValidChartReading(chartData, portfolioLine.dataKey)
+      : null;
+  const latestChartValue = latestChartReading?.value ?? null;
+  const latestChartDate = latestChartReading?.date ?? null;
+
+  const chartAnimate =
+    !seriesLoading && chartData.length > 0 && !error;
+  const chartAnimationProps = getChartAnimationProps({ active: chartAnimate });
+
+  const formatChartReadoutValue = (val) => {
+    if (val == null || !Number.isFinite(Number(val))) return '—';
+    if (isPercentMetric) return `${Number(val).toFixed(2)}%`;
+    return formatCurrency(val, displayCurrency);
+  };
+
   return (
     <div className="dashboard">
-      <PageHeader title="Portfolio Overview" subtitle={headerSubtitle} />
-
-      <div className="dashboard-kpi-grid">
-        <MetricCard
-          label="Current Value"
-          size="hero"
-          value={
+      <header className="dashboard-hero" id="dashboard-overview">
+        <PageHeader
+          eyebrow="Whole wealth overview"
+          title="Portfolio Overview"
+          subtitle={headerSubtitle}
+        />
+        <div className="dashboard-hero__value" aria-label="Current portfolio value">
+          <span className="dashboard-hero__value-label">Current value</span>
+          <div className="dashboard-hero__value-amount">
             <CurrencyValue value={summary.current_value} currency={displayCurrency} />
-          }
+          </div>
+          {summary.cash_summary?.total_display_value > 0 ? (
+            <p className="dashboard-hero__value-note">Cash-inclusive portfolio value</p>
+          ) : null}
+        </div>
+      </header>
+
+      <nav className="dashboard-section-nav" aria-label="Dashboard section navigation">
+        {DASHBOARD_SECTION_NAV.map((item) => (
+          <a key={item.href} className="dashboard-section-nav__link" href={item.href}>
+            {item.label}
+          </a>
+        ))}
+      </nav>
+
+      <div className="dashboard-kpi-strip" data-testid="dashboard-kpi-strip">
+        <KpiCard
+          label="Current Value"
+          size="compact"
+          value={<CurrencyValue value={summary.current_value} currency={displayCurrency} />}
         />
-        <MetricCard
+        <KpiCard
           label="Total Invested"
-          value={
-            <CurrencyValue value={summary.total_invested} currency={displayCurrency} />
-          }
+          size="compact"
+          value={<CurrencyValue value={summary.total_invested} currency={displayCurrency} />}
         />
-        <MetricCard
+        <KpiCard
           label="Total P/L"
-          tone={plTone(summary.total_pl)}
+          variant={kpiVariantFromTone(plTone(summary.total_pl))}
           value={
             <CurrencyValue
               value={summary.total_pl}
@@ -373,21 +437,35 @@ export default function Dashboard() {
             />
           }
         />
-        <MetricCard
+        <KpiCard
           label="XIRR"
-          tone={plTone(summary.xirr)}
-          value={
-            <PercentValue
-              value={summary.xirr}
-              tone={plTone(summary.xirr)}
-              showSign
-            />
-          }
+          variant={kpiVariantFromTone(plTone(summary.xirr))}
+          value={<PercentValue value={summary.xirr} tone={plTone(summary.xirr)} showSign />}
+        />
+        {benchmarkDelta != null ? (
+          <KpiCard
+            label="Benchmark delta"
+            variant={kpiVariantFromTone(plTone(benchmarkDelta))}
+            helperText={metricSheetData?.benchmark?.symbol || selectedBenchmark || undefined}
+            value={
+              <PercentValue
+                value={benchmarkDelta}
+                tone={plTone(benchmarkDelta)}
+                showSign
+              />
+            }
+          />
+        ) : null}
+        <KpiCard
+          label="Data status"
+          variant={dataStatusLabel === 'Good' ? 'success' : 'warning'}
+          value={dataStatusLabel}
+          helperText="Cached data review"
         />
         {summary.realized_pl != null ? (
-          <MetricCard
+          <KpiCard
             label="Realized P/L"
-            tone={plTone(summary.realized_pl)}
+            variant={kpiVariantFromTone(plTone(summary.realized_pl))}
             value={
               <CurrencyValue
                 value={summary.realized_pl}
@@ -399,9 +477,9 @@ export default function Dashboard() {
           />
         ) : null}
         {summary.unrealized_pl != null ? (
-          <MetricCard
+          <KpiCard
             label="Unrealized P/L"
-            tone={plTone(summary.unrealized_pl)}
+            variant={kpiVariantFromTone(plTone(summary.unrealized_pl))}
             value={
               <CurrencyValue
                 value={summary.unrealized_pl}
@@ -422,212 +500,226 @@ export default function Dashboard() {
         />
       ) : null}
 
-      {allocationChartData.length > 0 && allocationTotal > 0 ? (
-        <ChartCard
-          title="Asset allocation"
-          subtitle="Equity / Debt / Other from backend summary"
-          className="dashboard-allocation-card"
-          compact
-        >
-          <div className="dashboard-allocation-panel">
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie
-                  data={allocationChartData}
-                  dataKey="value"
-                  nameKey="label"
-                  outerRadius={80}
-                  label={({ label, percent }) =>
-                    `${label} ${(percent * 100).toFixed(0)}%`
-                  }
-                >
-                  {allocationChartData.map((entry, index) => (
-                    <Cell key={entry.label} fill={getSeriesColor(index)} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(val) =>
-                    formatCurrency(Number(val), summary.allocation_buckets?.currency || displayCurrency)
-                  }
-                  contentStyle={getChartTooltipStyle()}
+      <div className="dashboard-top-fold">
+        <div className="dashboard-performance-column" id="dashboard-performance">
+          <ChartFrame
+            title="Performance Center"
+            subtitle={chartMetricLabel}
+            density="dashboard"
+            footer={chartFooter}
+            className="dashboard-performance-center"
+            toolbar={performanceControls}
+            legend={chartLegendItems.length ? <ChartLegend items={chartLegendItems} /> : null}
+            panelClassName="dashboard-chart-panel"
+          >
+            {metric === 'value' && summary.has_fixed_deposits ? (
+              <WarningBanner
+                severity="info"
+                message="Value chart and return metrics include Fixed Deposits and included Bank Cash where applicable."
+                className="dashboard-banner dashboard-banner--inline"
+              />
+            ) : null}
+            {latestChartValue != null ? (
+              <div className="dashboard-chart-readout" aria-label="Chart latest value">
+                <span className="dashboard-chart-readout__label">{chartMetricLabel}</span>
+                <strong className="dashboard-chart-readout__value">
+                  {formatChartReadoutValue(latestChartValue)}
+                </strong>
+                {latestChartDate ? (
+                  <span className="dashboard-chart-readout__date">
+                    {axisDateFormatter(latestChartDate)} · {timeRange}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+            <ResponsiveContainer width="100%" height={getChartHeight('dashboard')}>
+              <LineChart data={chartData} margin={getChartMargin('dashboard')}>
+                <CartesianGrid
+                  {...getChartGridProps()}
+                  vertical={false}
+                  strokeOpacity={0.32}
                 />
-                <Legend wrapperStyle={getChartLegendStyle()} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-      ) : null}
-
-      <div className="dashboard-charts">
-        <ChartCard
-          title={chartTitle}
-          footer={chartFooter}
-        >
-          {metric === 'value' && summary.has_fixed_deposits ? (
-            <WarningBanner
-              severity="info"
-              message="Value chart and return metrics include Fixed Deposits and included Bank Cash where applicable."
-              className="dashboard-banner"
-            />
-          ) : null}
-          <div className="dashboard-chart-controls">
-            <SegmentedControl
-              ariaLabel="performance-metric"
-              options={METRIC_OPTIONS}
-              value={metric}
-              onChange={setMetric}
-            />
-            <SegmentedControl
-              ariaLabel="performance-time-range"
-              options={rangeOptions}
-              value={timeRange}
-              onChange={setTimeRange}
-            />
-          </div>
-          <div className="dashboard-chart-panel">
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData}>
-                <CartesianGrid {...getChartGridProps()} />
                 <XAxis
                   dataKey="date"
+                  axisLine={false}
+                  tickLine={false}
                   stroke={getChartAxisStroke()}
-                  tick={getChartAxisTick()}
+                  tick={{ ...getChartAxisTick(), fontSize: 11 }}
                   tickFormatter={axisDateFormatter}
                   interval="preserveStartEnd"
-                  minTickGap={shortChartRange ? 8 : 24}
+                  minTickGap={getChartMinTickGap('dashboard', shortChartRange)}
+                  dy={6}
                 />
                 <YAxis
+                  axisLine={false}
+                  tickLine={false}
+                  width={52}
                   stroke={getChartAxisStroke()}
-                  tick={getChartAxisTick()}
+                  tick={{ ...getChartAxisTick(), fontSize: 11 }}
                   tickFormatter={(v) =>
-                    isPercentMetric ? `${Number(v).toFixed(2)}%` : formatChartValue(v)
+                    isPercentMetric ? `${Number(v).toFixed(1)}%` : formatChartValue(v)
                   }
                 />
                 <Tooltip
-                  contentStyle={getChartTooltipStyle()}
-                  formatter={(value) => {
-                    if (value == null) return 'N/A';
-                    return isPercentMetric
-                      ? `${Number(value).toFixed(2)}%`
-                      : formatCurrency(value, displayCurrency);
-                  }}
-                  labelFormatter={(l) => axisDateFormatter(l)}
+                  content={
+                    <ChartRechartsTooltip
+                      labelFormatter={axisDateFormatter}
+                      valueKind={isPercentMetric ? 'percent' : 'currency'}
+                      currency={displayCurrency}
+                      benchmarkKeys={benchmarkDataKeys}
+                    />
+                  }
+                  cursor={getChartCrosshairCursorProps('dashboard')}
                 />
-                {lines.length > 1 ? (
-                  <Legend wrapperStyle={getChartLegendStyle()} />
-                ) : null}
-                {lines.map((ln) => (
-                  <Line
-                    key={ln.dataKey}
+                {portfolioLine ? (
+                  <Area
                     type="monotone"
-                    dataKey={ln.dataKey}
-                    name={ln.name}
-                    stroke={ln.stroke}
-                    strokeWidth={2}
-                    dot={false}
-                    isAnimationActive={false}
-                    connectNulls={ln.name === 'Portfolio'}
+                    dataKey={portfolioLine.dataKey}
+                    stroke="none"
+                    fill={getSeriesColorForRole(CHART_SERIES_ROLES.portfolio)}
+                    fillOpacity={isPercentMetric ? 0.08 : 0.14}
+                    {...chartAnimationProps}
                   />
-                ))}
+                ) : null}
+                {lines.map((ln) => {
+                  const strokeProps = getSeriesStrokeProps(ln.role);
+                  return (
+                    <Line
+                      key={ln.dataKey}
+                      type="monotone"
+                      dataKey={ln.dataKey}
+                      name={ln.name}
+                      stroke={ln.stroke}
+                      strokeWidth={strokeProps.strokeWidth}
+                      strokeDasharray={strokeProps.strokeDasharray}
+                      strokeOpacity={strokeProps.strokeOpacity}
+                      dot={false}
+                      activeDot={getChartActiveDotProps(ln.role)}
+                      connectNulls={false}
+                      {...chartAnimationProps}
+                    />
+                  );
+                })}
               </LineChart>
             </ResponsiveContainer>
             {!seriesLoading && chartData.length === 0 ? (
-              <EmptyState
+              <ChartEmptyState
                 title="No performance data for this portfolio."
                 className="dashboard-chart-empty"
               />
             ) : null}
+          </ChartFrame>
+        </div>
+
+        <aside className="dashboard-side-rail" aria-label="Dashboard supporting insights">
+          <div id="dashboard-allocation">
+          <DashboardAllocationPreview
+            buckets={allocationChartData}
+            currency={summary.allocation_buckets?.currency || displayCurrency}
+            total={allocationTotal}
+          />
           </div>
-        </ChartCard>
+          <div id="dashboard-health">
+          <DashboardPortfolioHealth items={portfolioHealthItems} />
+          </div>
+        </aside>
       </div>
 
-      <MetricSheetSection
-        className="dashboard-metric-sheet"
-        subtitle={metricSheetSubtitle}
-        actions={
-          <select
-            aria-label="metric-sheet-benchmark"
-            className="metric-sheet__benchmark-select dashboard-metric-sheet__benchmark-select"
-            value={selectedBenchmark}
-            onChange={(e) => setSelectedBenchmark(e.target.value)}
-          >
-            <option value="">No benchmark</option>
-            {benchmarkOptions.map((b) => (
-              <option key={b.symbol} value={b.symbol}>
-                {b.name || b.display_name || b.symbol}
-              </option>
-            ))}
-          </select>
-        }
-      >
-        {metricSheetLoading ? (
-          <LoadingState message="Loading Metric Sheet…" variant="skeleton" />
-        ) : metricSheetError ? (
-          <ErrorState title="Metric Sheet unavailable" message={metricSheetError} />
-        ) : metricSheetData ? (
-          <>
-            <MetricSheetWarnings warnings={metricSheetData.warnings} />
-            <MetricSheetSummaryCards metrics={metricSheetData.metrics} />
-            <MetricSheetRiskReturnTable metrics={metricSheetData.metrics} />
-            {selectedBenchmark && metricSheetData.benchmark ? (
-              <MetricSheetBenchmarkTable benchmark={metricSheetData.benchmark} />
-            ) : null}
-            <MetricSheetPeriodicReturnsTable
-              periodicReturns={metricSheetData.periodic_returns}
-            />
-            <MetricSheetDrawdownPeriodsTable
-              drawdownPeriods={metricSheetData.drawdown_periods}
-              drawdownSeries={metricSheetData.drawdown_series}
-            />
-          </>
-        ) : null}
-      </MetricSheetSection>
+      <section className="dashboard-lower-scroll" aria-label="Dashboard analytics">
+        <SectionHeader
+          title="Operating View"
+          subtitle="Metric Sheet, allocation context, and portfolio totals lower in the scroll."
+          className="dashboard-lower-scroll__header"
+        />
 
-      <div className="dashboard-charts dashboard-charts--secondary">
-        <ChartCard
+        <MetricSheetSection
+          id="dashboard-metric-sheet"
+          className="dashboard-metric-sheet"
+          subtitle={metricSheetSubtitle}
+          actions={
+            <select
+              aria-label="metric-sheet-benchmark"
+              className="metric-sheet__benchmark-select dashboard-metric-sheet__benchmark-select"
+              value={selectedBenchmark}
+              onChange={(e) => setSelectedBenchmark(e.target.value)}
+            >
+              <option value="">No benchmark</option>
+              {benchmarkOptions.map((b) => (
+                <option key={b.symbol} value={b.symbol}>
+                  {b.name || b.display_name || b.symbol}
+                </option>
+              ))}
+            </select>
+          }
+        >
+          {metricSheetLoading ? (
+            <LoadingState message="Loading Metric Sheet…" variant="skeleton" />
+          ) : metricSheetError ? (
+            <ErrorState title="Metric Sheet unavailable" message={metricSheetError} />
+          ) : metricSheetData ? (
+            <>
+              <MetricSheetWarnings warnings={metricSheetData.warnings} />
+              <MetricSheetSummaryCards metrics={metricSheetData.metrics} />
+              <MetricSheetRiskReturnTable metrics={metricSheetData.metrics} />
+              {selectedBenchmark && metricSheetData.benchmark ? (
+                <MetricSheetBenchmarkTable benchmark={metricSheetData.benchmark} />
+              ) : null}
+              <MetricSheetPeriodicReturnsTable
+                periodicReturns={metricSheetData.periodic_returns}
+              />
+              <MetricSheetDrawdownPeriodsTable
+                drawdownPeriods={metricSheetData.drawdown_periods}
+                drawdownSeries={metricSheetData.drawdown_series}
+              />
+            </>
+          ) : null}
+        </MetricSheetSection>
+
+        <ChartFrame
           title="Invested vs Current"
           subtitle="Portfolio totals comparison"
+          density="compact"
           compact
+          className="dashboard-invested-current"
+          panelClassName="dashboard-chart-panel dashboard-chart-panel--compact"
         >
-          <div className="dashboard-chart-panel dashboard-chart-panel--compact">
-            <ResponsiveContainer width="100%" height={120}>
-              <BarChart
-                layout="vertical"
-                data={portfolioTotalsBarData}
-                margin={{ top: 8, right: 24, left: 72, bottom: 8 }}
-              >
-                <CartesianGrid {...getChartGridProps()} horizontal={false} />
-                <XAxis
-                  type="number"
-                  stroke={getChartAxisStroke()}
-                  tick={getChartAxisTick()}
-                  tickFormatter={(v) => formatChartValue(v)}
-                />
-                <YAxis
-                  type="category"
-                  dataKey="label"
-                  width={68}
-                  stroke={getChartAxisStroke()}
-                  tick={{ ...getChartAxisTick(), fontSize: 11 }}
-                />
-                <Tooltip
-                  contentStyle={getChartTooltipStyle()}
-                  formatter={(value, name) => [
-                    formatCurrency(Number(value), displayCurrency),
-                    name,
-                  ]}
-                  labelFormatter={() =>
-                    `Δ ${plDiff >= 0 ? '+' : ''}${formatCurrency(plDiff, displayCurrency)}`
-                  }
-                />
-                <Legend wrapperStyle={getChartLegendStyle()} />
-                <Bar dataKey="invested" name="Total Invested" fill={getChartBarInvestedColor()} />
-                <Bar dataKey="current" name="Current Value" fill={currentBarFill} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartCard>
-      </div>
+          <ResponsiveContainer width="100%" height={getChartHeight('compact')}>
+            <BarChart
+              layout="vertical"
+              data={portfolioTotalsBarData}
+              margin={{ top: 8, right: 24, left: 72, bottom: 8 }}
+            >
+              <CartesianGrid {...getChartGridProps()} horizontal={false} />
+              <XAxis
+                type="number"
+                stroke={getChartAxisStroke()}
+                tick={getChartAxisTick()}
+                tickFormatter={(v) => formatChartValue(v)}
+              />
+              <YAxis
+                type="category"
+                dataKey="label"
+                width={68}
+                stroke={getChartAxisStroke()}
+                tick={{ ...getChartAxisTick(), fontSize: 11 }}
+              />
+              <Tooltip
+                contentStyle={getChartTooltipStyle()}
+                formatter={(value, name) => [
+                  formatCurrency(Number(value), displayCurrency),
+                  name,
+                ]}
+                labelFormatter={() =>
+                  `Δ ${plDiff >= 0 ? '+' : ''}${formatCurrency(plDiff, displayCurrency)}`
+                }
+              />
+              <Legend wrapperStyle={getChartLegendStyle()} />
+              <Bar dataKey="invested" name="Total Invested" fill={getChartBarInvestedColor()} />
+              <Bar dataKey="current" name="Current Value" fill={currentBarFill} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartFrame>
+      </section>
     </div>
   );
 }

@@ -5,6 +5,7 @@ export default function SectionCard({
   children,
   className = '',
   compact = false,
+  id,
 }) {
   const classes = ['ui-section-card', compact ? 'ui-section-card--compact' : '', className]
     .filter(Boolean)
@@ -13,7 +14,7 @@ export default function SectionCard({
   const showHeader = title || subtitle || actions;
 
   return (
-    <section className={classes}>
+    <section className={classes} id={id}>
       {showHeader ? (
         <div className="ui-section-card__header">
           <div>

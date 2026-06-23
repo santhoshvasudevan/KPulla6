@@ -1,4 +1,5 @@
 import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
+import { createElement } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useEffect } from 'react';
 import Dashboard from './Dashboard';
@@ -39,7 +40,19 @@ vi.mock('recharts', async () => {
     CartesianGrid: () => <div />,
     Legend: () => <div data-testid="chart-legend" />,
     YAxis: ({ tickFormatter }) => <div data-testid="y-axis">{tickFormatter ? tickFormatter(1234.567) : ''}</div>,
-    Tooltip: ({ formatter }) => {
+    Tooltip: ({ formatter, content: Content }) => {
+      if (Content) {
+        const tooltipProps = {
+          active: true,
+          payload: [{ value: 987.654, dataKey: 'value', name: 'Value History', color: '#3b82f6' }],
+          label: '2026-01-01',
+        };
+        const rendered =
+          typeof Content === 'function'
+            ? Content(tooltipProps)
+            : createElement(Content.type, { ...Content.props, ...tooltipProps });
+        return <div data-testid="chart-tooltip">{rendered}</div>;
+      }
       const formatted = formatter ? formatter(987.654) : '';
       return <div data-testid="chart-tooltip">{Array.isArray(formatted) ? formatted[0] : formatted}</div>;
     },
@@ -128,7 +141,9 @@ describe('Dashboard Component', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/€19,700\.00/)).toBeInTheDocument();
+      expect(
+        within(screen.getByLabelText('Current portfolio value')).getByText(/€19,700\.00/)
+      ).toBeInTheDocument();
     });
   });
 
@@ -141,6 +156,57 @@ describe('Dashboard Component', () => {
       </PortfolioProvider>
     );
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
+  });
+
+  it('renders hero current value and Performance Center after data loads', async () => {
+    api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
+    api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+    render(
+      <PortfolioProvider>
+        <Dashboard />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Current portfolio value')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Performance Center' })).toBeInTheDocument();
+      expect(screen.getByText('Whole wealth overview')).toBeInTheDocument();
+    });
+  });
+
+  it('renders Portfolio Health review queue from backend warnings', async () => {
+    api.fetchDashboardSummary.mockResolvedValueOnce({
+      ...mockSummary,
+      warnings: ['Oversell detected for AAA'],
+    });
+    api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+    render(
+      <PortfolioProvider>
+        <Dashboard />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Portfolio Health')).toBeInTheDocument();
+      expect(screen.getByText('Oversell detected for AAA')).toBeInTheDocument();
+    });
+  });
+
+  it('shows benchmark delta KPI when Metric Sheet benchmark metrics are available', async () => {
+    api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
+    api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+    render(
+      <PortfolioProvider>
+        <Dashboard />
+      </PortfolioProvider>
+    );
+
+    const benchSel = await screen.findByLabelText('metric-sheet-benchmark');
+    fireEvent.change(benchSel, { target: { value: '^GSPC' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Benchmark delta')).toBeInTheDocument();
+    });
   });
 
   it('renders summary cards after data loads', async () => {
@@ -156,8 +222,8 @@ describe('Dashboard Component', () => {
       expect(screen.getByText('Current Value')).toBeInTheDocument();
       expect(screen.getByText('Total Invested')).toBeInTheDocument();
       expect(screen.getByText('Total P/L')).toBeInTheDocument();
-      expect(within(document.querySelector('.dashboard-kpi-grid')).getByText('XIRR')).toBeInTheDocument();
-      expect(screen.getByText(/€18,500\.00/)).toBeInTheDocument();
+      expect(within(screen.getByTestId('dashboard-kpi-strip')).getByText('XIRR')).toBeInTheDocument();
+      expect(within(screen.getByTestId('dashboard-kpi-strip')).getByText(/€18,500\.00/)).toBeInTheDocument();
       expect(screen.getByText(/€3,500\.00/)).toBeInTheDocument();
     });
   });
@@ -184,12 +250,12 @@ describe('Dashboard Component', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Asset allocation')).toBeInTheDocument();
-      expect(screen.getByTestId('pie-chart')).toBeInTheDocument();
+      expect(screen.getByText('Allocation Preview')).toBeInTheDocument();
+      expect(screen.getByText('Cash / Bank Cash')).toBeInTheDocument();
     });
   });
 
-  it('renders allocation chart from backend allocation_buckets', async () => {
+  it('renders allocation preview from backend allocation_buckets', async () => {
     api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
     api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
     render(
@@ -199,8 +265,8 @@ describe('Dashboard Component', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Asset allocation')).toBeInTheDocument();
-      expect(screen.getByTestId('pie-chart')).toBeInTheDocument();
+      expect(screen.getByText('Allocation Preview')).toBeInTheDocument();
+      expect(screen.getByText('Equity')).toBeInTheDocument();
     });
   });
 
@@ -279,8 +345,189 @@ describe('Dashboard Component', () => {
 
     await waitFor(() => {
       expect(screen.getAllByTestId('y-axis')[0]).toHaveTextContent('1.2K');
-      expect(screen.getAllByTestId('chart-tooltip')[0]).toHaveTextContent('987.65');
+      expect(screen.getAllByTestId('chart-tooltip')[0]).toHaveTextContent(/987\.65/);
       expect(screen.getAllByTestId('x-axis')[0]).toHaveTextContent('Jan-26');
+    });
+  });
+
+  it('renders Dashboard in-page anchor navigation without route-duplicate labels', async () => {
+    api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
+    api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+    render(
+      <PortfolioProvider>
+        <Dashboard />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => {
+      const sectionNav = screen.getByLabelText('Dashboard section navigation');
+      expect(within(sectionNav).getByRole('link', { name: 'Overview' })).toHaveAttribute(
+        'href',
+        '#dashboard-overview'
+      );
+      expect(within(sectionNav).getByRole('link', { name: 'Performance' })).toHaveAttribute(
+        'href',
+        '#dashboard-performance'
+      );
+      expect(within(sectionNav).getByRole('link', { name: 'Allocation' })).toHaveAttribute(
+        'href',
+        '#dashboard-allocation'
+      );
+      expect(within(sectionNav).getByRole('link', { name: 'Health' })).toHaveAttribute(
+        'href',
+        '#dashboard-health'
+      );
+      expect(within(sectionNav).getByRole('link', { name: 'Metric Sheet' })).toHaveAttribute(
+        'href',
+        '#dashboard-metric-sheet'
+      );
+      expect(within(sectionNav).queryByRole('link', { name: 'Holdings' })).not.toBeInTheDocument();
+      expect(within(sectionNav).queryByRole('link', { name: 'Activity' })).not.toBeInTheDocument();
+      expect(within(sectionNav).queryByRole('link', { name: 'Cash Ledger' })).not.toBeInTheDocument();
+      expect(within(sectionNav).queryByRole('link', { name: 'Analytics' })).not.toBeInTheDocument();
+    });
+    expect(document.getElementById('dashboard-metric-sheet')).toBeInTheDocument();
+  });
+
+  it('associates Metric Sheet heading with the metric-sheet anchor target', async () => {
+    api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
+    api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+    render(
+      <PortfolioProvider>
+        <Dashboard />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => {
+      const metricSheetSection = document.getElementById('dashboard-metric-sheet');
+      expect(metricSheetSection).toBeInTheDocument();
+      expect(
+        within(metricSheetSection).getByRole('heading', { name: 'Metric Sheet' })
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('applies dashboard anchor scroll offset to section targets', async () => {
+    api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
+    api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+    render(
+      <PortfolioProvider>
+        <Dashboard />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => {
+      expect(document.getElementById('dashboard-overview')).toBeInTheDocument();
+    });
+
+    for (const id of [
+      'dashboard-overview',
+      'dashboard-performance',
+      'dashboard-allocation',
+      'dashboard-health',
+      'dashboard-metric-sheet',
+    ]) {
+      const target = document.getElementById(id);
+      expect(target).toBeInTheDocument();
+      expect(getComputedStyle(target).scrollMarginTop).not.toBe('0px');
+    }
+  });
+
+  it('renders Performance Center metric and range controls', async () => {
+    api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
+    api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+    render(
+      <PortfolioProvider>
+        <Dashboard />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('performance-metric')).toBeInTheDocument();
+      expect(screen.getByLabelText('performance-time-range')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Value' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '1Y' })).toBeInTheDocument();
+    });
+  });
+
+  it('renders Portfolio Health queue with scroll container for multiple items', async () => {
+    api.fetchDashboardSummary.mockResolvedValueOnce({
+      ...mockSummary,
+      warnings: ['Warning one', 'Warning two', 'Warning three', 'Warning four', 'Warning five'],
+      fx_status: 'fx_unavailable',
+    });
+    api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+    api.getPortfolioMetricSheet.mockResolvedValueOnce({ ...mockMetricSheet, warnings: [] });
+    render(
+      <PortfolioProvider>
+        <Dashboard />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => {
+      const healthList = screen.getByLabelText('Portfolio health checks');
+      expect(healthList).toHaveAttribute('data-item-count', '6');
+      expect(healthList).toHaveClass('dashboard-health-list');
+      expect(screen.getByText('Warning five')).toBeInTheDocument();
+    });
+  });
+
+  it('shows chart latest value readout from backend series', async () => {
+    api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
+    api.fetchPortfolioPerformance.mockResolvedValueOnce(mockPerf);
+    render(
+      <PortfolioProvider>
+        <Dashboard />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Chart latest value')).toBeInTheDocument();
+      expect(screen.getByLabelText('Chart latest value')).toHaveTextContent('110');
+    });
+  });
+
+  it('chart readout uses latest valid value point and skips trailing nulls', async () => {
+    api.fetchDashboardSummary.mockResolvedValueOnce({
+      ...mockSummary,
+      current_value: 1840000,
+    });
+    api.fetchPortfolioPerformance.mockResolvedValueOnce([
+      { date: '2026-05-01', value: 35982, metric: 'value', currency: 'EUR' },
+      { date: '2026-05-02', value: 1840000, metric: 'value', currency: 'EUR' },
+      { date: '2026-05-03', value: null, metric: 'value', currency: 'EUR' },
+    ]);
+    render(
+      <PortfolioProvider>
+        <Dashboard />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => {
+      const readout = screen.getByLabelText('Chart latest value');
+      expect(readout).toHaveTextContent('1,840,000');
+      expect(readout).not.toHaveTextContent('35,982');
+    });
+    expect(screen.getByLabelText('Current portfolio value')).toHaveTextContent('1,840,000');
+  });
+
+  it('Value mode maps performance points value field without coercing null to zero', async () => {
+    api.fetchDashboardSummary.mockResolvedValueOnce(mockSummary);
+    api.fetchPortfolioPerformance.mockResolvedValueOnce({
+      points: [
+        { date: '2026-05-01', value: 1840000, metric: 'value', currency: 'EUR' },
+        { date: '2026-05-02', value: null, metric: 'value', currency: 'EUR' },
+      ],
+      warnings: ['FX unavailable for one or more dates.'],
+    });
+    render(
+      <PortfolioProvider>
+        <Dashboard />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Chart latest value')).toHaveTextContent('1,840,000');
     });
   });
 
@@ -615,7 +862,7 @@ describe('Dashboard Component', () => {
         '1Y',
         expect.objectContaining({ portfolio_scope: 'all', display_currency: 'EUR' })
       );
-      expect(screen.getByText(/€18,500\.00/)).toBeInTheDocument();
+      expect(within(screen.getByTestId('dashboard-kpi-strip')).getByText(/€18,500\.00/)).toBeInTheDocument();
       expect(screen.getByText('Total P/L')).toBeInTheDocument();
     });
   });
@@ -643,7 +890,9 @@ describe('Dashboard Component', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/₹1,665,000\.00/)).toBeInTheDocument();
+      expect(
+        within(screen.getByLabelText('Current portfolio value')).getByText(/₹1,665,000\.00/)
+      ).toBeInTheDocument();
       expect(screen.getAllByText(/₹315,000\.00/).length).toBeGreaterThanOrEqual(1);
     });
   });
@@ -668,12 +917,20 @@ describe('Dashboard Component', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTitle('₹16,650,000.00')).toBeInTheDocument();
-      expect(screen.getByTitle('₹13,500,000.00')).toBeInTheDocument();
+      const heroValue = within(screen.getByLabelText('Current portfolio value')).getByTitle(
+        '₹16,650,000.00'
+      );
+      expect(heroValue.textContent).toBe('₹16,650,000.00');
+      expect(
+        within(screen.getByTestId('dashboard-kpi-strip')).getByTitle('₹13,500,000.00')
+      ).toBeInTheDocument();
     });
 
-    expect(screen.getByTitle('₹16,650,000.00').textContent).toBe('₹16,650,000.00');
-    expect(screen.getByTitle('₹16,650,000.00').closest('.ui-metric-card__value')).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('dashboard-kpi-strip'))
+        .getByTitle('₹16,650,000.00')
+        .closest('.ui-metric-card__value')
+    ).toBeInTheDocument();
   });
 
   it('does not fetch summary or performance until settings are loaded', async () => {
@@ -774,16 +1031,22 @@ describe('Dashboard Component', () => {
       resolveEur();
     });
     await waitFor(() => {
-      expect(screen.getByText(/€8,500\.00/)).toBeInTheDocument();
+      expect(
+        within(screen.getByLabelText('Current portfolio value')).getByText(/€8,500\.00/)
+      ).toBeInTheDocument();
     });
 
     await act(async () => {
       resolveInr();
     });
     await waitFor(() => {
-      expect(screen.getByText(/€8,500\.00/)).toBeInTheDocument();
+      expect(
+        within(screen.getByLabelText('Current portfolio value')).getByText(/€8,500\.00/)
+      ).toBeInTheDocument();
     });
-    expect(screen.queryByText(/₹1,665,000\.00/)).not.toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText('Current portfolio value')).queryByText(/₹1,665,000\.00/)
+    ).not.toBeInTheDocument();
   });
 
   it('ignores stale performance responses when apiQuery changes', async () => {
@@ -829,14 +1092,18 @@ describe('Dashboard Component', () => {
       resolveEurPerf();
     });
     await waitFor(() => {
-      expect(screen.getByText(/€8,500\.00/)).toBeInTheDocument();
+      expect(
+        within(screen.getByLabelText('Current portfolio value')).getByText(/€8,500\.00/)
+      ).toBeInTheDocument();
     });
 
     await act(async () => {
       resolveInrPerf();
     });
     await waitFor(() => {
-      expect(screen.getByText(/€8,500\.00/)).toBeInTheDocument();
+      expect(
+        within(screen.getByLabelText('Current portfolio value')).getByText(/€8,500\.00/)
+      ).toBeInTheDocument();
     });
   });
 
@@ -942,7 +1209,10 @@ describe('Dashboard Component', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText(/split-adjusted/i)).toBeInTheDocument();
+        const metricSheetSection = screen
+          .getByRole('heading', { name: 'Metric Sheet' })
+          .closest('.ui-section-card');
+        expect(within(metricSheetSection).getByText(/split-adjusted/i)).toBeInTheDocument();
       });
     });
 

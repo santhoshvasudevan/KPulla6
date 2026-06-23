@@ -5,6 +5,16 @@ import { usePortfolio } from '../portfolioContext';
 import { Button, WarningBanner } from './ui';
 import ThemeSelector from './ThemeSelector';
 
+const PRIMARY_NAV = [
+  { to: '/', label: 'Dashboard', end: true },
+  { to: '/transactions', label: 'Transactions' },
+  { to: '/cash', label: 'Cash' },
+  { to: '/assets', label: 'Assets' },
+  { to: '/fixed-deposits', label: 'Fixed Deposits' },
+  { to: '/compare', label: 'Compare' },
+  { to: '/settings', label: 'Settings' },
+];
+
 function Layout() {
   const { logout, user } = useAuth();
   const navigate = useNavigate();
@@ -65,14 +75,37 @@ function Layout() {
 
   return (
     <div className="app-shell">
-      <aside className="app-sidebar" aria-label="Application sidebar">
-        <div className="app-sidebar__brand">
-          <h1 className="app-sidebar__logo">Portfolio Insight</h1>
-          <p className="app-sidebar__subtitle">Portfolio analytics</p>
+      <header className="app-header" aria-label="Application header">
+        <div className="app-header__brand">
+          <div className="app-header__brand-mark" aria-hidden="true">
+            K
+          </div>
+          <div>
+            <h1 className="app-header__logo">KPulla6</h1>
+            <p className="app-header__subtitle">Executive Portfolio OS</p>
+            <p className="app-header__data-note" role="note">
+              Cached prices, NAVs, benchmarks, and FX from the database
+            </p>
+          </div>
         </div>
 
-        <div className="app-sidebar__controls">
-          <div className="app-sidebar__field">
+        <nav className="app-sidebar__nav app-header__nav" aria-label="Main navigation">
+          {PRIMARY_NAV.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              className={({ isActive }) =>
+                `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
+              }
+            >
+              {item.label}
+            </NavLink>
+          ))}
+        </nav>
+
+        <div className="app-header__actions">
+          <div className="app-sidebar__field app-header__field">
             <label className="app-sidebar__label" htmlFor="sidebar-portfolio-view">
               Portfolio View
             </label>
@@ -94,7 +127,7 @@ function Layout() {
             </select>
           </div>
 
-          <div className="app-sidebar__field">
+          <div className="app-sidebar__field app-header__field app-header__field--currency">
             <label className="app-sidebar__label" htmlFor="sidebar-display-currency">
               Display Currency
             </label>
@@ -119,95 +152,28 @@ function Layout() {
             </select>
           </div>
 
-          {portfoliosError ? (
-            <WarningBanner
-              severity="warning"
-              message={`Using All Portfolios (${portfoliosError})`}
-              className="app-sidebar__notice"
-            />
-          ) : null}
+          <ThemeSelector />
+          <div className="app-header__account">
+            <span className="app-header__user" title={accountLabel}>
+              {accountLabel}
+            </span>
+            <Button variant="secondary" className="app-header__logout" onClick={onLogout}>
+              Log out
+            </Button>
+          </div>
         </div>
+      </header>
 
-        <nav className="app-sidebar__nav" aria-label="Main navigation">
-          <NavLink
-            to="/"
-            className={({ isActive }) =>
-              `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
-            }
-            end
-          >
-            Dashboard
-          </NavLink>
-          <NavLink
-            to="/transactions"
-            className={({ isActive }) =>
-              `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
-            }
-          >
-            Transactions
-          </NavLink>
-          <NavLink
-            to="/cash"
-            className={({ isActive }) =>
-              `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
-            }
-          >
-            Cash
-          </NavLink>
-          <NavLink
-            to="/assets"
-            className={({ isActive }) =>
-              `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
-            }
-          >
-            Assets
-          </NavLink>
-          <NavLink
-            to="/fixed-deposits"
-            className={({ isActive }) =>
-              `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
-            }
-          >
-            Fixed Deposits
-          </NavLink>
-          <NavLink
-            to="/compare"
-            className={({ isActive }) =>
-              `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
-            }
-          >
-            Compare
-          </NavLink>
-          <NavLink
-            to="/settings"
-            className={({ isActive }) =>
-              `app-sidebar__nav-link${isActive ? ' app-sidebar__nav-link--active' : ''}`
-            }
-          >
-            Settings
-          </NavLink>
-        </nav>
-
-        <p className="app-sidebar__footer-text">
-          Valuations use cached prices and FX from the database.
-        </p>
-      </aside>
+      {portfoliosError ? (
+        <WarningBanner
+          severity="warning"
+          message={`Using All Portfolios (${portfoliosError})`}
+          className="app-shell__notice"
+        />
+      ) : null}
 
       <main className="app-main">
-        <header className="app-header" aria-label="Application header">
-          <div className="app-header__actions">
-            <ThemeSelector />
-            <div className="app-header__account">
-              <span className="app-header__user" title={accountLabel}>
-                {accountLabel}
-              </span>
-              <Button variant="secondary" className="app-header__logout" onClick={onLogout}>
-                Log out
-              </Button>
-            </div>
-          </div>
-        </header>
-        <div className="app-main__inner">
+        <div className="app-main__inner" id="main-content">
           <Outlet />
         </div>
       </main>

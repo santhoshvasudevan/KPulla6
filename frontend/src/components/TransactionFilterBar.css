@@ -6,6 +6,13 @@
   background: var(--bg-surface);
 }
 
+.txn-filter--embedded {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
 .txn-filter__row {
   display: flex;
   flex-wrap: wrap;

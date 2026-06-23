@@ -10,9 +10,13 @@
   --space-4: 16px;
   --space-5: 24px;
   --space-6: 32px;
+  --space-7: 40px;
+  --space-8: 48px;
 
   --radius-sm: 6px;
   --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 18px;
 }
 
 /* Institutional Slate — dark (default resolved theme) */
@@ -20,8 +24,11 @@
 [data-theme='dark'] {
   --bg-app: #0f1419;
   --bg-surface: #1a2332;
+  --bg-surface-soft: #16202d;
   --bg-surface-raised: #222d3d;
   --bg-surface-hover: #263041;
+  --surface: var(--bg-surface);
+  --surface-soft: var(--bg-surface-soft);
 
   --border-subtle: #2a3544;
   --border-strong: #3d4f63;
@@ -32,9 +39,18 @@
 
   --accent: #3b82f6;
   --accent-muted: #2563eb;
+  --accent-secondary: #14b8a6;
   --gain: #22c55e;
   --loss: #ef4444;
   --warn: #f59e0b;
+  --asset-stock: #60a5fa;
+  --asset-stock-bg: rgba(96, 165, 250, 0.14);
+  --asset-mutual-fund: #2dd4bf;
+  --asset-mutual-fund-bg: rgba(45, 212, 191, 0.14);
+  --asset-fixed-deposit: #f59e0b;
+  --asset-fixed-deposit-bg: rgba(245, 158, 11, 0.14);
+  --asset-cash: #a78bfa;
+  --asset-cash-bg: rgba(167, 139, 250, 0.14);
 
   --chart-1: #3b82f6;
   --chart-2: #22c55e;
@@ -44,6 +60,8 @@
   --chart-6: #64748b;
 
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-elevated: 0 18px 44px rgba(0, 0, 0, 0.28);
+  --shadow-shell: 0 18px 52px rgba(0, 0, 0, 0.22);
   --focus-ring: rgba(59, 130, 246, 0.2);
   --auth-gradient-accent: rgba(59, 130, 246, 0.12);
   --auth-gradient-teal: rgba(20, 184, 166, 0.08);
@@ -51,23 +69,35 @@
 
 /* Institutional Slate — light */
 [data-theme='light'] {
-  --bg-app: #f0f4f8;
+  --bg-app: #f6f8fb;
   --bg-surface: #ffffff;
-  --bg-surface-raised: #f8fafc;
-  --bg-surface-hover: #eef2f6;
+  --bg-surface-soft: #f1f6f9;
+  --bg-surface-raised: #f8fbfd;
+  --bg-surface-hover: #eef6f8;
+  --surface: var(--bg-surface);
+  --surface-soft: var(--bg-surface-soft);
 
-  --border-subtle: #d8e0ea;
-  --border-strong: #b8c5d6;
+  --border-subtle: #dbe6ef;
+  --border-strong: #b8c9d8;
 
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #64748b;
+  --text-primary: #17202a;
+  --text-secondary: #526273;
+  --text-muted: #77869a;
 
   --accent: #2563eb;
-  --accent-muted: #1d4ed8;
+  --accent-muted: #dbeafe;
+  --accent-secondary: #14b8a6;
   --gain: #16a34a;
   --loss: #dc2626;
   --warn: #d97706;
+  --asset-stock: #2563eb;
+  --asset-stock-bg: #eff6ff;
+  --asset-mutual-fund: #0d9488;
+  --asset-mutual-fund-bg: #ecfdf5;
+  --asset-fixed-deposit: #d97706;
+  --asset-fixed-deposit-bg: #fffbeb;
+  --asset-cash: #7c3aed;
+  --asset-cash-bg: #f5f3ff;
 
   --chart-1: #2563eb;
   --chart-2: #16a34a;
@@ -77,6 +107,8 @@
   --chart-6: #64748b;
 
   --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.08);
+  --shadow-elevated: 0 18px 44px rgba(15, 23, 42, 0.08);
+  --shadow-shell: 0 16px 40px rgba(31, 41, 55, 0.08);
   --focus-ring: rgba(37, 99, 235, 0.25);
   --auth-gradient-accent: rgba(37, 99, 235, 0.08);
   --auth-gradient-teal: rgba(13, 148, 136, 0.06);
@@ -148,6 +180,51 @@ th {
   font-size: 0.8rem;
 }
 
-td {
-  font-family: var(--font-body);
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
+
+/* P10: shared sticky section nav responsive + focus polish */
+.dashboard-section-nav,
+.assets-section-nav,
+.asset-detail-section-nav,
+.fd-section-nav,
+.compare-section-nav,
+.settings-section-nav {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.dashboard-section-nav__link:focus-visible,
+.assets-section-nav__link:focus-visible,
+.asset-detail-section-nav__link:focus-visible,
+.fd-section-nav__link:focus-visible,
+.compare-section-nav__link:focus-visible,
+.settings-section-nav__link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .dashboard-section-nav,
+  .assets-section-nav,
+  .asset-detail-section-nav,
+  .fd-section-nav,
+  .compare-section-nav,
+  .settings-section-nav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: var(--space-2);
+  }
+
+  .dashboard-kpi-strip,
+  .assets-page__overview,
+  .compare-page__kpi-strip,
+  .fixed-deposits-page__overview,
+  .settings-page__sections {
+    gap: var(--space-2);
+  }
+}
+
