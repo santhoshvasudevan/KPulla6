@@ -1,6 +1,93 @@
 # Fixed Deposits — Accounting Phase 1
 
-**Status:** **FD-ACC-7 implemented** · **FD-ACC-8B implemented** (value history) · **FD-ACC-8C implemented** (return metrics) · **FD-ACC-9 audited** (2026-06-14).
+**Status:** **FD-ACC-7 implemented** · **FD-ACC-8B implemented** (value history) · **FD-ACC-8C implemented** (return metrics) · **FD-ACC-9 audited** (2026-06-14) · **FD-ACC-10A implemented** (2026-06-24) · **FD-ACC-10B implemented** (2026-06-24) · **FD-TAX-1 implemented** (2026-06-24) · **FD-CASH-ASOF-1 implemented** (2026-06-24, create as-of balance UX).
+
+## FD-CASH-ASOF-1 implementation notes (2026-06-24)
+
+| Item | FD-CASH-ASOF-1 outcome |
+|------|------------------------|
+| **Validation** | FD create checks linked **bank account** ledger balance **as of `investment_date`** (inclusive) |
+| **Current vs as-of** | `current_balance` can exceed as-of when movements are dated after investment date |
+| **Cash tab** | Portfolio Cash (`CashLedgerEntry`) ≠ Bank Ledger (`CashMovement`) — FD uses bank ledger only |
+| **Opening balance** | Reference `opening_balance` not usable until `OPENING_BALANCE` movement seeded on/before investment date |
+| **API** | `GET /bank-accounts/{id}/balance?as_of=`; richer insufficient-balance `400` payload |
+| **UI** | Create modal shows both balances; structured error panel; auto-scroll/focus on failure |
+
+## FD-TAX-1 implementation notes (2026-06-24)
+
+| Item | FD-TAX-1 outcome |
+|------|------------------|
+| **API** | `GET /api/v1/reports/fixed-deposit-interest` |
+| **Sources** | Interest payments (`is_reversed=false`); settlement final interest (non-zero; excludes renewal-linked settlement); renewal group interest (non-zero) |
+| **Exclusions** | Reversed payments; zero-interest settlement/renewal; `CANCELLED` FD rows |
+| **Semantics** | `gross_interest`, `tax_withheld`, `net_interest` as stored at source; optional `display_currency` conversion with date-aware FX + fill |
+| **Scope** | User-scoped; portfolio filter via existing scope params |
+| **Not in scope** | Tax advice; CSV/export (FD-TAX-2); no ledger/performance/summary changes |
+
+---
+
+## FD-ACC-10B implementation notes (2026-06-24)
+
+| Item | FD-ACC-10B outcome |
+|------|-------------------|
+| **Principle** | Corrections via **reversal entries** — no destructive edits/deletes on ledger rows |
+| **Manual cash** | `POST /cash-movements/{id}/reverse` — `REVERSAL` opposite direction; `reversal_reason` required |
+| **FD interest** | `POST /fixed-deposit-interest-payments/{id}/reverse` — `FD_INTEREST_REVERSAL` DEBIT for net; payment `is_reversed` |
+| **Classifier** | Reversal of external contribution → external withdrawal offset; reversal of income → income (bank balance effect); internal reversals → internal |
+| **UI** | Cash movement table: Reverse + status labels; FD interest table: Reverse interest |
+| **Deferred** | Settlement reversal, renewal reversal, cancel-FD reversal → **FD-ACC-10C** |
+
+### FD-ACC-10A-REPAIR — one-time backfill command (2026-06-24)
+
+For FDs **deactivated via `DELETE` before FD-ACC-10A** that still have an unreversed `FD_OPENING` debit:
+
+```bash
+python manage.py repair_deactivated_fd_openings              # dry-run (default)
+python manage.py repair_deactivated_fd_openings --apply --fd-id <ID> --reason "..."
+```
+
+| Item | Behavior |
+|------|----------|
+| **Eligible** | `is_active=false`, unreversed `FD_OPENING`, status not `CANCELLED`/`CLOSED`/`MATURED_SETTLED`, no settlement/renewal/interest |
+| **Repair** | `FD_OPENING_REVERSAL` CREDIT; `status=CANCELLED`; `is_active=false` retained |
+| **Do not** | Add manual deposit — distorts XIRR/TWROR external flows |
+| **Skip** | Interest payments, settlement, renewal, ambiguous cases — manual review |
+
+Public `POST .../cancel` rules unchanged.
+
+---
+
+All bank ledger and FD accounting corrections use **linked reversal rows** (`is_reversal=true`, `reverses_id`). Original movements and interest payments remain visible for audit. PUT/PATCH/DELETE on movements and interest payments remain **405**.
+
+---
+
+## FD-ACC-10A implementation notes (2026-06-24)
+
+| Item | FD-ACC-10A outcome |
+|------|-------------------|
+| **Problem** | Soft deactivate on ledger-backed FD left `FD_OPENING` debit unreversed; bank cash and portfolio value diverged |
+| **Cancel** | `POST /fixed-deposits/{id}/cancel` — `FD_OPENING_REVERSAL` CREDIT; `status=CANCELLED`; `is_active=false` |
+| **Deactivate** | `DELETE /fixed-deposits/{id}` — **409** when unreversed `FD_OPENING`; legacy no-ledger FDs unchanged |
+| **Eligibility** | `ACTIVE`/`MATURED` only; rejects interest payments, settlement, renewal |
+| **Value history** | Cancelled FD excluded from FD principal series entirely; bank ledger shows opening + reversal |
+| **Historical PV** | Between opening and cancellation: bank debit remains in ledger history; FD principal not counted after cancel (documented dip until reversal date) |
+| **Portfolio** | Cancelled FD excluded from summary, holdings, `metric=value` FD series, XIRR/TWROR terminal; bank cash restored via reversal when included |
+| **Classifier** | `FD_OPENING_REVERSAL` = internal (not external flow) |
+| **Audit** | FD row retained — no destructive delete |
+| **Deferred** | Full reversal/correction framework → **FD-ACC-10B** (now implemented — see FD-ACC-10B section) |
+
+### FD lifecycle actions — Deactivate vs Cancel vs Settle vs Renew
+
+| Action | Purpose | API | Bank ledger | Portfolio surfaces after action |
+|--------|---------|-----|-------------|--------------------------------|
+| **Cancel FD** | Undo mistaken FD creation | `POST /fixed-deposits/{id}/cancel` | `FD_OPENING_REVERSAL` CREDIT | Excluded from summary, holdings, `metric=value` FD series, XIRR/TWROR terminal wealth pool; bank cash restored via reversal |
+| **Deactivate** | Hide legacy FD with no ledger opening | `DELETE /fixed-deposits/{id}` | None | Excluded from active list and portfolio value (`is_active=false`); **409** if unreversed `FD_OPENING` |
+| **Settle / Close** | Record real maturity or early closure | `POST /fixed-deposits/{id}/settle` | Principal + net interest CREDITs | Principal removed; `MATURED_SETTLED` or `CLOSED` — **not** the same as cancel |
+| **Renew** | Record real rollover | `POST /fixed-deposits/{id}/renew` | Settlement legs + optional payout; direct rollover skips reinvest bank movement | Old FD settled; new FD contributes principal |
+
+**Audit:** Cancel, deactivate, settle, and renew all **retain** the FD row — there is no destructive delete API.
+
+**Historical PV (cancel only):** between `FD_OPENING` and `FD_OPENING_REVERSAL` dates, included bank cash reflects the opening debit while cancelled FD principal is excluded from the FD value series — documented dip until reversal date. Broader backdated correction → **FD-ACC-10B**.
 
 ---
 
@@ -224,6 +311,7 @@ Maturity and settlement are **separate steps**. Do **not** skip `MATURED` by def
 | `MATURED` | Maturity date has arrived **or** user marked matured; **settlement not yet recorded** | **Yes** |
 | `MATURED_SETTLED` | Maturity settlement recorded (cash/renewal accounting complete) | **No** |
 | `CLOSED` | Early closure settlement recorded, or legacy MVP closed FD | **No** |
+| `CANCELLED` | Mistaken FD cancelled; opening debit reversed (FD-ACC-10A) | **No** |
 
 **Transitions:**
 
@@ -231,8 +319,9 @@ Maturity and settlement are **separate steps**. Do **not** skip `MATURED` by def
 2. `MATURED` → `MATURED_SETTLED` — `POST .../settle` (maturity settlement). Creates optional cash movements; removes principal from Debt.
 3. `ACTIVE` → `CLOSED` — `POST .../close` (early closure settlement). Same as today’s closed semantics for portfolio value.
 4. Renewal — old FD → `MATURED_SETTLED` or `CLOSED` as part of `POST .../renew`; new FD `ACTIVE` with `renewal_of`.
+5. `ACTIVE`/`MATURED` → `CANCELLED` — `POST .../cancel` (mistaken creation only; FD-ACC-10A). Creates `FD_OPENING_REVERSAL` CREDIT; `is_active=false`. **Not** a substitute for settle or renew.
 
-**MVP note:** Schema today has `ACTIVE`, `MATURED`, `CLOSED` only. **`MATURED_SETTLED`** is added in FD-ACC-4 migration. Until then, settled maturity may use `CLOSED` with a `settlement_kind` discriminator in API responses (implementation detail).
+**Schema (current):** `ACTIVE`, `MATURED`, `MATURED_SETTLED`, `CLOSED`, `CANCELLED` (migration `debt/0006_fd_cancellation`).
 
 ### Signed amount convention
 
@@ -277,6 +366,7 @@ Consistent with portfolio cash: **positive `amount` increases bank account balan
 | `TRANSFER_IN` | + | Increase | Manual (external bank transfer in) |
 | `TRANSFER_OUT` | − | Decrease | Manual (external transfer out) |
 | `FD_OPENING` | − | Decrease | **System on FD create (FD-ACC-3)** — mandatory for new FDs |
+| `FD_OPENING_REVERSAL` | + | Increase | **System on FD cancel (FD-ACC-10A)** — reverses mistaken opening |
 | `FD_INTEREST` | + | Increase | System on interest payment record |
 | `FD_MATURITY_PRINCIPAL` | + | Increase | System on mature |
 | `FD_MATURITY_INTEREST` | + | Increase | System on mature (final interest leg) |

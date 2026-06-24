@@ -36,6 +36,7 @@ from portfolios.summary_service import (
     _aggregate_timeseries_lists,
     _data_load_start,
     build_all_scope_portfolio_value_timeseries,
+    build_portfolio_summary,
     build_portfolio_value_timeseries,
     fifo_eligible_queryset,
     norm_display_currency,
@@ -76,6 +77,32 @@ class PerformanceComparisonResult:
     metric: str
     series: list[dict]
     warnings: list[str]
+
+
+def _align_terminal_value_with_summary(
+    timeseries_full: list[dict],
+    *,
+    scope: ResolvedPortfolioScope,
+    disp_ccy: str,
+    today: date,
+    user,
+) -> None:
+    """Ensure value metric terminal point matches summary KPI (same scope/currency/date)."""
+    if user is None or not timeseries_full:
+        return
+    summary = build_portfolio_summary(
+        scope=scope,
+        display_currency=disp_ccy,
+        include_timeseries=False,
+        user=user,
+    )
+    if summary.fx_status == "fx_unavailable":
+        return
+    terminal_iso = today.isoformat()
+    for point in reversed(timeseries_full):
+        if point["date"] <= terminal_iso:
+            point["portfolio_value"] = float(summary.current_value)
+            return
 
 
 def _single_portfolio_cash_aware_returns(scope: ResolvedPortfolioScope) -> bool:
@@ -489,6 +516,13 @@ def build_portfolio_performance(
             value_warnings = list(value_warnings) + list(fb_warnings)
             if not timeseries_full:
                 return PerformanceSeriesResult(points=[])
+            _align_terminal_value_with_summary(
+                timeseries_full,
+                scope=scope,
+                disp_ccy=disp_ccy,
+                today=today,
+                user=user,
+            )
             range_start_iso = range_start.isoformat()
             out: list[PerformancePoint] = []
             for p in timeseries_full:
@@ -648,6 +682,14 @@ def build_portfolio_performance(
         value_warnings = list(value_warnings) + list(fb_warnings)
         if not timeseries_full:
             return PerformanceSeriesResult(points=[])
+
+        _align_terminal_value_with_summary(
+            timeseries_full,
+            scope=scope,
+            disp_ccy=disp_ccy,
+            today=today,
+            user=user,
+        )
 
         needs_display_conv = (
             not use_all_scope_display

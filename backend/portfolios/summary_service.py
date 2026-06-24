@@ -770,20 +770,31 @@ def _aggregate_timeseries_lists(series_list: list[list[dict]]) -> list[dict]:
                     "portfolio_value": 0.0,
                     "invested_amount": 0.0,
                     "fx_status": "ok",
+                    "_pv_known": False,
                 }
             row = by_date[d]
             child_pv = pt.get("portfolio_value")
-            if child_pv is None:
-                row["portfolio_value"] = None
-            elif row.get("portfolio_value") is not None:
-                row["portfolio_value"] = float(row["portfolio_value"]) + float(child_pv)
+            if child_pv is not None:
+                if row["_pv_known"]:
+                    row["portfolio_value"] = float(row["portfolio_value"]) + float(
+                        child_pv
+                    )
+                else:
+                    row["portfolio_value"] = float(child_pv)
+                    row["_pv_known"] = True
             row["invested_amount"] = float(row["invested_amount"]) + float(
                 pt.get("invested_amount") or 0
             )
             row["fx_status"] = _combine_fx_status(
                 [row["fx_status"], pt.get("fx_status") or "ok"]
             )
-    return [by_date[d] for d in sorted(by_date.keys())]
+    out: list[dict] = []
+    for d in sorted(by_date.keys()):
+        row = by_date[d]
+        if not row.pop("_pv_known"):
+            row["portfolio_value"] = None
+        out.append(row)
+    return out
 
 
 def _aggregate_timeseries_from_children(

@@ -6,6 +6,7 @@ import * as api from '../api';
 vi.mock('../api', () => ({
   fetchCashMovements: vi.fn(),
   createCashMovement: vi.fn(),
+  reverseCashMovement: vi.fn(),
 }));
 
 const sampleAccount = {
@@ -301,5 +302,67 @@ describe('CashMovementManagement', () => {
     );
 
     await waitFor(() => expect(api.fetchCashMovements).toHaveBeenCalledTimes(2));
+  });
+
+  it('shows reverse action for eligible manual movements and submits reversal', async () => {
+    api.fetchCashMovements.mockResolvedValue({
+      items: [
+        {
+          ...sampleMovements.items[0],
+          is_reversal: false,
+          is_reversed: false,
+        },
+      ],
+      total: 1,
+    });
+    api.reverseCashMovement.mockResolvedValue({
+      message: 'Cash movement reversed.',
+    });
+    const onAccountUpdated = vi.fn();
+    render(
+      <CashMovementManagement account={sampleAccount} onAccountUpdated={onAccountUpdated} />
+    );
+
+    await waitFor(() => screen.getByRole('button', { name: /reverse/i }));
+    fireEvent.click(screen.getByRole('button', { name: /reverse/i }));
+    expect(screen.getByText(/opposite ledger entry/i)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/reason/i), {
+      target: { value: 'Duplicate deposit' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /confirm reversal/i }));
+
+    await waitFor(() => {
+      expect(api.reverseCashMovement).toHaveBeenCalledWith(10, {
+        reversal_date: expect.any(String),
+        reason: 'Duplicate deposit',
+      });
+      expect(onAccountUpdated).toHaveBeenCalled();
+    });
+  });
+
+  it('hides reverse for system and already reversed movements', async () => {
+    api.fetchCashMovements.mockResolvedValue({
+      items: [
+        {
+          id: 11,
+          movement_type: 'FD_INTEREST',
+          source: 'SYSTEM',
+          is_reversal: false,
+          is_reversed: false,
+        },
+        {
+          id: 12,
+          movement_type: 'MANUAL_DEPOSIT',
+          source: 'MANUAL',
+          is_reversal: false,
+          is_reversed: true,
+        },
+      ],
+      total: 2,
+    });
+    render(<CashMovementManagement account={sampleAccount} onAccountUpdated={vi.fn()} />);
+    await waitFor(() => expect(api.fetchCashMovements).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: /reverse/i })).not.toBeInTheDocument();
   });
 });

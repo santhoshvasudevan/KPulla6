@@ -27,17 +27,19 @@ Quick reference for MVP endpoints. Detail sections below. Product rules: [produc
 | POST | `/api/v1/cash/bulk-entries/preview` | Bulk schedule preview | `previewCashBulkEntries` | `test_cash_bulk_entries_api.py` |
 | POST | `/api/v1/cash/bulk-entries/apply` | Confirmed bulk manual entries | `applyCashBulkEntries` | `test_cash_bulk_entries_api.py` |
 | GET | `/api/v1/bank-accounts` | List active user bank accounts | `fetchBankAccounts` | `test_bank_accounts_api.py` |
+| GET | `/api/v1/bank-accounts/{id}/balance` | Current / as-of ledger balance | `fetchBankAccountBalance` | `test_bank_accounts_api.py` |
 | POST | `/api/v1/bank-accounts` | Create bank account | `createBankAccount` | `test_bank_accounts_api.py` |
 | PUT | `/api/v1/bank-accounts/{id}` | Update bank account | `updateBankAccount` | `test_bank_accounts_api.py` |
 | DELETE | `/api/v1/bank-accounts/{id}` | Soft deactivate bank account | `deleteBankAccount` | `test_bank_accounts_api.py` |
 | POST | `/api/v1/bank-accounts/{id}/seed-opening-balance` | Seed `OPENING_BALANCE` from `opening_balance` | `seedBankAccountOpeningBalance` | `test_cash_movements_api.py` |
 | GET | `/api/v1/cash-movements` | List bank cash movements (paginated) | `fetchCashMovements` | `test_cash_movements_api.py` |
 | POST | `/api/v1/cash-movements` | Create manual movement | `createCashMovement` | `test_cash_movements_api.py` |
-| GET | `/api/v1/cash-movements/{id}` | Movement detail | — | `test_cash_movements_api.py` |
+| POST | `/api/v1/cash-movements/{id}/reverse` | Reverse manual cash movement | `reverseCashMovement` | `test_cash_movement_reversals_api.py` |
 | GET | `/api/v1/fixed-deposits` | List active fixed deposits (portfolio scope) | `fetchFixedDeposits` | `test_fixed_deposits_api.py` |
 | POST | `/api/v1/fixed-deposits` | Create fixed deposit | `createFixedDeposit` | `test_fixed_deposits_api.py` |
 | PUT | `/api/v1/fixed-deposits/{id}` | Update fixed deposit | `updateFixedDeposit` | `test_fixed_deposits_api.py` |
-| DELETE | `/api/v1/fixed-deposits/{id}` | Soft deactivate fixed deposit | `deleteFixedDeposit` | `test_fixed_deposits_api.py` |
+| DELETE | `/api/v1/fixed-deposits/{id}` | Soft deactivate fixed deposit (legacy/no-ledger only) | `deleteFixedDeposit` | `test_fixed_deposits_api.py` |
+| POST | `/api/v1/fixed-deposits/{id}/cancel` | Cancel ledger-backed FD; reverse opening debit | `cancelFixedDeposit` | `test_fixed_deposit_cancellation_accounting.py` |
 | GET | `/api/v1/transactions` | Paginated asset transactions | `fetchTransactions` | `test_transactions_api.py` |
 | POST | `/api/v1/transactions` | Create stock/MF transaction | `createTransaction` | `test_transactions_api.py`, `test_cash_aware_transactions_api.py` |
 | PUT | `/api/v1/transactions/{id}` | Update transaction | `updateTransaction` | `test_transactions_api.py`, `test_cash_aware_transactions_api.py` |
@@ -1162,10 +1164,14 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 | GET | `/api/v1/cash-movements` | **Done** — paginated; filter `bank_account_id` |
 | POST | `/api/v1/cash-movements` | **Done** — `MANUAL_DEPOSIT`, `MANUAL_WITHDRAWAL`, `ADJUSTMENT` only |
 | GET | `/api/v1/cash-movements/{id}` | **Done** |
-| PUT/PATCH/DELETE | `/api/v1/cash-movements/{id}` | **405** — immutable ledger in FD-ACC-1 |
+| PUT/PATCH/DELETE | `/api/v1/cash-movements/{id}` | **405** — immutable ledger in FD-ACC-1; use reverse (FD-ACC-10B) |
+| POST | `/api/v1/cash-movements/{id}/reverse` | **Done** — `{ reversal_date?, reason }`; creates `REVERSAL` SYSTEM movement |
 | POST | `/api/v1/bank-accounts/{id}/seed-opening-balance` | **Done** — opt-in opening balance seed |
+| GET | `/api/v1/bank-accounts/{id}/balance` | **Done (FD-CASH-ASOF-1)** — `?as_of=YYYY-MM-DD` optional; returns `current_balance`, `balance_as_of_date`, `latest_ledger_balance_date` |
 
 **Bank account response extensions:** `has_ledger_entries`, `opening_balance_seeded`, `balance_source` (`manual` \| `ledger`).
+
+**FD create insufficient balance (400):** `detail`, `required`, `available`, `available_as_of_date`, `current_balance`, `shortfall`, `currency`, `investment_date`, `latest_ledger_balance_date`, `hint`. Validation uses ledger balance **as of FD `investment_date`**, not current total.
 
 **PUT `/bank-accounts/{id}`:** rejects `current_balance` when ledger exists (**400**).
 
@@ -1178,7 +1184,8 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 | GET | `/api/v1/fixed-deposits/{id}/interest-payments` | **Done** — list payments for FD (user-scoped) |
 | POST | `/api/v1/fixed-deposits/{id}/interest-payments` | **Done** — `{ payment_date, gross_interest, tax_withheld?, comment? }`; atomically creates `FixedDepositInterestPayment` + `FD_INTEREST` CREDIT for **net**; optional `warning` for COMPOUNDED FD |
 | GET | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | **Done** |
-| PUT/PATCH/DELETE | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | **405** — immutable; corrections via future ADJUSTMENT/reversal |
+| PUT/PATCH/DELETE | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | **405** — immutable; use reverse (FD-ACC-10B) |
+| POST | `/api/v1/fixed-deposit-interest-payments/{payment_id}/reverse` | **Done** — `{ reversal_date?, reason }`; `FD_INTEREST_REVERSAL` DEBIT; `is_reversed=true` |
 
 **Rejected:** interest payment on `CLOSED` FD (**400**). `ACTIVE` and `MATURED` allowed. Bank account taken from FD (not client-supplied).
 
@@ -1210,6 +1217,22 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 
 **Rejected:** `CLOSED`/`MATURED_SETTLED` FD; already renewed FD; foreign FD (**404**); invalid dates/amounts (**400**).
 
+### FD interest / tax report (FD-TAX-1)
+
+| Method | Path | Notes |
+|--------|------|--------|
+| GET | `/api/v1/reports/fixed-deposit-interest` | **Done** — read-only gross/tax/net report; no accounting side effects |
+
+**Query:** `portfolio_scope=all` or `portfolio_id`, optional `start_date`, `end_date`, `display_currency`, `group_by` (`year`, `portfolio`, `bank`, `fd`, `source`, `none`).
+
+**Sources:** non-reversed interest payments; settlement final interest (excludes renewal-linked settlements to avoid double count); renewal group interest. Excludes zero-interest rows and `CANCELLED` FD rows.
+
+**Response:** `rows`, `totals` (gross/tax/net, `row_count`, `fx_status`), optional `grouped_totals`, `warnings` (FX partial / mixed currency).
+
+**Frontend:** `fetchFixedDepositInterestReport` · `test_fixed_deposit_interest_report_api.py` · Fixed Deposits → Interest & Tax report section.
+
+**Deferred:** CSV/export (FD-TAX-2). Not tax advice.
+
 ### FD create — mandatory opening debit (FD-ACC-3)
 
 | Method | Path | Notes |
@@ -1220,7 +1243,24 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 
 **PUT `/fixed-deposits/{id}`:** rejects changes to `principal_amount`, `bank_account_id`, `currency`, `investment_date`, `portfolio_id` when opening movement exists (**400**). Legacy FDs without opening movement remain fully editable.
 
-**Lifecycle:** `ACTIVE` → `MATURED` (mark-matured) → `MATURED_SETTLED` or `CLOSED` (settle) — **implemented FD-ACC-5**.
+### FD lifecycle actions (FD-ACC-10A)
+
+| Action | API | When | Bank ledger | Portfolio value | Notes |
+|--------|-----|------|-------------|-----------------|-------|
+| **Cancel FD** | `POST /api/v1/fixed-deposits/{id}/cancel` | Mistaken ledger-backed FD; no interest/settlement/renewal | `FD_OPENING_REVERSAL` CREDIT | FD principal removed; bank cash restored when included; excluded from summary, holdings, value history, XIRR/TWROR terminal | `status=CANCELLED`; row **not** deleted |
+| **Deactivate** | `DELETE /api/v1/fixed-deposits/{id}` | Legacy FD without `FD_OPENING` only | None | FD principal removed (`is_active=false`) | **409** when unreversed `FD_OPENING` — message directs user to Cancel |
+| **Settle / Close** | `POST /api/v1/fixed-deposits/{id}/settle` | Real maturity or early closure | `FD_MATURITY_*` / `FD_CLOSURE_*` CREDITs | Principal removed after settlement; bank credited per proceeds | `MATURED_SETTLED` or `CLOSED` — real-world event, not mistake correction |
+| **Renew** | `POST /api/v1/fixed-deposits/{id}/renew` | Real rollover at institution | Settlement + payout legs; direct rollover may skip reinvest bank movement | Old FD settled; new FD principal included | Creates `renewal_of` chain |
+
+**Cancel request:** optional `cancellation_date` (default today).
+
+**Cancel rejected (400):** interest payments, settlement, renewal, already cancelled, no unreversed opening movement. **404:** foreign FD.
+
+**Deactivate response (409):** `"This FD has bank ledger movements. Use Cancel FD to reverse the opening debit."`
+
+**Historical PV limitation:** cancelled FD excluded from FD principal series entirely; included bank cash still shows opening debit until reversal date — dip possible between open and cancel. Full correction framework → **FD-ACC-10B**.
+
+**Lifecycle (settle/renew):** `ACTIVE` → `MATURED` (mark-matured) → `MATURED_SETTLED` or `CLOSED` (settle) — **implemented FD-ACC-5**.
 
 ---
 

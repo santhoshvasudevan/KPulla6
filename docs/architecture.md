@@ -83,7 +83,7 @@ Product rules index: [product-rules.md](./product-rules.md).
 
 1. **Transactions** — BUY/SELL (and splits for quantity/price adjustment); MF uses `investment_date` / `paid_value` for external cash flows where applicable.
 2. **HistoricalPrice** — split-adjusted stock/ETF closes (`yfinance` **Adj Close** via `make sync-prices`); benchmark `asset_type=INDEX`. **Invariant:** `build_split_adjusted_lot_snapshots` scales pre-split transaction quantities, so cached stock closes must be split-adjusted too. Raw nominal pre-split prices × split-adjusted qty produce false valuation spikes (see `test_stock_split_valuation_api.py`, `test_analytics_split_metrics_api.py`). Metric Sheet endpoints warn when a split date shows a value drop ratio matching the split factor (likely raw prices).
-3. **FXRate** — same-date conversion into portfolio/holding/display currency (7-day fill where summary/performance already allows).
+3. **FXRate** — same-date conversion into portfolio/holding/display currency (7-day fill where summary/performance already allows). Bulk loaders include **inverse-stored** pairs; value metric **terminal** point matches summary KPI when FX succeeds.
 4. **Mutual fund NAVs** — `HistoricalPrice` rows with `asset_type=MUTUAL_FUND`.
 5. **Benchmark index prices** — cached index levels for beta, alpha, correlation, and overlay charts.
 

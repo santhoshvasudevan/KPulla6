@@ -11,6 +11,7 @@ const STATUS_LABELS = {
   MATURED: 'Matured',
   MATURED_SETTLED: 'Settled',
   CLOSED: 'Closed',
+  CANCELLED: 'Cancelled',
 };
 
 /** Display-only status badge mapping from backend FD status. */
@@ -24,6 +25,8 @@ export function fdStatusBadgeProps(status) {
       return { status: 'info', label: STATUS_LABELS.MATURED_SETTLED };
     case 'CLOSED':
       return { status: 'closed', label: STATUS_LABELS.CLOSED };
+    case 'CANCELLED':
+      return { status: 'closed', label: STATUS_LABELS.CANCELLED };
     default:
       return { status: 'neutral', label: status || '—' };
   }

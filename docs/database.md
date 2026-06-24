@@ -295,7 +295,7 @@ Migration: `debt/migrations/0001_initial.py`
 
 ---
 
-## Fixed Deposits — Accounting (FD-ACC-1..8C implemented)
+## Fixed Deposits — Accounting (FD-ACC-1..10A implemented)
 
 Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 
@@ -306,14 +306,14 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 | `user_id` | FK → `auth.User` |
 | `bank_account_id` | FK → `bank_accounts` (`PROTECT`) |
 | `portfolio_id` | Nullable FK → `portfolios` |
-| `movement_type` | `OPENING_BALANCE`, `MANUAL_DEPOSIT`, `MANUAL_WITHDRAWAL`, `FD_OPENING`, `FD_INTEREST`, `FD_MATURITY_*`, `FD_CLOSURE_*`, `TRANSFER_IN`, `TRANSFER_OUT`, `ADJUSTMENT` |
+| `movement_type` | `OPENING_BALANCE`, `MANUAL_DEPOSIT`, `MANUAL_WITHDRAWAL`, `FD_OPENING`, `FD_OPENING_REVERSAL`, `FD_INTEREST`, `FD_INTEREST_REVERSAL`, `REVERSAL`, `FD_MATURITY_*`, `FD_CLOSURE_*`, `TRANSFER_IN`, `TRANSFER_OUT`, `ADJUSTMENT` |
 | `amount` | Positive decimal |
 | `direction` | `CREDIT` / `DEBIT` |
 | `currency` | Must match bank account |
 | `movement_date` | Effective date |
 | `linked_fixed_deposit_id` | Nullable; reserved |
 | `source` | `MANUAL` / `SYSTEM` |
-| `is_reversal` / `reverses_id` | Optional reversal chain |
+| `is_reversal` / `reverses_id` | Reversal chain; `reversal_reason` (FD-ACC-10B) |
 
 Migration: `debt/migrations/0002_cash_movement.py`
 
@@ -321,7 +321,7 @@ Migration: `debt/migrations/0002_cash_movement.py`
 
 ---
 
-## Implemented — FD Accounting Phase 1 (FD-ACC-1..8C)
+## Implemented — FD Accounting Phase 1 (FD-ACC-1..10A)
 
 Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 
@@ -332,15 +332,31 @@ Bank-account cash ledger is **separate** from portfolio `cash_ledger_entries` (u
 | Table | Model | Purpose |
 |-------|--------|---------|
 | `cash_movements` | `CashMovement` | **Done** (FD-ACC-1) |
-| `fixed_deposit_interest_payments` | `FixedDepositInterestPayment` | **Done** (FD-ACC-4) — gross/tax/net; OneToOne `cash_movement` |
+| `fixed_deposit_interest_payments` | `FixedDepositInterestPayment` | **Done** (FD-ACC-4) — gross/tax/net; OneToOne `cash_movement`; `is_reversed`, `reversed_at` (FD-ACC-10B) |
 | `fixed_deposit_settlements` | `FixedDepositSettlement` | **Done** (FD-ACC-5) — maturity/closure proceeds |
 | `fixed_deposit_renewal_groups` | `FixedDepositRenewalGroup` | **Done** (FD-ACC-6) — renewal audit trail |
 
-### `FixedDeposit.status` — `MATURED_SETTLED` (FD-ACC-5)
+### `FixedDeposit.status` (FD-ACC-5, FD-ACC-10A)
 
 | Status | Notes |
 |--------|--------|
+| `ACTIVE` | Live FD; principal contributes |
+| `MATURED` | Marked matured; unsettled; principal still contributes |
 | `MATURED_SETTLED` | Maturity settlement recorded; principal no longer contributes |
+| `CLOSED` | Early closure settlement recorded; principal no longer contributes |
+| `CANCELLED` | Mistaken FD cancelled (FD-ACC-10A); `FD_OPENING` reversed; principal no longer contributes; row retained for audit |
+
+Migration: `debt/0006_fd_cancellation` adds `CANCELLED` and `FD_OPENING_REVERSAL` movement type.
+
+Migration: `debt/0007_reversal_framework` adds `REVERSAL`, `FD_INTEREST_REVERSAL`, `reversal_reason`, interest payment reversal fields.
+
+### `CashMovement.movement_type` — reversal types (FD-ACC-10A / FD-ACC-10B)
+
+| Type | Direction | Effect | When |
+|------|-----------|--------|------|
+| `FD_OPENING_REVERSAL` | CREDIT | Restores bank cash | `POST /fixed-deposits/{id}/cancel`; links to original `FD_OPENING` via `reverses_id` + `is_reversal=true` |
+| `REVERSAL` | Opposite of original | Offsets manual movement | `POST /cash-movements/{id}/reverse` for manual types |
+| `FD_INTEREST_REVERSAL` | DEBIT | Reverses net interest credit | `POST /fixed-deposit-interest-payments/{id}/reverse` |
 
 ### `BankAccount` behavior (FD-ACC-1..7)
 

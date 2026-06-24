@@ -213,7 +213,12 @@ def test_soft_delete_fd_excludes_from_summary(api_client, seeded, test_user):
     portfolio = ensure_default_portfolio(test_user)
     bank = _bank(test_user)
     fd = _create_fd(test_user, portfolio.id, bank.id)
-    api_client.delete(f"/api/v1/fixed-deposits/{fd.id}")
+    cancel_resp = api_client.post(
+        f"/api/v1/fixed-deposits/{fd.id}/cancel",
+        {"cancellation_date": "2024-06-15"},
+        format="json",
+    )
+    assert cancel_resp.status_code == 200
     data = api_client.get(
         "/api/v1/portfolio/summary?include_timeseries=false&display_currency=INR"
     ).json()

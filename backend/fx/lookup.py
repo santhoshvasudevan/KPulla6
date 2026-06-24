@@ -116,7 +116,9 @@ def load_fx_rate_maps(
     clauses = Q()
     for frm, to in pairs:
         if frm and to and frm != to:
-            clauses |= Q(from_currency=frm, to_currency=to)
+            clauses |= Q(from_currency=frm, to_currency=to) | Q(
+                from_currency=to, to_currency=frm
+            )
     if not clauses:
         return {}
 

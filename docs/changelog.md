@@ -1,5 +1,129 @@
 # Changelog — KPulla6
 
+## 2026-06-24 — FD-CASH-ASOF-1: FD create as-of bank balance diagnostics and UX
+
+- **Root cause:** FD create validates **bank ledger balance as of `investment_date`**; create form showed **current** ledger balance only, which can exceed as-of balance when deposits are dated after the FD investment date.
+- **API:** richer `400` on insufficient balance (`available_as_of_date`, `current_balance`, `investment_date`, `shortfall`, `hint`, `latest_ledger_balance_date`); new `GET /api/v1/bank-accounts/{id}/balance?as_of=YYYY-MM-DD`.
+- **Frontend:** create modal shows current vs as-of balances; structured error panel; auto-scroll/focus on create failure; Cash tab vs Bank Ledger helper text.
+- **Clarified:** Portfolio Cash (broker `CashLedgerEntry`) ≠ Bank Ledger (`CashMovement`); reference `opening_balance` is not ledger cash until seeded.
+- **No accounting rule changes.**
+
+## 2026-06-24 — FD-CASH-ASOF-1: FD create as-of bank balance diagnostics and UX
+
+- **Root cause:** FD create validates **bank ledger balance as of `investment_date`**; create form showed **current** ledger balance only, which can exceed as-of balance when deposits are dated after the FD investment date.
+- **API:** richer `400` on insufficient balance (`available_as_of_date`, `current_balance`, `investment_date`, `shortfall`, `hint`, `latest_ledger_balance_date`); new `GET /api/v1/bank-accounts/{id}/balance?as_of=YYYY-MM-DD`.
+- **Frontend:** create modal shows current vs as-of balances; structured error panel; auto-scroll/focus on create failure; Cash tab vs Bank Ledger helper text.
+- **Clarified:** Portfolio Cash (broker `CashLedgerEntry`) ≠ Bank Ledger (`CashMovement`); reference `opening_balance` is not ledger cash until seeded.
+- **No accounting rule changes.**
+
+## 2026-06-24 — FD-TAX-1: Fixed Deposit interest and tax withheld report
+
+### Added
+- **`GET /api/v1/reports/fixed-deposit-interest`** — read-only report of FD gross interest, tax withheld, and net interest.
+- Sources: non-reversed `FixedDepositInterestPayment`, settlement final interest (non-renewal), renewal interest (`FixedDepositRenewalGroup`); zero-interest rows excluded; cancelled FD rows excluded; renewal settlements not double-counted.
+- Query: `portfolio_scope` / `portfolio_id`, `start_date`, `end_date`, `display_currency`, `group_by` (`year`, `portfolio`, `bank`, `fd`, `source`, `none`).
+- Frontend: **Interest & Tax report** section on Fixed Deposits page (summary KPIs, filters, table, grouped totals).
+
+### Notes
+- Reporting only — no accounting, ledger, or performance changes.
+- Not tax advice. CSV/export deferred to FD-TAX-2.
+
+---
+
+## 2026-06-24 — FD-ACC-10A-FX-TERMINAL-FIX: All Portfolio value-history terminal alignment
+
+### Problem
+- After the prior all-scope aggregation fix, **All Portfolios INR** value history could still show a sudden drop while **EUR** looked fine.
+- Latest `metric=value` point did not match summary `current_value` (e.g. ~7.1M vs ~16.8M INR on dev DB).
+- Root cause: bulk FX map loader queried only the direct pair direction (`EUR→INR`) and missed inverse-only rows (`INR→EUR`), so EUR portfolios were excluded from INR performance history after the last direct rate date. Secondary gap: daily timeseries holdings vs summary terminal valuation differed slightly.
+
+### Fixed
+- `fx/lookup.py` — `load_fx_rate_maps` loads both directions of each requested pair (matches `get_fx_rate_on_date` inverse semantics).
+- `portfolios/performance_service.py` — `_align_terminal_value_with_summary()` sets the terminal value point from summary KPI when FX is available/filled (same scope, currency, date).
+
+### Tests
+- `backend/tests/test_all_scope_fx_terminal_alignment.py` (new)
+- `backend/tests/test_fx_sync.py` — inverse-only bulk map regression
+
+### Notes
+- Cancelled FD was not the root cause of this mismatch.
+- Historical all-scope dates may still be partial/null when FX is unavailable; terminal date aligns with summary when conversion succeeds.
+
+---
+
+## 2026-06-24 — All Portfolios value chart: cancelled-FD / cash-only drop fix
+
+### Problem
+- After FD-ACC-10A-REPAIR, **All Portfolios** value history could drop to a single portfolio’s broker cash (e.g. 1,109,389 INR) when another child portfolio had `portfolio_value: null` (FX unavailable).
+- Root cause: all-scope aggregation poisoned the sum when any child was `null`; `merge_cash_into_value_timeseries` then substituted broker cash as the total.
+
+### Fixed
+- `portfolios/summary_service.py` — `_aggregate_timeseries_lists` sums known child values; one child’s `null` no longer nulls the entire all-scope row.
+- `cash/services.py` — `merge_cash_into_value_timeseries` no longer replaces unknown investment value with cash-only totals.
+- `debt/portfolio_value.py` — `merge_fd_bank_into_value_timeseries` forward-fills investment value on FD/bank union dates instead of starting from zero.
+
+### Tests
+- `backend/tests/test_cancelled_fd_all_scope_value_history.py` — cancelled repaired FD excluded; FX-gap child does not collapse to cash-only; active FD still included.
+
+---
+
+## 2026-06-24 — FD-ACC-10A-REPAIR: one-time repair for pre-10A deactivated FDs
+
+### Added
+- **`python manage.py repair_deactivated_fd_openings`** — dry-run by default; `--apply` creates `FD_OPENING_REVERSAL` and sets `status=CANCELLED` for eligible inactive FDs deactivated before Cancel FD workflow.
+- Filters: `--fd-id`, `--user-id`, `--reason`.
+- Unsafe cases (interest, settlement, renewal, already cancelled) skipped with report.
+
+### Notes
+- Do **not** manually add a deposit to fix this — use the repair command.
+- Public Cancel FD API unchanged.
+
+---
+
+## 2026-06-24 — FD-ACC-10B: General reversal / correction framework
+
+### Added
+- **`POST /api/v1/cash-movements/{id}/reverse`** — reverses eligible manual movements (`MANUAL_DEPOSIT`, `MANUAL_WITHDRAWAL`, `ADJUSTMENT`, `OPENING_BALANCE`) via `REVERSAL` SYSTEM movement; original retained and linked.
+- **`POST /api/v1/fixed-deposit-interest-payments/{id}/reverse`** — reverses interest payment via `FD_INTEREST_REVERSAL` DEBIT; marks payment `is_reversed`.
+- **Classifier** — reversal rows offset original external-flow classification; income reversals stay income (not external withdrawal); internal reversals stay internal.
+- **UI** — Reverse action on eligible cash movements; Reverse interest on active FD payments; status labels (Reversed / Reversal).
+- **Audit fields** — `CashMovement.reversal_reason`; `FixedDepositInterestPayment.is_reversed`, `reversed_at`.
+
+### Migration
+- `debt.0007_reversal_framework` — `REVERSAL`, `FD_INTEREST_REVERSAL` types; reversal/interest-reversal fields.
+
+### Tests
+- `test_cash_movement_reversals_api.py`, `test_fixed_deposit_interest_reversals_api.py` (new); classifier and cancellation regression tests updated.
+
+### Deferred (FD-ACC-10C)
+- Settlement reversal, renewal reversal, cancel-FD reversal.
+
+---
+
+## 2026-06-24 — FD-ACC-10A: FD cancel / deactivate accounting fix
+
+### Problem
+- `DELETE /fixed-deposits/{id}` soft-deactivated ledger-backed FDs without reversing `FD_OPENING` bank debit.
+- Bank cash stayed reduced; portfolio value dropped FD principal but cash was not restored.
+
+### Fixed
+- **`POST /fixed-deposits/{id}/cancel`** — reverses unreversed `FD_OPENING` via `FD_OPENING_REVERSAL` CREDIT; sets `status=CANCELLED`, `is_active=false`; row retained (not deleted).
+- **`DELETE /fixed-deposits/{id}`** — **409** when unreversed `FD_OPENING` exists; legacy FDs without opening movement still deactivate.
+- **Classifier** — `FD_OPENING_REVERSAL` treated as internal (not external flow).
+- **UI** — ledger-backed FDs show **Cancel FD** with explainer; legacy FDs show **Deactivate**.
+- **Docs** — lifecycle table distinguishes Cancel vs Deactivate vs Settle vs Renew; historical PV limitation documented (FD-ACC-10B deferred).
+
+### Migration
+- `debt.0006_fd_cancellation` — `CANCELLED` status; `FD_OPENING_REVERSAL` movement type.
+
+### Tests
+- `test_fixed_deposit_cancellation_accounting.py` (new); updates to summary/API/classifier tests.
+
+### Deferred
+- Full correction/reversal framework → **FD-ACC-10B**.
+
+---
+
 ## 2026-06-23 — P11: Final frontend redesign audit
 
 ### Audit

@@ -8,15 +8,26 @@ vi.mock('../api', () => ({
   fetchFixedDeposits: vi.fn(),
   fetchPortfolios: vi.fn(),
   fetchBankAccounts: vi.fn(),
+  fetchBankAccountBalance: vi.fn(),
   createFixedDeposit: vi.fn(),
   updateFixedDeposit: vi.fn(),
   deleteFixedDeposit: vi.fn(),
+  cancelFixedDeposit: vi.fn(),
   fetchFixedDepositInterestPayments: vi.fn(),
   createFixedDepositInterestPayment: vi.fn(),
+  reverseFixedDepositInterestPayment: vi.fn(),
   markFixedDepositMatured: vi.fn(),
   renewFixedDeposit: vi.fn(),
   settleFixedDeposit: vi.fn(),
+  fetchFixedDepositInterestReport: vi.fn(),
   invalidateDashboardSummaryCache: vi.fn(),
+  FixedDepositApiError: class FixedDepositApiError extends Error {
+    constructor(message, extras = {}) {
+      super(message);
+      this.name = 'FixedDepositApiError';
+      Object.assign(this, extras);
+    }
+  },
 }));
 
 const sampleFd = {
@@ -77,10 +88,32 @@ function renderPage() {
 describe('FixedDeposits page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Element.prototype.scrollIntoView = vi.fn();
     api.fetchFixedDeposits.mockResolvedValue([sampleFd]);
     api.fetchPortfolios.mockResolvedValue([{ id: 1, name: 'Default Portfolio', is_active: true }]);
     api.fetchBankAccounts.mockResolvedValue([seededBankAccount]);
+    api.fetchBankAccountBalance.mockResolvedValue({
+      bank_account_id: 10,
+      currency: 'INR',
+      current_balance: 250000,
+      balance_as_of_date: 250000,
+      as_of_date: '2026-06-24',
+      opening_balance_seeded: true,
+      has_ledger_entries: true,
+    });
     api.fetchFixedDepositInterestPayments.mockResolvedValue([]);
+    api.fetchFixedDepositInterestReport.mockResolvedValue({
+      rows: [],
+      totals: {
+        gross_interest: 0,
+        tax_withheld: 0,
+        net_interest: 0,
+        currency: 'INR',
+        row_count: 0,
+        fx_status: 'ok',
+      },
+      warnings: [],
+    });
   });
 
   it('renders page header and primary action', async () => {
@@ -121,17 +154,18 @@ describe('FixedDeposits page', () => {
     });
   });
 
-  it('create modal shows ledger balance for seeded bank account', async () => {
+  it('create modal shows current and as-of ledger balance labels', async () => {
     renderPage();
     await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
     fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
     expect(
       screen.getByText(/creating a fixed deposit will debit the principal from the linked bank account/i)
     ).toBeInTheDocument();
-    expect(screen.getByText(/ledger balance \(current total from api\): 250000/i)).toBeInTheDocument();
+    expect(screen.getByText(/current ledger balance:/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/available bank balance is checked as of the fd investment date/i)
+      screen.getByText(/fd creation validates the selected bank account ledger balance as of the investment date/i)
     ).toBeInTheDocument();
+    expect(screen.getByText(/portfolio cash \(cash tab\) and bank ledger/i)).toBeInTheDocument();
   });
 
   it('shows backdated ledger note when investment date is set', async () => {
@@ -145,12 +179,19 @@ describe('FixedDeposits page', () => {
     ).toBeInTheDocument();
   });
 
-  it('shows backdated hint on backend insufficient balance error', async () => {
-    api.createFixedDeposit.mockRejectedValueOnce(
-      new Error(
-        'Insufficient bank account balance for this movement.; required: 100000; available: 0; shortfall: 100000; currency: INR; For backdated FDs, record or seed bank cash on or before the investment date.'
-      )
-    );
+  it('shows structured backend insufficient balance details and focuses error', async () => {
+    const err = new api.FixedDepositApiError('Insufficient bank account balance for this movement.', {
+      detail: 'Insufficient bank account balance for this movement.',
+      required: 100000,
+      available: 0,
+      available_as_of_date: 0,
+      current_balance: 1359389,
+      shortfall: 100000,
+      currency: 'INR',
+      investment_date: '2024-01-01',
+      hint: 'For backdated FDs, record or seed bank cash on or before the investment date.',
+    });
+    api.createFixedDeposit.mockRejectedValueOnce(err);
     renderPage();
     await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
     fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
@@ -165,9 +206,13 @@ describe('FixedDeposits page', () => {
     fireEvent.click(screen.getByRole('button', { name: /^create$/i }));
 
     await waitFor(() => {
-      expect(screen.getByText(/available as of investment date: 0/i)).toBeInTheDocument();
-      expect(screen.getByText(/for backdated fds, record or seed bank cash/i)).toBeInTheDocument();
+      const panel = document.querySelector('.fd-form__error-panel');
+      expect(panel).toBeTruthy();
+      expect(panel).toHaveTextContent(/available as of investment date:/i);
+      expect(panel).toHaveTextContent(/current ledger balance:/i);
+      expect(panel).toHaveTextContent(/for backdated fds, record or seed bank cash/i);
     });
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
   });
 
   it('shows seed warning and zero ledger balance when opening balance is not seeded', async () => {
@@ -176,28 +221,42 @@ describe('FixedDeposits page', () => {
     await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
     fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
 
-    expect(screen.getByText(/ledger balance \(current total from api\): 0/i)).toBeInTheDocument();
+    expect(screen.getByText(/current ledger balance:/i)).toBeInTheDocument();
     expect(screen.getByText(/reference balance \(250000/i)).toBeInTheDocument();
-    expect(
-      screen.getByText(/opening balance is not yet seeded into the cash ledger/i)
-    ).toBeInTheDocument();
+    expect(screen.getAllByText(/opening balance is not yet seeded into the cash ledger/i).length).toBeGreaterThan(0);
 
     fireEvent.change(screen.getByLabelText(/principal amount/i), { target: { value: '100000' } });
     expect(screen.getByRole('button', { name: /^create$/i })).toBeDisabled();
-    expect(screen.getAllByText(/opening balance is not yet seeded into the cash ledger/i).length).toBeGreaterThan(0);
   });
 
-  it('shows insufficient ledger warning when principal exceeds available balance', async () => {
+  it('shows as-of shortfall warning when principal exceeds investment-date balance', async () => {
+    api.fetchBankAccountBalance.mockResolvedValue({
+      bank_account_id: 10,
+      currency: 'INR',
+      current_balance: 250000,
+      balance_as_of_date: 100000,
+      as_of_date: '2024-01-01',
+    });
     renderPage();
     await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
     fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.change(screen.getByLabelText(/investment date/i), { target: { value: '2024-01-01' } });
     fireEvent.change(screen.getByLabelText(/principal amount/i), { target: { value: '300000' } });
 
-    expect(screen.getByText(/insufficient ledger balance/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^create$/i })).toBeDisabled();
+    await waitFor(() => {
+      expect(screen.getByText(/available as of 2024-01-01 is/i)).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: /^create$/i })).not.toBeDisabled();
   });
 
-  it('successful create works with seeded ledger balance', async () => {
+  it('successful create works when investment date matches deposit date balance', async () => {
+    api.fetchBankAccountBalance.mockResolvedValue({
+      bank_account_id: 10,
+      currency: 'INR',
+      current_balance: 1109389,
+      balance_as_of_date: 1109389,
+      as_of_date: '2023-09-24',
+    });
     api.createFixedDeposit.mockResolvedValueOnce({
       ...sampleFd,
       id: 2,
@@ -209,6 +268,41 @@ describe('FixedDeposits page', () => {
     fireEvent.change(screen.getByLabelText(/institution/i), { target: { value: 'HDFC' } });
     fireEvent.change(screen.getByLabelText(/deposit account number/i), {
       target: { value: 'FD-NEW' },
+    });
+    fireEvent.change(screen.getByLabelText(/principal amount/i), { target: { value: '1109389' } });
+    fireEvent.change(screen.getByLabelText(/interest rate/i), { target: { value: '7' } });
+    fireEvent.change(screen.getByLabelText(/investment date/i), { target: { value: '2023-09-24' } });
+    fireEvent.change(screen.getByLabelText(/maturity date/i), { target: { value: '2024-09-24' } });
+    fireEvent.click(screen.getByRole('button', { name: /^create$/i }));
+
+    await waitFor(() => {
+      expect(api.createFixedDeposit).toHaveBeenCalled();
+      expect(screen.getByText(/fixed deposit created/i)).toBeInTheDocument();
+    });
+  });
+
+  it('fetches as-of balance when investment date changes', async () => {
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.change(screen.getByLabelText(/investment date/i), { target: { value: '2023-09-24' } });
+    await waitFor(() => {
+      expect(api.fetchBankAccountBalance).toHaveBeenCalledWith(10, { as_of: '2023-09-24' });
+    });
+  });
+
+  it('legacy successful create works with seeded ledger balance', async () => {
+    api.createFixedDeposit.mockResolvedValueOnce({
+      ...sampleFd,
+      id: 2,
+      deposit_account_number: 'FD-NEW-2',
+    });
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.change(screen.getByLabelText(/institution/i), { target: { value: 'HDFC' } });
+    fireEvent.change(screen.getByLabelText(/deposit account number/i), {
+      target: { value: 'FD-NEW-2' },
     });
     fireEvent.change(screen.getByLabelText(/principal amount/i), { target: { value: '100000' } });
     fireEvent.change(screen.getByLabelText(/interest rate/i), { target: { value: '7' } });
@@ -316,6 +410,44 @@ describe('FixedDeposits page', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/not allowed for closed fixed deposits/i)).toBeInTheDocument();
+    });
+  });
+
+  it('reverses interest payment from expanded payments table', async () => {
+    api.fetchFixedDepositInterestPayments.mockResolvedValueOnce([
+      {
+        id: 42,
+        payment_date: '2024-04-01',
+        gross_interest: 1000,
+        tax_withheld: 100,
+        net_interest: 900,
+        currency: 'INR',
+        comment: '',
+        is_reversed: false,
+      },
+    ]);
+    api.reverseFixedDepositInterestPayment.mockResolvedValueOnce({
+      message: 'Fixed deposit interest payment reversed.',
+    });
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /interest payments/i }));
+    fireEvent.click(screen.getByRole('button', { name: /interest payments/i }));
+
+    await waitFor(() => screen.getByRole('button', { name: /reverse interest/i }));
+    fireEvent.click(screen.getByRole('button', { name: /reverse interest/i }));
+    expect(screen.getByText(/this debits net interest/i)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/reason \(required\)/i), {
+      target: { value: 'Wrong quarter' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /confirm reversal/i }));
+
+    await waitFor(() => {
+      expect(api.reverseFixedDepositInterestPayment).toHaveBeenCalledWith(42, {
+        reversal_date: expect.any(String),
+        reason: 'Wrong quarter',
+      });
+      expect(screen.getByText(/interest payment reversed/i)).toBeInTheDocument();
     });
   });
 
@@ -477,5 +609,104 @@ describe('FixedDeposits page', () => {
 
     expect(screen.getByText(/tax withheld cannot exceed gross interest/i)).toBeInTheDocument();
     expect(api.renewFixedDeposit).not.toHaveBeenCalled();
+  });
+
+  it('shows Cancel FD for ledger-backed active FD', async () => {
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /cancel fd/i }));
+    expect(screen.queryByRole('button', { name: /^deactivate$/i })).not.toBeInTheDocument();
+  });
+
+  it('shows Deactivate for legacy FD without opening movement', async () => {
+    api.fetchFixedDeposits.mockResolvedValue([
+      { ...sampleFd, has_opening_cash_movement: false, opening_cash_movement_id: null },
+    ]);
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /^deactivate$/i }));
+    expect(screen.queryByRole('button', { name: /cancel fd/i })).not.toBeInTheDocument();
+  });
+
+  it('cancel success refreshes list and shows status', async () => {
+    api.cancelFixedDeposit.mockResolvedValueOnce({ ...sampleFd, status: 'CANCELLED', is_active: false });
+    window.confirm = vi.fn(() => true);
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /cancel fd/i }));
+    fireEvent.click(screen.getByRole('button', { name: /cancel fd/i }));
+
+    await waitFor(() => {
+      expect(api.cancelFixedDeposit).toHaveBeenCalledWith(1, {});
+      expect(screen.getByText(/cancelled/i)).toBeInTheDocument();
+    });
+  });
+
+  it('cancel error is displayed', async () => {
+    api.cancelFixedDeposit.mockRejectedValueOnce(new Error('Cannot cancel with interest payments'));
+    window.confirm = vi.fn(() => true);
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /cancel fd/i }));
+    fireEvent.click(screen.getByRole('button', { name: /cancel fd/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/cannot cancel with interest payments/i)).toBeInTheDocument();
+    });
+  });
+
+  it('renders interest and tax report section with disclaimer', async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /interest & tax report/i })).toBeInTheDocument();
+      expect(screen.getByText(/this is not tax advice/i)).toBeInTheDocument();
+    });
+  });
+
+  it('loads interest report with date filters and shows totals', async () => {
+    api.fetchFixedDepositInterestReport.mockResolvedValueOnce({
+      rows: [
+        {
+          source_type: 'INTEREST_PAYMENT',
+          source_id: 1,
+          date: '2024-04-01',
+          portfolio_name: 'Default Portfolio',
+          institution_name: 'HDFC',
+          deposit_account_number: 'FD-001',
+          bank_account_name: 'Savings',
+          gross_interest: 1000,
+          tax_withheld: 100,
+          net_interest: 900,
+          currency: 'INR',
+          comment: '',
+        },
+      ],
+      totals: {
+        gross_interest: 1000,
+        tax_withheld: 100,
+        net_interest: 900,
+        currency: 'INR',
+        row_count: 1,
+        fx_status: 'ok',
+      },
+      warnings: [],
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(api.fetchFixedDepositInterestReport).toHaveBeenCalled();
+      expect(screen.getByText('Interest payment')).toBeInTheDocument();
+      expect(screen.getByText('Gross interest')).toBeInTheDocument();
+    });
+  });
+
+  it('shows interest report empty state', async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText(/no interest rows/i)).toBeInTheDocument();
+    });
+  });
+
+  it('shows interest report error state', async () => {
+    api.fetchFixedDepositInterestReport.mockRejectedValueOnce(new Error('Report failed'));
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText(/report failed/i)).toBeInTheDocument();
+    });
   });
 });

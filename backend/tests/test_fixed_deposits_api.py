@@ -210,14 +210,28 @@ def test_list_filters_by_portfolio_id(api_client, seeded, test_user):
 
 
 @pytest.mark.django_db
-def test_soft_delete_deactivates_fd(api_client, seeded, test_user):
+def test_soft_delete_deactivates_legacy_fd(api_client, seeded, test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    bank = _bank(test_user)
+    fd = create_fixed_deposit(
+        test_user,
+        **_fd_payload(portfolio.id, bank.id),
+        skip_opening_debit=True,
+    )
+    response = api_client.delete(f"/api/v1/fixed-deposits/{fd.id}")
+    assert response.status_code == 200
+    assert response.json()["is_active"] is False
+
+
+@pytest.mark.django_db
+def test_soft_delete_blocks_ledger_backed_fd(api_client, seeded, test_user):
     portfolio = ensure_default_portfolio(test_user)
     bank = _bank(test_user)
     fund_bank_account(test_user, bank, "150000")
     fd = create_fixed_deposit(test_user, **_fd_payload(portfolio.id, bank.id))
     response = api_client.delete(f"/api/v1/fixed-deposits/{fd.id}")
-    assert response.status_code == 200
-    assert response.json()["is_active"] is False
+    assert response.status_code == 409
+    assert "Cancel FD" in response.json()["detail"]
 
 
 @pytest.mark.django_db
@@ -262,8 +276,11 @@ def test_create_via_service_rejects_inactive_portfolio(seeded, test_user):
 def test_deactivated_fd_excluded_from_active_list(api_client, seeded, test_user):
     portfolio = ensure_default_portfolio(test_user)
     bank = _bank(test_user)
-    fund_bank_account(test_user, bank, "150000")
-    fd = create_fixed_deposit(test_user, **_fd_payload(portfolio.id, bank.id))
+    fd = create_fixed_deposit(
+        test_user,
+        **_fd_payload(portfolio.id, bank.id),
+        skip_opening_debit=True,
+    )
     deactivate_fixed_deposit(test_user, fd.id)
     response = api_client.get("/api/v1/fixed-deposits")
     assert response.status_code == 200
@@ -284,11 +301,158 @@ def test_create_fd_rejects_insufficient_bank_balance(api_client, seeded, test_us
     assert "Insufficient" in body["detail"]
     assert body["required"] == 100000.0
     assert body["available"] == 0.0
+    assert body["available_as_of_date"] == 0.0
+    assert body["current_balance"] == 0.0
+    assert body["investment_date"] == "2024-01-01"
     assert body["shortfall"] > 0
     assert "hint" in body
-    assert "backdated" in body["hint"].lower()
+    assert "backdated" in body["hint"].lower() or "investment date" in body["hint"].lower()
     assert FixedDeposit.objects.filter(user=test_user).count() == 0
     assert CashMovement.objects.filter(user=test_user).count() == 0
+
+
+@pytest.mark.django_db
+def test_create_fd_rejects_when_as_of_balance_insufficient_but_current_sufficient(
+    api_client, seeded, test_user,
+):
+    """Deposit on 2023-09-24; FD on 2023-09-23 must fail despite higher current balance."""
+    portfolio = ensure_default_portfolio(test_user)
+    bank = _bank(test_user)
+    fund_bank_account(
+        test_user,
+        bank,
+        "1109389",
+        movement_date=date(2023, 9, 24),
+    )
+    bank.refresh_from_db()
+    assert bank.current_balance == Decimal("1109389")
+
+    response = api_client.post(
+        "/api/v1/fixed-deposits",
+        _fd_payload(
+            portfolio.id,
+            bank.id,
+            principal_amount=Decimal("1109389"),
+            investment_date=date(2023, 9, 23),
+            maturity_date=date(2024, 9, 23),
+        ),
+        format="json",
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["required"] == 1109389.0
+    assert body["available_as_of_date"] == 0.0
+    assert body["current_balance"] == 1109389.0
+    assert body["investment_date"] == "2023-09-23"
+    assert body["shortfall"] == 1109389.0
+    assert body["currency"] == "INR"
+    assert "investment date" in body["hint"].lower()
+
+
+@pytest.mark.django_db
+def test_create_fd_succeeds_when_deposit_same_date_as_investment(api_client, seeded, test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    bank = _bank(test_user)
+    fund_bank_account(
+        test_user,
+        bank,
+        "1109389",
+        movement_date=date(2023, 9, 24),
+    )
+    response = api_client.post(
+        "/api/v1/fixed-deposits",
+        _fd_payload(
+            portfolio.id,
+            bank.id,
+            principal_amount=Decimal("1109389"),
+            investment_date=date(2023, 9, 24),
+            maturity_date=date(2024, 9, 24),
+        ),
+        format="json",
+    )
+    assert response.status_code == 201
+
+
+@pytest.mark.django_db
+def test_create_fd_succeeds_when_deposit_before_investment_date(api_client, seeded, test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    bank = _bank(test_user)
+    fund_bank_account(
+        test_user,
+        bank,
+        "1109389",
+        movement_date=date(2023, 9, 24),
+    )
+    response = api_client.post(
+        "/api/v1/fixed-deposits",
+        _fd_payload(
+            portfolio.id,
+            bank.id,
+            principal_amount=Decimal("500000"),
+            investment_date=date(2023, 9, 25),
+            maturity_date=date(2024, 9, 25),
+        ),
+        format="json",
+    )
+    assert response.status_code == 201
+
+
+@pytest.mark.django_db
+def test_create_fd_unseeded_opening_balance_not_usable_ledger_cash(api_client, seeded, test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    bank = create_bank_account(
+        test_user,
+        name="Savings",
+        institution_name="HDFC",
+        account_number="REF-ONLY",
+        currency="INR",
+        opening_balance=Decimal("250000"),
+        current_balance=Decimal("250000"),
+    )
+    fund_bank_account(test_user, bank, "100000", movement_date=date(2024, 1, 1))
+    response = api_client.post(
+        "/api/v1/fixed-deposits",
+        _fd_payload(
+            portfolio.id,
+            bank.id,
+            principal_amount=Decimal("350000"),
+            investment_date=date(2024, 1, 1),
+        ),
+        format="json",
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["available_as_of_date"] == 100000.0
+    assert body["current_balance"] == 100000.0
+    assert "seed" in body["hint"].lower()
+
+
+@pytest.mark.django_db
+def test_create_fd_uses_linked_bank_not_other_account_balance(api_client, seeded, test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    funded = _bank(test_user, account_number="FUNDED-1")
+    fund_bank_account(test_user, funded, "500000", movement_date=date(2024, 1, 1))
+    empty = create_bank_account(
+        test_user,
+        name="Empty",
+        institution_name="HDFC",
+        account_number="EMPTY-1",
+        currency="INR",
+    )
+    response = api_client.post(
+        "/api/v1/fixed-deposits",
+        _fd_payload(
+            portfolio.id,
+            empty.id,
+            principal_amount=Decimal("100000"),
+            investment_date=date(2024, 1, 1),
+        ),
+        format="json",
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["available_as_of_date"] == 0.0
+    assert body["current_balance"] == 0.0
 
 
 @pytest.mark.django_db

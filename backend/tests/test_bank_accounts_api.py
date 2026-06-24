@@ -147,3 +147,33 @@ def test_model_validation_empty_name(seeded, test_user):
             account_number="1",
             currency="INR",
         )
+
+
+@pytest.mark.django_db
+def test_bank_account_balance_endpoint_current_and_as_of(api_client, seeded, test_user):
+    from datetime import date
+    from tests.debt_test_helpers import fund_bank_account
+
+    account = _create_account(test_user, opening_balance=Decimal("0"), current_balance=Decimal("0"))
+    fund_bank_account(test_user, account, "1109389", movement_date=date(2023, 9, 24))
+
+    current = api_client.get(f"/api/v1/bank-accounts/{account.id}/balance")
+    assert current.status_code == 200
+    body = current.json()
+    assert body["current_balance"] == 1109389.0
+    assert body["currency"] == "INR"
+
+    as_of_before = api_client.get(
+        f"/api/v1/bank-accounts/{account.id}/balance",
+        {"as_of": "2023-09-23"},
+    )
+    assert as_of_before.status_code == 200
+    as_of_body = as_of_before.json()
+    assert as_of_body["balance_as_of_date"] == 0.0
+    assert as_of_body["as_of_date"] == "2023-09-23"
+
+    as_of_same = api_client.get(
+        f"/api/v1/bank-accounts/{account.id}/balance",
+        {"as_of": "2023-09-24"},
+    )
+    assert as_of_same.json()["balance_as_of_date"] == 1109389.0

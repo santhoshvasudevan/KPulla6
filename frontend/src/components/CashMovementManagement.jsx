@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { createCashMovement, fetchCashMovements } from '../api';
+import { createCashMovement, fetchCashMovements, reverseCashMovement } from '../api';
 import {
   Button,
   EmptyState,
@@ -18,12 +18,15 @@ function formatMovementType(type) {
   if (!type) return '—';
   const labels = {
     FD_OPENING: 'FD opening',
+    FD_OPENING_REVERSAL: 'FD opening reversal',
     FD_INTEREST: 'FD interest',
     FD_MATURITY_PRINCIPAL: 'FD maturity principal',
     FD_MATURITY_INTEREST: 'FD maturity interest',
     FD_CLOSURE_PRINCIPAL: 'FD closure principal',
     FD_CLOSURE_INTEREST: 'FD closure interest',
     OPENING_BALANCE: 'Opening balance',
+    REVERSAL: 'Reversal',
+    FD_INTEREST_REVERSAL: 'FD interest reversal',
   };
   if (labels[type]) return labels[type];
   return type
@@ -53,6 +56,35 @@ function directionForType(movementType) {
   return null;
 }
 
+const REVERSIBLE_MOVEMENT_TYPES = new Set([
+  'MANUAL_DEPOSIT',
+  'MANUAL_WITHDRAWAL',
+  'ADJUSTMENT',
+  'OPENING_BALANCE',
+]);
+
+function canReverseMovement(movement) {
+  if (!movement || movement.is_reversal || movement.is_reversed) return false;
+  if (movement.source !== 'MANUAL') return false;
+  return REVERSIBLE_MOVEMENT_TYPES.has(movement.movement_type);
+}
+
+function emptyReverseForm() {
+  return {
+    reversal_date: new Date().toISOString().slice(0, 10),
+    reason: '',
+  };
+}
+
+function movementStatusLabel(movement) {
+  if (movement.is_reversal) {
+    const suffix = movement.reverses_id ? ` #${movement.reverses_id}` : '';
+    return `Reversal (reverses${suffix})`;
+  }
+  if (movement.is_reversed) return 'Reversed';
+  return '—';
+}
+
 export default function CashMovementManagement({ account, onAccountUpdated, refreshKey = 0 }) {
   const [movements, setMovements] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -62,6 +94,11 @@ export default function CashMovementManagement({ account, onAccountUpdated, refr
   const [form, setForm] = useState(emptyForm);
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [reverseModalOpen, setReverseModalOpen] = useState(false);
+  const [reverseTarget, setReverseTarget] = useState(null);
+  const [reverseForm, setReverseForm] = useState(emptyReverseForm);
+  const [reverseError, setReverseError] = useState('');
+  const [reverseSubmitting, setReverseSubmitting] = useState(false);
 
   const loadMovements = useCallback(async () => {
     if (!account?.id) return;
@@ -92,6 +129,52 @@ export default function CashMovementManagement({ account, onAccountUpdated, refr
   const closeModal = () => {
     setModalOpen(false);
     setFormError('');
+  };
+
+  const openReverseModal = (movement) => {
+    setReverseTarget(movement);
+    setReverseForm(emptyReverseForm());
+    setReverseError('');
+    setStatus('');
+    setReverseModalOpen(true);
+  };
+
+  const closeReverseModal = () => {
+    setReverseModalOpen(false);
+    setReverseTarget(null);
+    setReverseError('');
+  };
+
+  const handleReverseSubmit = async (e) => {
+    e.preventDefault();
+    setReverseError('');
+    if (!reverseTarget?.id) return;
+    if (!reverseForm.reason.trim()) {
+      setReverseError('Reason is required for audit.');
+      return;
+    }
+    if (!reverseForm.reversal_date) {
+      setReverseError('Reversal date is required.');
+      return;
+    }
+    setReverseSubmitting(true);
+    try {
+      await reverseCashMovement(reverseTarget.id, {
+        reversal_date: reverseForm.reversal_date,
+        reason: reverseForm.reason.trim(),
+      });
+      setReverseModalOpen(false);
+      setReverseTarget(null);
+      setStatus('Cash movement reversed. An opposite ledger entry was created.');
+      await loadMovements();
+      if (onAccountUpdated) {
+        await onAccountUpdated();
+      }
+    } catch (err) {
+      setReverseError(err.message || 'Failed to reverse cash movement.');
+    } finally {
+      setReverseSubmitting(false);
+    }
   };
 
   const handleTypeChange = (movementType) => {
@@ -198,8 +281,10 @@ export default function CashMovementManagement({ account, onAccountUpdated, refr
                 <th>Direction</th>
                 <th className="num-col">Amount</th>
                 <th>Description</th>
+                <th>Status</th>
                 <th>Source</th>
                 <th>Created at</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -210,8 +295,27 @@ export default function CashMovementManagement({ account, onAccountUpdated, refr
                   <td>{m.direction}</td>
                   <td className="num-col">{m.amount}</td>
                   <td>{m.description || '—'}</td>
+                  <td>
+                    {movementStatusLabel(m)}
+                    {m.reversal_reason ? (
+                      <span className="settings-hint"> — {m.reversal_reason}</span>
+                    ) : null}
+                  </td>
                   <td>{m.source}</td>
                   <td>{formatTimestamp(m.created_at)}</td>
+                  <td>
+                    {canReverseMovement(m) ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => openReverseModal(m)}
+                      >
+                        Reverse
+                      </Button>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -304,6 +408,61 @@ export default function CashMovementManagement({ account, onAccountUpdated, refr
                   {submitting ? 'Saving…' : 'Save movement'}
                 </Button>
                 <Button type="button" variant="secondary" onClick={closeModal}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {reverseModalOpen && reverseTarget ? (
+        <div
+          className="cash-movement-modal-backdrop"
+          role="presentation"
+          onClick={closeReverseModal}
+        >
+          <div
+            className="cash-movement-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cash-movement-reverse-modal-title"
+            onClick={(ev) => ev.stopPropagation()}
+          >
+            <h2 id="cash-movement-reverse-modal-title">Reverse cash movement</h2>
+            <p className="settings-hint">
+              This creates an opposite ledger entry. The original movement stays visible and is
+              marked reversed.
+            </p>
+            {reverseError ? <WarningBanner severity="error" message={reverseError} /> : null}
+            <form onSubmit={handleReverseSubmit} className="settings-form">
+              <div className="form-group">
+                <label htmlFor="cm-reverse-date">Reversal date</label>
+                <input
+                  id="cm-reverse-date"
+                  type="date"
+                  value={reverseForm.reversal_date}
+                  onChange={(e) =>
+                    setReverseForm((p) => ({ ...p, reversal_date: e.target.value }))
+                  }
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="cm-reverse-reason">Reason (required)</label>
+                <textarea
+                  id="cm-reverse-reason"
+                  value={reverseForm.reason}
+                  onChange={(e) => setReverseForm((p) => ({ ...p, reason: e.target.value }))}
+                  rows={3}
+                  required
+                />
+              </div>
+              <div className="cash-movement-modal__actions">
+                <Button type="submit" variant="primary" disabled={reverseSubmitting}>
+                  {reverseSubmitting ? 'Reversing…' : 'Confirm reversal'}
+                </Button>
+                <Button type="button" variant="secondary" onClick={closeReverseModal}>
                   Cancel
                 </Button>
               </div>

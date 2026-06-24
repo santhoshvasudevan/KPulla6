@@ -227,7 +227,9 @@ def create_fixed_deposit(
     from debt.bank_ledger_services import (
         InsufficientBankBalanceError,
         bank_account_has_ledger,
+        compute_bank_account_balance,
         create_fd_opening_cash_movement,
+        latest_ledger_movement_date,
         opening_balance_is_seeded,
         validate_no_overdraft,
     )
@@ -254,18 +256,33 @@ def create_fixed_deposit(
                 as_of_date=investment_date,
             )
         except InsufficientBankBalanceError as exc:
-            if (
+            current_balance = compute_bank_account_balance(bank_account)
+            latest_ledger_date = latest_ledger_movement_date(bank_account)
+            has_ledger = bank_account_has_ledger(bank_account)
+            unseeded_opening = (
                 bank_account.opening_balance > 0
                 and not opening_balance_is_seeded(bank_account)
-                and not bank_account_has_ledger(bank_account)
-            ):
+            )
+            if unseeded_opening and not has_ledger:
                 hint = (
                     "Opening balance has not been seeded into the cash ledger yet. "
                     "Use Settings → Bank Accounts → Seed opening balance first."
                 )
+            elif unseeded_opening:
+                hint = (
+                    "Reference opening balance is not ledger cash until seeded. "
+                    "Seed opening balance dated on or before the FD investment date."
+                )
+            elif current_balance > exc.available:
+                hint = (
+                    "Current ledger balance is higher because cash movements exist after "
+                    "the FD investment date. Record or seed bank cash on or before the "
+                    "investment date."
+                )
             else:
                 hint = (
-                    "For backdated FDs, record or seed bank cash on or before the investment date."
+                    "For backdated FDs, record or seed bank cash on or before the "
+                    "investment date."
                 )
             raise InsufficientBankBalanceError(
                 str(exc),
@@ -274,6 +291,10 @@ def create_fixed_deposit(
                 shortfall=exc.shortfall,
                 currency=exc.currency,
                 hint=hint,
+                current_balance=current_balance,
+                available_as_of_date=exc.available,
+                investment_date=investment_date,
+                latest_ledger_balance_date=latest_ledger_date,
             ) from exc
 
     fd = FixedDeposit(
@@ -384,9 +405,15 @@ def update_fixed_deposit(
 
 
 def deactivate_fixed_deposit(user: AbstractBaseUser, fd_id: int) -> FixedDeposit:
+    from debt.bank_ledger_services import fixed_deposit_has_unreversed_opening_cash_movement
+
     fd = get_fixed_deposit(user, fd_id)
     if not fd.is_active:
         raise FixedDepositNotFoundError(f"Fixed deposit not found: {fd_id}")
+    if fixed_deposit_has_unreversed_opening_cash_movement(fd.id):
+        raise FixedDepositValidationError(
+            "This FD has bank ledger movements. Use Cancel FD to reverse the opening debit."
+        )
     fd.is_active = False
     fd.save()
     return fd

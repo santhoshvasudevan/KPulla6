@@ -368,7 +368,7 @@ def build_fd_holding_rows(
                 display_value = converted
 
         value_status = "principal_only"
-        if fd.status in ("CLOSED", "MATURED_SETTLED") or not fd.is_active:
+        if fd.status in ("CLOSED", "MATURED_SETTLED", "CANCELLED") or not fd.is_active:
             value_status = "closed"
         elif principal <= 0:
             value_status = "excluded"
@@ -404,7 +404,7 @@ def build_fd_holding_rows(
                 "value_status": value_status,
                 "holding_status": (
                     "closed"
-                    if fd.status in ("CLOSED", "MATURED_SETTLED")
+                    if fd.status in ("CLOSED", "MATURED_SETTLED", "CANCELLED")
                     else "ok"
                 ),
                 "fx_status": "fx_unavailable" if fx_missing else "ok",
@@ -814,23 +814,34 @@ def merge_fd_bank_into_value_timeseries(
     out = []
     inv_by_date = {row["date"]: row for row in investment_ts}
     all_dates = sorted(set(inv_by_date) | set(fd_by_date) | set(bank_by_date))
+    last_known_inv_pv: float | None = None
     for day in all_dates:
         if day < start_date.isoformat() or day > end_date.isoformat():
             continue
         base_row = inv_by_date.get(day)
-        if base_row is None:
+        if base_row is not None:
+            merged = dict(base_row)
+            inv_val = merged.get("portfolio_value")
+            if inv_val is not None:
+                last_known_inv_pv = float(inv_val)
+        elif last_known_inv_pv is not None:
+            merged = {
+                "date": day,
+                "portfolio_value": last_known_inv_pv,
+                "invested_amount": 0.0,
+                "fx_status": "ok",
+            }
+        else:
             merged = {
                 "date": day,
                 "portfolio_value": 0.0,
                 "invested_amount": 0.0,
                 "fx_status": "ok",
             }
-        else:
-            merged = dict(base_row)
         addon, fx_status = _addon_for_date(day)
         inv_val = merged.get("portfolio_value")
         if inv_val is None:
-            merged["portfolio_value"] = addon if addon else None
+            merged["portfolio_value"] = None
         else:
             merged["portfolio_value"] = float(inv_val) + addon
         merged["fx_status"] = _combine_fx_status(

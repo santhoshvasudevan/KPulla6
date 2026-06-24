@@ -1300,7 +1300,8 @@ def merge_cash_into_value_timeseries(
         cash_val = float(cash_pt["cash_value"]) if cash_pt else 0.0
         inv_val = row.get("portfolio_value")
         if inv_val is None:
-            merged["portfolio_value"] = cash_val if cash_val else None
+            # Do not substitute broker cash when investment value is unknown.
+            merged["portfolio_value"] = None
         else:
             merged["portfolio_value"] = float(inv_val) + cash_val
         if cash_pt:

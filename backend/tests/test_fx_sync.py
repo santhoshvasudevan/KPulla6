@@ -74,6 +74,27 @@ def test_missing_fx_lookup_returns_none():
 
 
 @pytest.mark.django_db
+def test_load_fx_rate_maps_includes_inverse_stored_pair():
+    """Bulk FX maps must resolve rates stored only in the inverse direction."""
+    from fx.lookup import convert_amount_with_fill_from_maps, load_fx_rate_maps
+
+    d = date(2026, 6, 24)
+    upsert_fx_rate(
+        from_currency="INR",
+        to_currency="EUR",
+        row_date=d - timedelta(days=1),
+        rate=Decimal("0.009234"),
+    )
+    fx_maps = load_fx_rate_maps({("EUR", "INR")}, d - timedelta(days=30), d)
+    cv, status = convert_amount_with_fill_from_maps(
+        Decimal("1000"), "EUR", "INR", d, fx_maps
+    )
+    assert cv is not None
+    assert status == "filled"
+    assert cv == pytest.approx(Decimal("1000") / Decimal("0.009234"), rel=1e-6)
+
+
+@pytest.mark.django_db
 def test_no_latest_fx_fallback_for_historical_date():
     d1 = date(2026, 1, 1)
     d2 = date(2026, 1, 10)

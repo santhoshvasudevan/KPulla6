@@ -18,6 +18,7 @@ from debt.bank_ledger_services import (
     bank_account_ledger_metadata,
     fixed_deposit_has_opening_cash_movement,
     get_fd_opening_cash_movement_id,
+    movement_has_been_reversed,
 )
 
 
@@ -156,6 +157,8 @@ class CashMovementSerializer(serializers.ModelSerializer):
         source="portfolio.id", read_only=True, allow_null=True
     )
     signed_amount = serializers.SerializerMethodField()
+    is_reversed = serializers.SerializerMethodField()
+    reversed_by_id = serializers.SerializerMethodField()
 
     class Meta:
         model = CashMovement
@@ -175,6 +178,9 @@ class CashMovementSerializer(serializers.ModelSerializer):
             "source",
             "is_reversal",
             "reverses_id",
+            "reversal_reason",
+            "is_reversed",
+            "reversed_by_id",
             "created_at",
             "updated_at",
         )
@@ -185,6 +191,17 @@ class CashMovementSerializer(serializers.ModelSerializer):
 
         return float(signed_movement_amount(obj.amount, obj.direction))
 
+    def get_is_reversed(self, obj: CashMovement) -> bool:
+        if hasattr(obj, "_is_reversed"):
+            return bool(obj._is_reversed)
+        return movement_has_been_reversed(obj)
+
+    def get_reversed_by_id(self, obj: CashMovement):
+        if obj.is_reversal:
+            return None
+        reversal = obj.reversal_rows.filter(is_reversal=True).order_by("id").first()
+        return reversal.id if reversal else None
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data["amount"] = float(instance.amount)
@@ -193,7 +210,19 @@ class CashMovementSerializer(serializers.ModelSerializer):
         data["updated_at"] = instance.updated_at.isoformat()
         if not data.get("description"):
             data["description"] = None
+        if not data.get("reversal_reason"):
+            data["reversal_reason"] = None
         return data
+
+
+class ReversalWriteSerializer(serializers.Serializer):
+    reversal_date = serializers.DateField(required=False, allow_null=True)
+    reason = serializers.CharField()
+
+    def validate_reason(self, value: str) -> str:
+        if not (value or "").strip():
+            raise serializers.ValidationError("reason is required for audit.")
+        return value.strip()
 
 
 class CashMovementCreateSerializer(serializers.Serializer):
@@ -321,6 +350,8 @@ class FixedDepositInterestPaymentSerializer(serializers.ModelSerializer):
             "currency",
             "cash_movement_id",
             "comment",
+            "is_reversed",
+            "reversed_at",
             "created_at",
             "updated_at",
         )
@@ -334,6 +365,9 @@ class FixedDepositInterestPaymentSerializer(serializers.ModelSerializer):
         data["payment_date"] = instance.payment_date.isoformat()
         data["created_at"] = instance.created_at.isoformat()
         data["updated_at"] = instance.updated_at.isoformat()
+        data["reversed_at"] = (
+            instance.reversed_at.isoformat() if instance.reversed_at else None
+        )
         if not data.get("comment"):
             data["comment"] = None
         return data
@@ -464,6 +498,10 @@ class FixedDepositSettlementWriteSerializer(serializers.Serializer):
                 "At least one of principal_returned or net_interest must be greater than zero."
             )
         return attrs
+
+
+class FixedDepositCancelWriteSerializer(serializers.Serializer):
+    cancellation_date = serializers.DateField(required=False, allow_null=True)
 
 
 class FixedDepositRenewalWriteSerializer(serializers.Serializer):

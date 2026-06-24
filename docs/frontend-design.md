@@ -121,12 +121,19 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 
 - Table lists backend FD fields only (no interest or portfolio value calculations in React)
 - Add/Edit modal: portfolio and bank account dropdowns (active records only); currency read-only from selected bank account
-- **Create:** explainer that principal debits linked bank account; shows bank `current_balance` from API; backend rejects insufficient balance
+- **Create:** explainer that principal debits linked bank account; shows **current ledger balance** and **available as of investment date** (from balance API); backend rejects when as-of balance insufficient; structured error panel with auto-scroll/focus
 - **Edit:** when `has_opening_cash_movement`, principal/bank/currency/investment date/portfolio fields disabled; backend enforces immutability
-- Principal, rate, dates, status displayed from API; deactivate via DELETE (soft)
-- **Record interest (FD-ACC-4):** modal with payment date, gross interest, tax withheld, display-only net; expandable per-FD interest payment list from API
+- Principal, rate, dates, status displayed from API
+- **Lifecycle actions (FD-ACC-10A)** — four distinct paths; do not interchange:
+  - **Cancel FD:** mistaken ledger-backed creation; `POST .../cancel`; reverses opening bank debit; confirmation: “Cancelling reverses the original FD opening bank debit and removes the FD from portfolio value.”
+  - **Deactivate:** legacy FDs without `has_opening_cash_movement` only; `DELETE`; **409** error for ledger-backed FDs
+  - **Settle / Close:** real maturity or early closure at institution; credits bank per settlement proceeds
+  - **Renew:** real rollover; settles old FD and creates renewed FD
+- **Record interest (FD-ACC-4):** modal with payment date, gross interest, tax withheld, display-only net; expandable per-FD interest payment list from API; **Reverse interest** (FD-ACC-10B) with reason/date confirmation
+- **Cash movements (FD-ACC-10B):** Reverse action on eligible manual rows; status labels (Reversed / Reversal / reverses #id); reversal reason shown when present
 - **Mark matured / Settle (FD-ACC-5):** mark matured for `ACTIVE` FDs; Settle/Close modal with principal, final interest, TDS; settled/closed rows hide settlement actions
 - **Renew (FD-ACC-6):** Renew action for `ACTIVE`/`MATURED` (hidden when settled or `has_renewal`); modal with new FD terms, gross/tax/cash payout, direct rollover and bank-cash warnings; no `FD_OPENING` implied for renewal
+- **Interest & Tax report (FD-TAX-1):** section `#fd-interest-report` on Fixed Deposits page; date range + group-by filters; KPI cards and tables from `fetchFixedDepositInterestReport`; disclaimer that report is not tax advice; read-only (no accounting changes)
 - Interest/settlement credits bank ledger; when bank cash is included in portfolio value, headline total stays stable for principal (cash ↔ FD reclassification)
 - Dashboard allocation pie chart renders `summary.allocation_buckets` from backend only
 

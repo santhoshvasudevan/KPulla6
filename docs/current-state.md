@@ -1,7 +1,7 @@
 # Current State — KPulla6 (Portfolio Insight)
 
 ## Last Updated
-2026-06-14 (FD-ACC-9 — FD accounting stabilization and audit)
+2026-06-24 (FD-CASH-ASOF-1 — FD create as-of balance UX)
 
 **Documentation index:** [README.md](./README.md)
 
@@ -19,7 +19,7 @@
 - **Bulk Cash Entries** for historical funding (backfill wizard/APIs **removed**)
 - Stock + mutual fund transactions, CSV import, holdings, dashboard performance
 - **Fixed Deposits (FD MVP):** bank accounts, fixed deposit CRUD, principal-only summary/holdings integration, dashboard allocation buckets — see [fixed-deposits.md](./fixed-deposits.md)
-- **FD Accounting Phase 1 (FD-ACC-1..8C):** bank cash ledger, mandatory FD opening debit, interest/TDS, maturity/settlement, renewal, opt-in bank cash in portfolio value, value history + return metrics — [fixed-deposits-accounting.md](./fixed-deposits-accounting.md); **implemented and audited (FD-ACC-9)**
+- **FD Accounting Phase 1 (FD-ACC-1..10B) + FD-TAX-1 report:** bank cash ledger, mandatory FD opening debit, interest/TDS, maturity/settlement, renewal, opt-in bank cash in portfolio value, value history + return metrics, FD cancel/deactivate accounting, reversal/correction framework, **FD interest/tax withheld report (read-only)** — [fixed-deposits-accounting.md](./fixed-deposits-accounting.md); **implemented and audited (FD-ACC-9; FD-ACC-10A; FD-ACC-10B; FD-TAX-1)**
 
 Product rules index: [product-rules.md](./product-rules.md). Release checklist: [mvp-release-checklist.md](./mvp-release-checklist.md). API contract index: [api-contracts.md](./api-contracts.md).
 
@@ -259,10 +259,25 @@ Design doc: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md). MVP:
 | **FD-ACC-8B** | Value history — FD principal + included bank cash in `metric=value` | **Done** |
 | **FD-ACC-8C** | Cashflow-aware XIRR/TWROR for FD/bank events | **Done** |
 | **FD-ACC-9** | Stabilization, E2E audit, docs verification, Graphify refresh | **Done** |
+| **FD-ACC-10A** | FD cancel reverses opening debit; deactivate blocked for ledger-backed FDs | **Done** |
+| **FD-ACC-10B** | Manual cash + FD interest reversal framework; classifier offsets | **Done** |
+| **FD-TAX-1** | FD interest/tax withheld read-only report API + Fixed Deposits UI | **Done** |
+| **FD-CASH-ASOF-1** | FD create as-of bank balance diagnostics, balance API, create modal UX | **Done** |
+| **FD-ACC-10A-REPAIR** | `repair_deactivated_fd_openings` management command for pre-10A deactivated FDs | **Done** |
 
 **Performance:** Summary/holdings, **`metric=value`**, **XIRR**, **TWROR**, and **cumulative return** include FD principal + opt-in bank cash where applicable (FD-ACC-8B/8C). Internal FD/bank movements are excluded from external-flow maps; manual deposits/withdrawals and opening-balance seeds are external.
 
 **E2E audit (FD-ACC-9):** `test_fixed_deposit_end_to_end_accounting.py` — full lifecycle, renewal, excluded bank cash, unseeded balance, portfolio scope.
+
+**Reversal framework (FD-ACC-10B):** manual cash movements and FD interest payments can be reversed via dedicated POST endpoints; original rows retained. Settlement/renewal/cancel-FD reversal deferred to FD-ACC-10C.
+
+**Pre-10A repair (FD-ACC-10A-REPAIR):** `python manage.py repair_deactivated_fd_openings` (dry-run default) fixes inactive FDs with stuck `FD_OPENING` debits. Do not use manual deposits as a workaround.
+
+**Cancel vs deactivate (FD-ACC-10A):** ledger-backed FDs require `POST .../cancel` (reverses `FD_OPENING`, `status=CANCELLED`); `DELETE` returns **409** for unreversed opening debit. Legacy no-ledger FDs still deactivate via `DELETE`. Cancelled FDs excluded from portfolio surfaces; row retained for audit. See [fixed-deposits.md](./fixed-deposits.md) § FD lifecycle actions.
+
+**All-scope value history (2026-06-24 fix):** when one child portfolio has FX-unavailable `null` daily value, all-scope aggregation no longer nulls the combined series; broker cash is not substituted as the total portfolio value on those dates.
+
+**All-scope terminal alignment (FD-ACC-10A-FX-TERMINAL-FIX):** `metric=value` latest point matches summary `current_value` for the same scope/currency when FX conversion succeeds (`ok`/`filled`). Bulk FX maps include inverse-stored pairs (e.g. `INR→EUR` rows used for `EUR→INR` history). Historical dates may remain partial when FX is missing.
 
 ---
 
@@ -354,8 +369,8 @@ Design doc: [mutual-funds.md](./mutual-funds.md). **MF-1 schema, MF-2 NAV sync, 
 - All sync tests mock providers — no real network calls
 
 ## Test Status
-- Backend: `make test-backend` — **1052 passed** (`DJANGO_TEST_USE_SQLITE=1`)
-- Frontend: `make test-frontend` — **447 passed**; `npm run build` passes
+- Backend: `make test-backend` — **1069 passed** (`DJANGO_TEST_USE_SQLITE=1`)
+- Frontend: `make test-frontend` — **540 passed**; `npm run build` passes
 - **STAB-3 targets:** `make test-fast` · `make test-critical` · `make test-all` — all green (STAB-6 verified 2026-06-06)
 - Graphify: `make graphify` → `graphify update .`; `graphify-out/GRAPH_REPORT.md` tracked (refreshed FD-ACC-9 2026-06-14)
 

@@ -8,24 +8,36 @@ from debt.serializers import (
     BankAccountUpdateSerializer,
     CashMovementCreateSerializer,
     CashMovementSerializer,
+    ReversalWriteSerializer,
     FixedDepositInterestPaymentSerializer,
     FixedDepositInterestPaymentWriteSerializer,
     FixedDepositSerializer,
     FixedDepositSettlementSerializer,
     FixedDepositRenewalWriteSerializer,
     FixedDepositSettlementWriteSerializer,
+    FixedDepositCancelWriteSerializer,
     FixedDepositUpdateSerializer,
     FixedDepositWriteSerializer,
 )
+from datetime import date
+
 from debt.bank_ledger_services import (
     CashMovementNotFoundError,
     CashMovementValidationError,
     InsufficientBankBalanceError,
     OpeningBalanceAlreadySeededError,
+    bank_account_has_ledger,
+    compute_bank_account_balance,
     create_manual_cash_movement,
     get_cash_movement,
+    latest_ledger_movement_date,
     list_cash_movements,
+    opening_balance_is_seeded,
     seed_opening_balance,
+)
+from debt.cancellation_services import (
+    FixedDepositCancellationError,
+    cancel_fixed_deposit,
 )
 from debt.services import (
     BankAccountNotFoundError,
@@ -49,6 +61,12 @@ from debt.interest_payment_services import (
     create_fixed_deposit_interest_payment,
     get_fixed_deposit_interest_payment,
     list_fixed_deposit_interest_payments,
+)
+from debt.reversal_services import (
+    InterestPaymentReversalError,
+    ReversalValidationError,
+    reverse_cash_movement,
+    reverse_fixed_deposit_interest_payment,
 )
 from debt.renewal_services import RenewalValidationError, renew_fixed_deposit
 from debt.settlement_services import (
@@ -194,6 +212,8 @@ class FixedDepositDetailView(APIView):
             fd = deactivate_fixed_deposit(request.user, fd_id)
         except FixedDepositNotFoundError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except FixedDepositValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         return Response(FixedDepositSerializer(fd).data)
 
 
@@ -252,11 +272,65 @@ class FixedDepositInterestPaymentDetailView(APIView):
             {
                 "detail": (
                     "Fixed deposit interest payments cannot be deleted. "
-                    "Use ADJUSTMENT entries to correct."
+                    "Record a reversal instead."
                 )
             },
             status=status.HTTP_405_METHOD_NOT_ALLOWED,
         )
+
+
+class FixedDepositInterestPaymentReverseView(APIView):
+    def post(self, request, payment_id: int):
+        serializer = ReversalWriteSerializer(data=request.data or {})
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            result = reverse_fixed_deposit_interest_payment(
+                request.user,
+                payment_id,
+                reversal_date=serializer.validated_data.get("reversal_date"),
+                reason=serializer.validated_data["reason"],
+            )
+        except InterestPaymentNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except InsufficientBankBalanceError as exc:
+            return _insufficient_bank_balance_response(exc)
+        except InterestPaymentReversalError as exc:
+            status_code = (
+                status.HTTP_409_CONFLICT
+                if "deferred" in str(exc).lower()
+                else status.HTTP_400_BAD_REQUEST
+            )
+            return Response({"detail": str(exc)}, status=status_code)
+        account = get_bank_account(request.user, result.payment.bank_account_id)
+        return Response(
+            {
+                "original": FixedDepositInterestPaymentSerializer(result.payment).data,
+                "reversal_cash_movement_id": result.reversal_cash_movement.id,
+                "reversed_by": result.reversal_cash_movement.id,
+                "bank_account": BankAccountSerializer(account).data,
+                "message": result.message,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class FixedDepositCancelView(APIView):
+    def post(self, request, fd_id: int):
+        serializer = FixedDepositCancelWriteSerializer(data=request.data or {})
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            fd = cancel_fixed_deposit(
+                request.user,
+                fd_id,
+                cancellation_date=serializer.validated_data.get("cancellation_date"),
+            )
+        except FixedDepositNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except FixedDepositCancellationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(FixedDepositSerializer(fd).data)
 
 
 class FixedDepositMarkMaturedView(APIView):
@@ -373,9 +447,16 @@ def _insufficient_bank_balance_response(exc: InsufficientBankBalanceError) -> Re
         "detail": str(exc),
         "required": float(exc.required),
         "available": float(exc.available),
+        "available_as_of_date": float(exc.available_as_of_date),
         "shortfall": float(exc.shortfall),
         "currency": exc.currency,
     }
+    if exc.current_balance is not None:
+        body["current_balance"] = float(exc.current_balance)
+    if exc.investment_date is not None:
+        body["investment_date"] = exc.investment_date.isoformat()
+    if exc.latest_ledger_balance_date is not None:
+        body["latest_ledger_balance_date"] = exc.latest_ledger_balance_date.isoformat()
     if exc.hint:
         body["hint"] = exc.hint
     return Response(body, status=status.HTTP_400_BAD_REQUEST)
@@ -391,6 +472,46 @@ def _cash_movement_error_response(exc: Exception) -> Response | None:
     if isinstance(exc, (CashMovementValidationError, BankAccountValidationError)):
         return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
     return None
+
+
+class BankAccountBalanceView(APIView):
+    def get(self, request, account_id: int):
+        try:
+            account = get_bank_account(request.user, account_id)
+        except BankAccountNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+
+        as_of_raw = request.query_params.get("as_of")
+        as_of_date = None
+        if as_of_raw:
+            try:
+                as_of_date = date.fromisoformat(as_of_raw)
+            except ValueError:
+                return Response(
+                    {"detail": "as_of must be an ISO date (YYYY-MM-DD)."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        current_balance = compute_bank_account_balance(account)
+        latest_date = latest_ledger_movement_date(account)
+        body = {
+            "bank_account_id": account.id,
+            "currency": account.currency,
+            "current_balance": float(current_balance),
+            "opening_balance": float(account.opening_balance),
+            "opening_balance_seeded": opening_balance_is_seeded(account),
+            "has_ledger_entries": bank_account_has_ledger(account),
+            "balance_source": "ledger" if bank_account_has_ledger(account) else "manual",
+            "latest_ledger_balance_date": (
+                latest_date.isoformat() if latest_date is not None else None
+            ),
+        }
+        if as_of_date is not None:
+            body["as_of_date"] = as_of_date.isoformat()
+            body["balance_as_of_date"] = float(
+                compute_bank_account_balance(account, as_of_date=as_of_date)
+            )
+        return Response(body)
 
 
 class BankAccountSeedOpeningBalanceView(APIView):
@@ -498,4 +619,36 @@ class CashMovementDetailView(APIView):
         return Response(
             {"detail": "Cash movements cannot be deleted. Use ADJUSTMENT entries to correct."},
             status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+
+class CashMovementReverseView(APIView):
+    def post(self, request, movement_id: int):
+        serializer = ReversalWriteSerializer(data=request.data or {})
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            result = reverse_cash_movement(
+                request.user,
+                movement_id,
+                reversal_date=serializer.validated_data.get("reversal_date"),
+                reason=serializer.validated_data["reason"],
+            )
+        except CashMovementNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except InsufficientBankBalanceError as exc:
+            return _insufficient_bank_balance_response(exc)
+        except ReversalValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        account = get_bank_account(request.user, result.original.bank_account_id)
+        return Response(
+            {
+                "original": CashMovementSerializer(result.original).data,
+                "reversal_cash_movement_id": result.reversal.id,
+                "reversal": CashMovementSerializer(result.reversal).data,
+                "reversed_by": result.reversal.id,
+                "bank_account": BankAccountSerializer(account).data,
+                "message": result.message,
+            },
+            status=status.HTTP_201_CREATED,
         )
