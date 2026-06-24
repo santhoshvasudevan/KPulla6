@@ -14,18 +14,12 @@ from debt.models import (
 from debt.services import create_bank_account, create_fixed_deposit
 from portfolios.models import Portfolio
 from portfolios.seed import ensure_default_portfolio
-from tests.debt_test_helpers import fund_bank_account
+from tests.debt_test_helpers import create_test_bank_account, fund_bank_account
 
 
-def _bank(user, **overrides):
-    payload = dict(
-        name="Savings",
-        institution_name="HDFC",
-        account_number="111222333",
-        currency="INR",
-    )
-    payload.update(overrides)
-    return create_bank_account(user, **payload)
+def _bank(user, portfolio=None, **overrides):
+    return create_test_bank_account(user, portfolio=portfolio, **overrides)
+
 
 
 def _fd_payload(portfolio_id, bank_account_id, **overrides):
@@ -284,7 +278,7 @@ def test_reject_foreign_fd(api_client, seeded, test_user, other_user):
     other_portfolio = Portfolio.objects.create(
         user=other_user, name="Other", base_currency="INR", is_active=True
     )
-    other_bank = _bank(other_user, account_number="OTHER")
+    other_bank = _bank(other_user, portfolio=other_portfolio, account_number="OTHER")
     other_fd = _create_fd(other_user, other_portfolio.id, other_bank)
 
     response = api_client.post(

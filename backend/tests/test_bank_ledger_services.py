@@ -13,19 +13,12 @@ from debt.bank_ledger_services import (
 )
 from debt.models import CashMovement, CashMovementDirection, CashMovementType
 from debt.services import create_bank_account
+from tests.debt_test_helpers import create_test_bank_account
 
 
-def _bank(user, **kwargs):
-    defaults = dict(
-        name="Savings",
-        institution_name="HDFC",
-        account_number="ACC-001",
-        currency="INR",
-        opening_balance=Decimal("10000"),
-        current_balance=Decimal("0"),
-    )
-    defaults.update(kwargs)
-    return create_bank_account(user, **defaults)
+def _bank(user, portfolio=None, **kwargs):
+    return create_test_bank_account(user, portfolio=portfolio, **kwargs)
+
 
 
 @pytest.mark.django_db

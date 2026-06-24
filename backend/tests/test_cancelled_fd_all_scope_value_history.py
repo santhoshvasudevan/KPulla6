@@ -14,7 +14,7 @@ from debt.services import create_bank_account, create_fixed_deposit, update_bank
 from market_data.models import AssetType, HistoricalPrice
 from portfolios.models import Portfolio
 from portfolios.seed import ensure_default_portfolio
-from tests.debt_test_helpers import fund_bank_account
+from tests.debt_test_helpers import create_test_bank_account, fund_bank_account
 
 
 FIXED_TODAY = date(2026, 6, 24)
@@ -75,9 +75,10 @@ def _cash_deposit(portfolio, *, amount: str, day: str = "2023-09-24"):
     )
 
 
-def _bank(user, account_number: str):
-    return create_bank_account(
+def _bank(user, account_number: str, portfolio=None):
+    return create_test_bank_account(
         user,
+        portfolio=portfolio,
         name="Savings",
         institution_name="HDFC",
         account_number=account_number,
@@ -135,7 +136,7 @@ def test_cancelled_repaired_fd_excluded_from_all_scope_value_history(
     _price("STKA", "2024-01-15", "5000")
     _price("STKA", FIXED_TODAY.isoformat(), "5000")
 
-    bank = _bank(test_user, "50300861349345")
+    bank = _bank(test_user, "50300861349345", portfolio=p_fd)
     update_bank_account(test_user, bank.id, include_in_portfolio_value=True)
     fd = _create_fd(test_user, p_fd.id, bank)
     _deactivate_pre_10a(fd)

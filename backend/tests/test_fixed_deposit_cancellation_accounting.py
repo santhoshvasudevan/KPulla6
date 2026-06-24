@@ -23,17 +23,14 @@ from debt.services import (
 )
 from portfolios.models import Portfolio
 from portfolios.seed import ensure_default_portfolio
-from tests.debt_test_helpers import fund_bank_account
+from tests.debt_test_helpers import create_test_bank_account, fund_bank_account
 
 
-def _bank(user, name="Savings", account_number="111"):
-    return create_bank_account(
-        user,
-        name=name,
-        institution_name="HDFC",
-        account_number=account_number,
-        currency="INR",
+def _bank(user, name="Savings", account_number="111", portfolio=None):
+    return create_test_bank_account(
+        user, portfolio=portfolio, name=name, account_number=account_number
     )
+
 
 
 def _create_fd(user, portfolio_id, bank_id, principal="100000", *, fund=True, **kw):

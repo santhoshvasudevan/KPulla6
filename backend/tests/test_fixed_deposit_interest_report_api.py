@@ -20,18 +20,12 @@ from debt.services import create_bank_account, create_fixed_deposit
 from fx.services import upsert_fx_rate
 from portfolios.models import Portfolio
 from portfolios.seed import ensure_default_portfolio
-from tests.debt_test_helpers import fund_bank_account
+from tests.debt_test_helpers import create_test_bank_account, fund_bank_account
 
 
-def _bank(user, **overrides):
-    payload = dict(
-        name="Savings",
-        institution_name="HDFC",
-        account_number="tax-rpt-1",
-        currency="INR",
-    )
-    payload.update(overrides)
-    return create_bank_account(user, **payload)
+def _bank(user, portfolio=None, **overrides):
+    return create_test_bank_account(user, portfolio=portfolio, **overrides)
+
 
 
 def _create_fd(user, portfolio_id, bank, **overrides):
@@ -212,9 +206,10 @@ def test_report_portfolio_scope_filter(api_client, seeded, test_user):
     p2 = Portfolio.objects.create(
         user=test_user, name="Other", base_currency="INR", is_active=True
     )
-    bank = _bank(test_user)
-    fd1 = _create_fd(test_user, p1.id, bank, deposit_account_number="FD-A")
-    fd2 = _create_fd(test_user, p2.id, bank, deposit_account_number="FD-B")
+    bank1 = _bank(test_user, portfolio=p1, account_number="tax-rpt-a")
+    bank2 = _bank(test_user, portfolio=p2, account_number="tax-rpt-b")
+    fd1 = _create_fd(test_user, p1.id, bank1, deposit_account_number="FD-A")
+    fd2 = _create_fd(test_user, p2.id, bank2, deposit_account_number="FD-B")
     create_fixed_deposit_interest_payment(
         test_user, fd1.id, payment_date=date(2024, 4, 1), gross_interest=Decimal("100")
     )

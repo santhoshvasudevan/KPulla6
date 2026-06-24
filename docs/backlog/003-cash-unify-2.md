@@ -4,6 +4,8 @@
 **Branch:** `agent/003-cash-unify-2`  
 **Depends on:** 002 (bank account portfolio ownership)
 
+**Status:** **Done** (branch `fd-integration-fix`, 2026-06-24).
+
 ## Goal
 
 Ensure **FixedDeposit.portfolio** is derived from the linked **BankAccount.portfolio** on create, so FD and bank account cannot silently belong to different portfolios.

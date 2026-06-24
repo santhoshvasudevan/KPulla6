@@ -14,23 +14,15 @@ from debt.services import (
 from debt.bank_ledger_services import seed_opening_balance
 from portfolios.models import Portfolio
 from portfolios.seed import ensure_default_portfolio
-from tests.debt_test_helpers import fund_bank_account
+from tests.debt_test_helpers import create_test_bank_account, fund_bank_account
 
 
-def _bank(user, **overrides):
-    payload = dict(
-        name="Savings",
-        institution_name="HDFC",
-        account_number="111222333",
-        currency="INR",
-    )
-    payload.update(overrides)
-    return create_bank_account(user, **payload)
+def _bank(user, portfolio=None, **overrides):
+    return create_test_bank_account(user, portfolio=portfolio, **overrides)
 
 
 def _fd_payload(portfolio_id, bank_account_id, **overrides):
     payload = dict(
-        portfolio_id=portfolio_id,
         bank_account_id=bank_account_id,
         institution_name="HDFC",
         deposit_account_number="FD-001",
@@ -43,6 +35,8 @@ def _fd_payload(portfolio_id, bank_account_id, **overrides):
         nominee_name="Nominee",
         comment="Test FD",
     )
+    if portfolio_id is not None:
+        payload["portfolio_id"] = portfolio_id
     payload.update(overrides)
     return payload
 
@@ -146,16 +140,21 @@ def test_reject_foreign_bank_account(api_client, seeded, test_user, other_user):
 
 @pytest.mark.django_db
 def test_reject_foreign_portfolio(api_client, seeded, test_user, other_user):
+    portfolio = ensure_default_portfolio(test_user)
     other_portfolio = Portfolio.objects.create(
         user=other_user, name="Other PF", base_currency="EUR", is_active=True
     )
-    bank = _bank(test_user)
+    bank = _bank(test_user, portfolio=portfolio)
     response = api_client.post(
         "/api/v1/fixed-deposits",
         _fd_payload(other_portfolio.id, bank.id),
         format="json",
     )
     assert response.status_code == 400
+    body = response.json()
+    assert body["bank_account_id"] == bank.id
+    assert body["requested_portfolio_id"] == other_portfolio.id
+    assert body["bank_account_portfolio_id"] == portfolio.id
 
 
 @pytest.mark.django_db
@@ -180,7 +179,7 @@ def test_list_user_owned_fds_only(api_client, seeded, test_user, other_user):
     other_portfolio = Portfolio.objects.create(
         user=other_user, name="Other", base_currency="INR", is_active=True
     )
-    other_bank = _bank(other_user, account_number="OTHER")
+    other_bank = _bank(other_user, portfolio=other_portfolio, account_number="OTHER")
     fund_bank_account(other_user, other_bank, "150000")
     create_fixed_deposit(other_user, **_fd_payload(other_portfolio.id, other_bank.id))
 
@@ -195,11 +194,15 @@ def test_list_filters_by_portfolio_id(api_client, seeded, test_user):
     p2 = Portfolio.objects.create(
         user=test_user, name="Second", base_currency="INR", is_active=True
     )
-    bank = _bank(test_user)
-    fund_bank_account(test_user, bank, "300000")
-    create_fixed_deposit(test_user, **_fd_payload(p1.id, bank.id, deposit_account_number="FD-A"))
+    bank1 = _bank(test_user, portfolio=p1, account_number="BANK-P1")
+    bank2 = _bank(test_user, portfolio=p2, account_number="BANK-P2")
+    fund_bank_account(test_user, bank1, "150000")
+    fund_bank_account(test_user, bank2, "150000")
     create_fixed_deposit(
-        test_user, **_fd_payload(p2.id, bank.id, deposit_account_number="FD-B")
+        test_user, **_fd_payload(p1.id, bank1.id, deposit_account_number="FD-A")
+    )
+    create_fixed_deposit(
+        test_user, **_fd_payload(p2.id, bank2.id, deposit_account_number="FD-B")
     )
 
     response = api_client.get(f"/api/v1/fixed-deposits?portfolio_id={p2.id}")
@@ -265,9 +268,10 @@ def test_unauthenticated_fixed_deposits_returns_401_or_403(anon_client):
 @pytest.mark.django_db
 def test_create_via_service_rejects_inactive_portfolio(seeded, test_user):
     portfolio = ensure_default_portfolio(test_user)
+    bank = _bank(test_user, portfolio=portfolio)
+    fund_bank_account(test_user, bank, "150000")
     portfolio.is_active = False
     portfolio.save()
-    bank = _bank(test_user)
     with pytest.raises(FixedDepositValidationError):
         create_fixed_deposit(test_user, **_fd_payload(portfolio.id, bank.id))
 
@@ -408,6 +412,7 @@ def test_create_fd_unseeded_opening_balance_not_usable_ledger_cash(api_client, s
         currency="INR",
         opening_balance=Decimal("250000"),
         current_balance=Decimal("250000"),
+        portfolio_id=portfolio.id,
     )
     fund_bank_account(test_user, bank, "100000", movement_date=date(2024, 1, 1))
     response = api_client.post(
@@ -438,6 +443,7 @@ def test_create_fd_uses_linked_bank_not_other_account_balance(api_client, seeded
         institution_name="HDFC",
         account_number="EMPTY-1",
         currency="INR",
+        portfolio_id=portfolio.id,
     )
     response = api_client.post(
         "/api/v1/fixed-deposits",
@@ -466,6 +472,7 @@ def test_create_fd_fails_when_opening_balance_not_seeded(api_client, seeded, tes
         currency="INR",
         opening_balance=Decimal("250000"),
         current_balance=Decimal("250000"),
+        portfolio_id=portfolio.id,
     )
     response = api_client.post(
         "/api/v1/fixed-deposits",
@@ -494,6 +501,7 @@ def test_create_fd_succeeds_after_opening_balance_seeded(api_client, seeded, tes
         currency="INR",
         opening_balance=Decimal("250000"),
         current_balance=Decimal("250000"),
+        portfolio_id=portfolio.id,
     )
     seed_opening_balance(test_user, bank.id, movement_date=date(2024, 1, 1))
     bank.refresh_from_db()
@@ -612,7 +620,7 @@ def test_update_rejects_principal_after_opening(api_client, seeded, test_user):
 def test_update_rejects_bank_account_after_opening(api_client, seeded, test_user):
     portfolio = ensure_default_portfolio(test_user)
     bank = _bank(test_user)
-    bank2 = _bank(test_user, account_number="222333444", name="NRE")
+    bank2 = _bank(test_user, portfolio=portfolio, account_number="222333444", name="NRE")
     fund_bank_account(test_user, bank, "150000")
     fd = create_fixed_deposit(test_user, **_fd_payload(portfolio.id, bank.id))
 
@@ -668,3 +676,175 @@ def test_portfolio_summary_includes_fd_after_opening_debit(api_client, seeded, t
     assert data["current_value"] == 100000.0
     bank.refresh_from_db()
     assert bank.current_balance == Decimal("50000")
+
+
+@pytest.mark.django_db
+def test_create_fd_derives_portfolio_from_bank_account(api_client, seeded, test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    bank = _bank(test_user, portfolio=portfolio)
+    fund_bank_account(test_user, bank, "150000")
+    payload = _fd_payload(None, bank.id)
+    response = api_client.post("/api/v1/fixed-deposits", payload, format="json")
+    assert response.status_code == 201
+    assert response.json()["portfolio_id"] == portfolio.id
+
+
+@pytest.mark.django_db
+def test_create_fd_matching_portfolio_id_succeeds(api_client, seeded, test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    bank = _bank(test_user, portfolio=portfolio)
+    fund_bank_account(test_user, bank, "150000")
+    response = api_client.post(
+        "/api/v1/fixed-deposits",
+        _fd_payload(portfolio.id, bank.id),
+        format="json",
+    )
+    assert response.status_code == 201
+    assert response.json()["portfolio_id"] == portfolio.id
+
+
+@pytest.mark.django_db
+def test_create_fd_conflicting_portfolio_id_fails(api_client, seeded, test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    other = Portfolio.objects.create(
+        user=test_user, name="IndianInvestments", base_currency="INR", is_active=True
+    )
+    bank = _bank(test_user, portfolio=portfolio)
+    fund_bank_account(test_user, bank, "150000")
+    response = api_client.post(
+        "/api/v1/fixed-deposits",
+        _fd_payload(other.id, bank.id),
+        format="json",
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["bank_account_id"] == bank.id
+    assert body["bank_account_portfolio_id"] == portfolio.id
+    assert body["requested_portfolio_id"] == other.id
+    assert body["portfolio_assignment_status"] == "ASSIGNED"
+    assert "hint" in body
+
+
+@pytest.mark.django_db
+def test_create_fd_unassigned_bank_account_fails(api_client, seeded, test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    bank = create_bank_account(
+        test_user,
+        name="Unassigned",
+        institution_name="HDFC",
+        account_number="UNASSIGNED-1",
+        currency="INR",
+    )
+    response = api_client.post(
+        "/api/v1/fixed-deposits",
+        _fd_payload(portfolio.id, bank.id),
+        format="json",
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["bank_account_id"] == bank.id
+    assert body["portfolio_assignment_status"] == "UNASSIGNED"
+    assert "Assign this bank account" in body["detail"]
+
+
+@pytest.mark.django_db
+def test_create_fd_ambiguous_bank_account_fails(api_client, seeded, test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    p2 = Portfolio.objects.create(
+        user=test_user, name="Second", base_currency="INR", is_active=True
+    )
+    bank = create_bank_account(
+        test_user,
+        name="Ambiguous",
+        institution_name="HDFC",
+        account_number="AMBIG-1",
+        currency="INR",
+    )
+    for dep_num, pf in (("SIG-1", portfolio), ("SIG-2", p2)):
+        FixedDeposit(
+            user=test_user,
+            portfolio=pf,
+            bank_account=bank,
+            institution_name="HDFC",
+            deposit_account_number=dep_num,
+            principal_amount=Decimal("50000"),
+            currency="INR",
+            interest_rate_percent=Decimal("7"),
+            interest_payout_frequency="QUARTERLY",
+            investment_date=date(2023, 1, 1),
+            maturity_date=date(2025, 1, 1),
+            status="ACTIVE",
+            is_active=True,
+        ).save()
+    fund_bank_account(test_user, bank, "300000")
+    response = api_client.post(
+        "/api/v1/fixed-deposits",
+        _fd_payload(portfolio.id, bank.id, deposit_account_number="NEW-FD"),
+        format="json",
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["portfolio_assignment_status"] == "AMBIGUOUS"
+
+
+@pytest.mark.django_db
+def test_legacy_fd_portfolio_mismatch_warning(api_client, seeded, test_user):
+    p1 = ensure_default_portfolio(test_user)
+    p2 = Portfolio.objects.create(
+        user=test_user, name="Other PF", base_currency="INR", is_active=True
+    )
+    bank = _bank(test_user, portfolio=p2)
+    fd = FixedDeposit(
+        user=test_user,
+        portfolio=p1,
+        bank_account=bank,
+        institution_name="HDFC",
+        deposit_account_number="MISMATCH-1",
+        principal_amount=Decimal("50000"),
+        currency="INR",
+        interest_rate_percent=Decimal("7"),
+        interest_payout_frequency="QUARTERLY",
+        investment_date=date(2023, 1, 1),
+        maturity_date=date(2025, 1, 1),
+        status="ACTIVE",
+        is_active=True,
+    )
+    fd.save()
+    response = api_client.get(f"/api/v1/fixed-deposits/{fd.id}")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["portfolio_mismatch_warning"] is not None
+    assert "differs from" in body["portfolio_mismatch_warning"]
+
+
+@pytest.mark.django_db
+def test_update_legacy_fd_rejects_portfolio_bank_mismatch(api_client, seeded, test_user):
+    p1 = ensure_default_portfolio(test_user)
+    p2 = Portfolio.objects.create(
+        user=test_user, name="IndianInvestments", base_currency="INR", is_active=True
+    )
+    bank1 = _bank(test_user, portfolio=p1, account_number="B1")
+    fd = FixedDeposit(
+        user=test_user,
+        portfolio=p1,
+        bank_account=bank1,
+        institution_name="HDFC",
+        deposit_account_number="EDIT-1",
+        principal_amount=Decimal("50000"),
+        currency="INR",
+        interest_rate_percent=Decimal("7"),
+        interest_payout_frequency="QUARTERLY",
+        investment_date=date(2023, 1, 1),
+        maturity_date=date(2025, 1, 1),
+        status="ACTIVE",
+        is_active=True,
+    )
+    fd.save()
+    response = api_client.put(
+        f"/api/v1/fixed-deposits/{fd.id}",
+        {"portfolio_id": p2.id},
+        format="json",
+    )
+    assert response.status_code == 400
+    assert response.json()["bank_account_portfolio_id"] == p1.id
+    assert response.json()["requested_portfolio_id"] == p2.id

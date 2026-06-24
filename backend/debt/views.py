@@ -35,6 +35,7 @@ from debt.bank_ledger_services import (
     opening_balance_is_seeded,
     seed_opening_balance,
 )
+from debt.bank_account_portfolio import FixedDepositBankPortfolioError
 from debt.cancellation_services import (
     FixedDepositCancellationError,
     cancel_fixed_deposit,
@@ -176,6 +177,8 @@ class FixedDepositListCreateView(APIView):
             fd = create_fixed_deposit(request.user, **serializer.validated_data)
         except InsufficientBankBalanceError as exc:
             return _insufficient_bank_balance_response(exc)
+        except FixedDepositBankPortfolioError as exc:
+            return _fixed_deposit_bank_portfolio_error_response(exc)
         except FixedDepositValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except (BankAccountNotFoundError, FixedDepositNotFoundError) as exc:
@@ -204,6 +207,8 @@ class FixedDepositDetailView(APIView):
             )
         except FixedDepositNotFoundError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except FixedDepositBankPortfolioError as exc:
+            return _fixed_deposit_bank_portfolio_error_response(exc)
         except FixedDepositValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except (BankAccountNotFoundError,) as exc:
@@ -385,6 +390,8 @@ class FixedDepositRenewView(APIView):
             result = renew_fixed_deposit(request.user, fd_id, **serializer.validated_data)
         except FixedDepositNotFoundError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except FixedDepositBankPortfolioError as exc:
+            return _fixed_deposit_bank_portfolio_error_response(exc)
         except RenewalValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
@@ -462,6 +469,21 @@ def _insufficient_bank_balance_response(exc: InsufficientBankBalanceError) -> Re
         body["latest_ledger_balance_date"] = exc.latest_ledger_balance_date.isoformat()
     if exc.hint:
         body["hint"] = exc.hint
+    return Response(body, status=status.HTTP_400_BAD_REQUEST)
+
+
+def _fixed_deposit_bank_portfolio_error_response(
+    exc: FixedDepositBankPortfolioError,
+) -> Response:
+    body = {
+        "detail": exc.detail,
+        "bank_account_id": exc.bank_account_id,
+        "bank_account_portfolio_id": exc.bank_account_portfolio_id,
+        "bank_account_portfolio_name": exc.bank_account_portfolio_name,
+        "requested_portfolio_id": exc.requested_portfolio_id,
+        "portfolio_assignment_status": exc.portfolio_assignment_status,
+        "hint": exc.hint,
+    }
     return Response(body, status=status.HTTP_400_BAD_REQUEST)
 
 

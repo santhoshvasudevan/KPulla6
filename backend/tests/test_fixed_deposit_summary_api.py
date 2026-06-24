@@ -9,18 +9,13 @@ from fx.models import FXRate
 from market_data.models import HistoricalPrice
 from portfolios.models import Portfolio
 from portfolios.seed import ensure_default_portfolio
-from tests.debt_test_helpers import fund_bank_account
+from tests.debt_test_helpers import create_legacy_fixed_deposit_with_opening, create_test_bank_account, fund_bank_account
 from transactions.models import Transaction
 
 
-def _bank(user):
-    return create_bank_account(
-        user,
-        name="Savings",
-        institution_name="HDFC",
-        account_number="111",
-        currency="INR",
-    )
+def _bank(user, portfolio=None, account_number="111"):
+    return create_test_bank_account(user, portfolio=portfolio, account_number=account_number)
+
 
 
 def _create_fd(user, portfolio_id, bank_id, principal="100000", status="ACTIVE", **kw):
@@ -133,9 +128,10 @@ def test_all_scope_aggregates_fds(api_client, seeded, test_user):
     p2 = Portfolio.objects.create(
         user=test_user, name="Second", base_currency="INR", is_active=True
     )
-    bank = _bank(test_user)
-    _create_fd(test_user, p1.id, bank.id, principal="50000", deposit_account_number="A")
-    _create_fd(test_user, p2.id, bank.id, principal="75000", deposit_account_number="B")
+    bank1 = _bank(test_user, portfolio=p1, account_number="111-A")
+    bank2 = _bank(test_user, portfolio=p2, account_number="111-B")
+    _create_fd(test_user, p1.id, bank1.id, principal="50000", deposit_account_number="A")
+    _create_fd(test_user, p2.id, bank2.id, principal="75000", deposit_account_number="B")
 
     data = api_client.get(
         "/api/v1/portfolio/summary?portfolio_scope=all&include_timeseries=false&display_currency=INR"
@@ -149,9 +145,10 @@ def test_single_portfolio_scope_fd_only(api_client, seeded, test_user):
     p2 = Portfolio.objects.create(
         user=test_user, name="Second", base_currency="INR", is_active=True
     )
-    bank = _bank(test_user)
-    _create_fd(test_user, p1.id, bank.id, principal="50000", deposit_account_number="A")
-    _create_fd(test_user, p2.id, bank.id, principal="75000", deposit_account_number="B")
+    bank1 = _bank(test_user, portfolio=p1, account_number="111-A")
+    bank2 = _bank(test_user, portfolio=p2, account_number="111-B")
+    _create_fd(test_user, p1.id, bank1.id, principal="50000", deposit_account_number="A")
+    _create_fd(test_user, p2.id, bank2.id, principal="75000", deposit_account_number="B")
 
     data = api_client.get(
         f"/api/v1/portfolio/summary?portfolio_id={p1.id}&include_timeseries=false&display_currency=INR"
@@ -502,31 +499,29 @@ def test_single_portfolio_scope_excludes_multi_portfolio_bank_account(
     p2 = Portfolio.objects.create(
         user=test_user, name="Second", base_currency="INR", is_active=True
     )
-    bank = _bank(test_user)
-    fund_bank_account(test_user, bank, "80000")
-    create_fixed_deposit(
+    bank = create_bank_account(
         test_user,
-        portfolio_id=p1.id,
-        bank_account_id=bank.id,
+        name="Savings",
         institution_name="HDFC",
+        account_number="scope-shared",
+        currency="INR",
+    )
+    fund_bank_account(test_user, bank, "80000")
+    create_legacy_fixed_deposit_with_opening(
+        test_user,
+        portfolio=p1,
+        bank=bank,
         deposit_account_number="A",
         principal_amount=Decimal("10000"),
-        currency="INR",
-        interest_rate_percent=Decimal("7"),
-        interest_payout_frequency="QUARTERLY",
         investment_date=date(2024, 1, 1),
         maturity_date=date(2026, 1, 1),
     )
-    create_fixed_deposit(
+    create_legacy_fixed_deposit_with_opening(
         test_user,
-        portfolio_id=p2.id,
-        bank_account_id=bank.id,
-        institution_name="HDFC",
+        portfolio=p2,
+        bank=bank,
         deposit_account_number="B",
         principal_amount=Decimal("20000"),
-        currency="INR",
-        interest_rate_percent=Decimal("7"),
-        interest_payout_frequency="QUARTERLY",
         investment_date=date(2024, 1, 1),
         maturity_date=date(2026, 1, 1),
     )

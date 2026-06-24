@@ -120,7 +120,7 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 ### Fixed Deposits (`/fixed-deposits`)
 
 - Table lists backend FD fields only (no interest or portfolio value calculations in React)
-- Add/Edit modal: portfolio and bank account dropdowns (active records only); currency read-only from selected bank account
+- Add/Edit modal: bank account dropdown (active records only); **create:** portfolio read-only, derived from selected bank account (`FD portfolio: {name}, derived from selected bank account.`); blocks create when bank `portfolio_assignment_status` is `UNASSIGNED` or `AMBIGUOUS` with link to Settings → Bank Accounts; currency read-only from selected bank account
 - **Create:** explainer that principal debits linked bank account; shows **current ledger balance** and **available as of investment date** (from balance API); backend rejects when as-of balance insufficient; structured error panel with auto-scroll/focus
 - **Edit:** when `has_opening_cash_movement`, principal/bank/currency/investment date/portfolio fields disabled; backend enforces immutability
 - Principal, rate, dates, status displayed from API

@@ -131,6 +131,42 @@ function formatFdInsufficientErrorDetails(err) {
   };
 }
 
+function formatFdPortfolioErrorDetails(err) {
+  if (!(err instanceof FixedDepositApiError)) return null;
+  if (err.bank_account_id == null && err.portfolio_assignment_status == null) {
+    return null;
+  }
+  return {
+    detail: err.detail || err.message,
+    bankAccountId: err.bank_account_id,
+    bankAccountPortfolioId: err.bank_account_portfolio_id,
+    bankAccountPortfolioName: err.bank_account_portfolio_name,
+    requestedPortfolioId: err.requested_portfolio_id,
+    portfolioAssignmentStatus: err.portfolio_assignment_status,
+    hint: err.hint,
+  };
+}
+
+function bankBlocksFdCreate(bank) {
+  if (!bank) return false;
+  const status = bank.portfolio_assignment_status;
+  return status === 'UNASSIGNED' || status === 'AMBIGUOUS';
+}
+
+function bankPortfolioAssignmentMessage(bank) {
+  if (!bank) return '';
+  if (bank.portfolio_assignment_status === 'UNASSIGNED') {
+    return 'Assign this bank account to a portfolio in Bank Accounts before creating an FD.';
+  }
+  if (bank.portfolio_assignment_status === 'AMBIGUOUS') {
+    return 'This bank account is linked to multiple portfolios. Assign one portfolio in Bank Accounts before creating an FD.';
+  }
+  if (bank.portfolio_id && bank.portfolio_name) {
+    return `FD portfolio: ${bank.portfolio_name}, derived from selected bank account.`;
+  }
+  return '';
+}
+
 function emptyInterestForm() {
   return {
     payment_date: new Date().toISOString().slice(0, 10),
@@ -282,11 +318,12 @@ export default function FixedDeposits() {
 
   const openCreate = () => {
     setEditing(null);
-    const defaultPortfolio = portfolios[0];
     const defaultBank = bankAccounts[0];
+    const derivedPortfolioId =
+      defaultBank?.portfolio_id != null ? String(defaultBank.portfolio_id) : '';
     setForm({
       ...emptyForm(),
-      portfolio_id: defaultPortfolio ? String(defaultPortfolio.id) : '',
+      portfolio_id: derivedPortfolioId,
       bank_account_id: defaultBank ? String(defaultBank.id) : '',
       currency: defaultBank?.currency || 'INR',
     });
@@ -324,6 +361,10 @@ export default function FixedDeposits() {
       ...prev,
       bank_account_id: bankId,
       currency: bank?.currency || prev.currency,
+      portfolio_id:
+        bank?.portfolio_id != null
+          ? String(bank.portfolio_id)
+          : '',
     }));
   };
 
@@ -370,9 +411,13 @@ export default function FixedDeposits() {
   const principalAmount = parseFloat(form.principal_amount);
   const createBlockedByUnseeded =
     !editing && selectedBank && needsOpeningBalanceSeed(selectedBank);
+  const createBlockedByBankPortfolio =
+    !editing && selectedBank && bankBlocksFdCreate(selectedBank);
   const createBlockMessage = createBlockedByUnseeded
     ? 'Opening balance is not yet seeded into the cash ledger. Seed opening balance in Settings → Bank Accounts before creating a fixed deposit.'
-    : '';
+    : createBlockedByBankPortfolio
+      ? bankPortfolioAssignmentMessage(selectedBank)
+      : '';
   const showAsOfShortfallWarning =
     !editing &&
     selectedBank &&
@@ -385,13 +430,12 @@ export default function FixedDeposits() {
     e.preventDefault();
     setFormError('');
     setFormErrorDetails(null);
-    if (createBlockedByUnseeded) {
+    if (createBlockedByUnseeded || createBlockedByBankPortfolio) {
       setFormError(createBlockMessage);
       return;
     }
     setSubmitting(true);
     const payload = {
-      portfolio_id: Number(form.portfolio_id),
       bank_account_id: Number(form.bank_account_id),
       institution_name: form.institution_name.trim(),
       deposit_account_number: form.deposit_account_number.trim(),
@@ -405,6 +449,14 @@ export default function FixedDeposits() {
       comment: form.comment.trim(),
       status: form.status,
     };
+    if (editing) {
+      payload.portfolio_id = Number(form.portfolio_id);
+    } else if (
+      selectedBank?.portfolio_id != null &&
+      Number(form.portfolio_id) === selectedBank.portfolio_id
+    ) {
+      payload.portfolio_id = selectedBank.portfolio_id;
+    }
     try {
       if (editing) {
         await updateFixedDeposit(editing.id, payload);
@@ -416,7 +468,9 @@ export default function FixedDeposits() {
       setModalOpen(false);
       await loadData();
     } catch (err) {
-      const details = formatFdInsufficientErrorDetails(err);
+      const insufficientDetails = formatFdInsufficientErrorDetails(err);
+      const portfolioDetails = formatFdPortfolioErrorDetails(err);
+      const details = insufficientDetails || portfolioDetails;
       if (details) {
         setFormErrorDetails(details);
         setFormError(details.detail || err.message || 'Save failed.');
@@ -1103,6 +1157,12 @@ export default function FixedDeposits() {
                   {formErrorDetails.investmentDate ? (
                     <li>Investment date: {formErrorDetails.investmentDate}</li>
                   ) : null}
+                  {formErrorDetails.bankAccountPortfolioName ? (
+                    <li>Bank account portfolio: {formErrorDetails.bankAccountPortfolioName}</li>
+                  ) : null}
+                  {formErrorDetails.portfolioAssignmentStatus ? (
+                    <li>Portfolio assignment: {formErrorDetails.portfolioAssignmentStatus}</li>
+                  ) : null}
                   {formErrorDetails.hint ? <li>{formErrorDetails.hint}</li> : null}
                 </ul>
               </div>
@@ -1114,6 +1174,9 @@ export default function FixedDeposits() {
             {!editing && createBlockedByUnseeded ? (
               <WarningBanner severity="warning" message={createBlockMessage} />
             ) : null}
+            {!editing && createBlockedByBankPortfolio ? (
+              <WarningBanner severity="warning" message={createBlockMessage} />
+            ) : null}
             {!editing && showAsOfShortfallWarning ? (
               <WarningBanner
                 severity="warning"
@@ -1123,20 +1186,33 @@ export default function FixedDeposits() {
             <form onSubmit={handleSubmit} className="fd-form">
               <div className="form-group">
                 <label htmlFor="fd-portfolio">Portfolio</label>
-                <select
-                  id="fd-portfolio"
-                  value={form.portfolio_id}
-                  onChange={(e) => setForm((p) => ({ ...p, portfolio_id: e.target.value }))}
-                  required
-                  disabled={openingFieldsLocked}
-                >
-                  <option value="">Select portfolio</option>
-                  {portfolios.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                {!editing && selectedBank?.portfolio_id ? (
+                  <>
+                    <input
+                      id="fd-portfolio"
+                      type="text"
+                      readOnly
+                      value={selectedBank.portfolio_name || form.portfolio_id}
+                      disabled
+                    />
+                    <p className="settings-hint">{bankPortfolioAssignmentMessage(selectedBank)}</p>
+                  </>
+                ) : (
+                  <select
+                    id="fd-portfolio"
+                    value={form.portfolio_id}
+                    onChange={(e) => setForm((p) => ({ ...p, portfolio_id: e.target.value }))}
+                    required
+                    disabled={openingFieldsLocked || (!editing && Boolean(selectedBank))}
+                  >
+                    <option value="">Select portfolio</option>
+                    {portfolios.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div className="form-group">
                 <label htmlFor="fd-bank">Bank account</label>
@@ -1308,7 +1384,7 @@ export default function FixedDeposits() {
                 <Button
                   type="submit"
                   variant="primary"
-                  disabled={submitting || createBlockedByUnseeded}
+                  disabled={submitting || createBlockedByUnseeded || createBlockedByBankPortfolio}
                 >
                   {submitting ? 'Saving…' : editing ? 'Save changes' : 'Create'}
                 </Button>

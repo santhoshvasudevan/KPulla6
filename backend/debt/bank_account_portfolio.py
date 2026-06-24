@@ -162,6 +162,109 @@ def apply_bank_account_portfolio_inference(
     return account
 
 
+class FixedDepositBankPortfolioError(Exception):
+    """FD portfolio must derive from bank account portfolio (CASH-UNIFY-2)."""
+
+    def __init__(
+        self,
+        detail: str,
+        *,
+        bank_account_id: int,
+        bank_account_portfolio_id: int | None = None,
+        bank_account_portfolio_name: str | None = None,
+        requested_portfolio_id: int | None = None,
+        portfolio_assignment_status: str,
+        hint: str,
+    ) -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.bank_account_id = bank_account_id
+        self.bank_account_portfolio_id = bank_account_portfolio_id
+        self.bank_account_portfolio_name = bank_account_portfolio_name
+        self.requested_portfolio_id = requested_portfolio_id
+        self.portfolio_assignment_status = portfolio_assignment_status
+        self.hint = hint
+
+
+def resolve_fd_portfolio_from_bank_account(
+    bank_account: BankAccount,
+    requested_portfolio_id: int | None = None,
+):
+    """Return the portfolio for a fixed deposit linked to this bank account."""
+    from portfolios.models import Portfolio
+
+    status = bank_account_portfolio_assignment_status(bank_account)
+    bank_account_id = bank_account.id
+
+    if status == PortfolioAssignmentStatus.AMBIGUOUS.value:
+        raise FixedDepositBankPortfolioError(
+            detail=(
+                "Assign this bank account to a portfolio before creating a Fixed Deposit."
+            ),
+            bank_account_id=bank_account_id,
+            bank_account_portfolio_id=None,
+            bank_account_portfolio_name=None,
+            requested_portfolio_id=requested_portfolio_id,
+            portfolio_assignment_status=status,
+            hint=(
+                "Multiple portfolios are linked to this bank account. "
+                "Assign one portfolio in Settings → Bank Accounts."
+            ),
+        )
+
+    if not bank_account.portfolio_id:
+        raise FixedDepositBankPortfolioError(
+            detail=(
+                "Assign this bank account to a portfolio before creating a Fixed Deposit."
+            ),
+            bank_account_id=bank_account_id,
+            bank_account_portfolio_id=None,
+            bank_account_portfolio_name=None,
+            requested_portfolio_id=requested_portfolio_id,
+            portfolio_assignment_status=status,
+            hint=(
+                "Open Settings → Bank Accounts and assign a portfolio to this account."
+            ),
+        )
+
+    portfolio: Portfolio = bank_account.portfolio
+    if (
+        requested_portfolio_id is not None
+        and requested_portfolio_id != portfolio.id
+    ):
+        raise FixedDepositBankPortfolioError(
+            detail=(
+                f"Fixed deposit portfolio must match the bank account portfolio "
+                f"({portfolio.name})."
+            ),
+            bank_account_id=bank_account_id,
+            bank_account_portfolio_id=portfolio.id,
+            bank_account_portfolio_name=portfolio.name,
+            requested_portfolio_id=requested_portfolio_id,
+            portfolio_assignment_status=status,
+            hint=(
+                "Select a bank account linked to the intended portfolio, "
+                "or assign the bank account first."
+            ),
+        )
+
+    return portfolio
+
+
+def fixed_deposit_portfolio_mismatch_warning(fd: FixedDeposit) -> str | None:
+    """Read-only warning when legacy FD portfolio differs from bank account portfolio."""
+    bank = fd.bank_account
+    if not bank or not bank.portfolio_id:
+        return None
+    if fd.portfolio_id == bank.portfolio_id:
+        return None
+    bank_name = bank.portfolio.name if bank.portfolio_id else "unassigned"
+    return (
+        f"Fixed deposit portfolio ({fd.portfolio.name}) differs from the linked "
+        f"bank account portfolio ({bank_name}). Assign or reconcile in Bank Accounts."
+    )
+
+
 def resolve_portfolio_for_bank_account(
     user: AbstractBaseUser,
     portfolio_id: int | None,

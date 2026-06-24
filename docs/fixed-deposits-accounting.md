@@ -275,6 +275,8 @@ These ledgers must **not** be merged in storage. Cross-ledger transfers (e.g. ba
 
 **Unified domain model (CASH-UNIFY-0):** Both ledgers represent **cash holdings** within a portfolio wealth pool at the product level. See [cash-unification.md](./cash-unification.md) for ownership rules, Cash tab design, and implementation roadmap.
 
+**FD portfolio alignment (CASH-UNIFY-2):** New FDs derive portfolio from the linked bank account; opening debit behavior unchanged. Legacy FD/bank portfolio mismatches are flagged read-only in API (`portfolio_mismatch_warning`); no automatic ledger or portfolio rewrites.
+
 ---
 
 ## B. MVP accounting principles

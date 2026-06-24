@@ -116,11 +116,12 @@ Bank accounts used for **investment activity** (FD funding, included bank cash i
 | **Ambiguous accounts** | Accounts whose movements/FDs span multiple portfolios remain **unassigned** or **blocked from inclusion** until user resolves or portfolio-specific sub-balances exist (FD-ACC-7 conservative rule continues until then). |
 | **Non-investment bank accounts** | Salary/generic savings with no portfolio link remain user-scoped; optional `portfolio_id` on manual movements for reporting only (current behavior). |
 
-### 4.2 Current state (post CASH-UNIFY-1)
+### 4.2 Current state (post CASH-UNIFY-2)
 
 - `BankAccount.portfolio` nullable FK exists; create/update API accepts `portfolio_id`.
 - `portfolio_assignment_status` on bank account reads: `ASSIGNED` / `UNASSIGNED` / `AMBIGUOUS` (from FK + FD/movement signals).
-- `FixedDeposit` still accepts independent `portfolio_id` on create — **CASH-UNIFY-2**.
+- **FD create derives `FixedDeposit.portfolio` from `bank_account.portfolio`**; unassigned/ambiguous banks and conflicting `portfolio_id` are rejected (**400**).
+- Legacy FD rows with portfolio ≠ bank account portfolio remain readable; API exposes `portfolio_mismatch_warning` (no auto-rewrite).
 - FD-ACC-7 bank cash inclusion still uses movement/FD association inference when `portfolio` unset.
 
 ### 4.3 Enforcement timeline
@@ -129,7 +130,7 @@ Bank accounts used for **investment activity** (FD funding, included bank cash i
 |-------|----------|
 | **Today** | Independent FD/bank portfolio pick allowed; inclusion uses inference |
 | **CASH-UNIFY-1** | Add `BankAccount.portfolio` (nullable); read APIs expose ownership; inference backfill |
-| **CASH-UNIFY-2** | FD create derives portfolio from bank account; validate match on write |
+| **CASH-UNIFY-2** | **Done** — FD create derives portfolio from bank account; validate match on write |
 | **CASH-UNIFY-3+** | UI reflects ownership; ambiguous accounts prompt assignment |
 
 ---
@@ -190,12 +191,10 @@ When adding `BankAccount.portfolio` (nullable FK):
 3. **No signal:** No movements with portfolio and no FDs → leave null; user assigns when linking to investment activity.
 4. **No destructive changes:** Do not delete movements, FDs, or ledger rows. Do not auto-create balancing entries.
 
-### 6.2 FD portfolio alignment
+### 6.2 FD portfolio alignment (CASH-UNIFY-2 — implemented)
 
-After CASH-UNIFY-2:
-
-- **New FDs:** `portfolio` derived from `bank_account.portfolio`; reject create if bank account unassigned or user-supplied portfolio differs.
-- **Existing FDs:** If FD.portfolio ≠ inferred bank account portfolio, **do not auto-change**. Flag for manual review; optional read-only warning in API/UI.
+- **New FDs:** `portfolio` derived from `bank_account.portfolio`; reject create if bank account unassigned/ambiguous or user-supplied portfolio differs.
+- **Existing FDs:** If FD.portfolio ≠ bank account portfolio, **do not auto-change**. Read-only `portfolio_mismatch_warning` in API; assign bank account in Settings → Bank Accounts.
 - **No automatic cash movements** during alignment — accounting history stays intact.
 
 ### 6.3 Safety checklist (all backfill phases)

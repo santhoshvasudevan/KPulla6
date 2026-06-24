@@ -32,12 +32,13 @@ from debt.services import create_bank_account, create_fixed_deposit, update_bank
 from debt.settlement_services import create_fixed_deposit_settlement, mark_fixed_deposit_matured
 from portfolios.scope import ResolvedPortfolioScope
 from portfolios.seed import ensure_default_portfolio
-from tests.debt_test_helpers import fund_bank_account
+from tests.debt_test_helpers import create_test_bank_account, fund_bank_account
 
 
-def _bank(user, account_number="repair-1"):
-    return create_bank_account(
+def _bank(user, account_number="repair-1", portfolio=None):
+    return create_test_bank_account(
         user,
+        portfolio=portfolio,
         name="Savings",
         institution_name="HDFC",
         account_number=account_number,

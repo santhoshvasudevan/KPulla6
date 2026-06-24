@@ -14,7 +14,10 @@ from debt.models import (
     InterestPayoutFrequency,
     MANUAL_API_CASH_MOVEMENT_TYPES,
 )
-from debt.bank_account_portfolio import bank_account_portfolio_assignment_status
+from debt.bank_account_portfolio import (
+    bank_account_portfolio_assignment_status,
+    fixed_deposit_portfolio_mismatch_warning,
+)
 from debt.bank_ledger_services import (
     bank_account_ledger_metadata,
     fixed_deposit_has_opening_cash_movement,
@@ -113,6 +116,7 @@ class FixedDepositSerializer(serializers.ModelSerializer):
     has_opening_cash_movement = serializers.SerializerMethodField()
     opening_cash_movement_id = serializers.SerializerMethodField()
     has_renewal = serializers.SerializerMethodField()
+    portfolio_mismatch_warning = serializers.SerializerMethodField()
 
     class Meta:
         model = FixedDeposit
@@ -137,6 +141,7 @@ class FixedDepositSerializer(serializers.ModelSerializer):
             "has_renewal",
             "has_opening_cash_movement",
             "opening_cash_movement_id",
+            "portfolio_mismatch_warning",
             "is_active",
             "created_at",
             "updated_at",
@@ -154,6 +159,9 @@ class FixedDepositSerializer(serializers.ModelSerializer):
             return bool(obj._has_renewal)
         return obj.renewals.exists()
 
+    def get_portfolio_mismatch_warning(self, obj: FixedDeposit) -> str | None:
+        return fixed_deposit_portfolio_mismatch_warning(obj)
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data["principal_amount"] = float(instance.principal_amount)
@@ -166,6 +174,8 @@ class FixedDepositSerializer(serializers.ModelSerializer):
             data["nominee_name"] = None
         if not data.get("comment"):
             data["comment"] = None
+        if not data.get("portfolio_mismatch_warning"):
+            data["portfolio_mismatch_warning"] = None
         return data
 
 
@@ -271,7 +281,7 @@ class CashMovementCreateSerializer(serializers.Serializer):
 
 
 class FixedDepositWriteSerializer(serializers.Serializer):
-    portfolio_id = serializers.IntegerField()
+    portfolio_id = serializers.IntegerField(required=False, allow_null=True)
     bank_account_id = serializers.IntegerField()
     institution_name = serializers.CharField(max_length=255)
     deposit_account_number = serializers.CharField(max_length=128)

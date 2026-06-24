@@ -8,7 +8,7 @@ from debt.services import create_bank_account, create_fixed_deposit
 from fx.models import FXRate
 from portfolios.models import Portfolio
 from portfolios.seed import ensure_default_portfolio
-from tests.debt_test_helpers import fund_bank_account
+from tests.debt_test_helpers import create_legacy_fixed_deposit, fund_bank_account
 
 
 def _deposit(portfolio, *, amount: str, currency: str = "EUR"):
@@ -156,17 +156,14 @@ def test_overview_excludes_ambiguous_bank(api_client, seeded, test_user):
         user=test_user, name="Other", base_currency="INR", is_active=True
     )
     bank = _create_bank(test_user)
-    fund_bank_account(test_user, bank, "500000")
-    create_fixed_deposit(test_user, **_fd_payload(p1.id, bank.id))
-    create_fixed_deposit(
+    create_legacy_fixed_deposit(test_user, portfolio=p1, bank=bank, deposit_account_number="FD-1")
+    create_legacy_fixed_deposit(
         test_user,
-        **_fd_payload(
-            p2.id,
-            bank.id,
-            deposit_account_number="FD-2",
-            investment_date=date(2024, 7, 1),
-            maturity_date=date(2025, 7, 1),
-        ),
+        portfolio=p2,
+        bank=bank,
+        deposit_account_number="FD-2",
+        investment_date=date(2024, 7, 1),
+        maturity_date=date(2025, 7, 1),
     )
 
     response = api_client.get("/api/v1/cash/overview")

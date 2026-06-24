@@ -9,11 +9,11 @@ from debt.bank_account_portfolio import (
     InferenceOutcome,
     find_bank_account_inference_reports,
 )
-from debt.models import BankAccount
+from debt.models import BankAccount, FixedDeposit
 from debt.services import create_bank_account, create_fixed_deposit
 from portfolios.models import Portfolio
 from portfolios.seed import ensure_default_portfolio
-from tests.debt_test_helpers import fund_bank_account
+from tests.debt_test_helpers import create_legacy_fixed_deposit, fund_bank_account
 
 
 def _create_bank(user, **overrides):
@@ -27,29 +27,15 @@ def _create_bank(user, **overrides):
     return create_bank_account(user, **payload)
 
 
-def _fd_payload(portfolio_id, bank_id, **overrides):
-    payload = dict(
-        portfolio_id=portfolio_id,
-        bank_account_id=bank_id,
-        institution_name="HDFC",
-        deposit_account_number="FD-1",
-        principal_amount=Decimal("100000"),
-        currency="INR",
-        interest_rate_percent=Decimal("7"),
-        interest_payout_frequency="QUARTERLY",
-        investment_date=date(2024, 6, 1),
-        maturity_date=date(2025, 6, 1),
-    )
-    payload.update(overrides)
-    return payload
+def _legacy_fd(user, portfolio, bank, **overrides):
+    return create_legacy_fixed_deposit(user, portfolio=portfolio, bank=bank, **overrides)
 
 
 @pytest.mark.django_db
 def test_inference_unambiguous_from_fixed_deposit(seeded, test_user):
     portfolio = ensure_default_portfolio(test_user)
     bank = _create_bank(test_user)
-    fund_bank_account(test_user, bank, "200000")
-    create_fixed_deposit(test_user, **_fd_payload(portfolio.id, bank.id))
+    _legacy_fd(test_user, portfolio, bank)
 
     report = find_bank_account_inference_reports(bank_account_id=bank.id)[0]
     assert report.outcome == InferenceOutcome.INFERRED
@@ -63,17 +49,14 @@ def test_inference_ambiguous_multiple_portfolios(seeded, test_user):
         user=test_user, name="Second", base_currency="INR", is_active=True
     )
     bank = _create_bank(test_user)
-    fund_bank_account(test_user, bank, "500000")
-    create_fixed_deposit(test_user, **_fd_payload(p1.id, bank.id))
-    create_fixed_deposit(
+    _legacy_fd(test_user, p1, bank)
+    _legacy_fd(
         test_user,
-        **_fd_payload(
-            p2.id,
-            bank.id,
-            deposit_account_number="FD-2",
-            investment_date=date(2024, 7, 1),
-            maturity_date=date(2025, 7, 1),
-        ),
+        p2,
+        bank,
+        deposit_account_number="FD-2",
+        investment_date=date(2024, 7, 1),
+        maturity_date=date(2025, 7, 1),
     )
 
     report = find_bank_account_inference_reports(bank_account_id=bank.id)[0]
@@ -107,8 +90,7 @@ def test_inference_unchanged_when_portfolio_already_set(seeded, test_user):
 def test_command_dry_run_does_not_mutate(seeded, test_user):
     portfolio = ensure_default_portfolio(test_user)
     bank = _create_bank(test_user)
-    fund_bank_account(test_user, bank, "200000")
-    create_fixed_deposit(test_user, **_fd_payload(portfolio.id, bank.id))
+    _legacy_fd(test_user, portfolio, bank)
 
     out = StringIO()
     call_command("infer_bank_account_portfolios", stdout=out)
@@ -121,8 +103,7 @@ def test_command_dry_run_does_not_mutate(seeded, test_user):
 def test_command_apply_assigns_unambiguous(seeded, test_user):
     portfolio = ensure_default_portfolio(test_user)
     bank = _create_bank(test_user)
-    fund_bank_account(test_user, bank, "200000")
-    create_fixed_deposit(test_user, **_fd_payload(portfolio.id, bank.id))
+    _legacy_fd(test_user, portfolio, bank)
 
     call_command("infer_bank_account_portfolios", "--apply")
     bank.refresh_from_db()
@@ -136,17 +117,14 @@ def test_command_apply_skips_ambiguous(seeded, test_user):
         user=test_user, name="Second", base_currency="INR", is_active=True
     )
     bank = _create_bank(test_user)
-    fund_bank_account(test_user, bank, "500000")
-    create_fixed_deposit(test_user, **_fd_payload(p1.id, bank.id))
-    create_fixed_deposit(
+    _legacy_fd(test_user, p1, bank)
+    _legacy_fd(
         test_user,
-        **_fd_payload(
-            p2.id,
-            bank.id,
-            deposit_account_number="FD-2",
-            investment_date=date(2024, 7, 1),
-            maturity_date=date(2025, 7, 1),
-        ),
+        p2,
+        bank,
+        deposit_account_number="FD-2",
+        investment_date=date(2024, 7, 1),
+        maturity_date=date(2025, 7, 1),
     )
 
     call_command("infer_bank_account_portfolios", "--apply")

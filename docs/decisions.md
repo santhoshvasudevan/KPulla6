@@ -1,5 +1,12 @@
 # Architecture Decisions — KPulla6
 
+## 2026-06-24 — CASH-UNIFY-2: FD portfolio derived from bank account
+
+- **Decision:** New fixed deposits must belong to the same portfolio as their linked bank account. `POST /fixed-deposits` derives `portfolio_id` from `bank_account.portfolio`; client-supplied portfolio must match or be omitted.
+- **Unassigned/ambiguous bank accounts:** FD create blocked until user assigns portfolio in Bank Accounts settings.
+- **Legacy data:** Existing FD rows with portfolio ≠ bank account portfolio are not auto-rewritten; API returns `portfolio_mismatch_warning`.
+- **Deferred:** Cash page UI (CASH-UNIFY-3); broker-bank transfers (CASH-UNIFY-5).
+
 ## 2026-06-24 — CASH-UNIFY-1: Bank account portfolio ownership + cash overview API
 
 - **Schema:** nullable `BankAccount.portfolio` FK (`SET_NULL`); user/active portfolio validation in model `clean()`.

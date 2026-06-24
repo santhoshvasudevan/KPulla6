@@ -19,18 +19,12 @@ from debt.services import create_bank_account, create_fixed_deposit, update_bank
 from portfolios.scope import ResolvedPortfolioScope
 from portfolios.seed import ensure_default_portfolio
 from portfolios.xirr_service import compute_scope_xirr_detail
-from tests.debt_test_helpers import fund_bank_account
+from tests.debt_test_helpers import create_test_bank_account, fund_bank_account
 
 
-def _bank(user, **overrides):
-    payload = dict(
-        name="Savings",
-        institution_name="HDFC",
-        account_number="111",
-        currency="INR",
-    )
-    payload.update(overrides)
-    return create_bank_account(user, **payload)
+def _bank(user, portfolio=None, **overrides):
+    return create_test_bank_account(user, portfolio=portfolio, **overrides)
+
 
 
 def _enable(user, bank):

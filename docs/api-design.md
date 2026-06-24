@@ -1254,9 +1254,11 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 
 | Method | Path | Notes |
 |--------|------|--------|
-| POST | `/api/v1/fixed-deposits` | **Done** — atomically creates `FD_OPENING` `CashMovement` (SYSTEM DEBIT); **400** on insufficient bank balance with `required`, `available`, `shortfall`, `currency` |
+| POST | `/api/v1/fixed-deposits` | **Done** — atomically creates `FD_OPENING` `CashMovement` (SYSTEM DEBIT); **400** on insufficient bank balance with `required`, `available`, `shortfall`, `currency`. **CASH-UNIFY-2:** `portfolio_id` optional; derived from `bank_account.portfolio`; **400** with structured portfolio fields on unassigned/ambiguous bank or portfolio conflict. |
 
-**FD response extensions:** `has_opening_cash_movement`, `opening_cash_movement_id`.
+**Create body:** `bank_account_id` required; `portfolio_id` optional (must match bank account when supplied). Bank account must be **ASSIGNED** before create.
+
+**FD response extensions:** `has_opening_cash_movement`, `opening_cash_movement_id`, `portfolio_mismatch_warning` (read-only legacy flag).
 
 **PUT `/fixed-deposits/{id}`:** rejects changes to `principal_amount`, `bank_account_id`, `currency`, `investment_date`, `portfolio_id` when opening movement exists (**400**). Legacy FDs without opening movement remain fully editable.
 

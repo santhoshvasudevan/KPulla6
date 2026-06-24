@@ -1,5 +1,14 @@
 # Changelog — KPulla6
 
+## 2026-06-24 — CASH-UNIFY-2: FD portfolio derived from bank account
+
+- **FD create:** `POST /api/v1/fixed-deposits` derives `FixedDeposit.portfolio` from `bank_account.portfolio`. Optional `portfolio_id` must match or is omitted; conflicting or unassigned/ambiguous bank accounts return **400** with structured fields (`bank_account_id`, `bank_account_portfolio_id`, `portfolio_assignment_status`, `hint`, …).
+- **FD update:** When `bank_account_id` or `portfolio_id` is editable (no opening movement), portfolio must align with the selected bank account.
+- **Renewal:** Unchanged accounting; new FD portfolio must match bank account portfolio (rejects legacy mismatch).
+- **Read API:** `portfolio_mismatch_warning` on FD list/detail when legacy `fd.portfolio_id ≠ bank_account.portfolio_id` (no auto-rewrite).
+- **Frontend:** FD create modal shows derived portfolio read-only; blocks unassigned/ambiguous bank accounts.
+- **Deferred:** Cash page UI redesign (CASH-UNIFY-3).
+
 ## 2026-06-24 — CASH-UNIFY-1: Bank account portfolio ownership + cash overview API
 
 ### Added
@@ -9,7 +18,7 @@
 - **Frontend:** `fetchCashOverview` in `api.js`.
 
 ### Unchanged
-- FD create portfolio selection (CASH-UNIFY-2).
+- FD create portfolio selection (CASH-UNIFY-2). **Done (CASH-UNIFY-2).**
 - Cash page UI (CASH-UNIFY-3).
 - `/cash/balances`, ledger writes, summary/performance valuation.
 - No ledger merge or auto-created movements.

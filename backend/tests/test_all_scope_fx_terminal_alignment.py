@@ -231,6 +231,7 @@ def test_cancelled_fd_still_excluded_from_all_scope_inr_terminal(
         institution_name="HDFC",
         account_number="align-fd",
         currency="INR",
+        portfolio_id=p_fd.id,
     )
     fund_bank_account(
         test_user,

@@ -9,7 +9,11 @@ from django.db import transaction as db_transaction
 from django.db.models import QuerySet
 
 from cash.constants import SUPPORTED_CASH_CURRENCIES
-from debt.bank_account_portfolio import resolve_portfolio_for_bank_account
+from debt.bank_account_portfolio import (
+    FixedDepositBankPortfolioError,
+    resolve_fd_portfolio_from_bank_account,
+    resolve_portfolio_for_bank_account,
+)
 from debt.models import BankAccount, FixedDeposit, FixedDepositStatus
 from portfolios.models import Portfolio
 from portfolios.services import PortfolioNotFoundError, get_portfolio, list_active_portfolios
@@ -227,7 +231,7 @@ def _resolve_portfolio_for_fd(user: AbstractBaseUser, portfolio_id: int) -> Port
 def create_fixed_deposit(
     user: AbstractBaseUser,
     *,
-    portfolio_id: int,
+    portfolio_id: int | None = None,
     bank_account_id: int,
     institution_name: str,
     deposit_account_number: str,
@@ -253,8 +257,16 @@ def create_fixed_deposit(
         validate_no_overdraft,
     )
 
-    portfolio = _resolve_portfolio_for_fd(user, portfolio_id)
     bank_account = _resolve_bank_account_for_fd(user, bank_account_id)
+    portfolio = resolve_fd_portfolio_from_bank_account(
+        bank_account, requested_portfolio_id=portfolio_id
+    )
+    if portfolio.user_id != user.id:
+        raise FixedDepositValidationError(
+            f"Portfolio not found: {portfolio.id}"
+        )
+    if not portfolio.is_active:
+        raise FixedDepositValidationError(f"Portfolio is inactive: {portfolio.id}")
 
     renewal_of = None
     if renewal_of_id is not None:
@@ -383,10 +395,19 @@ def update_fixed_deposit(
                 f"Cannot change {label} after the opening cash movement has been recorded."
             )
 
-    if "portfolio_id" in fields and fields["portfolio_id"] is not None:
-        fd.portfolio = _resolve_portfolio_for_fd(user, fields["portfolio_id"])
     if "bank_account_id" in fields and fields["bank_account_id"] is not None:
         fd.bank_account = _resolve_bank_account_for_fd(user, fields["bank_account_id"])
+    if "bank_account_id" in fields or "portfolio_id" in fields:
+        requested_portfolio_id = (
+            fields["portfolio_id"] if "portfolio_id" in fields else None
+        )
+        fd.portfolio = resolve_fd_portfolio_from_bank_account(
+            fd.bank_account, requested_portfolio_id=requested_portfolio_id
+        )
+        if fd.portfolio.user_id != user.id:
+            raise FixedDepositValidationError(
+                f"Portfolio not found: {fd.portfolio.id}"
+            )
     if "institution_name" in fields and fields["institution_name"] is not None:
         fd.institution_name = (fields["institution_name"] or "").strip()
     if "deposit_account_number" in fields and fields["deposit_account_number"] is not None:

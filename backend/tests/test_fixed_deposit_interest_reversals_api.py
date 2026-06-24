@@ -21,18 +21,12 @@ from debt.settlement_services import (
 from portfolios.scope import ResolvedPortfolioScope
 from portfolios.seed import ensure_default_portfolio
 from portfolios.xirr_service import compute_scope_xirr_detail
-from tests.debt_test_helpers import fund_bank_account
+from tests.debt_test_helpers import create_test_bank_account, fund_bank_account
 
 
-def _bank(user, **overrides):
-    payload = dict(
-        name="Savings",
-        institution_name="HDFC",
-        account_number="int-rev-1",
-        currency="INR",
-    )
-    payload.update(overrides)
-    return create_bank_account(user, **payload)
+def _bank(user, portfolio=None, **overrides):
+    return create_test_bank_account(user, portfolio=portfolio, **overrides)
+
 
 
 def _fd(user, portfolio_id, bank):

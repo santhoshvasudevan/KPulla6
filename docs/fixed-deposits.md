@@ -81,7 +81,7 @@ Approved decisions (FD-ACC-0.1): see accounting doc § Approved product decision
 | Field | Type | Notes |
 |-------|------|-------|
 | `user` | FK → `auth.User` | Explicit ownership (also validated via portfolio/bank) |
-| `portfolio` | FK → `Portfolio` | Required; must be active, same user. **Future (CASH-UNIFY-2):** derived from `bank_account.portfolio` on create; must not differ silently. |
+| `portfolio` | FK → `Portfolio` | Required; must be active, same user. **CASH-UNIFY-2:** on create, derived from `bank_account.portfolio`; conflicting client `portfolio_id` rejected. Legacy rows may differ — see `portfolio_mismatch_warning`. |
 | `bank_account` | FK → `BankAccount` | Required; must be active, same user |
 | `institution_name` | string | e.g. SBI, HDFC, Post Office |
 | `deposit_account_number` | string | FD account / receipt number |

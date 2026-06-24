@@ -12,18 +12,12 @@ from debt.models import (
     CashMovementType,
 )
 from debt.services import create_bank_account
-from tests.debt_test_helpers import fund_bank_account
+from tests.debt_test_helpers import create_test_bank_account, fund_bank_account
 
 
-def _bank(user, **overrides):
-    payload = dict(
-        name="Savings",
-        institution_name="HDFC",
-        account_number="rev-1",
-        currency="INR",
-    )
-    payload.update(overrides)
-    return create_bank_account(user, **payload)
+def _bank(user, portfolio=None, **overrides):
+    return create_test_bank_account(user, portfolio=portfolio, **overrides)
+
 
 
 def _create_manual(api_client, account_id, movement_type, amount, **extra):

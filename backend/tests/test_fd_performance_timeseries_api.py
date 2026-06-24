@@ -12,18 +12,12 @@ from debt.models import FixedDeposit, FixedDepositStatus
 from debt.services import create_bank_account, create_fixed_deposit, update_bank_account
 from portfolios.models import Portfolio
 from portfolios.seed import ensure_default_portfolio
-from tests.debt_test_helpers import fund_bank_account
+from tests.debt_test_helpers import create_legacy_fixed_deposit_with_opening, create_test_bank_account, fund_bank_account
 
 
-def _bank(user, **overrides):
-    payload = dict(
-        name="Savings",
-        institution_name="HDFC",
-        account_number="111",
-        currency="INR",
-    )
-    payload.update(overrides)
-    return create_bank_account(user, **payload)
+def _bank(user, portfolio=None, **overrides):
+    return create_test_bank_account(user, portfolio=portfolio, **overrides)
+
 
 
 def _create_fd(user, portfolio_id, bank_id, principal="100000", status="ACTIVE", **kw):
@@ -323,7 +317,14 @@ def test_single_portfolio_scope_conservative_bank_attribution(
     p2 = Portfolio.objects.create(
         user=test_user, name="Second", base_currency="INR", is_active=True
     )
-    bank = _bank(test_user)
+    bank = create_bank_account(
+        test_user,
+        name="Savings",
+        institution_name="HDFC",
+        account_number="scope-shared",
+        currency="INR",
+        portfolio_id=p1.id,
+    )
     fund_bank_account(test_user, bank, "80000")
     create_fixed_deposit(
         test_user,
@@ -338,16 +339,12 @@ def test_single_portfolio_scope_conservative_bank_attribution(
         investment_date=date(2024, 1, 1),
         maturity_date=date(2026, 1, 1),
     )
-    create_fixed_deposit(
+    create_legacy_fixed_deposit_with_opening(
         test_user,
-        portfolio_id=p2.id,
-        bank_account_id=bank.id,
-        institution_name="HDFC",
+        portfolio=p2,
+        bank=bank,
         deposit_account_number="B",
         principal_amount=Decimal("20000"),
-        currency="INR",
-        interest_rate_percent=Decimal("7"),
-        interest_payout_frequency="QUARTERLY",
         investment_date=date(2024, 1, 1),
         maturity_date=date(2026, 1, 1),
     )
@@ -368,7 +365,7 @@ def test_other_user_fd_and_bank_cash_excluded(
     other_portfolio = Portfolio.objects.create(
         user=other, name="Other", base_currency="INR", is_active=True
     )
-    other_bank = _bank(other, account_number="OTHER")
+    other_bank = _bank(other, portfolio=other_portfolio, account_number="OTHER")
     fund_bank_account(other, other_bank, "99999")
     _enable_bank_inclusion(other, other_bank)
     _create_fd(other, other_portfolio.id, other_bank.id, principal="50000")

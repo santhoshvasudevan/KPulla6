@@ -58,6 +58,25 @@ const seededBankAccount = {
   currency: 'INR',
   opening_balance: 250000,
   current_balance: 250000,
+  portfolio_id: 1,
+  portfolio_name: 'Default Portfolio',
+  portfolio_assignment_status: 'ASSIGNED',
+  has_ledger_entries: true,
+  opening_balance_seeded: true,
+  balance_source: 'ledger',
+  is_active: true,
+};
+
+const unassignedBankAccount = {
+  id: 12,
+  name: 'Unassigned',
+  institution_name: 'ICICI',
+  currency: 'INR',
+  opening_balance: 100000,
+  current_balance: 100000,
+  portfolio_id: null,
+  portfolio_name: null,
+  portfolio_assignment_status: 'UNASSIGNED',
   has_ledger_entries: true,
   opening_balance_seeded: true,
   balance_source: 'ledger',
@@ -179,6 +198,64 @@ describe('FixedDeposits page', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows derived portfolio when assigned bank account is selected', async () => {
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
+
+    expect(screen.getByDisplayValue('Default Portfolio')).toBeInTheDocument();
+    expect(
+      screen.getByText(/fd portfolio: default portfolio, derived from selected bank account/i)
+    ).toBeInTheDocument();
+  });
+
+  it('blocks create when bank account portfolio is unassigned', async () => {
+    api.fetchBankAccounts.mockResolvedValueOnce([unassignedBankAccount]);
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
+
+    expect(
+      screen.getByText(/assign this bank account to a portfolio in bank accounts before creating an fd/i)
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^create$/i })).toBeDisabled();
+  });
+
+  it('shows structured backend portfolio conflict details', async () => {
+    const err = new api.FixedDepositApiError(
+      'Fixed deposit portfolio must match the bank account portfolio (Default Portfolio).',
+      {
+        detail: 'Fixed deposit portfolio must match the bank account portfolio (Default Portfolio).',
+        bank_account_id: 10,
+        bank_account_portfolio_id: 1,
+        bank_account_portfolio_name: 'Default Portfolio',
+        requested_portfolio_id: 2,
+        portfolio_assignment_status: 'ASSIGNED',
+        hint: 'Select a bank account linked to the intended portfolio, or assign the bank account first.',
+      }
+    );
+    api.createFixedDeposit.mockRejectedValueOnce(err);
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.change(screen.getByLabelText(/institution/i), { target: { value: 'HDFC' } });
+    fireEvent.change(screen.getByLabelText(/deposit account number/i), {
+      target: { value: 'FD-NEW' },
+    });
+    fireEvent.change(screen.getByLabelText(/principal amount/i), { target: { value: '100000' } });
+    fireEvent.change(screen.getByLabelText(/interest rate/i), { target: { value: '7' } });
+    fireEvent.change(screen.getByLabelText(/investment date/i), { target: { value: '2024-01-01' } });
+    fireEvent.change(screen.getByLabelText(/maturity date/i), { target: { value: '2026-01-01' } });
+    fireEvent.click(screen.getByRole('button', { name: /^create$/i }));
+
+    await waitFor(() => {
+      const panel = document.querySelector('.fd-form__error-panel');
+      expect(panel).toBeTruthy();
+      expect(panel).toHaveTextContent(/bank account portfolio: default portfolio/i);
+      expect(panel).toHaveTextContent(/portfolio assignment: assigned/i);
+    });
+  });
+
   it('shows structured backend insufficient balance details and focuses error', async () => {
     const err = new api.FixedDepositApiError('Insufficient bank account balance for this movement.', {
       detail: 'Insufficient bank account balance for this movement.',
@@ -277,6 +354,10 @@ describe('FixedDeposits page', () => {
 
     await waitFor(() => {
       expect(api.createFixedDeposit).toHaveBeenCalled();
+      expect(api.createFixedDeposit.mock.calls[0][0]).toMatchObject({
+        bank_account_id: 10,
+        portfolio_id: 1,
+      });
       expect(screen.getByText(/fixed deposit created/i)).toBeInTheDocument();
     });
   });

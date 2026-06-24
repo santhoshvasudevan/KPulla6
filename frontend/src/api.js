@@ -308,6 +308,11 @@ export class FixedDepositApiError extends ApiError {
     this.current_balance = extras.current_balance;
     this.investment_date = extras.investment_date;
     this.latest_ledger_balance_date = extras.latest_ledger_balance_date;
+    this.bank_account_id = extras.bank_account_id;
+    this.bank_account_portfolio_id = extras.bank_account_portfolio_id;
+    this.bank_account_portfolio_name = extras.bank_account_portfolio_name;
+    this.requested_portfolio_id = extras.requested_portfolio_id;
+    this.portfolio_assignment_status = extras.portfolio_assignment_status;
   }
 }
 
@@ -329,6 +334,11 @@ function buildFixedDepositApiError(errorData, status) {
     investment_date: data.investment_date,
     latest_ledger_balance_date: data.latest_ledger_balance_date,
     hint: data.hint,
+    bank_account_id: data.bank_account_id,
+    bank_account_portfolio_id: data.bank_account_portfolio_id,
+    bank_account_portfolio_name: data.bank_account_portfolio_name,
+    requested_portfolio_id: data.requested_portfolio_id,
+    portfolio_assignment_status: data.portfolio_assignment_status,
     data,
   });
 }
