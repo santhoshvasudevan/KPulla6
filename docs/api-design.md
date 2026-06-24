@@ -49,6 +49,18 @@ Quick reference for MVP endpoints. Detail sections below. Product rules: [produc
 
 **Removed (not active):** `POST /api/v1/cash/backfill-preview`, `POST /api/v1/cash/backfill-apply` — use deposits/withdrawals or bulk entries instead.
 
+### Planned — Cash unification (CASH-UNIFY-1..4)
+
+Design: [cash-unification.md](./cash-unification.md). **Not implemented** until respective backlog phases ship.
+
+| Method | Path | Purpose | Phase |
+|--------|------|---------|-------|
+| GET | `/api/v1/cash/overview` | Read-only broker + bank cash sections with `ledger_type` per row; optional display-currency totals | CASH-UNIFY-1 / 4 |
+| — | `BankAccount.portfolio` | Nullable FK; inference backfill; exposed on bank account CRUD | CASH-UNIFY-1 |
+| — | FD create portfolio rule | Derive `portfolio` from `bank_account.portfolio`; reject mismatch | CASH-UNIFY-2 |
+
+**Invariants (design):** No cross-ledger writes; no table merge; overview is read-only aggregation of existing balance rules.
+
 ## Implemented in KPulla6
 
 ### Health

@@ -170,24 +170,25 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 **Files:** `pages/Cash.jsx` · `pages/Cash.css` · `components/CashBulkEntriesWizard.jsx`
 
-**Layout status:** **Implemented (P5)** — cash ledger/overview page using Executive Portfolio OS primitives.
+**Layout status:** **Implemented (P5)** — broker cash ledger page. **Planned (CASH-UNIFY-3):** Bank Cash section + Total Cash KPIs — [cash-unification.md](./cash-unification.md) §5.
 
 | Section | Layout |
 |---------|--------|
-| **Header** | `PageHeader` — title “Cash”; subtitle explains native per-currency balances; primary actions in header: Add Deposit, Add Withdrawal, Add Bulk Cash Entries, Transfer Cash. |
-| **Overview** | `KpiCard` strip from backend `totals_by_currency` (all scope) or per-currency balance rows (single portfolio) — display only, no client-side totals. |
+| **Header** | `PageHeader` — title “Cash” (future: **Cash / Liquid Holdings**); subtitle explains native per-currency **broker** balances; primary actions: Add Deposit, Add Withdrawal, Add Bulk Cash Entries, Transfer Cash. |
+| **Overview** | `KpiCard` strip from backend `totals_by_currency` (all scope) or per-currency balance rows (single portfolio) — display only. **Future:** add Bank Cash + Total Cash KPIs from overview API. |
 | **Cash-aware** | `CashAwarePortfolioStatus`; enable for selected legacy portfolio; all-scope explanatory note. |
 | **Balances** | `DataTableShell` + `AppTable`: balance table by portfolio/currency from `GET /cash/balances`. |
 | **Ledger** | `AppCard` with filter bar (currency, entry type, date from/to) + nested `DataTableShell` + `AppTable`; `StatusBadge` for entry types; backend pagination; Details column from API. |
 | **Manual edit/delete** | Manual deposit/withdrawal rows only; edit modal reuses cash fields; delete confirm; future-impact 409 panel; linked/system/transfer rows are protected. |
 | **Bulk cash entries** | Configure → `previewCashBulkEntries`; Review schedule/warnings/totals → `applyCashBulkEntries`; Result summary; refresh balances + ledger. |
 | **Transfer Cash** | Same- or cross-currency transfer; user-entered target amount; implied rate informational only; no market FX. |
+| **Bank Cash (future)** | Read-only section: per bank account balance rows scoped to portfolio; link to Settings → Bank account movements; helper: funds **FD/bank products**, not securities. |
 
 **States:** balance loading/error/empty, ledger loading/error/empty, write success/error, withdrawal shortfall, future-impact panel, transfer shortfall/future-impact, bulk preview warnings/result.
 
-**APIs:** `fetchCashBalances`, `fetchCashLedger`, `createCashDeposit`, `createCashWithdrawal`, `createCashTransfer`, `updateCashLedgerEntry`, `deleteCashLedgerEntry`, `previewCashBulkEntries`, `applyCashBulkEntries`.
+**APIs:** `fetchCashBalances`, `fetchCashLedger`, … (today). **Planned:** `fetchCashOverview` (CASH-UNIFY-1) for bank cash section.
 
-**Preserve in redesign:** React displays backend cash balances, ledger rows, details, shortfalls, and future-impact payloads only. Do not compute running balances, join cash and asset transactions client-side, silently create deposits, or add implicit FX conversion.
+**Preserve in redesign:** React displays backend cash balances, ledger rows, details, shortfalls, and future-impact payloads only. Do not compute running balances, join cash and asset transactions client-side, silently create deposits, or add implicit FX conversion. Bank cash rows are **read-only** on this page until CASH-UNIFY-5 (cross-ledger transfers) if ever implemented.
 
 **Tests:** `Cash.test.jsx`, `CashAwarePortfolioStatus.test.jsx`, `api.test.js`.
 

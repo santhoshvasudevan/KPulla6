@@ -221,7 +221,7 @@ See **§ FD-ACC-8 performance/timeseries design** below for full detail.
 
 ---
 
-**Related:** [fixed-deposits.md](./fixed-deposits.md) (MVP) · [cash-ledger.md](./cash-ledger.md) (portfolio cash) · [database.md](./database.md) · [api-design.md](./api-design.md) · [decisions.md](./decisions.md)
+**Related:** [fixed-deposits.md](./fixed-deposits.md) (MVP) · [cash-ledger.md](./cash-ledger.md) (portfolio cash) · [cash-unification.md](./cash-unification.md) (unified domain model) · [database.md](./database.md) · [api-design.md](./api-design.md) · [decisions.md](./decisions.md)
 
 ---
 
@@ -271,7 +271,9 @@ User
     └── CashLedgerEntry           → portfolio cash       ← Cash-1..8 (implemented)
 ```
 
-These ledgers must **not** be merged in storage. Cross-ledger transfers (e.g. bank withdrawal → portfolio deposit) are a future product decision and are **not** auto-created in FD-ACC-1.
+These ledgers must **not** be merged in storage. Cross-ledger transfers (e.g. bank withdrawal → portfolio deposit) are a future product decision (**CASH-UNIFY-5**, deferred) and are **not** auto-created in FD-ACC-1 or CASH-UNIFY phases 1–4.
+
+**Unified domain model (CASH-UNIFY-0):** Both ledgers represent **cash holdings** within a portfolio wealth pool at the product level. See [cash-unification.md](./cash-unification.md) for ownership rules, Cash tab design, and implementation roadmap.
 
 ---
 

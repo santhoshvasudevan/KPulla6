@@ -1,7 +1,7 @@
 # Current State — KPulla6 (Portfolio Insight)
 
 ## Last Updated
-2026-06-24 (FD-CASH-ASOF-1 — FD create as-of balance UX)
+2026-06-24 (CASH-UNIFY-0 — unified cash domain model design)
 
 **Documentation index:** [README.md](./README.md)
 
@@ -237,7 +237,11 @@ Design doc: [cash-ledger.md](./cash-ledger.md).
 
 **Tester repair:** `PUT /api/v1/portfolios/{id}` with `"cash_aware_enabled": true` on the tester default portfolio (no user deletion).
 
-**Next recommended phase:** transfer fees (Cash-8C); optional bulk quarterly/yearly frequencies.
+**Next recommended phase:** [CASH-UNIFY-1](./backlog/002-cash-unify-1.md) — bank account portfolio ownership + unified cash read API. See [cash-unification.md](./cash-unification.md).
+
+**Cash unification (CASH-UNIFY-0 — design done 2026-06-24):** Two ledgers (broker `CashLedgerEntry` + bank `CashMovement`) unified at domain/UI level only — not merged in storage. Roadmap: ownership/read API → FD portfolio from bank → Cash page sections → terminology/display-currency. Deferred: broker-bank transfers (CASH-UNIFY-5), physical cash (CASH-UNIFY-6).
+
+**Other cash backlog:** transfer fees (Cash-8C); optional bulk quarterly/yearly frequencies.
 
 ## Fixed Deposits — Accounting (FD-ACC-1..9)
 

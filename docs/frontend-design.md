@@ -396,7 +396,20 @@ Backend supplies balances and ledger rows. React **displays only** — no cash b
 
 **Removed:** Cash shortfall backfill (Cash-7A/7B/7C) — no UI or API. Historical funding via manual entries or **Add Bulk Cash Entries**.
 
-Page layout: [page-layouts.md](./page-layouts.md) §8. Design: [cash-ledger.md](./cash-ledger.md).
+Page layout: [page-layouts.md](./page-layouts.md) §8. Design: [cash-ledger.md](./cash-ledger.md) · unified model: [cash-unification.md](./cash-unification.md).
+
+## Future — Unified Cash / Liquid Holdings page (CASH-UNIFY-3)
+
+**Design only (CASH-UNIFY-0).** Target layout when overview API (CASH-UNIFY-1) ships:
+
+| Section | Content | Actions |
+|---------|---------|---------|
+| **Header KPIs** | Total Cash; Broker Cash subtotal; Bank Cash subtotal (native currency; display FX in CASH-UNIFY-4) | Scope from `portfolioContext` |
+| **Broker Cash** | Existing balances table + ledger + deposit/withdrawal/transfer/bulk | Unchanged write paths on `/cash/*` |
+| **Bank Cash** | Per bank account balances from overview API; filtered by portfolio when ownership set | Link → Settings → Bank account movements |
+| **Helper copy** | Broker cash funds **securities/MF**; bank cash funds **FD/bank products** | Static explainer |
+
+React displays overview API only — no client-side aggregation across ledgers. Bank movement CRUD remains in Settings unless a later phase adds deep-links only.
 
 ## Future — Cash Ledger UI (remaining phases)
 

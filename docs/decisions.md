@@ -1,5 +1,17 @@
 # Architecture Decisions — KPulla6
 
+## 2026-06-24 — CASH-UNIFY-0: Unified cash domain model (design only)
+
+**Docs only — no runtime changes.**
+
+- **Two ledgers, one domain:** Broker cash (`CashLedgerEntry`, portfolio-scoped) and bank cash (`CashMovement`, bank-account-scoped) remain **separate tables**; unified at portfolio/accounting/reporting/UI level only.
+- **Portfolio composition:** Securities, mutual funds, fixed deposits, and **cash holdings** (broker cash + bank cash; physical cash deferred).
+- **Future ownership:** Bank accounts used for investment activity should link to **exactly one portfolio** via future `BankAccount.portfolio` FK (CASH-UNIFY-1); FD create should **derive portfolio from bank account** (CASH-UNIFY-2).
+- **Cash tab future:** “Cash / Liquid Holdings” with Broker Cash, Bank Cash, and Total Cash sections (CASH-UNIFY-3) — no ledger merge.
+- **Backfill:** Infer bank account portfolio when unambiguous; leave null and require user assignment when ambiguous; **no automatic cash movements**, **no destructive deletes**, **no double-counting**.
+- **Deferred:** Broker ↔ bank transfer workflow (CASH-UNIFY-5); physical/offline cash account (CASH-UNIFY-6).
+- Full design: [cash-unification.md](./cash-unification.md).
+
 ## 2026-06-24 — FD-CASH-ASOF-1: FD create validates bank ledger as-of investment date
 
 - FD opening debit checks **selected bank account** ledger balance **as of `investment_date`** (inclusive), not today's current balance.

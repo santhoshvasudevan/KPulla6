@@ -2,7 +2,7 @@
 
 **Status:** Cash-1 through Cash-7D **done**; **Cash-8A** same-currency and **Cash-8B** user-entered cross-currency portfolio transfers **done**. Transfer fees and same-portfolio FX conversion remain deferred.
 
-**Related:** [architecture.md](./architecture.md) · [database.md](./database.md) · [api-design.md](./api-design.md) · [frontend-design.md](./frontend-design.md) · [data-safety.md](./data-safety.md) · Cursor rule [`.cursor/rules/320-cash-ledger.mdc`](../.cursor/rules/320-cash-ledger.mdc)
+**Related:** [architecture.md](./architecture.md) · [database.md](./database.md) · [api-design.md](./api-design.md) · [frontend-design.md](./frontend-design.md) · [data-safety.md](./data-safety.md) · [cash-unification.md](./cash-unification.md) · Cursor rule [`.cursor/rules/320-cash-ledger.mdc`](../.cursor/rules/320-cash-ledger.mdc)
 
 ---
 
@@ -483,6 +483,26 @@ Preserve existing `/api/v1` contracts; cash endpoints are **additive**. Detail s
 | 6 | Should **bulk-schedule deposits** be editable after creation (same as manual entries)? |
 | 7 | Should **transfer fees** be recorded in **source currency**, **target currency**, or separate `FEE` ledger row? |
 | 8 | Should cash appear in the **Assets table** (row per currency) vs a dedicated **Cash** page / Settings section? |
+
+---
+
+## Appendix — Unified cash taxonomy (CASH-UNIFY-0)
+
+KPulla6 has **two cash ledgers** that represent **cash holdings** within a portfolio at the product level:
+
+| Ledger | Model | Scope | User-facing name |
+|--------|-------|-------|------------------|
+| Portfolio / broker | `CashLedgerEntry` | Per portfolio | **Broker Cash** |
+| Bank account | `CashMovement` | Per `BankAccount` | **Bank Cash** |
+
+**Rules:**
+
+- Do **not** merge `cash_ledger_entries` and `cash_movements` in storage.
+- Do **not** auto-create cross-ledger entries on read or backfill.
+- Summary/performance may **aggregate** both for headline value when bank cash is opt-in included (FD-ACC-7/8).
+- FD workflows debit **bank** ledger only; stock/MF settlements use **broker** ledger.
+
+**Roadmap:** [cash-unification.md](./cash-unification.md) — ownership, unified Cash page UI, terminology. Bank ledger detail: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md) § A.
 
 ---
 

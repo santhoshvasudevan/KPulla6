@@ -1,5 +1,12 @@
 # Changelog — KPulla6
 
+## 2026-06-24 — CASH-UNIFY-0: Unified cash domain model (design only)
+
+- **Design doc:** [cash-unification.md](./cash-unification.md) — portfolio cash holdings taxonomy (broker + bank; physical deferred), two-ledger separation, future `BankAccount.portfolio` ownership, FD portfolio derivation from bank account, future Cash tab layout, backfill strategy, safety rules, implementation phases CASH-UNIFY-1..6.
+- **ADR:** [decisions.md](./decisions.md) § CASH-UNIFY-0.
+- **Backlog aligned:** [002](./backlog/002-cash-unify-1.md)–[005](./backlog/005-cash-unify-4.md) scopes updated to match roadmap (ownership → FD derivation → UI → terminology/display-currency).
+- **No runtime, API, migration, or frontend behavior changes.**
+
 ## 2026-06-24 — FD-CASH-ASOF-1: FD create as-of bank balance diagnostics and UX
 
 - **Root cause:** FD create validates **bank ledger balance as of `investment_date`**; create form showed **current** ledger balance only, which can exceed as-of balance when deposits are dated after the FD investment date.
