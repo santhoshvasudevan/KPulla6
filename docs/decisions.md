@@ -1,5 +1,82 @@
 # Architecture Decisions — KPulla6
 
+## 2026-06-24 — CASH-UNIFY-2: FD portfolio derived from bank account
+
+- **Decision:** New fixed deposits must belong to the same portfolio as their linked bank account. `POST /fixed-deposits` derives `portfolio_id` from `bank_account.portfolio`; client-supplied portfolio must match or be omitted.
+- **Unassigned/ambiguous bank accounts:** FD create blocked until user assigns portfolio in Bank Accounts settings.
+- **Legacy data:** Existing FD rows with portfolio ≠ bank account portfolio are not auto-rewritten; API returns `portfolio_mismatch_warning`.
+- **Deferred:** Cash page UI (CASH-UNIFY-3); broker-bank transfers (CASH-UNIFY-5).
+
+## 2026-06-24 — CASH-UNIFY-1: Bank account portfolio ownership + cash overview API
+
+- **Schema:** nullable `BankAccount.portfolio` FK (`SET_NULL`); user/active portfolio validation in model `clean()`.
+- **Inference:** `infer_bank_account_portfolios` command — dry-run default; unambiguous signals from `FixedDeposit.portfolio` + `CashMovement.portfolio`; ambiguous multi-portfolio accounts skipped.
+- **Read API:** `GET /api/v1/cash/overview` aggregates broker (`CashLedgerEntry`) and bank (`CashMovement`) balances without merging ledgers; unassigned bank accounts excluded by default.
+- **Unchanged:** FD create behavior, cash accounting, `/cash/balances`, summary/performance paths.
+- Design: [cash-unification.md](./cash-unification.md).
+
+## 2026-06-24 — CASH-UNIFY-0: Unified cash domain model (design only)
+
+**Docs only — no runtime changes.**
+
+- **Two ledgers, one domain:** Broker cash (`CashLedgerEntry`, portfolio-scoped) and bank cash (`CashMovement`, bank-account-scoped) remain **separate tables**; unified at portfolio/accounting/reporting/UI level only.
+- **Portfolio composition:** Securities, mutual funds, fixed deposits, and **cash holdings** (broker cash + bank cash; physical cash deferred).
+- **Future ownership:** Bank accounts used for investment activity should link to **exactly one portfolio** via future `BankAccount.portfolio` FK (CASH-UNIFY-1); FD create should **derive portfolio from bank account** (CASH-UNIFY-2).
+- **Cash tab future:** “Cash / Liquid Holdings” with Broker Cash, Bank Cash, and Total Cash sections (CASH-UNIFY-3) — no ledger merge.
+- **Backfill:** Infer bank account portfolio when unambiguous; leave null and require user assignment when ambiguous; **no automatic cash movements**, **no destructive deletes**, **no double-counting**.
+- **Deferred:** Broker ↔ bank transfer workflow (CASH-UNIFY-5); physical/offline cash account (CASH-UNIFY-6).
+- Full design: [cash-unification.md](./cash-unification.md).
+
+## 2026-06-24 — FD-CASH-ASOF-1: FD create validates bank ledger as-of investment date
+
+- FD opening debit checks **selected bank account** ledger balance **as of `investment_date`** (inclusive), not today's current balance.
+- **Current ledger balance** can exceed **available as of investment date** when deposits/movements are dated after the FD date.
+- **Portfolio Cash** (Cash tab / `CashLedgerEntry`) is separate from **Bank Ledger** (`CashMovement` on linked `BankAccount`).
+- Reference `opening_balance` on a bank account is not usable ledger cash until `OPENING_BALANCE` is seeded (dated on/before investment date).
+- `GET /bank-accounts/{id}/balance?as_of=` for UI; richer insufficient-balance error payload; create modal auto-scrolls to error.
+
+## 2026-06-24 — FD-TAX-1: FD interest/tax withheld report (read-only)
+
+- **Reporting only** — `GET /api/v1/reports/fixed-deposit-interest` aggregates stored gross/tax/net from interest payments, settlements, and renewals without mutating ledger, summary, or performance.
+- **Reversed** interest payments excluded; **zero-interest** settlement/renewal rows excluded; **renewal settlements** excluded from settlement source (renewal group row used instead).
+- **Cancelled FD** rows excluded from report.
+- **Not tax advice**; CSV/export deferred to FD-TAX-2.
+
+## 2026-06-24 — FD-ACC-10A-FX-TERMINAL-FIX: All-scope value terminal alignment
+
+- **Problem:** All Portfolios INR value history dropped while EUR looked fine; latest `metric=value` point did not match summary `current_value`.
+- **Root cause:** `load_fx_rate_maps` queried only direct pair direction, missing inverse-only cached rows (e.g. `INR→EUR` for `EUR→INR` conversion). EUR portfolios were excluded from INR performance history after the last direct `EUR→INR` rate date.
+- **Terminal alignment:** `metric=value` last point uses summary `current_value` when FX status is `ok`/`filled` (holdings-level terminal valuation + same FX fill as KPI).
+- **Historical dates** may remain partial/null when FX is unavailable; cancelled FD was not the cause.
+
+## 2026-06-24 — FD-ACC-10A-REPAIR: one-time deactivated FD repair command
+
+- **Problem:** FDs soft-deactivated before FD-ACC-10A left unreversed `FD_OPENING` debits; bank cash understated; manual deposit fix would distort returns.
+- **`repair_deactivated_fd_openings`:** dry-run by default; `--apply` per eligible FD atomically.
+- **Does not weaken** public Cancel FD eligibility (`ACTIVE`/`MATURED`, `is_active=true`).
+- **Skips** interest/settlement/renewal/already-cancelled cases.
+
+## 2026-06-24 — FD-ACC-10B: General reversal / correction framework
+
+- **Principle:** corrections use **reversal entries** + optional replacement (replacement = separate create after reverse in this phase); no destructive edits/deletes on ledger rows.
+- **Existing reversal chain:** `CashMovement.is_reversal`, `reverses_id`, `reversal_reason`; interest payment `is_reversed`, `reversed_at`.
+- **Manual cash reversal:** `POST /cash-movements/{id}/reverse` — `REVERSAL` SYSTEM movement, opposite direction, same amount/account/portfolio.
+- **FD interest reversal:** `POST /fixed-deposit-interest-payments/{id}/reverse` — `FD_INTEREST_REVERSAL` DEBIT for net; blocks after settlement.
+- **Classifier:** reversal rows inherit offset classification from original (external contribution ↔ external withdrawal); income reversals remain income (effect via bank balance, not external flow).
+- **Deferred (FD-ACC-10C):** settlement reversal, renewal reversal, cancel-FD reversal.
+
+## 2026-06-24 — FD-ACC-10A: FD cancel / deactivate accounting
+
+- **Root cause:** `DELETE /fixed-deposits/{id}` set `is_active=false` without reversing mandatory `FD_OPENING` debit — bank cash stayed reduced while FD principal left portfolio value.
+- **`POST /fixed-deposits/{id}/cancel`:** atomically creates `FD_OPENING_REVERSAL` CREDIT linked to original opening via `reverses` + `is_reversal`; sets `status=CANCELLED`, `is_active=false`.
+- **`DELETE`:** **409** when unreversed `FD_OPENING` exists; legacy FDs without ledger opening unchanged.
+- **Cancel eligibility:** `ACTIVE`/`MATURED` only; rejects interest payments, settlement, renewal.
+- **Value history:** cancelled FD excluded from FD principal series entirely; bank ledger retains opening + reversal (historical PV may dip between open and cancel when bank included — documented).
+- **Classifier:** `FD_OPENING_REVERSAL` = internal (not external contribution/withdrawal).
+- **Portfolio:** cancelled FD excluded from summary, holdings, value history, XIRR/TWROR terminal; bank cash restored via reversal credit.
+- **Audit:** cancel sets `CANCELLED` + `is_active=false` — **no destructive delete**.
+- **Deferred:** full correction/reversal framework → **FD-ACC-10B**.
+
 ## 2026-06-14 — FD-ACC-8C: FD / bank cash return metrics alignment
 
 - XIRR terminal and TWROR/cumulative-return PV include FD + included bank cash (FD-ACC-8B series).

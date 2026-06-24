@@ -234,10 +234,15 @@ export async function fetchAssetDetails(assetSymbol, scopeParams = null) {
 const RESERVED_API_ERROR_KEYS = [
   'detail',
   'message',
+  'hint',
   'required',
   'available',
+  'available_as_of_date',
+  'current_balance',
   'shortfall',
   'currency',
+  'investment_date',
+  'latest_ledger_balance_date',
   'earliest_negative_date',
   'lowest_balance',
   'affected_entries',
@@ -291,6 +296,77 @@ export class ApiError extends Error {
     this.lowest_balance = extras.lowest_balance;
     this.affected_entries = extras.affected_entries ?? null;
   }
+}
+
+/** Fixed deposit write errors may include insufficient bank-balance fields. */
+export class FixedDepositApiError extends ApiError {
+  constructor(message, extras = {}) {
+    super(message, extras);
+    this.name = 'FixedDepositApiError';
+    this.hint = extras.hint;
+    this.available_as_of_date = extras.available_as_of_date;
+    this.current_balance = extras.current_balance;
+    this.investment_date = extras.investment_date;
+    this.latest_ledger_balance_date = extras.latest_ledger_balance_date;
+    this.bank_account_id = extras.bank_account_id;
+    this.bank_account_portfolio_id = extras.bank_account_portfolio_id;
+    this.bank_account_portfolio_name = extras.bank_account_portfolio_name;
+    this.requested_portfolio_id = extras.requested_portfolio_id;
+    this.portfolio_assignment_status = extras.portfolio_assignment_status;
+  }
+}
+
+function buildFixedDepositApiError(errorData, status) {
+  const data = errorData && typeof errorData === 'object' ? errorData : {};
+  let message = buildApiErrorMessage(data, status);
+  if (typeof data.hint === 'string' && data.hint && !message.includes(data.hint)) {
+    message = message ? `${message} ${data.hint}` : data.hint;
+  }
+  return new FixedDepositApiError(message, {
+    status,
+    detail: data.detail,
+    required: data.required,
+    available: data.available,
+    available_as_of_date: data.available_as_of_date,
+    current_balance: data.current_balance,
+    shortfall: data.shortfall,
+    currency: data.currency,
+    investment_date: data.investment_date,
+    latest_ledger_balance_date: data.latest_ledger_balance_date,
+    hint: data.hint,
+    bank_account_id: data.bank_account_id,
+    bank_account_portfolio_id: data.bank_account_portfolio_id,
+    bank_account_portfolio_name: data.bank_account_portfolio_name,
+    requested_portfolio_id: data.requested_portfolio_id,
+    portfolio_assignment_status: data.portfolio_assignment_status,
+    data,
+  });
+}
+
+async function fixedDepositRequestWithHandling(path, { method = 'POST', body } = {}) {
+  const hasJsonBody = body != null && method !== 'GET' && method !== 'DELETE';
+  const response = await fetch(
+    buildUrl(path),
+    defaultFetchOptions({
+      method,
+      headers: hasJsonBody ? { 'Content-Type': 'application/json' } : undefined,
+      body: hasJsonBody ? JSON.stringify(body) : undefined,
+    })
+  );
+  if (response.status === 401 && !path.startsWith('/auth/') && _onUnauthorized) {
+    _onUnauthorized();
+  }
+
+  const payload =
+    response.status === 204 ? null : await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw buildFixedDepositApiError(
+      payload && typeof payload === 'object' ? payload : {},
+      response.status
+    );
+  }
+  return payload;
 }
 
 /** Transaction write errors may include insufficient-cash fields from the backend. */
@@ -540,6 +616,10 @@ function cashScopeFromPortfolioContext(scopeParams) {
 function appendCashQueryParams(qs, extra = {}) {
   if (extra.as_of_date) qs.set('as_of_date', extra.as_of_date);
   if (extra.currency) qs.set('currency', extra.currency);
+  if (extra.display_currency) qs.set('display_currency', extra.display_currency);
+  if (extra.include_unassigned != null && extra.include_unassigned !== '') {
+    qs.set('include_unassigned', String(extra.include_unassigned));
+  }
   if (extra.entry_type) qs.set('entry_type', extra.entry_type);
   if (extra.date_from) qs.set('date_from', extra.date_from);
   if (extra.date_to) qs.set('date_to', extra.date_to);
@@ -604,6 +684,25 @@ export async function fetchCashBalances(params = {}) {
     currency,
   });
   return fetchWithHandling(`/cash/balances?${qs.toString()}`);
+}
+
+/** GET /api/v1/cash/overview — read-only broker + bank cash rows (CASH-UNIFY-1). */
+export async function fetchCashOverview(params = {}) {
+  const {
+    portfolio_scope,
+    portfolio_id,
+    as_of_date,
+    display_currency,
+    include_unassigned,
+    ...rest
+  } = params;
+  const scope = cashScopeFromPortfolioContext({ portfolio_scope, portfolio_id });
+  const qs = appendCashQueryParams(withCashScopeParams(rest, scope), {
+    as_of_date,
+    display_currency,
+    include_unassigned,
+  });
+  return fetchWithHandling(`/cash/overview?${qs.toString()}`);
 }
 
 /** GET /api/v1/cash/ledger — paginated ledger entries. */
@@ -711,6 +810,14 @@ export async function deleteBankAccount(id) {
   return fetchWithHandling(`/bank-accounts/${id}`, { method: 'DELETE' });
 }
 
+/** GET /api/v1/bank-accounts/{id}/balance — current and optional as-of ledger balance */
+export async function fetchBankAccountBalance(id, { as_of } = {}) {
+  const params = new URLSearchParams();
+  if (as_of) params.set('as_of', as_of);
+  const qs = params.toString();
+  return fetchWithHandling(qs ? `/bank-accounts/${id}/balance?${qs}` : `/bank-accounts/${id}/balance`);
+}
+
 /** POST /api/v1/bank-accounts/{id}/seed-opening-balance */
 export async function seedBankAccountOpeningBalance(id) {
   return fetchWithHandling(`/bank-accounts/${id}/seed-opening-balance`, {
@@ -738,6 +845,14 @@ export async function createCashMovement(payload) {
   });
 }
 
+/** POST /api/v1/cash-movements/{id}/reverse */
+export async function reverseCashMovement(movementId, payload) {
+  return fetchWithHandling(`/cash-movements/${movementId}/reverse`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 function withFdScopeParams(params, scopeParams) {
   const out = new URLSearchParams(params || {});
   if (scopeParams?.portfolio_id != null) {
@@ -756,10 +871,12 @@ export async function fetchFixedDeposits(scopeParams = null) {
 
 /** POST /api/v1/fixed-deposits */
 export async function createFixedDeposit(payload) {
-  return fetchWithHandling('/fixed-deposits', {
+  const res = await fixedDepositRequestWithHandling('/fixed-deposits', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: payload,
   });
+  invalidateDashboardSummaryCache();
+  return res;
 }
 
 /** PUT /api/v1/fixed-deposits/{id} */
@@ -793,6 +910,22 @@ export async function fetchFixedDepositInterestPayment(paymentId) {
   return fetchWithHandling(`/fixed-deposit-interest-payments/${paymentId}`);
 }
 
+/** POST /api/v1/fixed-deposit-interest-payments/{payment_id}/reverse */
+export async function reverseFixedDepositInterestPayment(paymentId, payload) {
+  return fetchWithHandling(`/fixed-deposit-interest-payments/${paymentId}/reverse`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** POST /api/v1/fixed-deposits/{id}/cancel */
+export async function cancelFixedDeposit(id, payload = {}) {
+  return fetchWithHandling(`/fixed-deposits/${id}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 /** POST /api/v1/fixed-deposits/{id}/mark-matured */
 export async function markFixedDepositMatured(fdId) {
   return fetchWithHandling(`/fixed-deposits/${fdId}/mark-matured`, { method: 'POST' });
@@ -817,6 +950,23 @@ export async function renewFixedDeposit(fdId, payload) {
 /** GET /api/v1/fixed-deposits/{id}/settlements */
 export async function fetchFixedDepositSettlements(fdId) {
   return fetchWithHandling(`/fixed-deposits/${fdId}/settlements`);
+}
+
+/** GET /api/v1/reports/fixed-deposit-interest */
+export async function fetchFixedDepositInterestReport(query = {}) {
+  const params = new URLSearchParams();
+  if (query.portfolio_id != null) {
+    params.set('portfolio_id', String(query.portfolio_id));
+  } else {
+    params.set('portfolio_scope', query.portfolio_scope ?? 'all');
+  }
+  if (query.display_currency) {
+    params.set('display_currency', String(query.display_currency));
+  }
+  if (query.start_date) params.set('start_date', query.start_date);
+  if (query.end_date) params.set('end_date', query.end_date);
+  if (query.group_by) params.set('group_by', query.group_by);
+  return fetchWithHandling(`/reports/fixed-deposit-interest?${params.toString()}`);
 }
 
 /** GET /api/v1/fixed-deposit-settlements/{settlement_id} */

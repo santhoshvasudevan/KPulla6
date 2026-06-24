@@ -50,6 +50,10 @@ class InsufficientBankBalanceError(CashMovementValidationError):
         shortfall: Decimal,
         currency: str,
         hint: str | None = None,
+        current_balance: Decimal | None = None,
+        available_as_of_date: Decimal | None = None,
+        investment_date: date | None = None,
+        latest_ledger_balance_date: date | None = None,
     ) -> None:
         super().__init__(message)
         self.required = required
@@ -57,6 +61,12 @@ class InsufficientBankBalanceError(CashMovementValidationError):
         self.shortfall = shortfall
         self.currency = currency
         self.hint = hint
+        self.current_balance = current_balance
+        self.available_as_of_date = (
+            available_as_of_date if available_as_of_date is not None else available
+        )
+        self.investment_date = investment_date
+        self.latest_ledger_balance_date = latest_ledger_balance_date
 
 
 class OpeningBalanceAlreadySeededError(CashMovementValidationError):
@@ -64,6 +74,10 @@ class OpeningBalanceAlreadySeededError(CashMovementValidationError):
 
 
 class FdOpeningAlreadyRecordedError(CashMovementValidationError):
+    pass
+
+
+class FdOpeningAlreadyReversedError(CashMovementValidationError):
     pass
 
 
@@ -111,29 +125,71 @@ def compute_bank_account_balance(
     return bank_cash_balance(_movement_points_for_account(account_id), as_of_date=as_of_date)
 
 
+def latest_ledger_movement_date(bank_account: BankAccount | int) -> date | None:
+    account_id = bank_account.id if isinstance(bank_account, BankAccount) else bank_account
+    return (
+        CashMovement.objects.filter(bank_account_id=account_id)
+        .order_by("-movement_date", "-id")
+        .values_list("movement_date", flat=True)
+        .first()
+    )
+
+
 def bank_account_has_ledger(bank_account: BankAccount | int) -> bool:
     account_id = bank_account.id if isinstance(bank_account, BankAccount) else bank_account
     return CashMovement.objects.filter(bank_account_id=account_id).exists()
 
 
 def fixed_deposit_has_opening_cash_movement(fixed_deposit_id: int) -> bool:
-    return CashMovement.objects.filter(
-        linked_fixed_deposit_id=fixed_deposit_id,
-        movement_type=CashMovementType.FD_OPENING,
-        is_reversal=False,
-    ).exists()
+    return fixed_deposit_has_unreversed_opening_cash_movement(fixed_deposit_id)
 
 
-def get_fd_opening_cash_movement_id(fixed_deposit_id: int) -> int | None:
-    return (
+def fixed_deposit_has_unreversed_opening_cash_movement(fixed_deposit_id: int) -> bool:
+    opening = (
         CashMovement.objects.filter(
             linked_fixed_deposit_id=fixed_deposit_id,
             movement_type=CashMovementType.FD_OPENING,
             is_reversal=False,
         )
-        .values_list("id", flat=True)
+        .order_by("id")
         .first()
     )
+    if opening is None:
+        return False
+    return not CashMovement.objects.filter(
+        reverses_id=opening.id,
+        is_reversal=True,
+    ).exists()
+
+
+def get_unreversed_fd_opening_cash_movement(fixed_deposit_id: int) -> CashMovement | None:
+    opening = (
+        CashMovement.objects.filter(
+            linked_fixed_deposit_id=fixed_deposit_id,
+            movement_type=CashMovementType.FD_OPENING,
+            is_reversal=False,
+        )
+        .order_by("id")
+        .first()
+    )
+    if opening is None:
+        return None
+    if CashMovement.objects.filter(reverses_id=opening.id, is_reversal=True).exists():
+        return None
+    return opening
+
+
+def get_fd_opening_cash_movement_id(fixed_deposit_id: int) -> int | None:
+    opening = get_unreversed_fd_opening_cash_movement(fixed_deposit_id)
+    return opening.id if opening else None
+
+
+def movement_has_been_reversed(movement: CashMovement | int) -> bool:
+    movement_id = movement.id if isinstance(movement, CashMovement) else movement
+    return CashMovement.objects.filter(
+        reverses_id=movement_id,
+        is_reversal=True,
+    ).exists()
 
 
 def opening_balance_is_seeded(bank_account: BankAccount | int) -> bool:
@@ -207,6 +263,7 @@ def create_cash_movement(
     linked_fixed_deposit_id: int | None = None,
     is_reversal: bool = False,
     reverses_id: int | None = None,
+    reversal_reason: str = "",
 ) -> CashMovement:
     if source != CashMovementSource.MANUAL and movement_type in MANUAL_API_CASH_MOVEMENT_TYPES:
         raise CashMovementValidationError(
@@ -237,6 +294,28 @@ def create_cash_movement(
                 "FD_OPENING movements must include portfolio_id."
             )
 
+    if movement_type == CashMovementType.FD_OPENING_REVERSAL:
+        if source != CashMovementSource.SYSTEM:
+            raise CashMovementValidationError(
+                "FD_OPENING_REVERSAL movements must use SYSTEM source."
+            )
+        if linked_fixed_deposit_id is None:
+            raise CashMovementValidationError(
+                "FD_OPENING_REVERSAL movements must link to a fixed deposit."
+            )
+        if portfolio_id is None:
+            raise CashMovementValidationError(
+                "FD_OPENING_REVERSAL movements must include portfolio_id."
+            )
+        if not is_reversal:
+            raise CashMovementValidationError(
+                "FD_OPENING_REVERSAL movements must be marked as reversals."
+            )
+        if reverses_id is None:
+            raise CashMovementValidationError(
+                "FD_OPENING_REVERSAL movements must reference the opening movement."
+            )
+
     if movement_type == CashMovementType.FD_INTEREST:
         if source != CashMovementSource.SYSTEM:
             raise CashMovementValidationError(
@@ -251,9 +330,47 @@ def create_cash_movement(
                 "FD_INTEREST movements must include portfolio_id."
             )
 
+    if movement_type == CashMovementType.FD_INTEREST_REVERSAL:
+        if source != CashMovementSource.SYSTEM:
+            raise CashMovementValidationError(
+                "FD_INTEREST_REVERSAL movements must use SYSTEM source."
+            )
+        if linked_fixed_deposit_id is None:
+            raise CashMovementValidationError(
+                "FD_INTEREST_REVERSAL movements must link to a fixed deposit."
+            )
+        if portfolio_id is None:
+            raise CashMovementValidationError(
+                "FD_INTEREST_REVERSAL movements must include portfolio_id."
+            )
+        if not is_reversal:
+            raise CashMovementValidationError(
+                "FD_INTEREST_REVERSAL movements must be marked as reversals."
+            )
+        if reverses_id is None:
+            raise CashMovementValidationError(
+                "FD_INTEREST_REVERSAL movements must reference the interest movement."
+            )
+
+    if movement_type == CashMovementType.REVERSAL:
+        if source != CashMovementSource.SYSTEM:
+            raise CashMovementValidationError(
+                "REVERSAL movements must use SYSTEM source."
+            )
+        if not is_reversal:
+            raise CashMovementValidationError(
+                "REVERSAL movements must be marked as reversals."
+            )
+        if reverses_id is None:
+            raise CashMovementValidationError(
+                "REVERSAL movements must reference the original movement."
+            )
+
     if movement_type in FD_SYSTEM_MOVEMENT_TYPES - {
         CashMovementType.FD_OPENING,
+        CashMovementType.FD_OPENING_REVERSAL,
         CashMovementType.FD_INTEREST,
+        CashMovementType.FD_INTEREST_REVERSAL,
     }:
         if source != CashMovementSource.SYSTEM:
             raise CashMovementValidationError(
@@ -303,6 +420,24 @@ def create_cash_movement(
     reverses = None
     if reverses_id is not None:
         reverses = get_cash_movement(user, reverses_id)
+        if (
+            movement_type == CashMovementType.FD_OPENING_REVERSAL
+            and reverses.movement_type != CashMovementType.FD_OPENING
+        ):
+            raise CashMovementValidationError(
+                "FD_OPENING_REVERSAL must reference an FD_OPENING movement."
+            )
+        if (
+            movement_type == CashMovementType.FD_INTEREST_REVERSAL
+            and reverses.movement_type != CashMovementType.FD_INTEREST
+        ):
+            raise CashMovementValidationError(
+                "FD_INTEREST_REVERSAL must reference an FD_INTEREST movement."
+            )
+        if CashMovement.objects.filter(reverses_id=reverses.id, is_reversal=True).exists():
+            raise FdOpeningAlreadyReversedError(
+                "A reversal already exists for this opening movement."
+            )
 
     signed = signed_movement_amount(amount, resolved_direction)
     validate_no_overdraft(account, additional_signed=signed, as_of_date=movement_date)
@@ -321,6 +456,7 @@ def create_cash_movement(
         source=source,
         is_reversal=is_reversal,
         reverses=reverses,
+        reversal_reason=(reversal_reason or "").strip(),
     )
     movement.save()
     refresh_bank_account_balance(account)
@@ -376,6 +512,46 @@ def create_fd_opening_cash_movement(
         description=description,
         source=CashMovementSource.SYSTEM,
         linked_fixed_deposit_id=fd.id,
+    )
+
+
+def create_fd_opening_reversal_cash_movement(
+    user: AbstractBaseUser,
+    fd: FixedDeposit,
+    *,
+    opening_movement: CashMovement,
+    movement_date: date,
+    reason: str = "",
+) -> CashMovement:
+    if opening_movement.movement_type != CashMovementType.FD_OPENING:
+        raise CashMovementValidationError(
+            "Opening reversal must reference an FD_OPENING movement."
+        )
+    if opening_movement.linked_fixed_deposit_id != fd.id:
+        raise CashMovementValidationError(
+            "Opening movement does not belong to this fixed deposit."
+        )
+    description = (
+        "Cancellation reversal of fixed deposit opening: "
+        f"{fd.institution_name}/{fd.deposit_account_number}"
+    )
+    trimmed_reason = (reason or "").strip()
+    if trimmed_reason:
+        description = f"{description} — {trimmed_reason}"
+    return create_cash_movement(
+        user,
+        bank_account_id=fd.bank_account_id,
+        movement_type=CashMovementType.FD_OPENING_REVERSAL,
+        amount=opening_movement.amount,
+        movement_date=movement_date,
+        direction=CashMovementDirection.CREDIT,
+        portfolio_id=fd.portfolio_id,
+        description=description,
+        source=CashMovementSource.SYSTEM,
+        linked_fixed_deposit_id=fd.id,
+        is_reversal=True,
+        reverses_id=opening_movement.id,
+        reversal_reason=trimmed_reason,
     )
 
 
@@ -512,7 +688,8 @@ def list_cash_movements(
 ) -> CashMovementListResult:
     qs: QuerySet[CashMovement] = (
         CashMovement.objects.filter(user=user)
-        .select_related("bank_account", "portfolio")
+        .select_related("bank_account", "portfolio", "reverses")
+        .prefetch_related("reversal_rows")
         .order_by("-movement_date", "-created_at", "-id")
     )
     if bank_account_id is not None:

@@ -1,14 +1,18 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createFixedDeposit,
   createFixedDepositInterestPayment,
+  cancelFixedDeposit,
   deleteFixedDeposit,
+  fetchBankAccountBalance,
   fetchBankAccounts,
+  FixedDepositApiError,
   fetchFixedDepositInterestPayments,
   fetchFixedDeposits,
   fetchPortfolios,
   markFixedDepositMatured,
   renewFixedDeposit,
+  reverseFixedDepositInterestPayment,
   settleFixedDeposit,
   updateFixedDeposit,
 } from '../api';
@@ -28,11 +32,13 @@ import {
   StatusBadge,
 } from '../components/ui';
 import { fdPayoutLabel, fdStatusBadgeProps, fdStatusCounts } from '../utils/fdDisplay';
+import FixedDepositInterestReport from '../components/FixedDepositInterestReport';
 import './FixedDeposits.css';
 
 const FD_SECTION_NAV = [
   { href: '#fd-overview', label: 'Overview' },
   { href: '#fd-deposits', label: 'Deposits' },
+  { href: '#fd-interest-report', label: 'Interest & Tax' },
 ];
 
 const PAYOUT_FREQUENCIES = [
@@ -90,7 +96,10 @@ function hasMisleadingManualBalance(bank) {
 }
 
 const FD_BALANCE_AS_OF_NOTE =
-  'Available bank balance is checked as of the FD investment date.';
+  'FD creation validates the selected bank account ledger balance as of the investment date, not today’s current balance.';
+
+const FD_CASH_LEDGER_NOTE =
+  'Portfolio Cash (Cash tab) and Bank Ledger (Settings → Bank Accounts) are separate. FD creation uses the selected bank account ledger as of the FD investment date.';
 
 const FD_BACKDATED_LEDGER_NOTE =
   'If this FD is backdated, make sure the opening balance or cash deposit is recorded on or before the FD investment date.';
@@ -98,13 +107,64 @@ const FD_BACKDATED_LEDGER_NOTE =
 const FD_BACKDATED_HINT =
   'For backdated FDs, record or seed bank cash on or before the investment date.';
 
-function formatFdInsufficientError(message) {
-  if (!message || !/insufficient/i.test(message)) return message;
-  let formatted = message.replace(/\bavailable:/i, 'Available as of investment date:');
-  if (!/backdated fd/i.test(formatted)) {
-    formatted = `${formatted} ${FD_BACKDATED_HINT}`;
+function formatMoneyAmount(value, currency) {
+  if (value == null || value === '') return '—';
+  const num = Number(value);
+  if (!Number.isFinite(num)) return String(value);
+  return `${num.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currency || ''}`.trim();
+}
+
+function formatFdInsufficientErrorDetails(err) {
+  if (!(err instanceof FixedDepositApiError)) return null;
+  if (err.required == null && err.available_as_of_date == null && err.current_balance == null) {
+    return null;
   }
-  return formatted;
+  return {
+    detail: err.detail || err.message,
+    required: err.required,
+    availableAsOf: err.available_as_of_date ?? err.available,
+    currentBalance: err.current_balance,
+    shortfall: err.shortfall,
+    currency: err.currency,
+    investmentDate: err.investment_date,
+    hint: err.hint,
+  };
+}
+
+function formatFdPortfolioErrorDetails(err) {
+  if (!(err instanceof FixedDepositApiError)) return null;
+  if (err.bank_account_id == null && err.portfolio_assignment_status == null) {
+    return null;
+  }
+  return {
+    detail: err.detail || err.message,
+    bankAccountId: err.bank_account_id,
+    bankAccountPortfolioId: err.bank_account_portfolio_id,
+    bankAccountPortfolioName: err.bank_account_portfolio_name,
+    requestedPortfolioId: err.requested_portfolio_id,
+    portfolioAssignmentStatus: err.portfolio_assignment_status,
+    hint: err.hint,
+  };
+}
+
+function bankBlocksFdCreate(bank) {
+  if (!bank) return false;
+  const status = bank.portfolio_assignment_status;
+  return status === 'UNASSIGNED' || status === 'AMBIGUOUS';
+}
+
+function bankPortfolioAssignmentMessage(bank) {
+  if (!bank) return '';
+  if (bank.portfolio_assignment_status === 'UNASSIGNED') {
+    return 'Assign this bank account to a portfolio in Bank Accounts before creating an FD.';
+  }
+  if (bank.portfolio_assignment_status === 'AMBIGUOUS') {
+    return 'This bank account is linked to multiple portfolios. Assign one portfolio in Bank Accounts before creating an FD.';
+  }
+  if (bank.portfolio_id && bank.portfolio_name) {
+    return `FD portfolio: ${bank.portfolio_name}, derived from selected bank account.`;
+  }
+  return '';
 }
 
 function emptyInterestForm() {
@@ -140,6 +200,19 @@ function canRenew(fd) {
     (fd?.status === 'ACTIVE' || fd?.status === 'MATURED') &&
     !fd?.has_renewal
   );
+}
+
+function canCancel(fd) {
+  return (
+    fd?.is_active &&
+    (fd?.status === 'ACTIVE' || fd?.status === 'MATURED') &&
+    fd?.has_opening_cash_movement &&
+    !fd?.has_renewal
+  );
+}
+
+function canDeactivate(fd) {
+  return fd?.is_active && !fd?.has_opening_cash_movement;
 }
 
 function emptyRenewalForm(fd) {
@@ -184,12 +257,25 @@ export default function FixedDeposits() {
   const [form, setForm] = useState(emptyForm());
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+  const [formErrorDetails, setFormErrorDetails] = useState(null);
+  const [asOfBalanceInfo, setAsOfBalanceInfo] = useState(null);
+  const [asOfBalanceLoading, setAsOfBalanceLoading] = useState(false);
+  const formErrorRef = useRef(null);
   const [interestFd, setInterestFd] = useState(null);
   const [interestForm, setInterestForm] = useState(emptyInterestForm);
   const [interestModalOpen, setInterestModalOpen] = useState(false);
   const [interestSubmitting, setInterestSubmitting] = useState(false);
   const [interestFormError, setInterestFormError] = useState('');
   const [expandedFdId, setExpandedFdId] = useState(null);
+  const [interestReverseTarget, setInterestReverseTarget] = useState(null);
+  const [interestReverseFd, setInterestReverseFd] = useState(null);
+  const [interestReverseModalOpen, setInterestReverseModalOpen] = useState(false);
+  const [interestReverseForm, setInterestReverseForm] = useState({
+    reversal_date: new Date().toISOString().slice(0, 10),
+    reason: '',
+  });
+  const [interestReverseError, setInterestReverseError] = useState('');
+  const [interestReverseSubmitting, setInterestReverseSubmitting] = useState(false);
   const [interestPaymentsByFd, setInterestPaymentsByFd] = useState({});
   const [interestLoadingFdId, setInterestLoadingFdId] = useState(null);
   const [settlementFd, setSettlementFd] = useState(null);
@@ -232,15 +318,18 @@ export default function FixedDeposits() {
 
   const openCreate = () => {
     setEditing(null);
-    const defaultPortfolio = portfolios[0];
     const defaultBank = bankAccounts[0];
+    const derivedPortfolioId =
+      defaultBank?.portfolio_id != null ? String(defaultBank.portfolio_id) : '';
     setForm({
       ...emptyForm(),
-      portfolio_id: defaultPortfolio ? String(defaultPortfolio.id) : '',
+      portfolio_id: derivedPortfolioId,
       bank_account_id: defaultBank ? String(defaultBank.id) : '',
       currency: defaultBank?.currency || 'INR',
     });
     setFormError('');
+    setFormErrorDetails(null);
+    setAsOfBalanceInfo(null);
     setModalOpen(true);
   };
 
@@ -262,6 +351,7 @@ export default function FixedDeposits() {
       status: fd.status || 'ACTIVE',
     });
     setFormError('');
+    setFormErrorDetails(null);
     setModalOpen(true);
   };
 
@@ -271,6 +361,10 @@ export default function FixedDeposits() {
       ...prev,
       bank_account_id: bankId,
       currency: bank?.currency || prev.currency,
+      portfolio_id:
+        bank?.portfolio_id != null
+          ? String(bank.portfolio_id)
+          : '',
     }));
   };
 
@@ -278,31 +372,70 @@ export default function FixedDeposits() {
     (b) => String(b.id) === String(form.bank_account_id)
   );
 
+  useEffect(() => {
+    if (!modalOpen || editing || !selectedBank?.id || !form.investment_date) {
+      setAsOfBalanceInfo(null);
+      return undefined;
+    }
+    let cancelled = false;
+    setAsOfBalanceLoading(true);
+    fetchBankAccountBalance(selectedBank.id, { as_of: form.investment_date })
+      .then((data) => {
+        if (!cancelled) setAsOfBalanceInfo(data);
+      })
+      .catch(() => {
+        if (!cancelled) setAsOfBalanceInfo(null);
+      })
+      .finally(() => {
+        if (!cancelled) setAsOfBalanceLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [modalOpen, editing, selectedBank?.id, form.investment_date]);
+
+  useEffect(() => {
+    if (!formError && !formErrorDetails) return;
+    const node = formErrorRef.current;
+    if (!node) return;
+    node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    node.focus({ preventScroll: true });
+  }, [formError, formErrorDetails]);
+
   const openingFieldsLocked = Boolean(editing?.has_opening_cash_movement);
   const ledgerBalance = ledgerBalanceForFd(selectedBank);
+  const asOfLedgerBalance =
+    asOfBalanceInfo?.balance_as_of_date != null
+      ? Number(asOfBalanceInfo.balance_as_of_date)
+      : null;
   const principalAmount = parseFloat(form.principal_amount);
-  const createBlockedByLedger =
+  const createBlockedByUnseeded =
+    !editing && selectedBank && needsOpeningBalanceSeed(selectedBank);
+  const createBlockedByBankPortfolio =
+    !editing && selectedBank && bankBlocksFdCreate(selectedBank);
+  const createBlockMessage = createBlockedByUnseeded
+    ? 'Opening balance is not yet seeded into the cash ledger. Seed opening balance in Settings → Bank Accounts before creating a fixed deposit.'
+    : createBlockedByBankPortfolio
+      ? bankPortfolioAssignmentMessage(selectedBank)
+      : '';
+  const showAsOfShortfallWarning =
     !editing &&
     selectedBank &&
     Number.isFinite(principalAmount) &&
     principalAmount > 0 &&
-    ledgerBalance < principalAmount;
-  const createBlockMessage = createBlockedByLedger
-    ? needsOpeningBalanceSeed(selectedBank)
-      ? 'Opening balance is not yet seeded into the cash ledger. Seed opening balance in Settings → Bank Accounts before creating a fixed deposit.'
-      : `Insufficient ledger balance. Available (current ledger total): ${ledgerBalance} ${selectedBank.currency}; required: ${form.principal_amount} ${selectedBank.currency}. ${FD_BALANCE_AS_OF_NOTE} ${FD_BACKDATED_HINT}`
-    : '';
+    asOfLedgerBalance != null &&
+    asOfLedgerBalance < principalAmount;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFormError('');
-    if (createBlockedByLedger) {
+    setFormErrorDetails(null);
+    if (createBlockedByUnseeded || createBlockedByBankPortfolio) {
       setFormError(createBlockMessage);
       return;
     }
     setSubmitting(true);
     const payload = {
-      portfolio_id: Number(form.portfolio_id),
       bank_account_id: Number(form.bank_account_id),
       institution_name: form.institution_name.trim(),
       deposit_account_number: form.deposit_account_number.trim(),
@@ -316,6 +449,14 @@ export default function FixedDeposits() {
       comment: form.comment.trim(),
       status: form.status,
     };
+    if (editing) {
+      payload.portfolio_id = Number(form.portfolio_id);
+    } else if (
+      selectedBank?.portfolio_id != null &&
+      Number(form.portfolio_id) === selectedBank.portfolio_id
+    ) {
+      payload.portfolio_id = selectedBank.portfolio_id;
+    }
     try {
       if (editing) {
         await updateFixedDeposit(editing.id, payload);
@@ -327,7 +468,16 @@ export default function FixedDeposits() {
       setModalOpen(false);
       await loadData();
     } catch (err) {
-      setFormError(formatFdInsufficientError(err.message || 'Save failed.'));
+      const insufficientDetails = formatFdInsufficientErrorDetails(err);
+      const portfolioDetails = formatFdPortfolioErrorDetails(err);
+      const details = insufficientDetails || portfolioDetails;
+      if (details) {
+        setFormErrorDetails(details);
+        setFormError(details.detail || err.message || 'Save failed.');
+      } else {
+        setFormErrorDetails(null);
+        setFormError(err.message || 'Save failed.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -341,6 +491,20 @@ export default function FixedDeposits() {
       await loadData();
     } catch (err) {
       setError(err.message || 'Failed to deactivate fixed deposit.');
+    }
+  };
+
+  const handleCancel = async (fd) => {
+    const confirmed = window.confirm(
+      `Cancel fixed deposit ${fd.deposit_account_number}?\n\nCancelling reverses the original FD opening bank debit and removes the FD from portfolio value.`
+    );
+    if (!confirmed) return;
+    try {
+      await cancelFixedDeposit(fd.id, {});
+      setStatus('Fixed deposit cancelled. Bank cash opening debit reversed.');
+      await loadData();
+    } catch (err) {
+      setError(err.message || 'Failed to cancel fixed deposit.');
     }
   };
 
@@ -445,6 +609,56 @@ export default function FixedDeposits() {
     interestForm.gross_interest,
     interestForm.tax_withheld
   );
+
+  const openInterestReverseModal = (fd, payment) => {
+    setInterestReverseFd(fd);
+    setInterestReverseTarget(payment);
+    setInterestReverseForm({
+      reversal_date: new Date().toISOString().slice(0, 10),
+      reason: '',
+    });
+    setInterestReverseError('');
+    setInterestReverseModalOpen(true);
+  };
+
+  const closeInterestReverseModal = () => {
+    setInterestReverseModalOpen(false);
+    setInterestReverseFd(null);
+    setInterestReverseTarget(null);
+    setInterestReverseError('');
+  };
+
+  const canReverseInterestPayment = (fd, payment) =>
+    !payment?.is_reversed && !isSettledFd(fd) && fd?.status !== 'CANCELLED';
+
+  const handleInterestReverseSubmit = async (e) => {
+    e.preventDefault();
+    setInterestReverseError('');
+    if (!interestReverseTarget?.id || !interestReverseFd) return;
+    if (!interestReverseForm.reason.trim()) {
+      setInterestReverseError('Reason is required for audit.');
+      return;
+    }
+    if (!interestReverseForm.reversal_date) {
+      setInterestReverseError('Reversal date is required.');
+      return;
+    }
+    setInterestReverseSubmitting(true);
+    try {
+      await reverseFixedDepositInterestPayment(interestReverseTarget.id, {
+        reversal_date: interestReverseForm.reversal_date,
+        reason: interestReverseForm.reason.trim(),
+      });
+      closeInterestReverseModal();
+      setStatus('Interest payment reversed. Net interest bank credit was reversed.');
+      await loadInterestPayments(interestReverseFd.id);
+      await loadData();
+    } catch (err) {
+      setInterestReverseError(err.message || 'Failed to reverse interest payment.');
+    } finally {
+      setInterestReverseSubmitting(false);
+    }
+  };
 
   const openSettlementModal = (fd) => {
     setSettlementFd(fd);
@@ -806,9 +1020,16 @@ export default function FixedDeposits() {
                           <Button variant="secondary" type="button" onClick={() => openEdit(fd)}>
                             Edit
                           </Button>
-                          <Button variant="secondary" type="button" onClick={() => handleDeactivate(fd)}>
-                            Deactivate
-                          </Button>
+                          {canCancel(fd) ? (
+                            <Button variant="secondary" type="button" onClick={() => handleCancel(fd)}>
+                              Cancel FD
+                            </Button>
+                          ) : null}
+                          {canDeactivate(fd) ? (
+                            <Button variant="secondary" type="button" onClick={() => handleDeactivate(fd)}>
+                              Deactivate
+                            </Button>
+                          ) : null}
                           <Button
                             variant="secondary"
                             type="button"
@@ -835,6 +1056,8 @@ export default function FixedDeposits() {
                                   <AppTableHeaderCell numeric>Tax</AppTableHeaderCell>
                                   <AppTableHeaderCell numeric>Net</AppTableHeaderCell>
                                   <AppTableHeaderCell>Comment</AppTableHeaderCell>
+                                  <AppTableHeaderCell>Status</AppTableHeaderCell>
+                                  <AppTableHeaderCell>Actions</AppTableHeaderCell>
                                 </tr>
                               </thead>
                               <tbody>
@@ -851,6 +1074,22 @@ export default function FixedDeposits() {
                                       <CurrencyValue value={p.net_interest} currency={p.currency} />
                                     </AppTableCell>
                                     <AppTableCell>{p.comment || '—'}</AppTableCell>
+                                    <AppTableCell>
+                                      {p.is_reversed ? 'Reversed' : 'Active'}
+                                    </AppTableCell>
+                                    <AppTableCell>
+                                      {canReverseInterestPayment(fd, p) ? (
+                                        <Button
+                                          variant="secondary"
+                                          type="button"
+                                          onClick={() => openInterestReverseModal(fd, p)}
+                                        >
+                                          Reverse interest
+                                        </Button>
+                                      ) : (
+                                        '—'
+                                      )}
+                                    </AppTableCell>
                                   </tr>
                                 ))}
                               </tbody>
@@ -871,6 +1110,8 @@ export default function FixedDeposits() {
       </DataTableShell>
       </div>
 
+      <FixedDepositInterestReport />
+
       {modalOpen ? (
         <div className="fd-modal-backdrop" role="presentation" onClick={() => setModalOpen(false)}>
           <div
@@ -886,27 +1127,92 @@ export default function FixedDeposits() {
                 Creating a fixed deposit will debit the principal from the linked bank account.
               </p>
             ) : null}
-            {formError ? <WarningBanner severity="error" message={formError} /> : null}
-            {!editing && createBlockedByLedger ? (
+            {formErrorDetails ? (
+              <div
+                ref={formErrorRef}
+                tabIndex={-1}
+                className="fd-form__error-panel"
+                aria-live="assertive"
+              >
+                <WarningBanner severity="error" message={formErrorDetails.detail} />
+                <ul className="fd-form__error-details settings-hint">
+                  {formErrorDetails.required != null ? (
+                    <li>Required amount: {formatMoneyAmount(formErrorDetails.required, formErrorDetails.currency)}</li>
+                  ) : null}
+                  {formErrorDetails.availableAsOf != null ? (
+                    <li>
+                      Available as of investment date:{' '}
+                      {formatMoneyAmount(formErrorDetails.availableAsOf, formErrorDetails.currency)}
+                    </li>
+                  ) : null}
+                  {formErrorDetails.currentBalance != null ? (
+                    <li>
+                      Current ledger balance:{' '}
+                      {formatMoneyAmount(formErrorDetails.currentBalance, formErrorDetails.currency)}
+                    </li>
+                  ) : null}
+                  {formErrorDetails.shortfall != null ? (
+                    <li>Shortfall: {formatMoneyAmount(formErrorDetails.shortfall, formErrorDetails.currency)}</li>
+                  ) : null}
+                  {formErrorDetails.investmentDate ? (
+                    <li>Investment date: {formErrorDetails.investmentDate}</li>
+                  ) : null}
+                  {formErrorDetails.bankAccountPortfolioName ? (
+                    <li>Bank account portfolio: {formErrorDetails.bankAccountPortfolioName}</li>
+                  ) : null}
+                  {formErrorDetails.portfolioAssignmentStatus ? (
+                    <li>Portfolio assignment: {formErrorDetails.portfolioAssignmentStatus}</li>
+                  ) : null}
+                  {formErrorDetails.hint ? <li>{formErrorDetails.hint}</li> : null}
+                </ul>
+              </div>
+            ) : formError ? (
+              <div ref={formErrorRef} tabIndex={-1} role="alert" aria-live="assertive">
+                <WarningBanner severity="error" message={formError} />
+              </div>
+            ) : null}
+            {!editing && createBlockedByUnseeded ? (
               <WarningBanner severity="warning" message={createBlockMessage} />
+            ) : null}
+            {!editing && createBlockedByBankPortfolio ? (
+              <WarningBanner severity="warning" message={createBlockMessage} />
+            ) : null}
+            {!editing && showAsOfShortfallWarning ? (
+              <WarningBanner
+                severity="warning"
+                message={`Available as of ${form.investment_date} is ${formatMoneyAmount(asOfLedgerBalance, selectedBank?.currency)} — less than the principal ${formatMoneyAmount(principalAmount, selectedBank?.currency)}. ${FD_BACKDATED_HINT}`}
+              />
             ) : null}
             <form onSubmit={handleSubmit} className="fd-form">
               <div className="form-group">
                 <label htmlFor="fd-portfolio">Portfolio</label>
-                <select
-                  id="fd-portfolio"
-                  value={form.portfolio_id}
-                  onChange={(e) => setForm((p) => ({ ...p, portfolio_id: e.target.value }))}
-                  required
-                  disabled={openingFieldsLocked}
-                >
-                  <option value="">Select portfolio</option>
-                  {portfolios.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                {!editing && selectedBank?.portfolio_id ? (
+                  <>
+                    <input
+                      id="fd-portfolio"
+                      type="text"
+                      readOnly
+                      value={selectedBank.portfolio_name || form.portfolio_id}
+                      disabled
+                    />
+                    <p className="settings-hint">{bankPortfolioAssignmentMessage(selectedBank)}</p>
+                  </>
+                ) : (
+                  <select
+                    id="fd-portfolio"
+                    value={form.portfolio_id}
+                    onChange={(e) => setForm((p) => ({ ...p, portfolio_id: e.target.value }))}
+                    required
+                    disabled={openingFieldsLocked || (!editing && Boolean(selectedBank))}
+                  >
+                    <option value="">Select portfolio</option>
+                    {portfolios.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div className="form-group">
                 <label htmlFor="fd-bank">Bank account</label>
@@ -927,10 +1233,20 @@ export default function FixedDeposits() {
                 {selectedBank ? (
                   <>
                     <p className="settings-hint">
-                      Ledger balance (current total from API): {ledgerBalance}{' '}
-                      {selectedBank.currency}
+                      Current ledger balance: {formatMoneyAmount(ledgerBalance, selectedBank.currency)}
                     </p>
-                    <p className="settings-hint">{FD_BALANCE_AS_OF_NOTE}</p>
+                    {!editing && form.investment_date ? (
+                      <p className="settings-hint">
+                        {asOfBalanceLoading
+                          ? 'Loading available as of investment date…'
+                          : asOfLedgerBalance != null
+                            ? `Available as of FD investment date (${form.investment_date}): ${formatMoneyAmount(asOfLedgerBalance, selectedBank.currency)}`
+                            : FD_BALANCE_AS_OF_NOTE}
+                      </p>
+                    ) : (
+                      <p className="settings-hint">{FD_BALANCE_AS_OF_NOTE}</p>
+                    )}
+                    <p className="settings-hint">{FD_CASH_LEDGER_NOTE}</p>
                     {!editing && form.investment_date && bankHasLedger(selectedBank) ? (
                       <p className="settings-hint">{FD_BACKDATED_LEDGER_NOTE}</p>
                     ) : null}
@@ -1068,7 +1384,7 @@ export default function FixedDeposits() {
                 <Button
                   type="submit"
                   variant="primary"
-                  disabled={submitting || createBlockedByLedger}
+                  disabled={submitting || createBlockedByUnseeded || createBlockedByBankPortfolio}
                 >
                   {submitting ? 'Saving…' : editing ? 'Save changes' : 'Create'}
                 </Button>
@@ -1169,6 +1485,69 @@ export default function FixedDeposits() {
                   {interestSubmitting ? 'Saving…' : 'Record payment'}
                 </Button>
                 <Button type="button" variant="secondary" onClick={closeInterestModal}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {interestReverseModalOpen && interestReverseTarget && interestReverseFd ? (
+        <div
+          className="fd-modal-backdrop"
+          role="presentation"
+          onClick={closeInterestReverseModal}
+        >
+          <div
+            className="fd-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="fd-interest-reverse-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="fd-interest-reverse-modal-title">Reverse interest payment</h2>
+            <p className="settings-hint">
+              This debits net interest ({interestReverseTarget.net_interest}{' '}
+              {interestReverseTarget.currency}) from {interestReverseFd.bank_account_name}. The
+              original payment stays visible and is marked reversed.
+            </p>
+            {interestReverseError ? (
+              <WarningBanner severity="error" message={interestReverseError} />
+            ) : null}
+            <form onSubmit={handleInterestReverseSubmit} className="fd-form">
+              <div className="form-group">
+                <label htmlFor="fd-int-rev-date">Reversal date</label>
+                <input
+                  id="fd-int-rev-date"
+                  type="date"
+                  value={interestReverseForm.reversal_date}
+                  onChange={(e) =>
+                    setInterestReverseForm((p) => ({
+                      ...p,
+                      reversal_date: e.target.value,
+                    }))
+                  }
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="fd-int-rev-reason">Reason (required)</label>
+                <textarea
+                  id="fd-int-rev-reason"
+                  value={interestReverseForm.reason}
+                  onChange={(e) =>
+                    setInterestReverseForm((p) => ({ ...p, reason: e.target.value }))
+                  }
+                  rows={3}
+                  required
+                />
+              </div>
+              <div className="fd-form__actions">
+                <Button type="submit" variant="primary" disabled={interestReverseSubmitting}>
+                  {interestReverseSubmitting ? 'Reversing…' : 'Confirm reversal'}
+                </Button>
+                <Button type="button" variant="secondary" onClick={closeInterestReverseModal}>
                   Cancel
                 </Button>
               </div>

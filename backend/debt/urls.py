@@ -1,18 +1,22 @@
 from django.urls import path
 
 from debt.views import (
+    BankAccountBalanceView,
     BankAccountDetailView,
     BankAccountListCreateView,
     BankAccountSeedOpeningBalanceView,
     CashMovementDetailView,
     CashMovementListCreateView,
+    CashMovementReverseView,
     FixedDepositDetailView,
     FixedDepositInterestPaymentDetailView,
     FixedDepositInterestPaymentListCreateView,
+    FixedDepositInterestPaymentReverseView,
     FixedDepositListCreateView,
     FixedDepositMarkMaturedView,
     FixedDepositSettleView,
     FixedDepositRenewView,
+    FixedDepositCancelView,
     FixedDepositSettlementDetailView,
     FixedDepositSettlementListView,
 )
@@ -29,11 +33,21 @@ urlpatterns = [
         BankAccountSeedOpeningBalanceView.as_view(),
         name="bank-account-seed-opening-balance",
     ),
+    path(
+        "bank-accounts/<int:account_id>/balance",
+        BankAccountBalanceView.as_view(),
+        name="bank-account-balance",
+    ),
     path("cash-movements", CashMovementListCreateView.as_view(), name="cash-movement-list"),
     path(
         "cash-movements/<int:movement_id>",
         CashMovementDetailView.as_view(),
         name="cash-movement-detail",
+    ),
+    path(
+        "cash-movements/<int:movement_id>/reverse",
+        CashMovementReverseView.as_view(),
+        name="cash-movement-reverse",
     ),
     path("fixed-deposits", FixedDepositListCreateView.as_view(), name="fixed-deposit-list"),
     path(
@@ -50,6 +64,16 @@ urlpatterns = [
         "fixed-deposit-interest-payments/<int:payment_id>",
         FixedDepositInterestPaymentDetailView.as_view(),
         name="fixed-deposit-interest-payment-detail",
+    ),
+    path(
+        "fixed-deposit-interest-payments/<int:payment_id>/reverse",
+        FixedDepositInterestPaymentReverseView.as_view(),
+        name="fixed-deposit-interest-payment-reverse",
+    ),
+    path(
+        "fixed-deposits/<int:fd_id>/cancel",
+        FixedDepositCancelView.as_view(),
+        name="fixed-deposit-cancel",
     ),
     path(
         "fixed-deposits/<int:fd_id>/mark-matured",

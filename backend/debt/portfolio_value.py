@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from django.db.models import QuerySet
 
+from debt.bank_account_portfolio import bank_account_associated_portfolio_ids
 from debt.bank_ledger_services import bank_account_has_ledger
 from debt.models import BankAccount, CashMovement, FixedDeposit, VALUE_CONTRIBUTING_STATUSES
 from finance.bank_cash import BankCashMovementPoint, bank_cash_balance
@@ -17,22 +18,6 @@ from portfolios.scope import ResolvedPortfolioScope
 FD_BANK_FX_VALUE_HISTORY_WARNING = (
     "FX rates are missing for some fixed deposit or bank cash value history points."
 )
-
-
-def bank_account_associated_portfolio_ids(bank_account_id: int) -> set[int]:
-    """Portfolios linked via FDs or portfolio-tagged cash movements."""
-    portfolio_ids: set[int] = set()
-    portfolio_ids.update(
-        FixedDeposit.objects.filter(bank_account_id=bank_account_id).values_list(
-            "portfolio_id", flat=True
-        )
-    )
-    portfolio_ids.update(
-        CashMovement.objects.filter(
-            bank_account_id=bank_account_id, portfolio_id__isnull=False
-        ).values_list("portfolio_id", flat=True)
-    )
-    return portfolio_ids
 
 
 def bank_account_includable_in_scope(
@@ -368,7 +353,7 @@ def build_fd_holding_rows(
                 display_value = converted
 
         value_status = "principal_only"
-        if fd.status in ("CLOSED", "MATURED_SETTLED") or not fd.is_active:
+        if fd.status in ("CLOSED", "MATURED_SETTLED", "CANCELLED") or not fd.is_active:
             value_status = "closed"
         elif principal <= 0:
             value_status = "excluded"
@@ -404,7 +389,7 @@ def build_fd_holding_rows(
                 "value_status": value_status,
                 "holding_status": (
                     "closed"
-                    if fd.status in ("CLOSED", "MATURED_SETTLED")
+                    if fd.status in ("CLOSED", "MATURED_SETTLED", "CANCELLED")
                     else "ok"
                 ),
                 "fx_status": "fx_unavailable" if fx_missing else "ok",
@@ -814,23 +799,34 @@ def merge_fd_bank_into_value_timeseries(
     out = []
     inv_by_date = {row["date"]: row for row in investment_ts}
     all_dates = sorted(set(inv_by_date) | set(fd_by_date) | set(bank_by_date))
+    last_known_inv_pv: float | None = None
     for day in all_dates:
         if day < start_date.isoformat() or day > end_date.isoformat():
             continue
         base_row = inv_by_date.get(day)
-        if base_row is None:
+        if base_row is not None:
+            merged = dict(base_row)
+            inv_val = merged.get("portfolio_value")
+            if inv_val is not None:
+                last_known_inv_pv = float(inv_val)
+        elif last_known_inv_pv is not None:
+            merged = {
+                "date": day,
+                "portfolio_value": last_known_inv_pv,
+                "invested_amount": 0.0,
+                "fx_status": "ok",
+            }
+        else:
             merged = {
                 "date": day,
                 "portfolio_value": 0.0,
                 "invested_amount": 0.0,
                 "fx_status": "ok",
             }
-        else:
-            merged = dict(base_row)
         addon, fx_status = _addon_for_date(day)
         inv_val = merged.get("portfolio_value")
         if inv_val is None:
-            merged["portfolio_value"] = addon if addon else None
+            merged["portfolio_value"] = None
         else:
             merged["portfolio_value"] = float(inv_val) + addon
         merged["fx_status"] = _combine_fx_status(

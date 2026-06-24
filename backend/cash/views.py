@@ -21,6 +21,7 @@ from cash.serializers import (
     CashTransferWriteSerializer,
     CashWithdrawalWriteSerializer,
 )
+from cash.overview_service import build_cash_overview, cash_overview_to_response_dict
 from cash.services import (
     CashBalancesAllResult,
     CashBalancesSingleResult,
@@ -171,6 +172,56 @@ class CashBalancesView(APIView):
                 ],
             }
         )
+
+
+class CashOverviewView(APIView):
+    """Read-only broker + bank cash overview (CASH-UNIFY-1)."""
+
+    def get(self, request):
+        try:
+            portfolio_id = _parse_portfolio_id(request)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            as_of_date = _parse_date_param(
+                request.query_params.get("as_of_date"), param_name="as_of_date"
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        display_currency = request.query_params.get("display_currency")
+        if display_currency is not None and display_currency.strip() == "":
+            display_currency = None
+
+        include_unassigned_raw = request.query_params.get("include_unassigned", "false")
+        include_unassigned = str(include_unassigned_raw).strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+
+        try:
+            scope = resolve_portfolio_scope(
+                request.user,
+                portfolio_scope=request.query_params.get("portfolio_scope"),
+                portfolio_id=portfolio_id,
+            )
+        except PortfolioScopeError as exc:
+            return Response(
+                {"detail": str(exc)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY
+            )
+        except PortfolioNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+
+        result = build_cash_overview(
+            request.user,
+            scope,
+            as_of_date=as_of_date,
+            display_currency=display_currency,
+            include_unassigned=include_unassigned,
+        )
+        return Response(cash_overview_to_response_dict(result))
 
 
 class CashLedgerView(APIView):

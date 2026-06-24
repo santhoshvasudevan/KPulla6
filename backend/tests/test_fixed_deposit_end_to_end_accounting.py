@@ -20,18 +20,12 @@ from portfolios.models import Portfolio
 from portfolios.scope import ResolvedPortfolioScope
 from portfolios.seed import ensure_default_portfolio
 from portfolios.xirr_service import compute_scope_xirr_detail
-from tests.debt_test_helpers import fund_bank_account
+from tests.debt_test_helpers import create_legacy_fixed_deposit_with_opening, create_test_bank_account, fund_bank_account
 
 
-def _bank(user, **overrides):
-    payload = dict(
-        name="Savings",
-        institution_name="HDFC",
-        account_number="e2e-111",
-        currency="INR",
-    )
-    payload.update(overrides)
-    return create_bank_account(user, **payload)
+def _bank(user, portfolio=None, **overrides):
+    return create_test_bank_account(user, portfolio=portfolio, **overrides)
+
 
 
 def _enable_inclusion(user, bank):
@@ -72,6 +66,7 @@ def test_scenario_1_included_bank_cash_full_lifecycle(api_client, seeded, test_u
         account_number="e2e-seed",
         currency="INR",
         opening_balance=Decimal("300000"),
+        portfolio_id=portfolio.id,
     )
     seed_opening_balance(test_user, bank.id, movement_date=date(2024, 1, 1))
     bank.refresh_from_db()
@@ -347,6 +342,7 @@ def test_scenario_4_unseeded_manual_balance(api_client, seeded, test_user):
         currency="INR",
         opening_balance=Decimal("250000"),
         current_balance=Decimal("250000"),
+        portfolio_id=portfolio.id,
     )
     _enable_inclusion(test_user, bank)
 
@@ -383,7 +379,7 @@ def test_scenario_5_portfolio_scope_attribution(api_client, seeded, test_user):
         user=test_user, name="Second E2E", base_currency="INR", is_active=True
     )
 
-    exclusive_bank = _bank(test_user, account_number="e2e-exclusive")
+    exclusive_bank = _bank(test_user, portfolio=p1, account_number="e2e-exclusive")
     fund_bank_account(test_user, exclusive_bank, "55000")
     _enable_inclusion(test_user, exclusive_bank)
     create_fixed_deposit(
@@ -402,33 +398,31 @@ def test_scenario_5_portfolio_scope_attribution(api_client, seeded, test_user):
     exclusive_summary = _summary(api_client, portfolio_id=p1.id)
     assert exclusive_summary["current_value"] == pytest.approx(55000.0, rel=0.001)
 
-    bank = _bank(test_user, account_number="e2e-scope")
+    bank = create_bank_account(
+        test_user,
+        name="E2E Scope",
+        institution_name="HDFC",
+        account_number="e2e-scope",
+        currency="INR",
+    )
     fund_bank_account(test_user, bank, "80000")
     _enable_inclusion(test_user, bank)
 
-    create_fixed_deposit(
+    create_legacy_fixed_deposit_with_opening(
         test_user,
-        portfolio_id=p1.id,
-        bank_account_id=bank.id,
-        institution_name="HDFC",
+        portfolio=p1,
+        bank=bank,
         deposit_account_number="FD-P1",
         principal_amount=Decimal("10000"),
-        currency="INR",
-        interest_rate_percent=Decimal("7"),
-        interest_payout_frequency="QUARTERLY",
         investment_date=date(2024, 1, 1),
         maturity_date=date(2026, 1, 1),
     )
-    create_fixed_deposit(
+    create_legacy_fixed_deposit_with_opening(
         test_user,
-        portfolio_id=p2.id,
-        bank_account_id=bank.id,
-        institution_name="HDFC",
+        portfolio=p2,
+        bank=bank,
         deposit_account_number="FD-P2",
         principal_amount=Decimal("20000"),
-        currency="INR",
-        interest_rate_percent=Decimal("7"),
-        interest_payout_frequency="QUARTERLY",
         investment_date=date(2024, 1, 1),
         maturity_date=date(2026, 1, 1),
     )

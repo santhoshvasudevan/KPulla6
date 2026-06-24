@@ -24,7 +24,7 @@ def contributes_to_portfolio_value(fd: FixedDepositLike) -> bool:
     """Return True when principal should count toward portfolio value."""
     if not fd.is_active:
         return False
-    if fd.status in {"CLOSED", "MATURED_SETTLED"}:
+    if fd.status in {"CLOSED", "MATURED_SETTLED", "CANCELLED"}:
         return False
     return fd.status in VALUE_CONTRIBUTING_STATUSES
 

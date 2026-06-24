@@ -9,6 +9,11 @@ from django.db import transaction as db_transaction
 from django.db.models import QuerySet
 
 from cash.constants import SUPPORTED_CASH_CURRENCIES
+from debt.bank_account_portfolio import (
+    FixedDepositBankPortfolioError,
+    resolve_fd_portfolio_from_bank_account,
+    resolve_portfolio_for_bank_account,
+)
 from debt.models import BankAccount, FixedDeposit, FixedDepositStatus
 from portfolios.models import Portfolio
 from portfolios.services import PortfolioNotFoundError, get_portfolio, list_active_portfolios
@@ -30,6 +35,9 @@ class FixedDepositValidationError(Exception):
     pass
 
 
+_NOT_PROVIDED = object()
+
+
 def _validate_currency(currency: str) -> str:
     code = (currency or "").strip().upper()
     if code not in SUPPORTED_CASH_CURRENCIES:
@@ -39,12 +47,18 @@ def _validate_currency(currency: str) -> str:
 
 def list_active_bank_accounts(user: AbstractBaseUser) -> list[BankAccount]:
     return list(
-        BankAccount.objects.filter(user=user, is_active=True).order_by("name", "id")
+        BankAccount.objects.filter(user=user, is_active=True)
+        .select_related("portfolio")
+        .order_by("name", "id")
     )
 
 
 def get_bank_account(user: AbstractBaseUser, account_id: int) -> BankAccount:
-    account = BankAccount.objects.filter(user=user, pk=account_id).first()
+    account = (
+        BankAccount.objects.filter(user=user, pk=account_id)
+        .select_related("portfolio")
+        .first()
+    )
     if not account:
         raise BankAccountNotFoundError(f"Bank account not found: {account_id}")
     return account
@@ -61,6 +75,7 @@ def create_bank_account(
     current_balance: Decimal | None = None,
     include_in_portfolio_value: bool = False,
     comment: str = "",
+    portfolio_id: int | None = None,
 ) -> BankAccount:
     nm = (name or "").strip()
     if not nm:
@@ -72,8 +87,11 @@ def create_bank_account(
     if not acct:
         raise BankAccountValidationError("account_number must not be empty")
 
+    resolve_portfolio_for_bank_account(user, portfolio_id)
+
     account = BankAccount(
         user=user,
+        portfolio_id=portfolio_id,
         name=nm,
         institution_name=inst,
         account_number=acct,
@@ -100,10 +118,15 @@ def update_bank_account(
     current_balance: Decimal | None = None,
     include_in_portfolio_value: bool | None = None,
     comment: str | None = None,
+    portfolio_id: int | None | object = _NOT_PROVIDED,
 ) -> BankAccount:
     account = get_bank_account(user, account_id)
     if not account.is_active:
         raise BankAccountNotFoundError(f"Bank account not found: {account_id}")
+
+    if portfolio_id is not _NOT_PROVIDED:
+        resolve_portfolio_for_bank_account(user, portfolio_id)  # type: ignore[arg-type]
+        account.portfolio_id = portfolio_id  # type: ignore[assignment]
 
     if name is not None:
         nm = (name or "").strip()
@@ -208,7 +231,7 @@ def _resolve_portfolio_for_fd(user: AbstractBaseUser, portfolio_id: int) -> Port
 def create_fixed_deposit(
     user: AbstractBaseUser,
     *,
-    portfolio_id: int,
+    portfolio_id: int | None = None,
     bank_account_id: int,
     institution_name: str,
     deposit_account_number: str,
@@ -227,13 +250,23 @@ def create_fixed_deposit(
     from debt.bank_ledger_services import (
         InsufficientBankBalanceError,
         bank_account_has_ledger,
+        compute_bank_account_balance,
         create_fd_opening_cash_movement,
+        latest_ledger_movement_date,
         opening_balance_is_seeded,
         validate_no_overdraft,
     )
 
-    portfolio = _resolve_portfolio_for_fd(user, portfolio_id)
     bank_account = _resolve_bank_account_for_fd(user, bank_account_id)
+    portfolio = resolve_fd_portfolio_from_bank_account(
+        bank_account, requested_portfolio_id=portfolio_id
+    )
+    if portfolio.user_id != user.id:
+        raise FixedDepositValidationError(
+            f"Portfolio not found: {portfolio.id}"
+        )
+    if not portfolio.is_active:
+        raise FixedDepositValidationError(f"Portfolio is inactive: {portfolio.id}")
 
     renewal_of = None
     if renewal_of_id is not None:
@@ -254,18 +287,33 @@ def create_fixed_deposit(
                 as_of_date=investment_date,
             )
         except InsufficientBankBalanceError as exc:
-            if (
+            current_balance = compute_bank_account_balance(bank_account)
+            latest_ledger_date = latest_ledger_movement_date(bank_account)
+            has_ledger = bank_account_has_ledger(bank_account)
+            unseeded_opening = (
                 bank_account.opening_balance > 0
                 and not opening_balance_is_seeded(bank_account)
-                and not bank_account_has_ledger(bank_account)
-            ):
+            )
+            if unseeded_opening and not has_ledger:
                 hint = (
                     "Opening balance has not been seeded into the cash ledger yet. "
                     "Use Settings → Bank Accounts → Seed opening balance first."
                 )
+            elif unseeded_opening:
+                hint = (
+                    "Reference opening balance is not ledger cash until seeded. "
+                    "Seed opening balance dated on or before the FD investment date."
+                )
+            elif current_balance > exc.available:
+                hint = (
+                    "Current ledger balance is higher because cash movements exist after "
+                    "the FD investment date. Record or seed bank cash on or before the "
+                    "investment date."
+                )
             else:
                 hint = (
-                    "For backdated FDs, record or seed bank cash on or before the investment date."
+                    "For backdated FDs, record or seed bank cash on or before the "
+                    "investment date."
                 )
             raise InsufficientBankBalanceError(
                 str(exc),
@@ -274,6 +322,10 @@ def create_fixed_deposit(
                 shortfall=exc.shortfall,
                 currency=exc.currency,
                 hint=hint,
+                current_balance=current_balance,
+                available_as_of_date=exc.available,
+                investment_date=investment_date,
+                latest_ledger_balance_date=latest_ledger_date,
             ) from exc
 
     fd = FixedDeposit(
@@ -343,10 +395,19 @@ def update_fixed_deposit(
                 f"Cannot change {label} after the opening cash movement has been recorded."
             )
 
-    if "portfolio_id" in fields and fields["portfolio_id"] is not None:
-        fd.portfolio = _resolve_portfolio_for_fd(user, fields["portfolio_id"])
     if "bank_account_id" in fields and fields["bank_account_id"] is not None:
         fd.bank_account = _resolve_bank_account_for_fd(user, fields["bank_account_id"])
+    if "bank_account_id" in fields or "portfolio_id" in fields:
+        requested_portfolio_id = (
+            fields["portfolio_id"] if "portfolio_id" in fields else None
+        )
+        fd.portfolio = resolve_fd_portfolio_from_bank_account(
+            fd.bank_account, requested_portfolio_id=requested_portfolio_id
+        )
+        if fd.portfolio.user_id != user.id:
+            raise FixedDepositValidationError(
+                f"Portfolio not found: {fd.portfolio.id}"
+            )
     if "institution_name" in fields and fields["institution_name"] is not None:
         fd.institution_name = (fields["institution_name"] or "").strip()
     if "deposit_account_number" in fields and fields["deposit_account_number"] is not None:
@@ -384,9 +445,15 @@ def update_fixed_deposit(
 
 
 def deactivate_fixed_deposit(user: AbstractBaseUser, fd_id: int) -> FixedDeposit:
+    from debt.bank_ledger_services import fixed_deposit_has_unreversed_opening_cash_movement
+
     fd = get_fixed_deposit(user, fd_id)
     if not fd.is_active:
         raise FixedDepositNotFoundError(f"Fixed deposit not found: {fd_id}")
+    if fixed_deposit_has_unreversed_opening_cash_movement(fd.id):
+        raise FixedDepositValidationError(
+            "This FD has bank ledger movements. Use Cancel FD to reverse the opening debit."
+        )
     fd.is_active = False
     fd.save()
     return fd

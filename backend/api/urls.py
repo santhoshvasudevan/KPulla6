@@ -19,6 +19,7 @@ from transactions.views import (
     TransactionFilterOptionsView,
     TransactionListCreateView,
 )
+from debt.report_views import FixedDepositInterestReportView
 
 urlpatterns = [
     path("auth/", include("accounts.urls")),
@@ -78,4 +79,9 @@ urlpatterns = [
     path("nav/refresh", NavRefreshView.as_view(), name="nav-refresh"),
     path("benchmarks/indices", BenchmarkIndicesView.as_view(), name="benchmark-indices"),
     path("portfolio/force-sync", PortfolioForceSyncView.as_view(), name="portfolio-force-sync"),
+    path(
+        "reports/fixed-deposit-interest",
+        FixedDepositInterestReportView.as_view(),
+        name="fixed-deposit-interest-report",
+    ),
 ]

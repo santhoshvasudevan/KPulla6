@@ -83,7 +83,7 @@ Product rules index: [product-rules.md](./product-rules.md).
 
 1. **Transactions** — BUY/SELL (and splits for quantity/price adjustment); MF uses `investment_date` / `paid_value` for external cash flows where applicable.
 2. **HistoricalPrice** — split-adjusted stock/ETF closes (`yfinance` **Adj Close** via `make sync-prices`); benchmark `asset_type=INDEX`. **Invariant:** `build_split_adjusted_lot_snapshots` scales pre-split transaction quantities, so cached stock closes must be split-adjusted too. Raw nominal pre-split prices × split-adjusted qty produce false valuation spikes (see `test_stock_split_valuation_api.py`, `test_analytics_split_metrics_api.py`). Metric Sheet endpoints warn when a split date shows a value drop ratio matching the split factor (likely raw prices).
-3. **FXRate** — same-date conversion into portfolio/holding/display currency (7-day fill where summary/performance already allows).
+3. **FXRate** — same-date conversion into portfolio/holding/display currency (7-day fill where summary/performance already allows). Bulk loaders include **inverse-stored** pairs; value metric **terminal** point matches summary KPI when FX succeeds.
 4. **Mutual fund NAVs** — `HistoricalPrice` rows with `asset_type=MUTUAL_FUND`.
 5. **Benchmark index prices** — cached index levels for beta, alpha, correlation, and overlay charts.
 
@@ -179,6 +179,18 @@ Never call yfinance, MFAPI, or other external providers during analytics **read*
 - **Optional future cache/snapshot table** may be added only after formulas and API contracts stabilize.
 - If caching is introduced later, invalidation must run on changes to transactions, prices, FX, NAVs, or benchmark rows affecting the subject; cache keys must include **subject** (portfolio/asset), **range**, **display_currency**, **benchmark**, and an **input hash** (e.g. latest transaction id + max price date per symbol).
 
+## Unified cash model (CASH-UNIFY-0 — design)
+
+KPulla6 treats **broker cash** and **bank cash** as cash holdings within a portfolio wealth pool, while keeping **separate ledgers** in storage. Design doc: [cash-unification.md](./cash-unification.md).
+
+| Holding | Ledger | Scope | Implementation |
+|---------|--------|-------|----------------|
+| Broker cash | `CashLedgerEntry` | Per portfolio | `cash` app — **done** |
+| Bank cash | `CashMovement` | Per `BankAccount` | `debt` app — **done** |
+| Physical cash | TBD | Deferred | CASH-UNIFY-6 |
+
+**Near-term roadmap:** bank account portfolio ownership + overview read API (CASH-UNIFY-1) → FD portfolio from bank account (CASH-UNIFY-2) → unified Cash page UI (CASH-UNIFY-3) → terminology/display-currency/stabilization (CASH-UNIFY-4). **No table merge** in these phases.
+
 ## Cash Ledger (implemented — Cash-1 through Cash-8B)
 
 Full specification: [cash-ledger.md](./cash-ledger.md). Product rules: [product-rules.md](./product-rules.md).
@@ -206,7 +218,7 @@ Design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md) § **FD-A
 
 **FD-ACC-8C (2026-06-14):** return metrics aligned via `debt/cash_ledger_flows.py` classifier and extended XIRR terminal.
 
-**Module boundary:** bank ledger in `debt/` + `finance/bank_cash.py` — do not store bank movements in `cash_ledger_entries`.
+**Module boundary:** bank ledger in `debt/` + `finance/bank_cash.py` — do not store bank movements in `cash_ledger_entries`. Unification roadmap: [cash-unification.md](./cash-unification.md).
 
 ## Constraints
 - Do not modify KPulla5

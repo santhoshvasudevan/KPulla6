@@ -17,6 +17,13 @@ class BankAccount(models.Model):
         on_delete=models.CASCADE,
         related_name="bank_accounts",
     )
+    portfolio = models.ForeignKey(
+        "portfolios.Portfolio",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="bank_accounts",
+    )
     name = models.CharField(max_length=255)
     institution_name = models.CharField(max_length=255)
     account_number = models.CharField(max_length=128)
@@ -38,10 +45,18 @@ class BankAccount(models.Model):
         indexes = [
             models.Index(fields=["user", "is_active"]),
             models.Index(fields=["user", "name"]),
+            models.Index(fields=["user", "portfolio"]),
         ]
 
     def clean(self):
         super().clean()
+        if self.portfolio_id and self.user_id:
+            if self.portfolio.user_id != self.user_id:
+                raise ValidationError(
+                    {"portfolio": "Portfolio must belong to the same user."}
+                )
+            if not self.portfolio.is_active:
+                raise ValidationError({"portfolio": "Portfolio must be active."})
         if self.currency and self.currency not in SUPPORTED_CASH_CURRENCIES:
             raise ValidationError(
                 {"currency": f"Unsupported currency: {self.currency}"}
@@ -74,6 +89,7 @@ class FixedDepositStatus(models.TextChoices):
     MATURED = "MATURED", "Matured"
     MATURED_SETTLED = "MATURED_SETTLED", "Matured (settled)"
     CLOSED = "CLOSED", "Closed"
+    CANCELLED = "CANCELLED", "Cancelled"
 
 
 class CashMovementType(models.TextChoices):
@@ -81,7 +97,10 @@ class CashMovementType(models.TextChoices):
     MANUAL_DEPOSIT = "MANUAL_DEPOSIT", "Manual deposit"
     MANUAL_WITHDRAWAL = "MANUAL_WITHDRAWAL", "Manual withdrawal"
     FD_OPENING = "FD_OPENING", "Fixed deposit opening"
+    FD_OPENING_REVERSAL = "FD_OPENING_REVERSAL", "Fixed deposit opening reversal"
     FD_INTEREST = "FD_INTEREST", "Fixed deposit interest"
+    FD_INTEREST_REVERSAL = "FD_INTEREST_REVERSAL", "Fixed deposit interest reversal"
+    REVERSAL = "REVERSAL", "Reversal"
     FD_MATURITY_PRINCIPAL = "FD_MATURITY_PRINCIPAL", "Fixed deposit maturity principal"
     FD_MATURITY_INTEREST = "FD_MATURITY_INTEREST", "Fixed deposit maturity interest"
     FD_CLOSURE_PRINCIPAL = "FD_CLOSURE_PRINCIPAL", "Fixed deposit closure principal"
@@ -99,12 +118,23 @@ MANUAL_API_CASH_MOVEMENT_TYPES = frozenset(
     }
 )
 
+REVERSIBLE_MANUAL_CASH_MOVEMENT_TYPES = frozenset(
+    {
+        CashMovementType.MANUAL_DEPOSIT,
+        CashMovementType.MANUAL_WITHDRAWAL,
+        CashMovementType.ADJUSTMENT,
+        CashMovementType.OPENING_BALANCE,
+    }
+)
+
 INFERRED_DIRECTION_BY_TYPE = {
     CashMovementType.MANUAL_DEPOSIT: "CREDIT",
     CashMovementType.MANUAL_WITHDRAWAL: "DEBIT",
     CashMovementType.OPENING_BALANCE: "CREDIT",
     CashMovementType.FD_OPENING: "DEBIT",
+    CashMovementType.FD_OPENING_REVERSAL: "CREDIT",
     CashMovementType.FD_INTEREST: "CREDIT",
+    CashMovementType.FD_INTEREST_REVERSAL: "DEBIT",
     CashMovementType.FD_MATURITY_PRINCIPAL: "CREDIT",
     CashMovementType.FD_MATURITY_INTEREST: "CREDIT",
     CashMovementType.FD_CLOSURE_PRINCIPAL: "CREDIT",
@@ -114,7 +144,9 @@ INFERRED_DIRECTION_BY_TYPE = {
 FD_SYSTEM_MOVEMENT_TYPES = frozenset(
     {
         CashMovementType.FD_OPENING,
+        CashMovementType.FD_OPENING_REVERSAL,
         CashMovementType.FD_INTEREST,
+        CashMovementType.FD_INTEREST_REVERSAL,
         CashMovementType.FD_MATURITY_PRINCIPAL,
         CashMovementType.FD_MATURITY_INTEREST,
         CashMovementType.FD_CLOSURE_PRINCIPAL,
@@ -132,6 +164,10 @@ SETTLEMENT_ELIGIBLE_FD_STATUSES = frozenset(
 
 SETTLEMENT_BLOCKED_FD_STATUSES = frozenset(
     {FixedDepositStatus.CLOSED, FixedDepositStatus.MATURED_SETTLED}
+)
+
+CANCEL_ELIGIBLE_FD_STATUSES = frozenset(
+    {FixedDepositStatus.ACTIVE, FixedDepositStatus.MATURED}
 )
 
 COMPOUNDED_FD_INTEREST_WARNING = (
@@ -331,6 +367,7 @@ class CashMovement(models.Model):
         blank=True,
         related_name="reversal_rows",
     )
+    reversal_reason = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -431,6 +468,8 @@ class FixedDepositInterestPayment(models.Model):
         related_name="fixed_deposit_interest_payment",
     )
     comment = models.TextField(blank=True, default="")
+    is_reversed = models.BooleanField(default=False)
+    reversed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -120,13 +120,20 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 ### Fixed Deposits (`/fixed-deposits`)
 
 - Table lists backend FD fields only (no interest or portfolio value calculations in React)
-- Add/Edit modal: portfolio and bank account dropdowns (active records only); currency read-only from selected bank account
-- **Create:** explainer that principal debits linked bank account; shows bank `current_balance` from API; backend rejects insufficient balance
+- Add/Edit modal: bank account dropdown (active records only); **create:** portfolio read-only, derived from selected bank account (`FD portfolio: {name}, derived from selected bank account.`); blocks create when bank `portfolio_assignment_status` is `UNASSIGNED` or `AMBIGUOUS` with link to Settings → Bank Accounts; currency read-only from selected bank account
+- **Create:** explainer that principal debits linked bank account; shows **current ledger balance** and **available as of investment date** (from balance API); backend rejects when as-of balance insufficient; structured error panel with auto-scroll/focus
 - **Edit:** when `has_opening_cash_movement`, principal/bank/currency/investment date/portfolio fields disabled; backend enforces immutability
-- Principal, rate, dates, status displayed from API; deactivate via DELETE (soft)
-- **Record interest (FD-ACC-4):** modal with payment date, gross interest, tax withheld, display-only net; expandable per-FD interest payment list from API
+- Principal, rate, dates, status displayed from API
+- **Lifecycle actions (FD-ACC-10A)** — four distinct paths; do not interchange:
+  - **Cancel FD:** mistaken ledger-backed creation; `POST .../cancel`; reverses opening bank debit; confirmation: “Cancelling reverses the original FD opening bank debit and removes the FD from portfolio value.”
+  - **Deactivate:** legacy FDs without `has_opening_cash_movement` only; `DELETE`; **409** error for ledger-backed FDs
+  - **Settle / Close:** real maturity or early closure at institution; credits bank per settlement proceeds
+  - **Renew:** real rollover; settles old FD and creates renewed FD
+- **Record interest (FD-ACC-4):** modal with payment date, gross interest, tax withheld, display-only net; expandable per-FD interest payment list from API; **Reverse interest** (FD-ACC-10B) with reason/date confirmation
+- **Cash movements (FD-ACC-10B):** Reverse action on eligible manual rows; status labels (Reversed / Reversal / reverses #id); reversal reason shown when present
 - **Mark matured / Settle (FD-ACC-5):** mark matured for `ACTIVE` FDs; Settle/Close modal with principal, final interest, TDS; settled/closed rows hide settlement actions
 - **Renew (FD-ACC-6):** Renew action for `ACTIVE`/`MATURED` (hidden when settled or `has_renewal`); modal with new FD terms, gross/tax/cash payout, direct rollover and bank-cash warnings; no `FD_OPENING` implied for renewal
+- **Interest & Tax report (FD-TAX-1):** section `#fd-interest-report` on Fixed Deposits page; date range + group-by filters; KPI cards and tables from `fetchFixedDepositInterestReport`; disclaimer that report is not tax advice; read-only (no accounting changes)
 - Interest/settlement credits bank ledger; when bank cash is included in portfolio value, headline total stays stable for principal (cash ↔ FD reclassification)
 - Dashboard allocation pie chart renders `summary.allocation_buckets` from backend only
 
@@ -389,7 +396,20 @@ Backend supplies balances and ledger rows. React **displays only** — no cash b
 
 **Removed:** Cash shortfall backfill (Cash-7A/7B/7C) — no UI or API. Historical funding via manual entries or **Add Bulk Cash Entries**.
 
-Page layout: [page-layouts.md](./page-layouts.md) §8. Design: [cash-ledger.md](./cash-ledger.md).
+Page layout: [page-layouts.md](./page-layouts.md) §8. Design: [cash-ledger.md](./cash-ledger.md) · unified model: [cash-unification.md](./cash-unification.md).
+
+## Future — Unified Cash / Liquid Holdings page (CASH-UNIFY-3)
+
+**Design only (CASH-UNIFY-0).** Target layout when overview API (CASH-UNIFY-1) ships:
+
+| Section | Content | Actions |
+|---------|---------|---------|
+| **Header KPIs** | Total Cash; Broker Cash subtotal; Bank Cash subtotal (native currency; display FX in CASH-UNIFY-4) | Scope from `portfolioContext` |
+| **Broker Cash** | Existing balances table + ledger + deposit/withdrawal/transfer/bulk | Unchanged write paths on `/cash/*` |
+| **Bank Cash** | Per bank account balances from overview API; filtered by portfolio when ownership set | Link → Settings → Bank account movements |
+| **Helper copy** | Broker cash funds **securities/MF**; bank cash funds **FD/bank products** | Static explainer |
+
+React displays overview API only — no client-side aggregation across ledgers. Bank movement CRUD remains in Settings unless a later phase adds deep-links only.
 
 ## Future — Cash Ledger UI (remaining phases)
 

@@ -14,14 +14,27 @@ from debt.models import (
     InterestPayoutFrequency,
     MANUAL_API_CASH_MOVEMENT_TYPES,
 )
+from debt.bank_account_portfolio import (
+    bank_account_portfolio_assignment_status,
+    fixed_deposit_portfolio_mismatch_warning,
+)
 from debt.bank_ledger_services import (
     bank_account_ledger_metadata,
     fixed_deposit_has_opening_cash_movement,
     get_fd_opening_cash_movement_id,
+    movement_has_been_reversed,
 )
 
 
 class BankAccountSerializer(serializers.ModelSerializer):
+    portfolio_id = serializers.IntegerField(
+        source="portfolio.id", read_only=True, allow_null=True
+    )
+    portfolio_name = serializers.CharField(
+        source="portfolio.name", read_only=True, allow_null=True
+    )
+    portfolio_assignment_status = serializers.SerializerMethodField()
+
     class Meta:
         model = BankAccount
         fields = (
@@ -33,12 +46,18 @@ class BankAccountSerializer(serializers.ModelSerializer):
             "opening_balance",
             "current_balance",
             "include_in_portfolio_value",
+            "portfolio_id",
+            "portfolio_name",
+            "portfolio_assignment_status",
             "is_active",
             "comment",
             "created_at",
             "updated_at",
         )
         read_only_fields = ("id", "is_active", "created_at", "updated_at")
+
+    def get_portfolio_assignment_status(self, obj: BankAccount) -> str:
+        return bank_account_portfolio_assignment_status(obj)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -48,6 +67,8 @@ class BankAccountSerializer(serializers.ModelSerializer):
         data["updated_at"] = instance.updated_at.isoformat()
         if not data.get("comment"):
             data["comment"] = None
+        if data.get("portfolio_id") is None:
+            data["portfolio_name"] = None
         data.update(bank_account_ledger_metadata(instance))
         return data
 
@@ -64,6 +85,7 @@ class BankAccountCreateSerializer(serializers.Serializer):
         max_digits=18, decimal_places=4, required=False, default=Decimal("0")
     )
     include_in_portfolio_value = serializers.BooleanField(required=False, default=False)
+    portfolio_id = serializers.IntegerField(required=False, allow_null=True)
     comment = serializers.CharField(required=False, allow_blank=True, default="")
 
 
@@ -79,6 +101,7 @@ class BankAccountUpdateSerializer(serializers.Serializer):
         max_digits=18, decimal_places=4, required=False
     )
     include_in_portfolio_value = serializers.BooleanField(required=False)
+    portfolio_id = serializers.IntegerField(required=False, allow_null=True)
     comment = serializers.CharField(required=False, allow_blank=True)
 
 
@@ -93,6 +116,7 @@ class FixedDepositSerializer(serializers.ModelSerializer):
     has_opening_cash_movement = serializers.SerializerMethodField()
     opening_cash_movement_id = serializers.SerializerMethodField()
     has_renewal = serializers.SerializerMethodField()
+    portfolio_mismatch_warning = serializers.SerializerMethodField()
 
     class Meta:
         model = FixedDeposit
@@ -117,6 +141,7 @@ class FixedDepositSerializer(serializers.ModelSerializer):
             "has_renewal",
             "has_opening_cash_movement",
             "opening_cash_movement_id",
+            "portfolio_mismatch_warning",
             "is_active",
             "created_at",
             "updated_at",
@@ -134,6 +159,9 @@ class FixedDepositSerializer(serializers.ModelSerializer):
             return bool(obj._has_renewal)
         return obj.renewals.exists()
 
+    def get_portfolio_mismatch_warning(self, obj: FixedDeposit) -> str | None:
+        return fixed_deposit_portfolio_mismatch_warning(obj)
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data["principal_amount"] = float(instance.principal_amount)
@@ -146,6 +174,8 @@ class FixedDepositSerializer(serializers.ModelSerializer):
             data["nominee_name"] = None
         if not data.get("comment"):
             data["comment"] = None
+        if not data.get("portfolio_mismatch_warning"):
+            data["portfolio_mismatch_warning"] = None
         return data
 
 
@@ -156,6 +186,8 @@ class CashMovementSerializer(serializers.ModelSerializer):
         source="portfolio.id", read_only=True, allow_null=True
     )
     signed_amount = serializers.SerializerMethodField()
+    is_reversed = serializers.SerializerMethodField()
+    reversed_by_id = serializers.SerializerMethodField()
 
     class Meta:
         model = CashMovement
@@ -175,6 +207,9 @@ class CashMovementSerializer(serializers.ModelSerializer):
             "source",
             "is_reversal",
             "reverses_id",
+            "reversal_reason",
+            "is_reversed",
+            "reversed_by_id",
             "created_at",
             "updated_at",
         )
@@ -185,6 +220,17 @@ class CashMovementSerializer(serializers.ModelSerializer):
 
         return float(signed_movement_amount(obj.amount, obj.direction))
 
+    def get_is_reversed(self, obj: CashMovement) -> bool:
+        if hasattr(obj, "_is_reversed"):
+            return bool(obj._is_reversed)
+        return movement_has_been_reversed(obj)
+
+    def get_reversed_by_id(self, obj: CashMovement):
+        if obj.is_reversal:
+            return None
+        reversal = obj.reversal_rows.filter(is_reversal=True).order_by("id").first()
+        return reversal.id if reversal else None
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data["amount"] = float(instance.amount)
@@ -193,7 +239,19 @@ class CashMovementSerializer(serializers.ModelSerializer):
         data["updated_at"] = instance.updated_at.isoformat()
         if not data.get("description"):
             data["description"] = None
+        if not data.get("reversal_reason"):
+            data["reversal_reason"] = None
         return data
+
+
+class ReversalWriteSerializer(serializers.Serializer):
+    reversal_date = serializers.DateField(required=False, allow_null=True)
+    reason = serializers.CharField()
+
+    def validate_reason(self, value: str) -> str:
+        if not (value or "").strip():
+            raise serializers.ValidationError("reason is required for audit.")
+        return value.strip()
 
 
 class CashMovementCreateSerializer(serializers.Serializer):
@@ -223,7 +281,7 @@ class CashMovementCreateSerializer(serializers.Serializer):
 
 
 class FixedDepositWriteSerializer(serializers.Serializer):
-    portfolio_id = serializers.IntegerField()
+    portfolio_id = serializers.IntegerField(required=False, allow_null=True)
     bank_account_id = serializers.IntegerField()
     institution_name = serializers.CharField(max_length=255)
     deposit_account_number = serializers.CharField(max_length=128)
@@ -321,6 +379,8 @@ class FixedDepositInterestPaymentSerializer(serializers.ModelSerializer):
             "currency",
             "cash_movement_id",
             "comment",
+            "is_reversed",
+            "reversed_at",
             "created_at",
             "updated_at",
         )
@@ -334,6 +394,9 @@ class FixedDepositInterestPaymentSerializer(serializers.ModelSerializer):
         data["payment_date"] = instance.payment_date.isoformat()
         data["created_at"] = instance.created_at.isoformat()
         data["updated_at"] = instance.updated_at.isoformat()
+        data["reversed_at"] = (
+            instance.reversed_at.isoformat() if instance.reversed_at else None
+        )
         if not data.get("comment"):
             data["comment"] = None
         return data
@@ -464,6 +527,10 @@ class FixedDepositSettlementWriteSerializer(serializers.Serializer):
                 "At least one of principal_returned or net_interest must be greater than zero."
             )
         return attrs
+
+
+class FixedDepositCancelWriteSerializer(serializers.Serializer):
+    cancellation_date = serializers.DateField(required=False, allow_null=True)
 
 
 class FixedDepositRenewalWriteSerializer(serializers.Serializer):

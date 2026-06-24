@@ -168,6 +168,50 @@ describe('API Service', () => {
     expect(global.fetch).toHaveBeenCalledWith('/api/v1/bank-accounts', expect.objectContaining(defaultFetchOptions));
   });
 
+  it('fetchBankAccounts calls the correct endpoint', async () => {
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => [] });
+    await api.fetchBankAccounts();
+    expect(global.fetch).toHaveBeenCalledWith('/api/v1/bank-accounts', expect.objectContaining(defaultFetchOptions));
+  });
+
+  it('fetchBankAccountBalance calls balance endpoint with as_of', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ current_balance: 100, balance_as_of_date: 0, as_of_date: '2023-09-23' }),
+    });
+    await api.fetchBankAccountBalance(5, { as_of: '2023-09-23' });
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/bank-accounts/5/balance?as_of=2023-09-23',
+      expect.objectContaining(defaultFetchOptions)
+    );
+  });
+
+  it('createFixedDeposit throws FixedDepositApiError with structured balance fields', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        detail: 'Insufficient bank account balance for this movement.',
+        required: 1109389,
+        available: 0,
+        available_as_of_date: 0,
+        current_balance: 1109389,
+        shortfall: 1109389,
+        currency: 'INR',
+        investment_date: '2023-09-23',
+        hint: 'Current ledger balance is higher because cash movements exist after the FD investment date.',
+      }),
+    });
+    await expect(
+      api.createFixedDeposit({ portfolio_id: 1, bank_account_id: 2, principal_amount: '1109389' })
+    ).rejects.toMatchObject({
+      name: 'FixedDepositApiError',
+      available_as_of_date: 0,
+      current_balance: 1109389,
+      investment_date: '2023-09-23',
+    });
+  });
+
   it('fetchCashMovements calls the correct endpoint with bank_account_id filter', async () => {
     global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ items: [], total: 0 }) });
     await api.fetchCashMovements({ bank_account_id: 3, page: 1, page_size: 20 });
@@ -214,6 +258,24 @@ describe('API Service', () => {
     );
   });
 
+  it('fetchFixedDepositInterestReport calls report endpoint with filters', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ rows: [], totals: { row_count: 0 } }),
+    });
+    await api.fetchFixedDepositInterestReport({
+      portfolio_scope: 'all',
+      display_currency: 'INR',
+      start_date: '2024-01-01',
+      end_date: '2024-12-31',
+      group_by: 'year',
+    });
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/reports/fixed-deposit-interest?portfolio_scope=all&display_currency=INR&start_date=2024-01-01&end_date=2024-12-31&group_by=year',
+      expect.objectContaining(defaultFetchOptions)
+    );
+  });
+
   it('createFixedDepositInterestPayment posts to nested FD endpoint', async () => {
     const payload = {
       payment_date: '2024-04-01',
@@ -224,6 +286,34 @@ describe('API Service', () => {
     await api.createFixedDepositInterestPayment(7, payload);
     expect(global.fetch).toHaveBeenCalledWith(
       '/api/v1/fixed-deposits/7/interest-payments',
+      expect.objectContaining({
+        ...defaultFetchOptions,
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+    );
+  });
+
+  it('reverseCashMovement posts to reverse endpoint', async () => {
+    const payload = { reversal_date: '2026-06-10', reason: 'Duplicate' };
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ message: 'ok' }) });
+    await api.reverseCashMovement(5, payload);
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/cash-movements/5/reverse',
+      expect.objectContaining({
+        ...defaultFetchOptions,
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+    );
+  });
+
+  it('reverseFixedDepositInterestPayment posts to reverse endpoint', async () => {
+    const payload = { reversal_date: '2024-04-15', reason: 'Wrong amount' };
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ message: 'ok' }) });
+    await api.reverseFixedDepositInterestPayment(9, payload);
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/fixed-deposit-interest-payments/9/reverse',
       expect.objectContaining({
         ...defaultFetchOptions,
         method: 'POST',
@@ -283,6 +373,22 @@ describe('API Service', () => {
         ...defaultFetchOptions,
         method: 'POST',
         body: JSON.stringify(payload),
+      })
+    );
+  });
+
+  it('cancelFixedDeposit posts to cancel endpoint', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ id: 7, status: 'CANCELLED', is_active: false }),
+    });
+    await api.cancelFixedDeposit(7, { cancellation_date: '2024-06-15' });
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/fixed-deposits/7/cancel',
+      expect.objectContaining({
+        ...defaultFetchOptions,
+        method: 'POST',
+        body: JSON.stringify({ cancellation_date: '2024-06-15' }),
       })
     );
   });
@@ -433,6 +539,23 @@ describe('API Service', () => {
     expect(url).not.toContain('display_currency');
     expect(url).toContain('as_of_date=2026-06-01');
     expect(url).toContain('currency=EUR');
+  });
+
+  it('fetchCashOverview calls overview endpoint with scope and display params', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ rows: [], totals: {}, warnings: [] }),
+    });
+    await api.fetchCashOverview({
+      portfolio_scope: 'all',
+      display_currency: 'EUR',
+      include_unassigned: true,
+    });
+    const url = global.fetch.mock.calls[0][0];
+    expect(url).toContain('/api/v1/cash/overview?');
+    expect(url).toContain('portfolio_scope=all');
+    expect(url).toContain('display_currency=EUR');
+    expect(url).toContain('include_unassigned=true');
   });
 
   it('fetchCashLedger calls ledger endpoint with pagination and filters', async () => {

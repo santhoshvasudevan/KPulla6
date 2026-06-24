@@ -69,3 +69,35 @@ Local Postgres (`portfolio_insight_kpulla6`) holds real dev portfolio data. Trea
 ### Reference
 
 - Full incident notes, backup/restore, and forbidden commands: `docs/data-safety.md`
+
+## Background Agent Operating Rules
+
+For phased work queued in **`docs/backlog/`**, Cursor Background Agents act as the **implementation worker**. ChatGPT Project owns backlog priority, scope approval, and review.
+
+### Workflow
+
+1. **One task = one branch = one reviewable diff.** Branch name: `agent/NNN-short-slug` (see task file). Do not implement multiple backlog items in one branch unless the planner explicitly combines them.
+2. **Do not expand scope.** Out-of-scope discoveries go in the final response under **Deferred**; do not implement them in the same phase.
+3. Read the task file, `AGENTS.md`, and linked domain docs before editing.
+
+### Safety
+
+4. **Never run destructive DB commands** on live dev Postgres (see § Data safety above).
+5. Before **migrations, model changes, or ledger mutations** on dev Postgres: run `make backup-db` and `make db-safety-check`; record counts; re-check after the phase.
+
+### Testing
+
+6. **Code changes:** run targeted tests from the task file, then `make test-backend` and/or `cd frontend && npm test -- --run` as appropriate; use `make test` for full backend + frontend confidence; `make test-all` when the task touches build-critical paths.
+7. **Docs-only tasks:** tests optional unless docs tooling or CI requires them.
+
+### Final response (required)
+
+Every Background Agent completion must report:
+
+- **Files changed** (created / updated / deleted)
+- **Tests run** (commands + pass/fail, or “skipped — docs-only”)
+- **`git diff --stat`** summary against the branch base
+- **Commit hash** if committed (or state not committed)
+- **Deferred items** intentionally left out of scope
+
+Backlog index and operating guide: [docs/backlog/README.md](./docs/backlog/README.md).

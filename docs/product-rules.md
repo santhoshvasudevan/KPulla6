@@ -2,7 +2,7 @@
 
 **Purpose:** Single index of MVP product rules. Deep specifications live in linked docs — do not duplicate them here.
 
-**Canonical deep docs:** [cash-ledger.md](./cash-ledger.md) · [architecture.md](./architecture.md) · [api-design.md](./api-design.md) · [api-contracts.md](./api-contracts.md) · [frontend-design.md](./frontend-design.md) · [decisions.md](./decisions.md) · [mvp-release-checklist.md](./mvp-release-checklist.md)
+**Canonical deep docs:** [cash-ledger.md](./cash-ledger.md) · [cash-unification.md](./cash-unification.md) · [architecture.md](./architecture.md) · [api-design.md](./api-design.md) · [api-contracts.md](./api-contracts.md) · [frontend-design.md](./frontend-design.md) · [decisions.md](./decisions.md) · [mvp-release-checklist.md](./mvp-release-checklist.md)
 
 **Agent rules:** [AGENTS.md](../AGENTS.md) · [.cursor/rules/320-cash-ledger.mdc](../.cursor/rules/320-cash-ledger.mdc)
 
@@ -19,6 +19,7 @@
 | No cross-currency BUY funding | USD cash must **not** automatically fund an EUR purchase (or any other currency pair). |
 | Cash in portfolio analytics | Cash is included in **current value**, **allocation**, **value history**, **portfolio XIRR**, **portfolio TWROR**, and **cumulative return** (Cash-6+). |
 | Cash excluded from investment analytics | Cash is **not** an Asset Detail Metric Sheet subject and **not** a Compare subject. |
+| **Dual ledger (broker + bank)** | **Broker cash** (`CashLedgerEntry`) and **bank cash** (`CashMovement`) are **separate ledgers** — do not merge storage or auto-create cross-ledger entries. Unified at portfolio/UI level only. See [cash-unification.md](./cash-unification.md). |
 
 ---
 
@@ -113,3 +114,15 @@ Historical funding for legacy gaps: manual deposits/withdrawals or **Bulk Cash E
 | Migrations / real-data scripts | Run `make backup-db` and `make db-safety-check` before and after. |
 
 Full protocol: [data-safety.md](./data-safety.md) · [workflows.md](./workflows.md).
+
+---
+
+## I. Bank cash & cash unification (design — CASH-UNIFY-0)
+
+| Rule | Summary |
+|------|---------|
+| Bank ledger separate | Bank cash truth is `CashMovement` on `BankAccount` — not `CashLedgerEntry`. FD opening debits bank ledger only. |
+| Broker vs bank in UI | **Broker Cash** = securities buying power; **Bank Cash** = FD/bank products. Future Cash tab shows both ([cash-unification.md §5](./cash-unification.md)). |
+| Portfolio ownership (future) | Investment-linked bank accounts → one portfolio (CASH-UNIFY-1); FD portfolio derived from bank account (CASH-UNIFY-2). |
+| Inclusion (today) | `include_in_portfolio_value` opt-in; conservative single-portfolio inference (FD-ACC-7). |
+| No cross-ledger auto-writes | Backfill and migration set FKs/flags only — no automatic transfer legs (CASH-UNIFY-5 deferred). |

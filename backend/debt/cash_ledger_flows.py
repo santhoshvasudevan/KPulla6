@@ -34,6 +34,7 @@ class BankCashFlowKind(str, Enum):
 _INTERNAL_MOVEMENT_TYPES = frozenset(
     {
         CashMovementType.FD_OPENING,
+        CashMovementType.FD_OPENING_REVERSAL,
         CashMovementType.FD_MATURITY_PRINCIPAL,
         CashMovementType.FD_CLOSURE_PRINCIPAL,
         CashMovementType.TRANSFER_IN,
@@ -44,6 +45,7 @@ _INTERNAL_MOVEMENT_TYPES = frozenset(
 _INCOME_RETURN_MOVEMENT_TYPES = frozenset(
     {
         CashMovementType.FD_INTEREST,
+        CashMovementType.FD_INTEREST_REVERSAL,
         CashMovementType.FD_MATURITY_INTEREST,
         CashMovementType.FD_CLOSURE_INTEREST,
     }
@@ -63,21 +65,9 @@ _EXTERNAL_WITHDRAWAL_TYPES = frozenset(
 )
 
 
-def classify_bank_cash_movement(
+def _classify_non_reversal_movement(
     movement: CashMovement,
-    *,
-    bank_included: bool,
 ) -> BankCashFlowKind:
-    """
-    Classify a bank ``CashMovement`` for portfolio return metrics.
-
-    Only movements on opt-in included accounts with a ledger participate in
-    external-flow maps. FD system movements and interest credits are internal
-    or income; manual deposits/withdrawals and opening-balance seeds are external.
-    """
-    if not bank_included or movement.is_reversal:
-        return BankCashFlowKind.IGNORED
-
     movement_type = movement.movement_type
     if movement_type in _INTERNAL_MOVEMENT_TYPES:
         return BankCashFlowKind.INTERNAL
@@ -93,6 +83,46 @@ def classify_bank_cash_movement(
         if movement.direction == CashMovementDirection.DEBIT:
             return BankCashFlowKind.EXTERNAL_WITHDRAWAL
     return BankCashFlowKind.IGNORED
+
+
+def _offset_kind(kind: BankCashFlowKind) -> BankCashFlowKind:
+    if kind == BankCashFlowKind.EXTERNAL_CONTRIBUTION:
+        return BankCashFlowKind.EXTERNAL_WITHDRAWAL
+    if kind == BankCashFlowKind.EXTERNAL_WITHDRAWAL:
+        return BankCashFlowKind.EXTERNAL_CONTRIBUTION
+    return kind
+
+
+def classify_bank_cash_movement(
+    movement: CashMovement,
+    *,
+    bank_included: bool,
+) -> BankCashFlowKind:
+    """
+    Classify a bank ``CashMovement`` for portfolio return metrics.
+
+    Only movements on opt-in included accounts with a ledger participate in
+    external-flow maps. FD system movements and interest credits are internal
+    or income; manual deposits/withdrawals and opening-balance seeds are external.
+    Reversal rows offset the classification of the movement they reverse.
+    """
+    if not bank_included:
+        return BankCashFlowKind.IGNORED
+
+    movement_type = movement.movement_type
+    if movement_type == CashMovementType.FD_OPENING_REVERSAL:
+        return BankCashFlowKind.INTERNAL
+
+    if movement.is_reversal:
+        if movement.reverses_id is None:
+            return BankCashFlowKind.IGNORED
+        original = movement.reverses
+        if original is None:
+            return BankCashFlowKind.IGNORED
+        original_kind = _classify_non_reversal_movement(original)
+        return _offset_kind(original_kind)
+
+    return _classify_non_reversal_movement(movement)
 
 
 def _eligible_accounts(user, scope: ResolvedPortfolioScope) -> list[BankAccount]:
@@ -149,8 +179,9 @@ def build_bank_cash_external_flows(
     movements = list(
         CashMovement.objects.filter(
             bank_account_id__in=account_ids,
-            is_reversal=False,
-        ).order_by("movement_date", "id")
+        )
+        .select_related("reverses")
+        .order_by("movement_date", "id")
     )
     external_rows = [
         row

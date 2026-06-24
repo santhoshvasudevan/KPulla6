@@ -19,18 +19,12 @@ from debt.services import create_bank_account, create_fixed_deposit, update_bank
 from portfolios.scope import ResolvedPortfolioScope
 from portfolios.seed import ensure_default_portfolio
 from portfolios.xirr_service import compute_scope_xirr_detail
-from tests.debt_test_helpers import fund_bank_account
+from tests.debt_test_helpers import create_test_bank_account, fund_bank_account
 
 
-def _bank(user, **overrides):
-    payload = dict(
-        name="Savings",
-        institution_name="HDFC",
-        account_number="111",
-        currency="INR",
-    )
-    payload.update(overrides)
-    return create_bank_account(user, **payload)
+def _bank(user, portfolio=None, **overrides):
+    return create_test_bank_account(user, portfolio=portfolio, **overrides)
+
 
 
 def _enable(user, bank):
@@ -67,6 +61,38 @@ def test_classify_fd_opening_as_internal(seeded, test_user):
         linked_fixed_deposit_id=fd.id, movement_type=CashMovementType.FD_OPENING
     )
     assert classify_bank_cash_movement(opening, bank_included=True) == BankCashFlowKind.INTERNAL
+
+
+@pytest.mark.django_db
+def test_classify_fd_opening_reversal_as_internal(seeded, test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    bank = _bank(test_user)
+    fund_bank_account(test_user, bank, "150000")
+    _enable(test_user, bank)
+    fd = create_fixed_deposit(
+        test_user,
+        portfolio_id=portfolio.id,
+        bank_account_id=bank.id,
+        institution_name="HDFC",
+        deposit_account_number="FD-1",
+        principal_amount=Decimal("100000"),
+        currency="INR",
+        interest_rate_percent=Decimal("7"),
+        interest_payout_frequency="QUARTERLY",
+        investment_date=date(2024, 1, 1),
+        maturity_date=date(2026, 1, 1),
+    )
+    from debt.cancellation_services import cancel_fixed_deposit
+
+    cancel_fixed_deposit(test_user, fd.id, cancellation_date=date(2024, 6, 15))
+    reversal = CashMovement.objects.get(
+        linked_fixed_deposit_id=fd.id,
+        movement_type=CashMovementType.FD_OPENING_REVERSAL,
+    )
+    assert (
+        classify_bank_cash_movement(reversal, bank_included=True)
+        == BankCashFlowKind.INTERNAL
+    )
 
 
 @pytest.mark.django_db
@@ -255,3 +281,109 @@ def test_fd_opening_does_not_spike_twror_with_included_bank(api_client, seeded, 
     )
     if open_day is not None:
         assert abs(open_day["value"]) < 0.05
+
+
+@pytest.mark.django_db
+def test_reversal_of_external_contribution_offsets_contribution(seeded, test_user):
+    from debt.reversal_services import reverse_cash_movement
+
+    bank = _bank(test_user)
+    fund_bank_account(test_user, bank, "10000", movement_date=date(2024, 3, 1))
+    _enable(test_user, bank)
+    deposit = CashMovement.objects.get(
+        bank_account=bank, movement_type=CashMovementType.MANUAL_DEPOSIT
+    )
+    result = reverse_cash_movement(
+        test_user,
+        deposit.id,
+        reversal_date=date(2024, 3, 15),
+        reason="Duplicate entry",
+    )
+    assert (
+        classify_bank_cash_movement(result.reversal, bank_included=True)
+        == BankCashFlowKind.EXTERNAL_WITHDRAWAL
+    )
+    scope = _scope(test_user)
+    flows, _ = build_bank_cash_twror_external_flows(
+        test_user, scope, calculation_currency="INR"
+    )
+    assert flows.get(date(2024, 3, 1), Decimal("0")) == Decimal("10000")
+    assert flows.get(date(2024, 3, 15), Decimal("0")) == Decimal("-10000")
+
+
+@pytest.mark.django_db
+def test_reversal_of_external_withdrawal_offsets_withdrawal(seeded, test_user):
+    from debt.reversal_services import reverse_cash_movement
+
+    bank = _bank(test_user)
+    fund_bank_account(test_user, bank, "20000", movement_date=date(2024, 2, 1))
+    _enable(test_user, bank)
+    withdrawal = create_manual_cash_movement(
+        test_user,
+        bank_account_id=bank.id,
+        movement_type=CashMovementType.MANUAL_WITHDRAWAL,
+        amount=Decimal("3000"),
+        movement_date=date(2024, 2, 10),
+    )
+    result = reverse_cash_movement(
+        test_user,
+        withdrawal.id,
+        reversal_date=date(2024, 2, 20),
+        reason="Mistaken withdrawal",
+    )
+    assert (
+        classify_bank_cash_movement(result.reversal, bank_included=True)
+        == BankCashFlowKind.EXTERNAL_CONTRIBUTION
+    )
+
+
+@pytest.mark.django_db
+def test_reversal_of_internal_remains_internal(seeded, test_user):
+    from debt.cancellation_services import cancel_fixed_deposit
+
+    portfolio = ensure_default_portfolio(test_user)
+    bank = _bank(test_user)
+    fund_bank_account(test_user, bank, "150000")
+    _enable(test_user, bank)
+    fd = create_fixed_deposit(
+        test_user,
+        portfolio_id=portfolio.id,
+        bank_account_id=bank.id,
+        institution_name="HDFC",
+        deposit_account_number="FD-REV-INT",
+        principal_amount=Decimal("100000"),
+        currency="INR",
+        interest_rate_percent=Decimal("7"),
+        interest_payout_frequency="QUARTERLY",
+        investment_date=date(2024, 1, 1),
+        maturity_date=date(2026, 1, 1),
+    )
+    cancel_fixed_deposit(test_user, fd.id, cancellation_date=date(2024, 6, 1))
+    reversal = CashMovement.objects.get(
+        movement_type=CashMovementType.FD_OPENING_REVERSAL,
+    )
+    assert (
+        classify_bank_cash_movement(reversal, bank_included=True)
+        == BankCashFlowKind.INTERNAL
+    )
+
+
+@pytest.mark.django_db
+def test_non_included_account_reversals_ignored(seeded, test_user):
+    from debt.reversal_services import reverse_cash_movement
+
+    bank = _bank(test_user)
+    fund_bank_account(test_user, bank, "5000")
+    deposit = CashMovement.objects.get(
+        bank_account=bank, movement_type=CashMovementType.MANUAL_DEPOSIT
+    )
+    result = reverse_cash_movement(
+        test_user,
+        deposit.id,
+        reason="Excluded bank correction",
+    )
+    assert (
+        classify_bank_cash_movement(result.reversal, bank_included=False)
+        == BankCashFlowKind.IGNORED
+    )
+
