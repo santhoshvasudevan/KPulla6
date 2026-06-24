@@ -9,6 +9,7 @@ from django.db import transaction as db_transaction
 from django.db.models import QuerySet
 
 from cash.constants import SUPPORTED_CASH_CURRENCIES
+from debt.bank_account_portfolio import resolve_portfolio_for_bank_account
 from debt.models import BankAccount, FixedDeposit, FixedDepositStatus
 from portfolios.models import Portfolio
 from portfolios.services import PortfolioNotFoundError, get_portfolio, list_active_portfolios
@@ -30,6 +31,9 @@ class FixedDepositValidationError(Exception):
     pass
 
 
+_NOT_PROVIDED = object()
+
+
 def _validate_currency(currency: str) -> str:
     code = (currency or "").strip().upper()
     if code not in SUPPORTED_CASH_CURRENCIES:
@@ -39,12 +43,18 @@ def _validate_currency(currency: str) -> str:
 
 def list_active_bank_accounts(user: AbstractBaseUser) -> list[BankAccount]:
     return list(
-        BankAccount.objects.filter(user=user, is_active=True).order_by("name", "id")
+        BankAccount.objects.filter(user=user, is_active=True)
+        .select_related("portfolio")
+        .order_by("name", "id")
     )
 
 
 def get_bank_account(user: AbstractBaseUser, account_id: int) -> BankAccount:
-    account = BankAccount.objects.filter(user=user, pk=account_id).first()
+    account = (
+        BankAccount.objects.filter(user=user, pk=account_id)
+        .select_related("portfolio")
+        .first()
+    )
     if not account:
         raise BankAccountNotFoundError(f"Bank account not found: {account_id}")
     return account
@@ -61,6 +71,7 @@ def create_bank_account(
     current_balance: Decimal | None = None,
     include_in_portfolio_value: bool = False,
     comment: str = "",
+    portfolio_id: int | None = None,
 ) -> BankAccount:
     nm = (name or "").strip()
     if not nm:
@@ -72,8 +83,11 @@ def create_bank_account(
     if not acct:
         raise BankAccountValidationError("account_number must not be empty")
 
+    resolve_portfolio_for_bank_account(user, portfolio_id)
+
     account = BankAccount(
         user=user,
+        portfolio_id=portfolio_id,
         name=nm,
         institution_name=inst,
         account_number=acct,
@@ -100,10 +114,15 @@ def update_bank_account(
     current_balance: Decimal | None = None,
     include_in_portfolio_value: bool | None = None,
     comment: str | None = None,
+    portfolio_id: int | None | object = _NOT_PROVIDED,
 ) -> BankAccount:
     account = get_bank_account(user, account_id)
     if not account.is_active:
         raise BankAccountNotFoundError(f"Bank account not found: {account_id}")
+
+    if portfolio_id is not _NOT_PROVIDED:
+        resolve_portfolio_for_bank_account(user, portfolio_id)  # type: ignore[arg-type]
+        account.portfolio_id = portfolio_id  # type: ignore[assignment]
 
     if name is not None:
         nm = (name or "").strip()

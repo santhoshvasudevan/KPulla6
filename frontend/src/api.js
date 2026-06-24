@@ -606,6 +606,10 @@ function cashScopeFromPortfolioContext(scopeParams) {
 function appendCashQueryParams(qs, extra = {}) {
   if (extra.as_of_date) qs.set('as_of_date', extra.as_of_date);
   if (extra.currency) qs.set('currency', extra.currency);
+  if (extra.display_currency) qs.set('display_currency', extra.display_currency);
+  if (extra.include_unassigned != null && extra.include_unassigned !== '') {
+    qs.set('include_unassigned', String(extra.include_unassigned));
+  }
   if (extra.entry_type) qs.set('entry_type', extra.entry_type);
   if (extra.date_from) qs.set('date_from', extra.date_from);
   if (extra.date_to) qs.set('date_to', extra.date_to);
@@ -670,6 +674,25 @@ export async function fetchCashBalances(params = {}) {
     currency,
   });
   return fetchWithHandling(`/cash/balances?${qs.toString()}`);
+}
+
+/** GET /api/v1/cash/overview — read-only broker + bank cash rows (CASH-UNIFY-1). */
+export async function fetchCashOverview(params = {}) {
+  const {
+    portfolio_scope,
+    portfolio_id,
+    as_of_date,
+    display_currency,
+    include_unassigned,
+    ...rest
+  } = params;
+  const scope = cashScopeFromPortfolioContext({ portfolio_scope, portfolio_id });
+  const qs = appendCashQueryParams(withCashScopeParams(rest, scope), {
+    as_of_date,
+    display_currency,
+    include_unassigned,
+  });
+  return fetchWithHandling(`/cash/overview?${qs.toString()}`);
 }
 
 /** GET /api/v1/cash/ledger — paginated ledger entries. */

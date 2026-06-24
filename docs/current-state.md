@@ -1,7 +1,7 @@
 # Current State — KPulla6 (Portfolio Insight)
 
 ## Last Updated
-2026-06-24 (CASH-UNIFY-0 — unified cash domain model design)
+2026-06-24 (CASH-UNIFY-1 — bank account portfolio ownership + cash overview API)
 
 **Documentation index:** [README.md](./README.md)
 
@@ -237,9 +237,9 @@ Design doc: [cash-ledger.md](./cash-ledger.md).
 
 **Tester repair:** `PUT /api/v1/portfolios/{id}` with `"cash_aware_enabled": true` on the tester default portfolio (no user deletion).
 
-**Next recommended phase:** [CASH-UNIFY-1](./backlog/002-cash-unify-1.md) — bank account portfolio ownership + unified cash read API. See [cash-unification.md](./cash-unification.md).
+**Next recommended phase:** [CASH-UNIFY-2](./backlog/003-cash-unify-2.md) — FD portfolio derived from bank account. See [cash-unification.md](./cash-unification.md).
 
-**Cash unification (CASH-UNIFY-0 — design done 2026-06-24):** Two ledgers (broker `CashLedgerEntry` + bank `CashMovement`) unified at domain/UI level only — not merged in storage. Roadmap: ownership/read API → FD portfolio from bank → Cash page sections → terminology/display-currency. Deferred: broker-bank transfers (CASH-UNIFY-5), physical cash (CASH-UNIFY-6).
+**Cash unification (CASH-UNIFY-1 — done 2026-06-24):** Nullable `BankAccount.portfolio` FK; `infer_bank_account_portfolios` command (dry-run default); read-only `GET /api/v1/cash/overview` with `BROKER_CASH` and `BANK_CASH` rows; `fetchCashOverview` in `api.js`. Cash page UI unchanged (CASH-UNIFY-3). FD create unchanged (CASH-UNIFY-2).
 
 **Other cash backlog:** transfer fees (Cash-8C); optional bulk quarterly/yearly frequencies.
 

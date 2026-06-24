@@ -116,12 +116,12 @@ Bank accounts used for **investment activity** (FD funding, included bank cash i
 | **Ambiguous accounts** | Accounts whose movements/FDs span multiple portfolios remain **unassigned** or **blocked from inclusion** until user resolves or portfolio-specific sub-balances exist (FD-ACC-7 conservative rule continues until then). |
 | **Non-investment bank accounts** | Salary/generic savings with no portfolio link remain user-scoped; optional `portfolio_id` on manual movements for reporting only (current behavior). |
 
-### 4.2 Current state (pre CASH-UNIFY-1)
+### 4.2 Current state (post CASH-UNIFY-1)
 
-- `BankAccount` has **no** `portfolio` FK (`debt/models.py`).
-- `FixedDeposit` requires both `portfolio` and `bank_account`; create API accepts independent selection.
-- `CashMovement.portfolio` is nullable; required to match FD when `linked_fixed_deposit` is set.
-- FD-ACC-7 includes bank cash in portfolio value only when movement/FD associations resolve to **one portfolio** (inference, not ownership FK).
+- `BankAccount.portfolio` nullable FK exists; create/update API accepts `portfolio_id`.
+- `portfolio_assignment_status` on bank account reads: `ASSIGNED` / `UNASSIGNED` / `AMBIGUOUS` (from FK + FD/movement signals).
+- `FixedDeposit` still accepts independent `portfolio_id` on create — **CASH-UNIFY-2**.
+- FD-ACC-7 bank cash inclusion still uses movement/FD association inference when `portfolio` unset.
 
 ### 4.3 Enforcement timeline
 
@@ -230,7 +230,7 @@ These apply to **all** CASH-UNIFY implementation phases:
 | ID | Title | Backlog file | Depends on | Runtime |
 |----|-------|--------------|------------|---------|
 | **CASH-UNIFY-0** | Unified cash model design | [001-cash-unify-0.md](./backlog/001-cash-unify-0.md) | — | **Docs only** ✓ |
-| **CASH-UNIFY-1** | Bank account portfolio ownership + unified read API | [002-cash-unify-1.md](./backlog/002-cash-unify-1.md) | 001 | Schema + read API |
+| **CASH-UNIFY-1** | Bank account portfolio ownership + unified read API | [002-cash-unify-1.md](./backlog/002-cash-unify-1.md) | 001 | **Done** ✓ |
 | **CASH-UNIFY-2** | FD portfolio derived from bank account | [003-cash-unify-2.md](./backlog/003-cash-unify-2.md) | 002 | Write validation + backfill flags |
 | **CASH-UNIFY-3** | Unified Cash page UI | [004-cash-unify-3.md](./backlog/004-cash-unify-3.md) | 002 (overview API); 003 recommended | Frontend |
 | **CASH-UNIFY-4** | Terminology, display-currency totals, stabilization | [005-cash-unify-4.md](./backlog/005-cash-unify-4.md) | 003 | Read API + docs + tests |
@@ -239,7 +239,7 @@ These apply to **all** CASH-UNIFY implementation phases:
 
 ### 8.2 Phase summaries
 
-**CASH-UNIFY-1 — Bank account portfolio ownership + read API**
+**CASH-UNIFY-1 — Bank account portfolio ownership + read API (implemented 2026-06-24)**
 
 - Add nullable `BankAccount.portfolio` FK + migration.
 - Inference backfill command (dry-run default) per §6.1.
@@ -285,6 +285,9 @@ These apply to **all** CASH-UNIFY implementation phases:
 
 | Area | Location |
 |------|----------|
+| Bank account portfolio inference | `backend/debt/bank_account_portfolio.py` |
+| Inference command | `backend/debt/management/commands/infer_bank_account_portfolios.py` |
+| Cash overview service | `backend/cash/overview_service.py` |
 | Broker ledger model | `backend/cash/models.py` — `CashLedgerEntry` |
 | Bank ledger model | `backend/debt/models.py` — `CashMovement`, `BankAccount` |
 | FD create + opening debit | `backend/debt/services.py`, `backend/debt/bank_ledger_services.py` |

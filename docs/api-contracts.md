@@ -55,6 +55,7 @@ Detail: [api-design.md § analytics](./api-design.md), [architecture.md § Metri
 | Method | Endpoint | Purpose | Frontend | Key 200/201 blocks | Errors / warnings | Backend tests | Frontend tests |
 |--------|----------|---------|----------|-------------------|-------------------|---------------|----------------|
 | GET | `/cash/balances` | Native-currency balances | `fetchCashBalances` | `balances[]` (`currency`, `balance`) | 404 scope | `test_cash_api.py` | `Cash.test.jsx`, `api.test.js` |
+| GET | `/cash/overview` | Broker + bank cash rows (read-only) | `fetchCashOverview` | `rows[]`, `totals`, `warnings` | 404 scope | `test_cash_overview_api.py` | `api.test.js` |
 | GET | `/cash/ledger` | Paginated ledger | `fetchCashLedger` | `items[]` incl. `details`, `total`, `page` | 404 scope | `test_cash_api.py` | `Cash.test.jsx` |
 | POST | `/cash/deposits` | Manual deposit | `createCashDeposit` | Single ledger item | 400 validation | `test_cash_api.py` | `Cash.test.jsx`, `api.test.js` |
 | POST | `/cash/withdrawals` | Manual withdrawal | `createCashWithdrawal` | Single ledger item | **400 shortfall** | `test_cash_api.py` | `Cash.test.jsx` |

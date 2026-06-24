@@ -150,6 +150,85 @@ def test_model_validation_empty_name(seeded, test_user):
 
 
 @pytest.mark.django_db
+def test_create_bank_account_with_portfolio(api_client, seeded, test_user):
+    from portfolios.seed import ensure_default_portfolio
+
+    portfolio = ensure_default_portfolio(test_user)
+    response = api_client.post(
+        "/api/v1/bank-accounts",
+        {
+            "name": "Linked",
+            "institution_name": "SBI",
+            "account_number": "LINK-1",
+            "currency": "INR",
+            "portfolio_id": portfolio.id,
+        },
+        format="json",
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["portfolio_id"] == portfolio.id
+    assert body["portfolio_name"] == portfolio.name
+    assert body["portfolio_assignment_status"] == "ASSIGNED"
+
+
+@pytest.mark.django_db
+def test_update_bank_account_portfolio(api_client, seeded, test_user):
+    from portfolios.seed import ensure_default_portfolio
+
+    portfolio = ensure_default_portfolio(test_user)
+    account = _create_account(test_user)
+    response = api_client.put(
+        f"/api/v1/bank-accounts/{account.id}",
+        {"portfolio_id": portfolio.id},
+        format="json",
+    )
+    assert response.status_code == 200
+    assert response.json()["portfolio_id"] == portfolio.id
+
+
+@pytest.mark.django_db
+def test_create_bank_account_rejects_other_users_portfolio(
+    api_client, seeded, test_user, other_user
+):
+    from portfolios.models import Portfolio
+
+    other_portfolio = Portfolio.objects.create(
+        user=other_user, name="Other PF", base_currency="INR", is_active=True
+    )
+    response = api_client.post(
+        "/api/v1/bank-accounts",
+        {
+            "name": "Bad link",
+            "institution_name": "SBI",
+            "account_number": "BAD",
+            "currency": "INR",
+            "portfolio_id": other_portfolio.id,
+        },
+        format="json",
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_null_portfolio_allowed_on_create(api_client, seeded, test_user):
+    response = api_client.post(
+        "/api/v1/bank-accounts",
+        {
+            "name": "Unlinked",
+            "institution_name": "SBI",
+            "account_number": "NULL-1",
+            "currency": "INR",
+        },
+        format="json",
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["portfolio_id"] is None
+    assert body["portfolio_assignment_status"] == "UNASSIGNED"
+
+
+@pytest.mark.django_db
 def test_bank_account_balance_endpoint_current_and_as_of(api_client, seeded, test_user):
     from datetime import date
     from tests.debt_test_helpers import fund_bank_account

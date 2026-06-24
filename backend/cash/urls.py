@@ -1,18 +1,20 @@
 from django.urls import path
 
 from cash.views import (
+    CashBalancesView,
     CashBulkEntriesApplyView,
     CashBulkEntriesPreviewView,
-    CashBalancesView,
     CashDepositView,
     CashLedgerEntryDetailView,
     CashLedgerView,
+    CashOverviewView,
     CashTransferView,
     CashWithdrawalView,
 )
 
 urlpatterns = [
     path("balances", CashBalancesView.as_view(), name="cash-balances"),
+    path("overview", CashOverviewView.as_view(), name="cash-overview"),
     path("ledger", CashLedgerView.as_view(), name="cash-ledger"),
     path(
         "ledger/<int:entry_id>",

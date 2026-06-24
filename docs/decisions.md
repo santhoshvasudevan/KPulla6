@@ -1,5 +1,13 @@
 # Architecture Decisions — KPulla6
 
+## 2026-06-24 — CASH-UNIFY-1: Bank account portfolio ownership + cash overview API
+
+- **Schema:** nullable `BankAccount.portfolio` FK (`SET_NULL`); user/active portfolio validation in model `clean()`.
+- **Inference:** `infer_bank_account_portfolios` command — dry-run default; unambiguous signals from `FixedDeposit.portfolio` + `CashMovement.portfolio`; ambiguous multi-portfolio accounts skipped.
+- **Read API:** `GET /api/v1/cash/overview` aggregates broker (`CashLedgerEntry`) and bank (`CashMovement`) balances without merging ledgers; unassigned bank accounts excluded by default.
+- **Unchanged:** FD create behavior, cash accounting, `/cash/balances`, summary/performance paths.
+- Design: [cash-unification.md](./cash-unification.md).
+
 ## 2026-06-24 — CASH-UNIFY-0: Unified cash domain model (design only)
 
 **Docs only — no runtime changes.**

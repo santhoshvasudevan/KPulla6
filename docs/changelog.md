@@ -1,5 +1,19 @@
 # Changelog — KPulla6
 
+## 2026-06-24 — CASH-UNIFY-1: Bank account portfolio ownership + cash overview API
+
+### Added
+- **`BankAccount.portfolio`** — nullable FK to `Portfolio` (migration `debt/0009_bankaccount_portfolio`); exposed on bank account CRUD as `portfolio_id`, `portfolio_name`, `portfolio_assignment_status` (`ASSIGNED` / `UNASSIGNED` / `AMBIGUOUS`).
+- **`manage.py infer_bank_account_portfolios`** — dry-run default; `--apply` sets portfolio when FD/movement signals are unambiguous; never creates cash movements.
+- **`GET /api/v1/cash/overview`** — read-only unified broker + bank cash rows (`ledger_type`: `BROKER_CASH` | `BANK_CASH`); optional `display_currency`, `include_unassigned`; exclusion counts/warnings for unassigned/ambiguous bank accounts.
+- **Frontend:** `fetchCashOverview` in `api.js`.
+
+### Unchanged
+- FD create portfolio selection (CASH-UNIFY-2).
+- Cash page UI (CASH-UNIFY-3).
+- `/cash/balances`, ledger writes, summary/performance valuation.
+- No ledger merge or auto-created movements.
+
 ## 2026-06-24 — CASH-UNIFY-0: Unified cash domain model (design only)
 
 - **Design doc:** [cash-unification.md](./cash-unification.md) — portfolio cash holdings taxonomy (broker + bank; physical deferred), two-ledger separation, future `BankAccount.portfolio` ownership, FD portfolio derivation from bank account, future Cash tab layout, backfill strategy, safety rules, implementation phases CASH-UNIFY-1..6.

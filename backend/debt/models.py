@@ -17,6 +17,13 @@ class BankAccount(models.Model):
         on_delete=models.CASCADE,
         related_name="bank_accounts",
     )
+    portfolio = models.ForeignKey(
+        "portfolios.Portfolio",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="bank_accounts",
+    )
     name = models.CharField(max_length=255)
     institution_name = models.CharField(max_length=255)
     account_number = models.CharField(max_length=128)
@@ -38,10 +45,18 @@ class BankAccount(models.Model):
         indexes = [
             models.Index(fields=["user", "is_active"]),
             models.Index(fields=["user", "name"]),
+            models.Index(fields=["user", "portfolio"]),
         ]
 
     def clean(self):
         super().clean()
+        if self.portfolio_id and self.user_id:
+            if self.portfolio.user_id != self.user_id:
+                raise ValidationError(
+                    {"portfolio": "Portfolio must belong to the same user."}
+                )
+            if not self.portfolio.is_active:
+                raise ValidationError({"portfolio": "Portfolio must be active."})
         if self.currency and self.currency not in SUPPORTED_CASH_CURRENCIES:
             raise ValidationError(
                 {"currency": f"Unsupported currency: {self.currency}"}

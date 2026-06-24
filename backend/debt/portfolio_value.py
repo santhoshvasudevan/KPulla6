@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from django.db.models import QuerySet
 
+from debt.bank_account_portfolio import bank_account_associated_portfolio_ids
 from debt.bank_ledger_services import bank_account_has_ledger
 from debt.models import BankAccount, CashMovement, FixedDeposit, VALUE_CONTRIBUTING_STATUSES
 from finance.bank_cash import BankCashMovementPoint, bank_cash_balance
@@ -17,22 +18,6 @@ from portfolios.scope import ResolvedPortfolioScope
 FD_BANK_FX_VALUE_HISTORY_WARNING = (
     "FX rates are missing for some fixed deposit or bank cash value history points."
 )
-
-
-def bank_account_associated_portfolio_ids(bank_account_id: int) -> set[int]:
-    """Portfolios linked via FDs or portfolio-tagged cash movements."""
-    portfolio_ids: set[int] = set()
-    portfolio_ids.update(
-        FixedDeposit.objects.filter(bank_account_id=bank_account_id).values_list(
-            "portfolio_id", flat=True
-        )
-    )
-    portfolio_ids.update(
-        CashMovement.objects.filter(
-            bank_account_id=bank_account_id, portfolio_id__isnull=False
-        ).values_list("portfolio_id", flat=True)
-    )
-    return portfolio_ids
 
 
 def bank_account_includable_in_scope(

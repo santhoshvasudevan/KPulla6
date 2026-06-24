@@ -122,9 +122,12 @@ class BankAccountDetailView(APIView):
         serializer = BankAccountUpdateSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        payload = dict(serializer.validated_data)
+        if "portfolio_id" in request.data:
+            payload["portfolio_id"] = serializer.validated_data.get("portfolio_id")
         try:
             account = update_bank_account(
-                request.user, account_id, **serializer.validated_data
+                request.user, account_id, **payload
             )
         except BankAccountNotFoundError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)

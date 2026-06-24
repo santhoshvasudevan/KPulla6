@@ -14,6 +14,7 @@ from debt.models import (
     InterestPayoutFrequency,
     MANUAL_API_CASH_MOVEMENT_TYPES,
 )
+from debt.bank_account_portfolio import bank_account_portfolio_assignment_status
 from debt.bank_ledger_services import (
     bank_account_ledger_metadata,
     fixed_deposit_has_opening_cash_movement,
@@ -23,6 +24,14 @@ from debt.bank_ledger_services import (
 
 
 class BankAccountSerializer(serializers.ModelSerializer):
+    portfolio_id = serializers.IntegerField(
+        source="portfolio.id", read_only=True, allow_null=True
+    )
+    portfolio_name = serializers.CharField(
+        source="portfolio.name", read_only=True, allow_null=True
+    )
+    portfolio_assignment_status = serializers.SerializerMethodField()
+
     class Meta:
         model = BankAccount
         fields = (
@@ -34,12 +43,18 @@ class BankAccountSerializer(serializers.ModelSerializer):
             "opening_balance",
             "current_balance",
             "include_in_portfolio_value",
+            "portfolio_id",
+            "portfolio_name",
+            "portfolio_assignment_status",
             "is_active",
             "comment",
             "created_at",
             "updated_at",
         )
         read_only_fields = ("id", "is_active", "created_at", "updated_at")
+
+    def get_portfolio_assignment_status(self, obj: BankAccount) -> str:
+        return bank_account_portfolio_assignment_status(obj)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -49,6 +64,8 @@ class BankAccountSerializer(serializers.ModelSerializer):
         data["updated_at"] = instance.updated_at.isoformat()
         if not data.get("comment"):
             data["comment"] = None
+        if data.get("portfolio_id") is None:
+            data["portfolio_name"] = None
         data.update(bank_account_ledger_metadata(instance))
         return data
 
@@ -65,6 +82,7 @@ class BankAccountCreateSerializer(serializers.Serializer):
         max_digits=18, decimal_places=4, required=False, default=Decimal("0")
     )
     include_in_portfolio_value = serializers.BooleanField(required=False, default=False)
+    portfolio_id = serializers.IntegerField(required=False, allow_null=True)
     comment = serializers.CharField(required=False, allow_blank=True, default="")
 
 
@@ -80,6 +98,7 @@ class BankAccountUpdateSerializer(serializers.Serializer):
         max_digits=18, decimal_places=4, required=False
     )
     include_in_portfolio_value = serializers.BooleanField(required=False)
+    portfolio_id = serializers.IntegerField(required=False, allow_null=True)
     comment = serializers.CharField(required=False, allow_blank=True)
 
 

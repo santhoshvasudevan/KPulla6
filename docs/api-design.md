@@ -18,6 +18,7 @@ Quick reference for MVP endpoints. Detail sections below. Product rules: [produc
 | GET | `/api/v1/analytics/assets/{asset_symbol}/performance-metrics` | Asset Metric Sheet | `getAssetMetricSheet` | `test_analytics_asset_metrics_api.py` |
 | GET | `/api/v1/analytics/compare` | Two-asset Metric Sheet compare | `getCompareMetricSheet` | `test_analytics_compare_api.py` |
 | GET | `/api/v1/cash/balances` | Native-currency balances (no display FX in read path) | `fetchCashBalances` | `test_cash_api.py` |
+| GET | `/api/v1/cash/overview` | Read-only broker + bank cash rows with `ledger_type` | `fetchCashOverview` | `test_cash_overview_api.py` |
 | GET | `/api/v1/cash/ledger` | Paginated cash ledger | `fetchCashLedger` | `test_cash_api.py` |
 | POST | `/api/v1/cash/deposits` | Manual `CASH_DEPOSIT` | `createCashDeposit` | `test_cash_api.py` |
 | POST | `/api/v1/cash/withdrawals` | Manual `CASH_WITHDRAWAL` | `createCashWithdrawal` | `test_cash_api.py` |
@@ -51,15 +52,19 @@ Quick reference for MVP endpoints. Detail sections below. Product rules: [produc
 
 ### Planned — Cash unification (CASH-UNIFY-1..4)
 
-Design: [cash-unification.md](./cash-unification.md). **Not implemented** until respective backlog phases ship.
+Design: [cash-unification.md](./cash-unification.md).
 
 | Method | Path | Purpose | Phase |
 |--------|------|---------|-------|
-| GET | `/api/v1/cash/overview` | Read-only broker + bank cash sections with `ledger_type` per row; optional display-currency totals | CASH-UNIFY-1 / 4 |
-| — | `BankAccount.portfolio` | Nullable FK; inference backfill; exposed on bank account CRUD | CASH-UNIFY-1 |
+| GET | `/api/v1/cash/overview` | **Implemented (CASH-UNIFY-1)** — read-only broker + bank cash rows; optional `display_currency`, `include_unassigned` | CASH-UNIFY-1 |
+| — | `BankAccount.portfolio` | **Implemented (CASH-UNIFY-1)** — nullable FK; inference via `infer_bank_account_portfolios` | CASH-UNIFY-1 |
 | — | FD create portfolio rule | Derive `portfolio` from `bank_account.portfolio`; reject mismatch | CASH-UNIFY-2 |
 
-**Invariants (design):** No cross-ledger writes; no table merge; overview is read-only aggregation of existing balance rules.
+**`GET /api/v1/cash/overview` query:** `portfolio_scope=all` or `portfolio_id`; optional `as_of_date`, `display_currency`, `include_unassigned` (default false).
+
+**Response:** `rows[]` (`ledger_type`: `BROKER_CASH` | `BANK_CASH`), `totals`, `warnings`, exclusion counts for unassigned/ambiguous bank accounts.
+
+**Invariants:** No cross-ledger writes; no table merge; does not change `/cash/balances` or summary/performance valuation.
 
 ## Implemented in KPulla6
 

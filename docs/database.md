@@ -364,6 +364,5 @@ Migration: `debt/0007_reversal_framework` adds `REVERSAL`, `FD_INTEREST_REVERSAL
 |--------|----------------|
 | `current_balance` | Cached from `CashMovement` sum; **`PUT` rejects or ignores manual edits** once ledger exists |
 | `opening_balance` | Seed/display only; conversion to `OPENING_BALANCE` movement via **opt-in wizard only** — never auto-backfill |
-| `include_in_portfolio_value` | Default **false**; when **true**, ledger `current_balance` included in summary/holdings/allocation per scope rules (FD-ACC-7). **Future (CASH-UNIFY-1):** requires unambiguous `BankAccount.portfolio` when set. |
-
-**Planned (CASH-UNIFY-1):** nullable `BankAccount.portfolio` FK — see [cash-unification.md](./cash-unification.md) §4.
+| `include_in_portfolio_value` | Default **false**; when **true**, ledger `current_balance` included in summary/holdings/allocation per scope rules (FD-ACC-7) |
+| `portfolio` | Nullable FK → `Portfolio` (`SET_NULL`); **CASH-UNIFY-1**; user-scoped validation; `portfolio_assignment_status` on API |

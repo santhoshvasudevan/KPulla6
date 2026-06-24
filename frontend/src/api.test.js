@@ -541,6 +541,23 @@ describe('API Service', () => {
     expect(url).toContain('currency=EUR');
   });
 
+  it('fetchCashOverview calls overview endpoint with scope and display params', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ rows: [], totals: {}, warnings: [] }),
+    });
+    await api.fetchCashOverview({
+      portfolio_scope: 'all',
+      display_currency: 'EUR',
+      include_unassigned: true,
+    });
+    const url = global.fetch.mock.calls[0][0];
+    expect(url).toContain('/api/v1/cash/overview?');
+    expect(url).toContain('portfolio_scope=all');
+    expect(url).toContain('display_currency=EUR');
+    expect(url).toContain('include_unassigned=true');
+  });
+
   it('fetchCashLedger calls ledger endpoint with pagination and filters', async () => {
     global.fetch.mockResolvedValueOnce({
       ok: true,
