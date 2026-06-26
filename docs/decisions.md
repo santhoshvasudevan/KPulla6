@@ -15,6 +15,18 @@
 - **Unassigned toggle:** Always-visible **Show unassigned / ambiguous bank accounts** (`include_unassigned=true`).
 - **Deferred:** Automated correction/reclassification (CASH-CORR-1); broker-funded FD.
 
+## 2026-06-26 — CASH-UNIFY-4B: Bank link modal + display currency auto-select (implemented)
+
+- **Bank link UX:** Link/change-link actions open a modal selector; delink remains one-click `portfolio_id=null`. Fixes CASH-UNIFY-4 bug where actions only scrolled to buried edit form.
+- **Display currency:** Portfolio view change syncs display currency to portfolio `base_currency` when in supported set; All Portfolios does not force a switch.
+
+## 2026-06-26 — CASH-UNIFY-4: Bank account link/delink UX (implemented)
+
+- **Decision:** Portfolio link/delink is a **classification-only** FK update on `BankAccount.portfolio` — no `CashMovement` or balance changes.
+- **UX:** Settings → Bank Accounts exposes link/change/delink with explicit copy; FD warning on relink when active FDs exist (informational, not blocked).
+- **Inclusion:** Cash overview and Cash page follow current link; delinked banks are external unless `include_unassigned=true`.
+- **FD:** CASH-UNIFY-2 unchanged — create requires linked bank; existing FD portfolio not rewritten on relink.
+
 ## 2026-06-24 — CASH-MODEL-REFINE-0: Bank account portfolio link & FD funding semantics (docs only)
 
 - **Bank account independence:** A `BankAccount` is a real-world cash account (user-scoped). It exists independently of any portfolio.

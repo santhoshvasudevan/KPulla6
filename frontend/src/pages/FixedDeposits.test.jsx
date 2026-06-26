@@ -205,7 +205,9 @@ describe('FixedDeposits page', () => {
 
     expect(screen.getByDisplayValue('Default Portfolio')).toBeInTheDocument();
     expect(
-      screen.getByText(/fd portfolio: default portfolio, derived from selected bank account/i)
+      screen.getByText(
+        /fd portfolio is derived from the selected bank account's linked portfolio \(default portfolio\)/i
+      )
     ).toBeInTheDocument();
   });
 
@@ -216,7 +218,9 @@ describe('FixedDeposits page', () => {
     fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
 
     expect(
-      screen.getByText(/assign this bank account to a portfolio in bank accounts before creating an fd/i)
+      screen.getByText(
+        /link this bank account to a portfolio in settings → bank accounts before creating an fd/i
+      )
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^create$/i })).toBeDisabled();
   });

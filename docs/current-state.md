@@ -237,7 +237,11 @@ Design doc: [cash-ledger.md](./cash-ledger.md).
 
 **Tester repair:** `PUT /api/v1/portfolios/{id}` with `"cash_aware_enabled": true` on the tester default portfolio (no user deletion).
 
-**Next recommended phase:** [CASH-UNIFY-4](./backlog/005-cash-unify-4.md) — bank account link/delink UX. Broker cash reversal available via CASH-CORR-1A.
+**Next recommended phase:** [CASH-UNIFY-5](./backlog/006-cash-unify-5.md) — broker ↔ bank transfer workflow (if queued). Broker cash reversal available via CASH-CORR-1A.
+
+**Cash unification (CASH-UNIFY-4B — done 2026-06-26):** Bank link/change-link opens dedicated modal (fixes invisible edit-form bug). Portfolio view switch auto-selects display currency from portfolio `base_currency` when supported; All Portfolios preserves current currency.
+
+**Cash unification (CASH-UNIFY-4 — done 2026-06-26):** Settings → Bank Accounts link/delink UX (`portfolio_id` FK only — no cash movements). Cash overview and Cash page reflect link changes; delinked bank cash external unless `include_unassigned`. FD create still requires linked bank; existing FDs not rewritten on relink.
 
 **Cash correction (CASH-CORR-1A — done 2026-06-26):** Audited broker cash reversal API + `reverse_broker_cash_entry` command; Cash page Reverse on eligible manual rows; migration `cash/0003`. Use to reverse mistaken broker deposit #103 on IndianInvestments without touching bank `CashMovement` #2.
 

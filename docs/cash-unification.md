@@ -161,7 +161,7 @@ Example: A manual broker deposit that should have been a bank deposit is **not**
 - **FD create (bank path only today):** Linked bank account + `FD_OPENING` on bank ledger; portfolio from bank link (CASH-UNIFY-2). Broker-cash FD funding **not implemented**.
 - Legacy FD rows with portfolio ≠ bank account portfolio remain readable; API exposes `portfolio_mismatch_warning` (no auto-rewrite).
 - FD-ACC-7 bank cash inclusion still uses movement/FD association inference when `portfolio` unset.
-- **Link/delink UX** not yet productized — assignment via Settings `portfolio_id` field; dedicated link/delink flow → CASH-UNIFY-4.
+- **Link/delink UX** — **Done (CASH-UNIFY-4):** Settings → Bank Accounts; `PUT` `portfolio_id` (set or null); no ledger writes; Cash overview inclusion follows link.
 
 ### 4.4 Enforcement timeline
 
@@ -171,7 +171,7 @@ Example: A manual broker deposit that should have been a bank deposit is **not**
 | **CASH-UNIFY-2** | **Done** — FD create derives portfolio from linked bank account |
 | **CASH-UNIFY-3** | **Done** — Cash page shows Broker + Bank Cash separately |
 | **CASH-UNIFY-3A** | Cash page verification: correct row attribution, broker actions visible, source diagnostics |
-| **CASH-UNIFY-4** | Link/delink UX; stabilize inclusion after link changes; display-currency + terminology |
+| **CASH-UNIFY-4** | **Done** — Link/delink UX; inclusion stabilization; terminology |
 | **CASH-CORR-1** | Safe reclassification for mistaken broker ↔ bank entries |
 | **CASH-UNIFY-5** | Actual broker ↔ bank transfer workflow (deferred) |
 | **FD-FUND-BROKER** | *Deferred* | Broker-cash-funded FD create (single-source; no partial split) |

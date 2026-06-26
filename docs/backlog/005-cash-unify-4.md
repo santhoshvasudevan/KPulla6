@@ -2,7 +2,8 @@
 
 **ID:** CASH-UNIFY-4  
 **Branch:** `agent/005-cash-unify-4`  
-**Depends on:** 004, 004a (recommended)
+**Depends on:** 004, 004a (recommended)  
+**Status:** **Done** (2026-06-26); **4B hotfix** (link modal + display currency auto-select) same date.
 
 ## Goal
 

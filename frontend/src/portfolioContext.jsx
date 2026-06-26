@@ -1,5 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
 import { fetchPortfolios, getSettings, updateSettings, invalidateDashboardSummaryCache } from './api';
+import { displayCurrencyForPortfolio } from './utils/displayCurrency';
+
+export { DISPLAY_CURRENCY_CHOICES } from './utils/displayCurrency';
 
 const PortfolioContext = createContext(null);
 
@@ -94,11 +97,43 @@ export function PortfolioProvider({
     }
   }, [selectedPortfolioMode, selectedPortfolioId]);
 
-  const selectPortfolio = useCallback((id, name) => {
-    setSelectedPortfolioMode('portfolio');
-    setSelectedPortfolioId(id);
-    setSelectedPortfolioName(name || '');
+  const selectPortfolio = useCallback(
+    async (id, name, options = {}) => {
+      setSelectedPortfolioMode('portfolio');
+      setSelectedPortfolioId(id);
+      setSelectedPortfolioName(name || '');
+      const portfolio =
+        options.portfolio || portfolios.find((p) => p.id === id) || null;
+      const nextCurrency = displayCurrencyForPortfolio(portfolio);
+      if (
+        nextCurrency &&
+        settingsLoaded &&
+        nextCurrency !== selectedDisplayCurrency
+      ) {
+        await setDisplayCurrency(nextCurrency);
+      }
+    },
+    [portfolios, settingsLoaded, selectedDisplayCurrency, setDisplayCurrency]
+  );
+
+  const selectAllPortfolios = useCallback(() => {
+    setSelectedPortfolioMode('all');
+    setSelectedPortfolioId(null);
+    setSelectedPortfolioName('All Portfolios');
   }, []);
+
+  const applyPortfolioViewSelection = useCallback(
+    async (selection) => {
+      if (selection.mode === 'all') {
+        selectAllPortfolios();
+        return;
+      }
+      await selectPortfolio(selection.id, selection.name, {
+        portfolio: selection.portfolio,
+      });
+    },
+    [selectAllPortfolios, selectPortfolio]
+  );
 
   const selectorOptions = useMemo(() => {
     const real = (portfolios || []).filter((p) => p && p.is_active);
@@ -129,6 +164,8 @@ export function PortfolioProvider({
       setDisplayCurrency,
       reloadPortfolios,
       selectPortfolio,
+      selectAllPortfolios,
+      applyPortfolioViewSelection,
       setSelectedPortfolioMode,
       setSelectedPortfolioId,
       setSelectedPortfolioName,
@@ -146,6 +183,8 @@ export function PortfolioProvider({
       setDisplayCurrency,
       reloadPortfolios,
       selectPortfolio,
+      selectAllPortfolios,
+      applyPortfolioViewSelection,
       apiQuery,
     ]
   );

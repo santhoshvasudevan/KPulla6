@@ -60,7 +60,7 @@ export default function PortfolioManagement() {
       const created = await createPortfolio(payload);
       await reloadPortfolios();
       if (created?.id != null) {
-        selectPortfolio(created.id, created.name || name);
+        await selectPortfolio(created.id, created.name || name, { portfolio: created });
       }
       setCreateForm(emptyCreateForm());
       setStatus(`Portfolio "${created?.name || name}" created.`);

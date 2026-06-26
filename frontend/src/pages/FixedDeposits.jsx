@@ -156,13 +156,13 @@ function bankBlocksFdCreate(bank) {
 function bankPortfolioAssignmentMessage(bank) {
   if (!bank) return '';
   if (bank.portfolio_assignment_status === 'UNASSIGNED') {
-    return 'Assign this bank account to a portfolio in Bank Accounts before creating an FD.';
+    return 'Link this bank account to a portfolio in Settings → Bank Accounts before creating an FD.';
   }
   if (bank.portfolio_assignment_status === 'AMBIGUOUS') {
-    return 'This bank account is linked to multiple portfolios. Assign one portfolio in Bank Accounts before creating an FD.';
+    return 'This bank account has an ambiguous portfolio link. Set one linked portfolio in Settings → Bank Accounts before creating an FD.';
   }
   if (bank.portfolio_id && bank.portfolio_name) {
-    return `FD portfolio: ${bank.portfolio_name}, derived from selected bank account.`;
+    return `FD portfolio is derived from the selected bank account's linked portfolio (${bank.portfolio_name}).`;
   }
   return '';
 }

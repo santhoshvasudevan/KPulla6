@@ -1,5 +1,21 @@
 # Changelog — KPulla6
 
+## 2026-06-26 — CASH-UNIFY-4B: Bank link modal fix + portfolio display currency auto-select
+
+- **Bank link UI fix:** “Link to portfolio” / “Change linked portfolio” now open a dedicated modal with portfolio selector (CASH-UNIFY-4 had wired these to the full edit form at the bottom of the page — invisible without scrolling).
+- **Link modal:** Save sends `portfolio_id` only; delink unchanged (`portfolio_id=null`); FD warning in modal; inline API errors; empty portfolio state.
+- **Display currency:** Selecting a specific portfolio auto-sets Display Currency to that portfolio’s `base_currency` when supported (EUR/USD/INR/GBP/CHF). **All Portfolios** preserves current display currency. Unsupported/missing base currency leaves display currency unchanged. Manual currency change on same portfolio is not overwritten until portfolio changes again.
+- **Deferred:** CASH-UNIFY-5 transfer, broker-funded FD.
+
+## 2026-06-26 — CASH-UNIFY-4: Bank account link/delink UX and portfolio inclusion
+
+- **Settings → Bank Accounts:** **Linked portfolio** column; **Link to portfolio**, **Change linked portfolio**, and **Delink from portfolio** actions; optional link on create; helper text that link/delink does not create cash movements or change balance.
+- **API:** `PUT /api/v1/bank-accounts/{id}` with `portfolio_id` (set or `null`) — FK update only; response includes `portfolio_id`, `portfolio_name`, `portfolio_assignment_status`, `active_fixed_deposit_count`. FD warning when changing link on account with active FDs (UI only; not blocked).
+- **Cash overview:** Linked bank cash appears in selected portfolio Bank Cash; relink moves inclusion without balance or movement changes; delinked banks excluded unless `include_unassigned=true`. Warning copy uses “portfolio link” terminology.
+- **FD create:** Unchanged CASH-UNIFY-2 behavior; helper copy references linked portfolio derivation.
+- **Tests:** `test_bank_accounts_api` link/delink/no-movement/balance; `test_cash_overview_api` relink/delink scope; `test_fixed_deposits_api` relink FD derivation; `BankAccountManagement.test.jsx`, `FixedDeposits.test.jsx`.
+- **Deferred:** CASH-UNIFY-5 broker-bank transfer, broker-funded FD, CASH-CORR-1 reclassification.
+
 ## 2026-06-26 — CASH-CORR-1A: Safe broker cash ledger reversal
 
 - **Broker cash reversal:** `POST /api/v1/cash/ledger/{id}/reverse` with `reversal_date` and `reason` creates an opposite manual broker entry (`CASH_DEPOSIT` ↔ `CASH_WITHDRAWAL`) linked via `reverses` / `is_reversal` / `reversal_reason`. Original row preserved (no silent delete).
@@ -16,7 +32,7 @@
 - **Bank Cash:** Section and KPI from `BANK_CASH` rows only; read-only; source (`cash_movements` → CashMovement); assignment status and include-in-portfolio-value columns.
 - **Visibility:** Always-on toggle **Show unassigned / ambiguous bank accounts** (`include_unassigned=true` refetch). Diagnostic copy explains source columns and defers correction to CASH-CORR-1.
 - **Tests:** Vitest attribution/KPI/IndianInvestments fixture; pytest `test_overview_totals_not_swapped_broker_zero_bank_positive`.
-- **Deferred:** broker-funded FD, CASH-CORR-1 reclassification, CASH-UNIFY-4 link/delink UX.
+- **Deferred:** broker-funded FD, CASH-CORR-1 reclassification, ~~CASH-UNIFY-4 link/delink UX~~ (done in CASH-UNIFY-4).
 
 ## 2026-06-24 — CASH-MODEL-REFINE-0: Bank account portfolio link & FD funding semantics (docs only)
 

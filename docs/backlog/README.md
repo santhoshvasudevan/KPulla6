@@ -107,7 +107,7 @@ Execute in order within each epic unless the planner reprioritizes.
 | 3 | [003-cash-unify-2.md](./003-cash-unify-2.md) | CASH-UNIFY-2 | **Done** | 002 |
 | 4 | [004-cash-unify-3.md](./004-cash-unify-3.md) | CASH-UNIFY-3 | **Done** | 003 |
 | 4a | [004a-cash-unify-3a.md](./004a-cash-unify-3a.md) | CASH-UNIFY-3A | Done | 004 |
-| 5 | [005-cash-unify-4.md](./005-cash-unify-4.md) | CASH-UNIFY-4 | Open | 004, 004a |
+| 5 | [005-cash-unify-4.md](./005-cash-unify-4.md) | CASH-UNIFY-4 | **Done** | 004, 004a |
 | 6 | [006-fx-1.md](./006-fx-1.md) | FX-1 | Open | 005 (recommended) |
 | 7 | [007-fx-2.md](./007-fx-2.md) | FX-2 | Open | 006 |
 | 8 | [008-fd-tax-1a.md](./008-fd-tax-1a.md) | FD-TAX-1a | Open | — |

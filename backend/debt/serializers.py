@@ -7,6 +7,7 @@ from debt.models import (
     CashMovement,
     CashMovementType,
     FixedDeposit,
+    FixedDepositStatus,
     FixedDepositInterestPayment,
     FixedDepositSettlement,
     FixedDepositSettlementType,
@@ -34,6 +35,7 @@ class BankAccountSerializer(serializers.ModelSerializer):
         source="portfolio.name", read_only=True, allow_null=True
     )
     portfolio_assignment_status = serializers.SerializerMethodField()
+    active_fixed_deposit_count = serializers.SerializerMethodField()
 
     class Meta:
         model = BankAccount
@@ -49,6 +51,7 @@ class BankAccountSerializer(serializers.ModelSerializer):
             "portfolio_id",
             "portfolio_name",
             "portfolio_assignment_status",
+            "active_fixed_deposit_count",
             "is_active",
             "comment",
             "created_at",
@@ -58,6 +61,15 @@ class BankAccountSerializer(serializers.ModelSerializer):
 
     def get_portfolio_assignment_status(self, obj: BankAccount) -> str:
         return bank_account_portfolio_assignment_status(obj)
+
+    def get_active_fixed_deposit_count(self, obj: BankAccount) -> int:
+        if hasattr(obj, "_active_fixed_deposit_count"):
+            return int(obj._active_fixed_deposit_count)
+        return FixedDeposit.objects.filter(
+            bank_account_id=obj.id,
+            is_active=True,
+            status=FixedDepositStatus.ACTIVE,
+        ).count()
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

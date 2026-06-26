@@ -256,3 +256,129 @@ def test_bank_account_balance_endpoint_current_and_as_of(api_client, seeded, tes
         {"as_of": "2023-09-24"},
     )
     assert as_of_same.json()["balance_as_of_date"] == 1109389.0
+
+
+@pytest.mark.django_db
+def test_delink_bank_account(api_client, seeded, test_user):
+    from portfolios.seed import ensure_default_portfolio
+
+    portfolio = ensure_default_portfolio(test_user)
+    account = _create_account(test_user)
+    api_client.put(
+        f"/api/v1/bank-accounts/{account.id}",
+        {"portfolio_id": portfolio.id},
+        format="json",
+    )
+    response = api_client.put(
+        f"/api/v1/bank-accounts/{account.id}",
+        {"portfolio_id": None},
+        format="json",
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["portfolio_id"] is None
+    assert body["portfolio_name"] is None
+    assert body["portfolio_assignment_status"] == "UNASSIGNED"
+
+
+@pytest.mark.django_db
+def test_change_linked_portfolio(api_client, seeded, test_user):
+    from portfolios.models import Portfolio
+    from portfolios.seed import ensure_default_portfolio
+
+    p1 = ensure_default_portfolio(test_user)
+    p2 = Portfolio.objects.create(
+        user=test_user, name="IndianInvestments", base_currency="INR", is_active=True
+    )
+    account = _create_account(test_user)
+    api_client.put(
+        f"/api/v1/bank-accounts/{account.id}",
+        {"portfolio_id": p1.id},
+        format="json",
+    )
+    response = api_client.put(
+        f"/api/v1/bank-accounts/{account.id}",
+        {"portfolio_id": p2.id},
+        format="json",
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["portfolio_id"] == p2.id
+    assert body["portfolio_name"] == "IndianInvestments"
+    assert body["portfolio_assignment_status"] == "ASSIGNED"
+
+
+@pytest.mark.django_db
+def test_link_rejects_inactive_portfolio(api_client, seeded, test_user):
+    from portfolios.seed import ensure_default_portfolio
+
+    portfolio = ensure_default_portfolio(test_user)
+    portfolio.is_active = False
+    portfolio.save()
+    account = _create_account(test_user)
+    response = api_client.put(
+        f"/api/v1/bank-accounts/{account.id}",
+        {"portfolio_id": portfolio.id},
+        format="json",
+    )
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
+def test_link_delink_creates_no_cash_movement(api_client, seeded, test_user):
+    from debt.models import CashMovement
+    from portfolios.models import Portfolio
+    from portfolios.seed import ensure_default_portfolio
+    from tests.debt_test_helpers import fund_bank_account
+
+    p1 = ensure_default_portfolio(test_user)
+    p2 = Portfolio.objects.create(
+        user=test_user, name="Other", base_currency="INR", is_active=True
+    )
+    account = _create_account(test_user, opening_balance=Decimal("0"), current_balance=Decimal("0"))
+    fund_bank_account(test_user, account, "50000")
+    before = CashMovement.objects.filter(bank_account=account).count()
+
+    api_client.put(
+        f"/api/v1/bank-accounts/{account.id}",
+        {"portfolio_id": p1.id},
+        format="json",
+    )
+    api_client.put(
+        f"/api/v1/bank-accounts/{account.id}",
+        {"portfolio_id": p2.id},
+        format="json",
+    )
+    api_client.put(
+        f"/api/v1/bank-accounts/{account.id}",
+        {"portfolio_id": None},
+        format="json",
+    )
+
+    assert CashMovement.objects.filter(bank_account=account).count() == before
+
+
+@pytest.mark.django_db
+def test_link_delink_does_not_change_balance(api_client, seeded, test_user):
+    from portfolios.seed import ensure_default_portfolio
+    from tests.debt_test_helpers import fund_bank_account
+
+    portfolio = ensure_default_portfolio(test_user)
+    account = _create_account(test_user, opening_balance=Decimal("0"), current_balance=Decimal("0"))
+    fund_bank_account(test_user, account, "1359389")
+    account.refresh_from_db()
+    balance_before = account.current_balance
+
+    api_client.put(
+        f"/api/v1/bank-accounts/{account.id}",
+        {"portfolio_id": portfolio.id},
+        format="json",
+    )
+    api_client.put(
+        f"/api/v1/bank-accounts/{account.id}",
+        {"portfolio_id": None},
+        format="json",
+    )
+
+    account.refresh_from_db()
+    assert account.current_balance == balance_before

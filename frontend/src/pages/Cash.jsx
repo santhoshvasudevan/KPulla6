@@ -1526,7 +1526,7 @@ export default function Cash() {
       {(excludedUnassigned > 0 || excludedAmbiguous > 0) && !includeUnassigned ? (
         <WarningBanner
           severity="warning"
-          message={`${excludedUnassigned + excludedAmbiguous} bank account(s) excluded from this view (${excludedUnassigned} unassigned, ${excludedAmbiguous} ambiguous). Assign them in Settings before using for FD creation.`}
+          message={`${excludedUnassigned + excludedAmbiguous} bank account(s) excluded from this view (${excludedUnassigned} unlinked, ${excludedAmbiguous} ambiguous). Link them in Settings → Bank Accounts before using for FD creation.`}
           className="cash-page__banner"
         />
       ) : null}

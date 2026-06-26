@@ -112,6 +112,8 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 ### Settings
 
 - `AppCard` sections with sticky section nav: Display & tax; **Portfolios** (CRUD); **Bank accounts** (`BankAccountManagement` + nested `CashMovementManagement`); Data & sync (explainer)
+- **Bank accounts (CASH-UNIFY-4 / 4B):** **Linked portfolio** column; **Link to portfolio** / **Change linked portfolio** open a **modal** with portfolio selector; **Delink from portfolio** inline; helper text that link/delink does not create cash movements or change balance; FD warning in modal when relinking account with active FDs.
+- **Portfolio view (CASH-UNIFY-4B):** Selecting a portfolio auto-sets **Display Currency** to portfolio `base_currency` when supported; **All Portfolios** preserves current display currency.
 - Portfolio table: name, base currency, default flag; create form; edit modal; deactivate for non-default only
 - Bank accounts: list active accounts; create/edit; ledger-derived `current_balance`; seed opening balance; per-account cash movements
 - Display currency must stay in sync with **header** display-currency selector
@@ -120,7 +122,7 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 ### Fixed Deposits (`/fixed-deposits`)
 
 - Table lists backend FD fields only (no interest or portfolio value calculations in React)
-- Add/Edit modal: bank account dropdown (active records only); **create:** portfolio read-only, derived from selected bank account (`FD portfolio: {name}, derived from selected bank account.`); blocks create when bank `portfolio_assignment_status` is `UNASSIGNED` or `AMBIGUOUS` with link to Settings → Bank Accounts; currency read-only from selected bank account
+- Add/Edit modal: bank account dropdown (active records only); **create:** portfolio read-only, derived from selected bank account's **linked portfolio**; blocks create when bank `portfolio_assignment_status` is `UNASSIGNED` or `AMBIGUOUS` with link to Settings → Bank Accounts; currency read-only from selected bank account
 - **Create:** explainer that principal debits linked bank account; shows **current ledger balance** and **available as of investment date** (from balance API); backend rejects when as-of balance insufficient; structured error panel with auto-scroll/focus
 - **Edit:** when `has_opening_cash_movement`, principal/bank/currency/investment date/portfolio fields disabled; backend enforces immutability
 - Principal, rate, dates, status displayed from API

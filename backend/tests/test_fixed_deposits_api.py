@@ -848,3 +848,44 @@ def test_update_legacy_fd_rejects_portfolio_bank_mismatch(api_client, seeded, te
     assert response.status_code == 400
     assert response.json()["bank_account_portfolio_id"] == p1.id
     assert response.json()["requested_portfolio_id"] == p2.id
+
+
+@pytest.mark.django_db
+def test_relink_bank_derives_future_fd_portfolio(api_client, seeded, test_user):
+    from debt.services import update_bank_account
+
+    p1 = ensure_default_portfolio(test_user)
+    p2 = Portfolio.objects.create(
+        user=test_user, name="IndianInvestments", base_currency="INR", is_active=True
+    )
+    bank = _bank(test_user, portfolio=p1, account_number="RELINK-1")
+    fund_bank_account(test_user, bank, "200000")
+
+    update_bank_account(test_user, bank.id, portfolio_id=p2.id)
+
+    response = api_client.post(
+        "/api/v1/fixed-deposits",
+        _fd_payload(p2.id, bank.id, deposit_account_number="FD-NEW-LINK"),
+        format="json",
+    )
+    assert response.status_code == 201
+    assert response.json()["portfolio_id"] == p2.id
+
+
+@pytest.mark.django_db
+def test_relink_does_not_rewrite_existing_fd(api_client, seeded, test_user):
+    from debt.services import update_bank_account
+
+    p1 = ensure_default_portfolio(test_user)
+    p2 = Portfolio.objects.create(
+        user=test_user, name="IndianInvestments", base_currency="INR", is_active=True
+    )
+    bank = _bank(test_user, portfolio=p1, account_number="RELINK-2")
+    fund_bank_account(test_user, bank, "200000")
+    fd = create_fixed_deposit(test_user, **_fd_payload(p1.id, bank.id, deposit_account_number="FD-OLD"))
+
+    update_bank_account(test_user, bank.id, portfolio_id=p2.id)
+
+    fd.refresh_from_db()
+    assert fd.portfolio_id == p1.id
+    assert fd.bank_account_id == bank.id

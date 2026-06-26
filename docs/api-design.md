@@ -1218,7 +1218,7 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 
 **FD create insufficient balance (400):** `detail`, `required`, `available`, `available_as_of_date`, `current_balance`, `shortfall`, `currency`, `investment_date`, `latest_ledger_balance_date`, `hint`. Validation uses ledger balance **as of FD `investment_date`**, not current total.
 
-**PUT `/bank-accounts/{id}`:** rejects `current_balance` when ledger exists (**400**).
+**PUT `/bank-accounts/{id}`:** rejects `current_balance` when ledger exists (**400**). **`portfolio_id`** (set or `null`) updates the **portfolio link** only — no cash movements (**CASH-UNIFY-4**). Response includes `portfolio_id`, `portfolio_name`, `portfolio_assignment_status`, `active_fixed_deposit_count`.
 
 **Deferred (FD-ACC-9+):** reversal endpoint, `TRANSFER_IN`/`OUT` manual API, via-bank renewal path. **FD-ACC-7/8 done:** opt-in bank cash in portfolio summary/holdings/allocation/performance/returns.
 

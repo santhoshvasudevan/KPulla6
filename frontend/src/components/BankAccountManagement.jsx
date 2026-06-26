@@ -3,6 +3,7 @@ import {
   createBankAccount,
   deleteBankAccount,
   fetchBankAccounts,
+  fetchPortfolios,
   seedBankAccountOpeningBalance,
   updateBankAccount,
 } from '../api';
@@ -10,6 +11,9 @@ import CashMovementManagement from './CashMovementManagement';
 import { Button, WarningBanner } from './ui';
 
 const CURRENCIES = ['EUR', 'USD', 'INR', 'GBP', 'CHF'];
+
+const PORTFOLIO_LINK_HELP =
+  'Linking controls where this bank cash appears in portfolio views. It does not create a cash movement or change the bank balance.';
 
 function emptyForm() {
   return {
@@ -19,12 +23,24 @@ function emptyForm() {
     currency: 'INR',
     opening_balance: '0',
     current_balance: '0',
+    portfolio_id: '',
     comment: '',
   };
 }
 
+function linkedPortfolioLabel(account) {
+  if (account?.portfolio_id && account?.portfolio_name) {
+    return account.portfolio_name;
+  }
+  if (account?.portfolio_assignment_status === 'AMBIGUOUS') {
+    return 'Ambiguous link';
+  }
+  return 'Unlinked';
+}
+
 export default function BankAccountManagement() {
   const [accounts, setAccounts] = useState([]);
+  const [portfolios, setPortfolios] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
@@ -33,6 +49,11 @@ export default function BankAccountManagement() {
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState(emptyForm());
   const [editSubmitting, setEditSubmitting] = useState(false);
+  const [linkModalAccount, setLinkModalAccount] = useState(null);
+  const [linkModalPortfolioId, setLinkModalPortfolioId] = useState('');
+  const [linkModalError, setLinkModalError] = useState('');
+  const [linkModalSubmitting, setLinkModalSubmitting] = useState(false);
+  const [linkSubmittingId, setLinkSubmittingId] = useState(null);
   const [deactivatingId, setDeactivatingId] = useState(null);
   const [seedingId, setSeedingId] = useState(null);
   const [selectedAccountId, setSelectedAccountId] = useState(null);
@@ -42,8 +63,12 @@ export default function BankAccountManagement() {
     setLoading(true);
     setError('');
     try {
-      const data = await fetchBankAccounts();
-      setAccounts(Array.isArray(data) ? data : []);
+      const [accountData, portfolioData] = await Promise.all([
+        fetchBankAccounts(),
+        fetchPortfolios(),
+      ]);
+      setAccounts(Array.isArray(accountData) ? accountData : []);
+      setPortfolios((portfolioData || []).filter((p) => p.is_active));
     } catch (err) {
       setError(err.message || 'Failed to load bank accounts.');
     } finally {
@@ -55,13 +80,18 @@ export default function BankAccountManagement() {
     reload();
   }, []);
 
+  const portfolioPayload = (portfolioId) => {
+    if (!portfolioId) return { portfolio_id: null };
+    return { portfolio_id: Number(portfolioId) };
+  };
+
   const handleCreate = async (e) => {
     e.preventDefault();
     setStatus('');
     setError('');
     setCreateSubmitting(true);
     try {
-      await createBankAccount({
+      const payload = {
         name: createForm.name.trim(),
         institution_name: createForm.institution_name.trim(),
         account_number: createForm.account_number.trim(),
@@ -70,7 +100,11 @@ export default function BankAccountManagement() {
         current_balance: createForm.current_balance,
         include_in_portfolio_value: false,
         comment: createForm.comment.trim(),
-      });
+      };
+      if (createForm.portfolio_id) {
+        payload.portfolio_id = Number(createForm.portfolio_id);
+      }
+      await createBankAccount(payload);
       setCreateForm(emptyForm());
       setStatus('Bank account created.');
       await reload();
@@ -91,6 +125,7 @@ export default function BankAccountManagement() {
       opening_balance: String(account.opening_balance ?? 0),
       current_balance: String(account.current_balance ?? 0),
       include_in_portfolio_value: Boolean(account.include_in_portfolio_value),
+      portfolio_id: account.portfolio_id ? String(account.portfolio_id) : '',
       comment: account.comment || '',
     });
     setStatus('');
@@ -113,6 +148,7 @@ export default function BankAccountManagement() {
         opening_balance: editForm.opening_balance,
         include_in_portfolio_value: editForm.include_in_portfolio_value,
         comment: editForm.comment.trim(),
+        ...portfolioPayload(editForm.portfolio_id),
       };
       if (!ledgerActive) {
         payload.current_balance = editForm.current_balance;
@@ -125,6 +161,66 @@ export default function BankAccountManagement() {
       setError(err.message || 'Failed to update bank account.');
     } finally {
       setEditSubmitting(false);
+    }
+  };
+
+  const openLinkModal = (account) => {
+    setLinkModalAccount(account);
+    setLinkModalPortfolioId(account.portfolio_id ? String(account.portfolio_id) : '');
+    setLinkModalError('');
+    setStatus('');
+    setError('');
+  };
+
+  const closeLinkModal = () => {
+    setLinkModalAccount(null);
+    setLinkModalPortfolioId('');
+    setLinkModalError('');
+  };
+
+  const saveLinkModal = async (e) => {
+    e.preventDefault();
+    if (!linkModalAccount) return;
+    if (!linkModalPortfolioId) {
+      setLinkModalError('Select a portfolio to link.');
+      return;
+    }
+    setLinkModalSubmitting(true);
+    setLinkModalError('');
+    try {
+      await updateBankAccount(
+        linkModalAccount.id,
+        portfolioPayload(linkModalPortfolioId)
+      );
+      const portfolioName =
+        portfolios.find((p) => String(p.id) === linkModalPortfolioId)?.name ||
+        'portfolio';
+      setStatus(`Linked "${linkModalAccount.name}" to ${portfolioName}.`);
+      closeLinkModal();
+      await reload();
+    } catch (err) {
+      setLinkModalError(err.message || 'Failed to update portfolio link.');
+    } finally {
+      setLinkModalSubmitting(false);
+    }
+  };
+
+  const handlePortfolioLink = async (account, portfolioId) => {
+    setLinkSubmittingId(account.id);
+    setError('');
+    setStatus('');
+    try {
+      await updateBankAccount(account.id, portfolioPayload(portfolioId));
+      setStatus(
+        portfolioId
+          ? `Linked "${account.name}" to portfolio.`
+          : `Delinked "${account.name}" from portfolio.`
+      );
+      await reload();
+    } catch (err) {
+      setError(err.message || 'Failed to update portfolio link.');
+    } finally {
+      setLinkSubmittingId(null);
     }
   };
 
@@ -173,7 +269,8 @@ export default function BankAccountManagement() {
 
       <p className="settings-hint">
         Bank account balances come from the cash movement ledger. You can optionally include
-        ledger balance in portfolio value per account below.
+        ledger balance in portfolio value per account below. Use <strong>Linked portfolio</strong>{' '}
+        to control where bank cash appears in Cash / Liquid Holdings — this does not move money.
       </p>
 
       {accounts.length > 0 ? (
@@ -186,7 +283,8 @@ export default function BankAccountManagement() {
                 <th>Account number</th>
                 <th>Currency</th>
                 <th>Current balance</th>
-                <th>In portfolio</th>
+                <th>Linked portfolio</th>
+                <th>In portfolio value</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -198,8 +296,38 @@ export default function BankAccountManagement() {
                   <td>{account.account_number}</td>
                   <td>{account.currency}</td>
                   <td>{account.current_balance}</td>
+                  <td>{linkedPortfolioLabel(account)}</td>
                   <td>{account.include_in_portfolio_value ? 'Yes' : 'No'}</td>
                   <td>
+                    {account.portfolio_id ? (
+                      <>
+                        <Button
+                          variant="secondary"
+                          type="button"
+                          disabled={linkSubmittingId === account.id || linkModalSubmitting}
+                          onClick={() => openLinkModal(account)}
+                        >
+                          Change linked portfolio
+                        </Button>{' '}
+                        <Button
+                          variant="secondary"
+                          type="button"
+                          disabled={linkSubmittingId === account.id || linkModalSubmitting}
+                          onClick={() => handlePortfolioLink(account, null)}
+                        >
+                          Delink from portfolio
+                        </Button>{' '}
+                      </>
+                    ) : (
+                      <Button
+                        variant="secondary"
+                        type="button"
+                        disabled={linkSubmittingId === account.id || linkModalSubmitting}
+                        onClick={() => openLinkModal(account)}
+                      >
+                        Link to portfolio
+                      </Button>
+                    )}{' '}
                     {account.opening_balance > 0 &&
                     !account.opening_balance_seeded &&
                     !account.has_ledger_entries ? (
@@ -294,6 +422,22 @@ export default function BankAccountManagement() {
           </select>
         </div>
         <div className="form-group">
+          <label htmlFor="ba-portfolio">Linked portfolio (optional)</label>
+          <select
+            id="ba-portfolio"
+            value={createForm.portfolio_id}
+            onChange={(e) => setCreateForm((p) => ({ ...p, portfolio_id: e.target.value }))}
+          >
+            <option value="">Unlinked</option>
+            {portfolios.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <p className="settings-hint">{PORTFOLIO_LINK_HELP}</p>
+        </div>
+        <div className="form-group">
           <label htmlFor="ba-opening">Opening balance</label>
           <input
             id="ba-opening"
@@ -333,6 +477,29 @@ export default function BankAccountManagement() {
       {editingId != null ? (
         <form onSubmit={handleEdit} className="bank-account-form settings-form">
           <h3 className="bank-account-form__title">Edit bank account</h3>
+          <div className="form-group">
+            <label htmlFor="ba-edit-portfolio">Linked portfolio</label>
+            <select
+              id="ba-edit-portfolio"
+              value={editForm.portfolio_id}
+              onChange={(e) => setEditForm((p) => ({ ...p, portfolio_id: e.target.value }))}
+            >
+              <option value="">Unlinked</option>
+              {portfolios.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <p className="settings-hint">{PORTFOLIO_LINK_HELP}</p>
+            {(accounts.find((a) => a.id === editingId)?.active_fixed_deposit_count ?? 0) > 0 ? (
+              <WarningBanner
+                severity="warning"
+                message="This bank account has linked Fixed Deposits. Changing the link affects where bank cash appears, but does not rewrite existing FD records."
+                className="settings-banner"
+              />
+            ) : null}
+          </div>
           <div className="form-group">
             <label htmlFor="ba-edit-name">Name</label>
             <input
@@ -447,6 +614,83 @@ export default function BankAccountManagement() {
             </Button>
           </div>
         </form>
+      ) : null}
+
+      {linkModalAccount ? (
+        <div
+          className="cash-movement-modal-backdrop"
+          role="presentation"
+          onClick={closeLinkModal}
+        >
+          <div
+            className="cash-movement-modal bank-account-link-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="bank-account-link-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="bank-account-link-modal-title">
+              {linkModalAccount.portfolio_id ? 'Change linked portfolio' : 'Link to portfolio'}
+            </h2>
+            <p className="settings-hint">
+              Account: <strong>{linkModalAccount.name}</strong>
+            </p>
+            <p className="settings-hint">{PORTFOLIO_LINK_HELP}</p>
+            {(linkModalAccount.active_fixed_deposit_count ?? 0) > 0 ? (
+              <WarningBanner
+                severity="warning"
+                message="This bank account has linked Fixed Deposits. Changing the link affects where bank cash appears, but does not rewrite existing FD records."
+                className="settings-banner"
+              />
+            ) : null}
+            {linkModalError ? (
+              <WarningBanner severity="error" message={linkModalError} className="settings-banner" />
+            ) : null}
+            <form onSubmit={saveLinkModal}>
+              <div className="form-group">
+                <label htmlFor="bank-account-link-portfolio">Linked portfolio</label>
+                {portfolios.length === 0 ? (
+                  <p className="settings-hint">
+                    No active portfolios available. Create a portfolio in Settings → Portfolios
+                    first.
+                  </p>
+                ) : (
+                  <select
+                    id="bank-account-link-portfolio"
+                    value={linkModalPortfolioId}
+                    onChange={(e) => setLinkModalPortfolioId(e.target.value)}
+                    required
+                    disabled={linkModalSubmitting}
+                  >
+                    <option value="">Select portfolio</option>
+                    {portfolios.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              <div className="cash-movement-modal__actions">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={linkModalSubmitting || portfolios.length === 0}
+                >
+                  {linkModalSubmitting ? 'Saving…' : 'Save link'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={closeLinkModal}
+                  disabled={linkModalSubmitting}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
       ) : null}
     </div>
   );

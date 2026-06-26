@@ -275,7 +275,7 @@ These ledgers must **not** be merged in storage. Cross-ledger transfers (e.g. ba
 
 **Unified domain model (CASH-UNIFY-0 + CASH-MODEL-REFINE-0):** Both ledgers represent **cash holdings** at the product level. `BankAccount` is independent; `BankAccount.portfolio` is a **current portfolio link** (not ownership). Link/delink changes inclusion only — no movements. See [cash-unification.md](./cash-unification.md) §4.
 
-**FD portfolio alignment (CASH-UNIFY-2):** New FDs require a **linked** bank account; portfolio derives from `bank_account.portfolio`. Opening debit behavior unchanged. Legacy mismatches flagged read-only (`portfolio_mismatch_warning`); no automatic rewrites.
+**FD portfolio alignment (CASH-UNIFY-2 + CASH-UNIFY-4):** New FDs require a **linked** bank account; portfolio derives from `bank_account.portfolio`. Link/delink in Settings changes inclusion only — existing FD rows are not rewritten. Legacy mismatches flagged read-only (`portfolio_mismatch_warning`); no automatic rewrites.
 
 ---
 

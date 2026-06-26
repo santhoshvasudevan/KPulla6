@@ -73,7 +73,7 @@ Approved decisions (FD-ACC-0.1): see accounting doc § Approved product decision
 | `currency` | string(3) | Same supported set as cash (`SUPPORTED_CASH_CURRENCIES`) |
 | `opening_balance` | decimal | Default 0; future cash balance |
 | `current_balance` | decimal | Default 0; future cash balance |
-| `include_in_portfolio_value` | bool | Default **false**; when **true** and ledger exists, balance included in portfolio value (FD-ACC-7). Requires unambiguous portfolio link or inference (FD-ACC-7); **CASH-UNIFY-4** adds explicit link/delink UX. |
+| `include_in_portfolio_value` | bool | Default **false**; when **true** and ledger exists, balance included in portfolio value (FD-ACC-7). Requires portfolio link (CASH-UNIFY-4 link/delink UX in Settings). |
 | `is_active` | bool | Soft delete sets false |
 | `comment` | text | Optional |
 
