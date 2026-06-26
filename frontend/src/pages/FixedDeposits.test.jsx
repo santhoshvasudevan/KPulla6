@@ -740,7 +740,8 @@ describe('FixedDeposits page', () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /interest & tax report/i })).toBeInTheDocument();
-      expect(screen.getByText(/this is not tax advice/i)).toBeInTheDocument();
+      expect(screen.getByText(/this report is not tax advice/i)).toBeInTheDocument();
+      expect(screen.getByText(/reversed interest payments are excluded/i)).toBeInTheDocument();
     });
   });
 
@@ -775,15 +776,18 @@ describe('FixedDeposits page', () => {
     renderPage();
     await waitFor(() => {
       expect(api.fetchFixedDepositInterestReport).toHaveBeenCalled();
-      expect(screen.getByText('Interest payment')).toBeInTheDocument();
-      expect(screen.getByText('Gross interest')).toBeInTheDocument();
     });
+    expect(await screen.findByText('Interest payment')).toBeInTheDocument();
+    expect(screen.getAllByText('Gross interest').length).toBeGreaterThan(0);
   });
 
   it('shows interest report empty state', async () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByText(/no interest rows/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/recorded interest payments, settlement interest, and renewal interest/i)
+      ).toBeInTheDocument();
     });
   });
 

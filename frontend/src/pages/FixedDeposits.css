@@ -108,6 +108,24 @@
   gap: var(--space-3);
 }
 
+.fd-interest-report__notes {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.fd-interest-report__filter--actions {
+  justify-content: flex-end;
+}
+
+.fd-interest-report__totals-warning {
+  margin-bottom: 0;
+}
+
 .fixed-deposits-page__table {
   margin-bottom: 0;
 }

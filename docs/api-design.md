@@ -1274,7 +1274,7 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 
 **Response:** `rows`, `totals` (gross/tax/net, `row_count`, `fx_status`), optional `grouped_totals`, `warnings` (FX partial / mixed currency).
 
-**Frontend:** `fetchFixedDepositInterestReport` · `test_fixed_deposit_interest_report_api.py` · Fixed Deposits → Interest & Tax report section.
+**Frontend (FD-TAX-1A):** `FixedDepositInterestReport.jsx` — filters, reset, notes, warnings, grouped totals, table polish. `FixedDepositInterestReport.test.jsx` · `FixedDeposits.test.jsx`.
 
 **Deferred:** CSV/export (FD-TAX-2). Not tax advice.
 

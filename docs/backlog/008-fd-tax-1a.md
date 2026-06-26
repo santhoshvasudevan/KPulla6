@@ -1,8 +1,6 @@
 # 008 — FD-TAX-1a: Interest & tax report polish
 
-**ID:** FD-TAX-1a  
-**Branch:** `agent/008-fd-tax-1a`  
-**Depends on:** FD-TAX-1 (implemented)
+**Status:** **Done** (2026-06-26)
 
 ## Goal
 
