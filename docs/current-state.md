@@ -1,7 +1,7 @@
 # Current State — KPulla6 (Portfolio Insight)
 
 ## Last Updated
-2026-06-24 (CASH-UNIFY-2 — FD portfolio derived from bank account)
+2026-06-24 (CASH-MODEL-REFINE-0 — bank account portfolio link semantics, docs only)
 
 **Documentation index:** [README.md](./README.md)
 
@@ -237,11 +237,19 @@ Design doc: [cash-ledger.md](./cash-ledger.md).
 
 **Tester repair:** `PUT /api/v1/portfolios/{id}` with `"cash_aware_enabled": true` on the tester default portfolio (no user deletion).
 
-**Next recommended phase:** [CASH-UNIFY-3](./backlog/004-cash-unify-3.md) — Cash page UI. See [cash-unification.md](./cash-unification.md).
+**Next recommended phase:** [CASH-UNIFY-4](./backlog/005-cash-unify-4.md) — bank account link/delink UX. Broker cash reversal available via CASH-CORR-1A.
+
+**Cash correction (CASH-CORR-1A — done 2026-06-26):** Audited broker cash reversal API + `reverse_broker_cash_entry` command; Cash page Reverse on eligible manual rows; migration `cash/0003`. Use to reverse mistaken broker deposit #103 on IndianInvestments without touching bank `CashMovement` #2.
+
+**Cash unification (CASH-UNIFY-3A — done 2026-06-25):** Cash page attribution fix — Broker/Bank sections and KPIs filter overview `ledger_type`; per-row source diagnostics; **Broker Cash actions** in header; Bank Cash read-only; always-on **Show unassigned / ambiguous bank accounts** toggle. Root cause of IndianInvestments swap: WIP used broker-only `/cash/balances` for unified layout. Correction deferred to CASH-CORR-1.
+
+**Cash unification (CASH-UNIFY-3 — done 2026-06-24):** Cash page retitled **Cash / Liquid Holdings**; uses `GET /api/v1/cash/overview` for Total/Broker/Bank KPIs and separate read-only Bank Cash table; broker ledger writes unchanged; link to Settings → Bank Accounts; warnings for FX gaps and excluded unassigned/ambiguous banks.
+
+**Cash model refinement (CASH-MODEL-REFINE-0 — docs 2026-06-24):** `BankAccount` is independent; `BankAccount.portfolio` is **current portfolio link**. Link/delink = inclusion only. **FD funding:** one clear source — linked bank **or** broker cash (target); no partial split; unlinked bank cannot fund FD. **Runtime today:** bank path only (`FD_OPENING`). Transfer = CASH-UNIFY-5; correction = CASH-CORR-1.
 
 **Cash unification (CASH-UNIFY-2 — done 2026-06-24):** FD create derives `FixedDeposit.portfolio` from `BankAccount.portfolio`; rejects unassigned/ambiguous banks and conflicting `portfolio_id` (**400** with structured error). FD API exposes `portfolio_mismatch_warning` for legacy rows (no auto-rewrite). FD create modal shows derived portfolio read-only.
 
-**Cash unification (CASH-UNIFY-1 — done 2026-06-24):** Nullable `BankAccount.portfolio` FK; `infer_bank_account_portfolios` command (dry-run default); read-only `GET /api/v1/cash/overview` with `BROKER_CASH` and `BANK_CASH` rows; `fetchCashOverview` in `api.js`. Cash page UI unchanged (CASH-UNIFY-3).
+**Cash unification (CASH-UNIFY-1 — done 2026-06-24):** Nullable `BankAccount.portfolio` FK; `infer_bank_account_portfolios` command (dry-run default); read-only `GET /api/v1/cash/overview` with `BROKER_CASH` and `BANK_CASH` rows; `fetchCashOverview` in `api.js`.
 
 **Other cash backlog:** transfer fees (Cash-8C); optional bulk quarterly/yearly frequencies.
 

@@ -30,11 +30,20 @@ export function formatCashAmount(value, currency) {
 /** Manual CASH_DEPOSIT / CASH_WITHDRAWAL without links — editable in Cash-3D. */
 export function isManualEditableCashEntry(entry) {
   if (!entry) return false;
+  if (entry.is_reversal) return false;
+  if (entry.is_reversed) return false;
   const type = entry.entry_type;
   if (type !== 'CASH_DEPOSIT' && type !== 'CASH_WITHDRAWAL') return false;
   if (entry.linked_transaction_id != null) return false;
   if (entry.transfer_group_id != null) return false;
   return true;
+}
+
+/** Manual broker deposit/withdrawal eligible for audited reversal (CASH-CORR-1A). */
+export function isReversibleManualCashEntry(entry) {
+  if (!entry) return false;
+  if (entry.is_reversible != null) return Boolean(entry.is_reversible);
+  return isManualEditableCashEntry(entry);
 }
 
 export function amountTone(amount) {

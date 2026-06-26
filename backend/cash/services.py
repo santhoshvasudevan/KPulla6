@@ -276,7 +276,17 @@ def is_manual_editable_entry(entry: CashLedgerEntry) -> bool:
         entry.entry_type in MANUAL_EDITABLE_ENTRY_TYPES
         and entry.linked_transaction_id is None
         and entry.transfer_group_id is None
+        and not entry.is_reversal
+        and not ledger_entry_has_been_reversed(entry)
     )
+
+
+def ledger_entry_has_been_reversed(entry: CashLedgerEntry | int) -> bool:
+    entry_id = entry.id if isinstance(entry, CashLedgerEntry) else entry
+    return CashLedgerEntry.objects.filter(
+        reverses_id=entry_id,
+        is_reversal=True,
+    ).exists()
 
 
 def _ledger_entry_for_user(user: AbstractBaseUser, entry_id: int) -> CashLedgerEntry:

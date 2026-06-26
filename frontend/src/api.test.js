@@ -856,6 +856,29 @@ describe('API Service', () => {
     expect(jsonCalls).toBe(1);
   });
 
+  it('reverseCashLedgerEntry posts reversal payload', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      json: async () => ({
+        original: { id: 103, is_reversed: true },
+        reversal: { id: 201, entry_type: 'CASH_WITHDRAWAL', amount: -1109389 },
+        message: 'Broker cash entry reversed.',
+      }),
+    });
+    await api.reverseCashLedgerEntry(103, {
+      reversal_date: '2026-06-26',
+      reason: 'Recorded in broker ledger by mistake',
+    });
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(url).toContain('/api/v1/cash/ledger/103/reverse');
+    expect(options.method).toBe('POST');
+    expect(JSON.parse(options.body)).toEqual({
+      reversal_date: '2026-06-26',
+      reason: 'Recorded in broker ledger by mistake',
+    });
+  });
+
   it('withCashScopeParams never sends display_currency', () => {
     const params = api.withCashScopeParams({ currency: 'EUR' }, { portfolio_scope: 'all' });
     expect(params.get('portfolio_scope')).toBe('all');

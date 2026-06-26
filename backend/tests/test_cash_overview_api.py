@@ -213,6 +213,38 @@ def test_overview_missing_fx_warning(api_client, seeded, test_user):
 
 
 @pytest.mark.django_db
+def test_overview_totals_not_swapped_broker_zero_bank_positive(api_client, seeded, test_user):
+    """Regression: broker and bank native totals must not be swapped (CASH-UNIFY-3A)."""
+    portfolio = Portfolio.objects.create(
+        user=test_user,
+        name="IndianInvestments",
+        base_currency="INR",
+        is_active=True,
+    )
+    bank = _create_bank(test_user, portfolio_id=portfolio.id, account_number="IN-1")
+    fund_bank_account(test_user, bank, "1109389")
+
+    response = api_client.get(
+        "/api/v1/cash/overview", {"portfolio_id": portfolio.id}
+    )
+    assert response.status_code == 200
+    body = response.json()
+
+    broker_rows = [r for r in body["rows"] if r["ledger_type"] == "BROKER_CASH"]
+    bank_rows = [r for r in body["rows"] if r["ledger_type"] == "BANK_CASH"]
+    assert broker_rows == []
+    assert len(bank_rows) == 1
+    assert bank_rows[0]["balance"] == pytest.approx(1109389.0)
+    assert bank_rows[0]["source"] == "cash_movements"
+    assert all(r["ledger_type"] != "BROKER_CASH" or r["balance"] == 0 for r in body["rows"])
+
+    inr_totals = next(t for t in body["totals"]["by_currency"] if t["currency"] == "INR")
+    assert inr_totals["broker_cash"] == 0.0
+    assert inr_totals["bank_cash"] == pytest.approx(1109389.0)
+    assert inr_totals["total_cash"] == pytest.approx(1109389.0)
+
+
+@pytest.mark.django_db
 def test_overview_user_scoped(api_client, seeded, test_user, other_user):
     portfolio = ensure_default_portfolio(test_user)
     _deposit(portfolio, amount="100")

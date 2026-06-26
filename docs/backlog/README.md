@@ -102,18 +102,19 @@ Execute in order within each epic unless the planner reprioritizes.
 
 | # | File | ID | Status | Depends on |
 |---|------|-----|--------|------------|
-| 1 | [001-cash-unify-0.md](./001-cash-unify-0.md) | CASH-UNIFY-0 | Open | — |
-| 2 | [002-cash-unify-1.md](./002-cash-unify-1.md) | CASH-UNIFY-1 | Open | 001 |
-| 3 | [003-cash-unify-2.md](./003-cash-unify-2.md) | CASH-UNIFY-2 | Open | 002 |
-| 4 | [004-cash-unify-3.md](./004-cash-unify-3.md) | CASH-UNIFY-3 | Open | 003 |
-| 5 | [005-cash-unify-4.md](./005-cash-unify-4.md) | CASH-UNIFY-4 | Open | 004 |
+| 1 | [001-cash-unify-0.md](./001-cash-unify-0.md) | CASH-UNIFY-0 | **Done** | — |
+| 2 | [002-cash-unify-1.md](./002-cash-unify-1.md) | CASH-UNIFY-1 | **Done** | 001 |
+| 3 | [003-cash-unify-2.md](./003-cash-unify-2.md) | CASH-UNIFY-2 | **Done** | 002 |
+| 4 | [004-cash-unify-3.md](./004-cash-unify-3.md) | CASH-UNIFY-3 | **Done** | 003 |
+| 4a | [004a-cash-unify-3a.md](./004a-cash-unify-3a.md) | CASH-UNIFY-3A | Done | 004 |
+| 5 | [005-cash-unify-4.md](./005-cash-unify-4.md) | CASH-UNIFY-4 | Open | 004, 004a |
 | 6 | [006-fx-1.md](./006-fx-1.md) | FX-1 | Open | 005 (recommended) |
 | 7 | [007-fx-2.md](./007-fx-2.md) | FX-2 | Open | 006 |
 | 8 | [008-fd-tax-1a.md](./008-fd-tax-1a.md) | FD-TAX-1a | Open | — |
 | 9 | [009-fd-tax-2.md](./009-fd-tax-2.md) | FD-TAX-2 | Open | 008 |
 | 10 | [010-fd-acc-10c.md](./010-fd-acc-10c.md) | FD-ACC-10C | Open | — |
 | 11 | [011-fd-acc-10d.md](./011-fd-acc-10d.md) | FD-ACC-10D | Open | 010 |
-| 12 | [012-cash-corr-1.md](./012-cash-corr-1.md) | CASH-CORR-1 | Open | 005, 010 (recommended) |
+| 12 | [012-cash-corr-1.md](./012-cash-corr-1.md) | CASH-CORR-1 | Open | 005, 004a |
 | 13 | [013-fd-analytics-1.md](./013-fd-analytics-1.md) | FD-ANALYTICS-1 | Open | 005 |
 | 14 | [014-fd-analytics-2.md](./014-fd-analytics-2.md) | FD-ANALYTICS-2 | Open | 013 |
 
@@ -123,19 +124,23 @@ Execute in order within each epic unless the planner reprioritizes.
 
 ## Epic summaries
 
-### CASH-UNIFY (001–005)
+### CASH-UNIFY (001–005, 004a, 012)
 
 Clarify and surface the **two-ledger cash model** (portfolio broker cash vs bank ledger) without merging storage. Portfolio `CashLedgerEntry` and bank `CashMovement` remain separate per `docs/decisions.md` and [cash-unification.md](../cash-unification.md).
 
+**Refined model (CASH-MODEL-REFINE-0):** `BankAccount` is independent; `BankAccount.portfolio` is a **current portfolio link** (not ownership). Link/delink = inclusion only; transfer = CASH-UNIFY-5; correction = CASH-CORR-1.
+
 | Phase | Backlog | Scope |
 |-------|---------|--------|
-| **0** | 001 | Design doc + ADR (done) |
-| **1** | 002 | `BankAccount.portfolio` + inference backfill + `GET /cash/overview` read API |
-| **2** | 003 | FD create derives portfolio from bank account |
-| **3** | 004 | Unified Cash page UI (Broker + Bank + Total sections) |
-| **4** | 005 | Display-currency totals, terminology, stabilization |
+| **0** | 001 | Design doc + ADR (**done**) |
+| **1** | 002 | `BankAccount.portfolio` link FK + inference + `GET /cash/overview` (**done**) |
+| **2** | 003 | FD create derives portfolio from linked bank account (**done**) |
+| **3** | 004 | Unified Cash page UI (**done**) |
+| **3A** | 004a | Cash page verification: attribution, broker actions, diagnostics (**done**) |
+| **4** | 005 | Bank account link/delink UX + inclusion + display-currency stabilization |
+| **CORR** | 012 | Reconciliation diagnostics + safe reclassification (mistaken broker ↔ bank entries) |
 
-**Deferred (not in backlog index):** CASH-UNIFY-5 broker ↔ bank transfer workflow; CASH-UNIFY-6 physical/offline cash account.
+**Deferred (not in backlog index):** CASH-UNIFY-5 broker ↔ bank **transfer** workflow (actual movements); CASH-UNIFY-6 physical/offline cash account.
 
 ### FX (006–007)
 
@@ -151,7 +156,7 @@ FD-ACC-10C: settlement/renewal/cancel-FD reversals. FD-ACC-10D: audit, classifie
 
 ### CASH-CORR (012)
 
-Read-only reconciliation diagnostics and guided correction UX across broker and bank ledgers.
+Reconciliation diagnostics and **safe reclassification** for mistaken broker ↔ bank cash entries (audited; no silent rewrite). Distinct from link/delink (CASH-UNIFY-4) and transfer (CASH-UNIFY-5).
 
 ### FD-ANALYTICS (013–014)
 

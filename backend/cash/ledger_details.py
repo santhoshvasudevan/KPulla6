@@ -32,6 +32,14 @@ def _join_parts(parts: list[str]) -> str:
 
 
 def _manual_entry_details(entry: CashLedgerEntry) -> str:
+    if entry.is_reversal:
+        parts = [f"Reversal of entry #{entry.reverses_id}"]
+        if entry.reversal_reason:
+            parts.append(entry.reversal_reason.strip())
+        elif entry.note:
+            parts.append(entry.note.strip())
+        return _join_parts(parts)
+
     parts: list[str] = []
     if entry.source_of_funds:
         parts.append(entry.source_of_funds.strip())

@@ -378,38 +378,29 @@ Component: `CashEntryFormFields.jsx` (shared cash form fields); `TransactionModa
 
 Existing portfolios stay legacy until enabled; new portfolios default on (Cash-4A.1). No disable button in UI.
 
-## Cash page (`/cash`) — **Implemented** (Cash-3B)
+## Cash page (`/cash`) — **Implemented** (Cash-3B + CASH-UNIFY-3)
 
-Route: `pages/Cash.jsx` · `pages/Cash.css` · sidebar nav **Cash** (after Transactions).
+Route: `pages/Cash.jsx` · `pages/Cash.css` · sidebar nav **Cash** (after Transactions). Page title: **Cash / Liquid Holdings**.
 
-Backend supplies balances and ledger rows. React **displays only** — no cash balance math or display-currency totals on this page. `CurrencyValue` formats native amounts.
+Overview and tables use `GET /api/v1/cash/overview` (`fetchCashOverview`) with `portfolioContext.apiQuery` (scope + `display_currency`). Broker ledger writes still use `/cash/*`. React **displays only** — no client-side cash aggregation.
 
 | Section | Behavior |
 |---------|----------|
-| **Balances** | `GET /cash/balances` with `portfolioContext.apiQuery`; table + `totals_by_currency` for all scope |
-| **Ledger** | `GET /cash/ledger` with filters and backend pagination |
+| **KPI strip** | Total Cash, Broker Cash, Bank Cash (display currency when FX available; native balances always in tables) |
+| **Broker Cash** | Overview `BROKER_CASH` rows; deposit/withdrawal/transfer/bulk actions labeled **Broker Cash actions** |
+| **Bank Cash** | Overview `BANK_CASH` rows — read-only; assignment status; include-in-portfolio-value; link → Settings → Bank Accounts |
+| **Exclusions** | Warnings/counts for unassigned/ambiguous banks; optional **Show unassigned bank accounts** (`include_unassigned`) |
+| **Broker ledger** | `GET /cash/ledger` with filters and backend pagination |
 | **Cash-aware status** | `CashAwarePortfolioStatus` below header (Cash-4A.2) |
 | **Deposit / withdrawal** | Modals → `POST /cash/deposits`, `POST /cash/withdrawals`; insufficient withdrawal shows API shortfall fields |
-| **Edit / delete** | Manual rows only → `PUT`/`DELETE /cash/ledger/{id}`; edit reuses modal; delete confirm; **Cash-4D** future-impact panel (`CashFutureImpactDisplay`) with `affected_entries` — no cascade delete |
+| **Edit / delete** | Manual broker rows only → `PUT`/`DELETE /cash/ledger/{id}`; **Cash-4D** future-impact panel |
+| **Bulk cash entries (Cash-7D)** | `CashBulkEntriesWizard` on broker ledger |
 
-| **Bulk cash entries (Cash-7D)** | **Add Bulk Cash Entries** → `CashBulkEntriesWizard`: deposit/withdrawal, currency, amount, date range, once/monthly → `previewCashBulkEntries` → review → `applyCashBulkEntries`; refresh after apply |
+**Removed:** Cash shortfall backfill (Cash-7A/7B/7C). Display-currency headline edge cases → CASH-UNIFY-4. Link/delink UX → CASH-UNIFY-4.
 
-**Removed:** Cash shortfall backfill (Cash-7A/7B/7C) — no UI or API. Historical funding via manual entries or **Add Bulk Cash Entries**.
+**Cash page (CASH-UNIFY-3 / 3A / CASH-CORR-1A):** `/cash` title **Cash / Liquid Holdings**. Overview from `fetchCashOverview`; Broker and Bank sections filter `ledger_type`. Per-row source labels distinguish `CashLedgerEntry` vs `CashMovement`. **Broker Cash actions** in header only. Bank Cash read-only with link to Settings. Toggle **Show unassigned / ambiguous bank accounts** always visible. **Reverse** on eligible manual broker ledger rows (reason + date required; bank cash unaffected).
 
-Page layout: [page-layouts.md](./page-layouts.md) §8. Design: [cash-ledger.md](./cash-ledger.md) · unified model: [cash-unification.md](./cash-unification.md).
-
-## Future — Unified Cash / Liquid Holdings page (CASH-UNIFY-3)
-
-**Design only (CASH-UNIFY-0).** Target layout when overview API (CASH-UNIFY-1) ships:
-
-| Section | Content | Actions |
-|---------|---------|---------|
-| **Header KPIs** | Total Cash; Broker Cash subtotal; Bank Cash subtotal (native currency; display FX in CASH-UNIFY-4) | Scope from `portfolioContext` |
-| **Broker Cash** | Existing balances table + ledger + deposit/withdrawal/transfer/bulk | Unchanged write paths on `/cash/*` |
-| **Bank Cash** | Per bank account balances from overview API; filtered by portfolio when ownership set | Link → Settings → Bank account movements |
-| **Helper copy** | Broker cash funds **securities/MF**; bank cash funds **FD/bank products** | Static explainer |
-
-React displays overview API only — no client-side aggregation across ledgers. Bank movement CRUD remains in Settings unless a later phase adds deep-links only.
+Page layout: [page-layouts.md](./page-layouts.md) §8. Design: [cash-ledger.md](./cash-ledger.md) · [cash-unification.md](./cash-unification.md).
 
 ## Future — Cash Ledger UI (remaining phases)
 

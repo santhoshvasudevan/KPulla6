@@ -756,6 +756,14 @@ export async function deleteCashLedgerEntry(id) {
   return cashRequestWithHandling(`/cash/ledger/${id}`, { method: 'DELETE' });
 }
 
+/** POST /api/v1/cash/ledger/{id}/reverse — audited broker cash reversal (CASH-CORR-1A). */
+export async function reverseCashLedgerEntry(id, payload) {
+  return cashRequestWithHandling(`/cash/ledger/${id}/reverse`, {
+    method: 'POST',
+    body: payload,
+  });
+}
+
 function buildCashBulkEntriesBody(payload = {}) {
   const body = {
     portfolio_id: payload.portfolio_id,

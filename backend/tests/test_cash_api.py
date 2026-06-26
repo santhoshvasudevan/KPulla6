@@ -21,6 +21,12 @@ LEDGER_ITEM_KEYS = {
     "transfer_group_id",
     "note",
     "details",
+    "is_reversal",
+    "reverses_id",
+    "reversal_reason",
+    "is_reversed",
+    "reversed_by_id",
+    "is_reversible",
     "created_at",
     "updated_at",
 }

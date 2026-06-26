@@ -42,7 +42,8 @@ Key design choices documented there:
 
 - Bank ledger is **separate** from portfolio `CashLedgerEntry` (broker cash)
 - Ledger is source of truth for bank `current_balance`; FD principal stays portfolio value until settled
-- **New FDs (FD-ACC-3):** principal debited from linked bank account via `FD_OPENING` movement at create time; requires **ledger-derived** bank balance **as of the FD investment date** (seed opening balance or manual deposit on/before that date)
+- **New FDs (FD-ACC-3):** principal debited from **linked** bank account via `FD_OPENING` movement at create time (bank funding path — **only path implemented today**)
+- **FD funding (target — CASH-MODEL-REFINE-0):** one clear source per FD — **linked bank account** OR **broker cash** from selected portfolio; **no** partial bank+broker split; unlinked bank cannot fund until linked
 - **Backdated FDs:** seed opening balance and manual deposits must be dated on or before `investment_date`; seeding with today’s date does not fund an earlier investment date. **Current ledger balance** (today) may exceed **available as of investment date** — FD create validates the latter (FD-CASH-ASOF-1).
 - **Cash tab vs bank ledger:** Portfolio Cash (`/cash/balances`) is broker cash; FD opening debits use the linked **bank account** cash ledger (`CashMovement`). Unified product model: [cash-unification.md](./cash-unification.md).
 - **Interest payments (FD-ACC-4):** periodic payouts via `FD_INTEREST`; immutable; COMPOUNDED soft warning
@@ -72,7 +73,7 @@ Approved decisions (FD-ACC-0.1): see accounting doc § Approved product decision
 | `currency` | string(3) | Same supported set as cash (`SUPPORTED_CASH_CURRENCIES`) |
 | `opening_balance` | decimal | Default 0; future cash balance |
 | `current_balance` | decimal | Default 0; future cash balance |
-| `include_in_portfolio_value` | bool | Default **false**; when **true** and ledger exists, balance included in portfolio value (FD-ACC-7). **Future:** requires unambiguous `BankAccount.portfolio` (CASH-UNIFY-1). |
+| `include_in_portfolio_value` | bool | Default **false**; when **true** and ledger exists, balance included in portfolio value (FD-ACC-7). Requires unambiguous portfolio link or inference (FD-ACC-7); **CASH-UNIFY-4** adds explicit link/delink UX. |
 | `is_active` | bool | Soft delete sets false |
 | `comment` | text | Optional |
 
@@ -81,8 +82,8 @@ Approved decisions (FD-ACC-0.1): see accounting doc § Approved product decision
 | Field | Type | Notes |
 |-------|------|-------|
 | `user` | FK → `auth.User` | Explicit ownership (also validated via portfolio/bank) |
-| `portfolio` | FK → `Portfolio` | Required; must be active, same user. **CASH-UNIFY-2:** on create, derived from `bank_account.portfolio`; conflicting client `portfolio_id` rejected. Legacy rows may differ — see `portfolio_mismatch_warning`. |
-| `bank_account` | FK → `BankAccount` | Required; must be active, same user |
+| `portfolio` | FK → `Portfolio` | Required; must be active, same user. **CASH-UNIFY-2:** on create, derived from **linked** `bank_account.portfolio`; conflicting client `portfolio_id` rejected. Legacy rows may differ — see `portfolio_mismatch_warning`. |
+| `bank_account` | FK → `BankAccount` | Required for **bank-funded** FD create (today's only path); must be active, same user, **linked** (`portfolio` set). Broker-funded FD (future) may relax or repurpose — TBD. |
 | `institution_name` | string | e.g. SBI, HDFC, Post Office |
 | `deposit_account_number` | string | FD account / receipt number |
 | `principal_amount` | decimal | Must be > 0 |

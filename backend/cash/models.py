@@ -169,6 +169,15 @@ class CashLedgerEntry(models.Model):
         related_name="ledger_entries",
     )
     note = models.TextField(blank=True, default="")
+    is_reversal = models.BooleanField(default=False)
+    reverses = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="reversal_rows",
+    )
+    reversal_reason = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

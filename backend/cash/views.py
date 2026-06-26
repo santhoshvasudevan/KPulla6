@@ -17,11 +17,17 @@ from cash.serializers import (
     CashBulkEntriesRequestSerializer,
     CashDepositWriteSerializer,
     CashLedgerEntrySerializer,
+    CashLedgerReversalWriteSerializer,
     CashManualLedgerUpdateSerializer,
     CashTransferWriteSerializer,
     CashWithdrawalWriteSerializer,
 )
 from cash.overview_service import build_cash_overview, cash_overview_to_response_dict
+from cash.reversal_services import (
+    CashReversalValidationError,
+    broker_cash_balance_preview,
+    reverse_broker_cash_ledger_entry,
+)
 from cash.services import (
     CashBalancesAllResult,
     CashBalancesSingleResult,
@@ -75,6 +81,8 @@ def _cash_write_error_response(exc: Exception) -> Response | None:
     if isinstance(exc, CashEntryNotEditableError):
         return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
     if isinstance(exc, CashValidationError):
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    if isinstance(exc, CashReversalValidationError):
         return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
     return None
 
@@ -437,6 +445,46 @@ class CashLedgerEntryDetailView(APIView):
             raise
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class CashLedgerEntryReverseView(APIView):
+    """POST /api/v1/cash/ledger/{id}/reverse — manual broker cash reversal (CASH-CORR-1A)."""
+
+    def post(self, request, entry_id: int):
+        serializer = CashLedgerReversalWriteSerializer(data=request.data or {})
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            result = reverse_broker_cash_ledger_entry(
+                request.user,
+                entry_id,
+                reversal_date=serializer.validated_data.get("reversal_date"),
+                reason=serializer.validated_data["reason"],
+            )
+        except (
+            PortfolioNotFoundError,
+            CashValidationError,
+            CashReversalValidationError,
+            InsufficientCashError,
+            FutureCashImpactError,
+        ) as exc:
+            err = _cash_write_error_response(exc)
+            if err is not None:
+                return err
+            raise
+
+        balance = broker_cash_balance_preview(request.user, result.reversal.portfolio_id, result.reversal.currency)
+        return Response(
+            {
+                "original": CashLedgerEntrySerializer(result.original).data,
+                "reversal": CashLedgerEntrySerializer(result.reversal).data,
+                "reversal_entry_id": result.reversal.id,
+                "reversed_by": result.reversal.id,
+                "broker_cash_balance": balance,
+                "message": result.message,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 def _bulk_entries_validation_response(exc: CashValidationError) -> Response:

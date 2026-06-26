@@ -24,6 +24,7 @@ Quick reference for MVP endpoints. Detail sections below. Product rules: [produc
 | POST | `/api/v1/cash/withdrawals` | Manual `CASH_WITHDRAWAL` | `createCashWithdrawal` | `test_cash_api.py` |
 | PUT | `/api/v1/cash/ledger/{id}` | Edit manual deposit/withdrawal | `updateCashLedgerEntry` | `test_cash_api.py` |
 | DELETE | `/api/v1/cash/ledger/{id}` | Delete manual deposit/withdrawal | `deleteCashLedgerEntry` | `test_cash_api.py` |
+| POST | `/api/v1/cash/ledger/{id}/reverse` | Reverse manual broker deposit/withdrawal (CASH-CORR-1A) | `reverseCashLedgerEntry` | `test_cash_ledger_reversals_api.py` |
 | POST | `/api/v1/cash/transfers` | Same- or cross-currency portfolio transfer | `createCashTransfer` | `test_cash_api.py` |
 | POST | `/api/v1/cash/bulk-entries/preview` | Bulk schedule preview | `previewCashBulkEntries` | `test_cash_bulk_entries_api.py` |
 | POST | `/api/v1/cash/bulk-entries/apply` | Confirmed bulk manual entries | `applyCashBulkEntries` | `test_cash_bulk_entries_api.py` |
@@ -57,14 +58,16 @@ Design: [cash-unification.md](./cash-unification.md).
 | Method | Path | Purpose | Phase |
 |--------|------|---------|-------|
 | GET | `/api/v1/cash/overview` | **Implemented (CASH-UNIFY-1)** — read-only broker + bank cash rows; optional `display_currency`, `include_unassigned` | CASH-UNIFY-1 |
-| — | `BankAccount.portfolio` | **Implemented (CASH-UNIFY-1)** — nullable FK; inference via `infer_bank_account_portfolios` | CASH-UNIFY-1 |
+| — | `BankAccount.portfolio` | **Implemented (CASH-UNIFY-1)** — nullable FK = **current portfolio link** / default investment portfolio; inference via `infer_bank_account_portfolios`. Link/delink does not create movements (CASH-MODEL-REFINE-0). Dedicated link/delink UX → CASH-UNIFY-4 | CASH-UNIFY-1 |
 | — | FD create portfolio rule | Derive `portfolio` from `bank_account.portfolio`; reject mismatch | CASH-UNIFY-2 |
 
 **`GET /api/v1/cash/overview` query:** `portfolio_scope=all` or `portfolio_id`; optional `as_of_date`, `display_currency`, `include_unassigned` (default false).
 
 **Response:** `rows[]` (`ledger_type`: `BROKER_CASH` | `BANK_CASH`), `totals`, `warnings`, exclusion counts for unassigned/ambiguous bank accounts.
 
-**Invariants:** No cross-ledger writes; no table merge; does not change `/cash/balances` or summary/performance valuation.
+**Invariants:** No cross-ledger writes on link/delink or overview read; no table merge; does not change `/cash/balances` or summary/performance valuation.
+
+**Portfolio link semantics (CASH-MODEL-REFINE-0):** `portfolio_id` on bank account create/update sets the **current portfolio link**. Unlinked accounts (`portfolio_id` null) are external/unassigned bank cash in overview (excluded from single-portfolio scope unless `include_unassigned=true`). Changing the link does not post cash movements.
 
 ## Implemented in KPulla6
 
@@ -1047,6 +1050,31 @@ When `source_currency == target_currency`, `source_amount` must equal `target_am
 Same manual-entry rules as `PUT`. Blocked when any later ledger date would have negative balance in that portfolio/currency. **No cascade delete** of linked asset transactions or settlements.
 
 **Errors:** `404` not found; `409` protected entry or future negative balance.
+
+#### `POST /api/v1/cash/ledger/{id}/reverse` — **201 Created** (CASH-CORR-1A)
+
+Audited reversal of a **manual** broker `CASH_DEPOSIT` or `CASH_WITHDRAWAL`. Creates opposite-direction entry with `is_reversal=true`, `reverses_id`, `reversal_reason`. **Original row is not deleted.**
+
+**Body:**
+
+```json
+{
+  "reversal_date": "2026-06-26",
+  "reason": "Recorded in broker ledger by mistake"
+}
+```
+
+`reason` required. `reversal_date` optional (defaults to today).
+
+**Response:** `{ original, reversal, reversal_entry_id, reversed_by, broker_cash_balance, message }` — ledger item shapes include `is_reversed`, `is_reversible`, `reverses_id`.
+
+**Eligibility:** manual deposit/withdrawal only; not linked, transfer, system, already reversed, or reversal rows.
+
+**Errors:** `400` validation / insufficient cash; `404` not found; `409` future negative balance.
+
+**Unchanged:** bank `CashMovement` rows; FD accounting.
+
+**CLI:** `manage.py reverse_broker_cash_entry --entry-id … --reason …` (dry-run default; `--apply` to write).
 
 #### Future impact error (Cash-4D) — **409 Conflict**
 

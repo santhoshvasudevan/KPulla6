@@ -273,9 +273,9 @@ User
 
 These ledgers must **not** be merged in storage. Cross-ledger transfers (e.g. bank withdrawal → portfolio deposit) are a future product decision (**CASH-UNIFY-5**, deferred) and are **not** auto-created in FD-ACC-1 or CASH-UNIFY phases 1–4.
 
-**Unified domain model (CASH-UNIFY-0):** Both ledgers represent **cash holdings** within a portfolio wealth pool at the product level. See [cash-unification.md](./cash-unification.md) for ownership rules, Cash tab design, and implementation roadmap.
+**Unified domain model (CASH-UNIFY-0 + CASH-MODEL-REFINE-0):** Both ledgers represent **cash holdings** at the product level. `BankAccount` is independent; `BankAccount.portfolio` is a **current portfolio link** (not ownership). Link/delink changes inclusion only — no movements. See [cash-unification.md](./cash-unification.md) §4.
 
-**FD portfolio alignment (CASH-UNIFY-2):** New FDs derive portfolio from the linked bank account; opening debit behavior unchanged. Legacy FD/bank portfolio mismatches are flagged read-only in API (`portfolio_mismatch_warning`); no automatic ledger or portfolio rewrites.
+**FD portfolio alignment (CASH-UNIFY-2):** New FDs require a **linked** bank account; portfolio derives from `bank_account.portfolio`. Opening debit behavior unchanged. Legacy mismatches flagged read-only (`portfolio_mismatch_warning`); no automatic rewrites.
 
 ---
 
@@ -613,11 +613,17 @@ Extend response with `ledger_balance` (computed or cached), `ledger_as_of`, `has
 
 ### 2. FD opening
 
-1. User creates FD via `POST /fixed-deposits` (**FD-ACC-3**).
+**Funding source (CASH-MODEL-REFINE-0):** Each FD requires **one** funding path — linked **bank account** or **broker cash** from the portfolio. Partial bank+broker split is **not** supported. Unlinked bank cannot fund until linked.
+
+**Implemented today (bank path only):**
+
+1. User creates FD via `POST /fixed-deposits` with a **linked** bank account (**FD-ACC-3**).
 2. Backend atomically creates `FD_OPENING` movement (−principal) on linked bank account on `investment_date`.
-3. **Validation:** ledger balance **as of `investment_date`** must cover principal (**400** shortfall — `available`, `required`, `shortfall`, optional `hint`). Bank account API `current_balance` is the latest ledger total, not necessarily the as-of investment date.
-4. **Backdated FDs:** opening balance seed and manual deposits must use `movement_date` on or before the FD `investment_date`. Default seed uses today — insufficient for an earlier investment date unless movements are backdated via manual deposit/adjustment workflows.
+3. **Validation:** bank ledger balance **as of `investment_date`** must cover principal (**400** shortfall). Bank account must be linked (`portfolio` set) per CASH-UNIFY-2.
+4. **Backdated FDs:** opening balance seed and manual deposits must use `movement_date` on or before the FD `investment_date`.
 5. **Existing MVP FDs:** no movement; FD remains valid; no auto-backfill.
+
+**Deferred (broker-cash path):** Principal debited from portfolio `CashLedgerEntry` (broker ledger) instead of bank `FD_OPENING` — requires dedicated implementation phase; not interchangeable with link/delink or transfer.
 
 ### 3. Periodic interest payment
 
