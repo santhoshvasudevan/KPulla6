@@ -157,19 +157,22 @@ Use the action that matches the real-world event. These are **not** interchangea
 
 **Do not fix pre-10A deactivated FDs with a manual deposit** — use the repair command. Manual deposits are external contributions and distort XIRR/TWROR. cancelled FDs are excluded from FD principal history entirely, but included bank cash still reflects the original `FD_OPENING` debit until the reversal date — headline PV may dip between opening and cancellation. Settlement/renewal/cancel-FD reversal → **FD-ACC-10C**.
 
-### FD interest / tax report (FD-TAX-1 / FD-TAX-1A)
+### FD interest / tax report (FD-TAX-1 / FD-TAX-1A / FD-TAX-2)
 
 | Method | Path | Behavior |
 |--------|------|----------|
 | GET | `/reports/fixed-deposit-interest` | Read-only gross/tax/net report from interest payments, settlements, renewals |
+| GET | `/reports/fixed-deposit-interest/export.csv` | Read-only CSV export of detail rows; same filters/exclusions as JSON report |
 
-**Query:** `portfolio_scope` / `portfolio_id`, `start_date`, `end_date`, optional `display_currency`, `group_by` (`year`, `portfolio`, `bank`, `fd`, `source`, `none`).
+**Query:** `portfolio_scope` / `portfolio_id`, `start_date`, `end_date`, optional `display_currency`, `group_by` (`year`, `portfolio`, `bank`, `fd`, `source`, `none`) — JSON only; CSV ignores `group_by` (detail rows only).
 
 **Excludes:** reversed interest payments; zero-interest settlement/renewal rows; `CANCELLED` FD rows; renewal-linked settlement rows (renewal group used instead).
 
-**UI (FD-TAX-1A):** Fixed Deposits → **Interest & Tax** section — default date range = current calendar year; **Reset filters**; `group_by` includes **Bank account**; KPI cards (gross/tax/net/row count); grouped totals with readable labels; exclusion/disclaimer notes; FX and mixed-currency warnings near totals; improved empty state.
+**UI (FD-TAX-1A / FD-TAX-2):** Fixed Deposits → **Interest & Tax** section — default date range = current calendar year; **Reset filters**; `group_by` includes **Bank account**; KPI cards (gross/tax/net/row count); grouped totals with readable labels; exclusion/disclaimer notes; FX and mixed-currency warnings near totals; improved empty state; **Export CSV** button (current filters; blob download).
 
-**Not tax advice.** CSV/export deferred (FD-TAX-2). No ledger or performance side effects.
+**CSV columns:** Date, Source Type, Source Label, Portfolio, Bank / Institution, Bank Account, FD Account, Currency, Gross Interest, Tax Withheld, Net Interest, Display Currency, Gross/Tax/Net Interest Display, Comment. Filename includes date range (e.g. `fd-interest-tax-2026-01-01-to-2026-12-31.csv`). Warnings remain UI-only; CSV is rows-only (header when empty).
+
+**Not tax advice.** No ledger or performance side effects.
 
 ### Summary / holdings integration
 

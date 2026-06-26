@@ -10,6 +10,8 @@ import { PortfolioProvider } from '../portfolioContext';
 
 vi.mock('../api', () => ({
   fetchFixedDepositInterestReport: vi.fn(),
+  exportFixedDepositInterestReportCsv: vi.fn(),
+  downloadBlobFile: vi.fn(),
   getSettings: vi.fn(),
   fetchPortfolios: vi.fn(),
   updateSettings: vi.fn(),
@@ -55,6 +57,10 @@ describe('FixedDepositInterestReport', () => {
       },
       grouped_totals: [],
       warnings: [],
+    });
+    api.exportFixedDepositInterestReportCsv.mockResolvedValue({
+      blob: new Blob(['csv'], { type: 'text/csv' }),
+      filename: 'fd-interest-tax.csv',
     });
   });
 
@@ -126,11 +132,22 @@ describe('FixedDepositInterestReport', () => {
 
   it('shows tax-not-advice note', async () => {
     renderReport();
+    await waitFor(() => {
+      expect(api.fetchFixedDepositInterestReport).toHaveBeenCalled();
+    });
+    const section = screen.getByRole('region', {
+      name: /fixed deposit interest and tax report/i,
+    });
     expect(
-      await screen.findByText(/this report is not tax advice/i)
+      within(section).getByText(
+        /summarizes recorded fd interest and tax withheld from interest payments/i
+      )
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/it is not tax advice/i)
+      within(section).getAllByText(/this report is not tax advice/i).length
+    ).toBeGreaterThanOrEqual(1);
+    expect(
+      within(section).getByText(/it is not tax advice/i)
     ).toBeInTheDocument();
   });
 
@@ -273,5 +290,37 @@ describe('FixedDepositInterestReport', () => {
     expect(screen.getByText('Row count')).toBeInTheDocument();
     expect(screen.getByText('Bank / Institution')).toBeInTheDocument();
     expect(screen.getByText('FD account')).toBeInTheDocument();
+  });
+
+  it('renders Export CSV button and helper text', async () => {
+    renderReport();
+    expect(await screen.findByRole('button', { name: 'Export CSV' })).toBeInTheDocument();
+    expect(screen.getByText(/csv export uses the current filters/i)).toBeInTheDocument();
+  });
+
+  it('exports CSV with current filters and triggers download', async () => {
+    renderReport();
+    await waitFor(() => expect(api.fetchFixedDepositInterestReport).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    await waitFor(() => {
+      expect(api.exportFixedDepositInterestReportCsv).toHaveBeenCalledWith(
+        expect.objectContaining({
+          display_currency: 'INR',
+          start_date: currentYearStart(),
+          end_date: todayIso(),
+        })
+      );
+      expect(api.downloadBlobFile).toHaveBeenCalled();
+    });
+  });
+
+  it('shows inline error when CSV export fails', async () => {
+    api.exportFixedDepositInterestReportCsv.mockRejectedValueOnce(
+      new Error('Export failed')
+    );
+    renderReport();
+    await waitFor(() => expect(api.fetchFixedDepositInterestReport).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+    expect(await screen.findByText('Export failed')).toBeInTheDocument();
   });
 });

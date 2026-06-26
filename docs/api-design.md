@@ -1267,16 +1267,19 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 | Method | Path | Notes |
 |--------|------|--------|
 | GET | `/api/v1/reports/fixed-deposit-interest` | **Done** — read-only gross/tax/net report; no accounting side effects |
+| GET | `/api/v1/reports/fixed-deposit-interest/export.csv` | **Done** — read-only CSV export; same filters/exclusions; detail rows only |
 
-**Query:** `portfolio_scope=all` or `portfolio_id`, optional `start_date`, `end_date`, `display_currency`, `group_by` (`year`, `portfolio`, `bank`, `fd`, `source`, `none`).
+**Query:** `portfolio_scope=all` or `portfolio_id`, optional `start_date`, `end_date`, `display_currency`, `group_by` (`year`, `portfolio`, `bank`, `fd`, `source`, `none`) — JSON only; CSV export ignores `group_by`.
 
 **Sources:** non-reversed interest payments; settlement final interest (excludes renewal-linked settlements to avoid double count); renewal group interest. Excludes zero-interest rows and `CANCELLED` FD rows.
 
 **Response:** `rows`, `totals` (gross/tax/net, `row_count`, `fx_status`), optional `grouped_totals`, `warnings` (FX partial / mixed currency).
 
-**Frontend (FD-TAX-1A):** `FixedDepositInterestReport.jsx` — filters, reset, notes, warnings, grouped totals, table polish. `FixedDepositInterestReport.test.jsx` · `FixedDeposits.test.jsx`.
+**CSV export (FD-TAX-2):** `Content-Type: text/csv`; `Content-Disposition: attachment; filename="fd-interest-tax-{start}-to-{end}.csv"` (variants when dates partial). Columns: Date, Source Type, Source Label, Portfolio, Bank / Institution, Bank Account, FD Account, Currency, Gross Interest, Tax Withheld, Net Interest, Display Currency, Gross/Tax/Net Interest Display, Comment. Rows-only (no footer totals or warnings in file); header row when empty.
 
-**Deferred:** CSV/export (FD-TAX-2). Not tax advice.
+**Frontend (FD-TAX-1A / FD-TAX-2):** `FixedDepositInterestReport.jsx` — filters, reset, notes, warnings, grouped totals, table polish, **Export CSV** (`exportFixedDepositInterestReportCsv`, `downloadBlobFile`). `FixedDepositInterestReport.test.jsx` · `FixedDeposits.test.jsx` · `api.test.js`.
+
+**Not tax advice.** No accounting changes.
 
 ### FD create — mandatory opening debit (FD-ACC-3)
 

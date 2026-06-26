@@ -108,6 +108,18 @@
   gap: var(--space-3);
 }
 
+.fd-interest-report__header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.fd-interest-report__export-hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
 .fd-interest-report__notes {
   margin: 0;
   padding-left: 1.25rem;

@@ -276,6 +276,33 @@ describe('API Service', () => {
     );
   });
 
+  it('exportFixedDepositInterestReportCsv fetches CSV blob without group_by', async () => {
+    const blob = new Blob(['date,source'], { type: 'text/csv' });
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      blob: async () => blob,
+      headers: {
+        get: (name) =>
+          name.toLowerCase() === 'content-disposition'
+            ? 'attachment; filename="fd-interest-tax-2024-01-01-to-2024-12-31.csv"'
+            : null,
+      },
+    });
+    const result = await api.exportFixedDepositInterestReportCsv({
+      portfolio_scope: 'all',
+      display_currency: 'INR',
+      start_date: '2024-01-01',
+      end_date: '2024-12-31',
+      group_by: 'year',
+    });
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/reports/fixed-deposit-interest/export.csv?portfolio_scope=all&display_currency=INR&start_date=2024-01-01&end_date=2024-12-31',
+      expect.objectContaining(defaultFetchOptions)
+    );
+    expect(result.filename).toBe('fd-interest-tax-2024-01-01-to-2024-12-31.csv');
+    expect(result.blob).toBe(blob);
+  });
+
   it('createFixedDepositInterestPayment posts to nested FD endpoint', async () => {
     const payload = {
       payment_date: '2024-04-01',

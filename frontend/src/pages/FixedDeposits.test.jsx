@@ -20,6 +20,8 @@ vi.mock('../api', () => ({
   renewFixedDeposit: vi.fn(),
   settleFixedDeposit: vi.fn(),
   fetchFixedDepositInterestReport: vi.fn(),
+  exportFixedDepositInterestReportCsv: vi.fn(),
+  downloadBlobFile: vi.fn(),
   invalidateDashboardSummaryCache: vi.fn(),
   FixedDepositApiError: class FixedDepositApiError extends Error {
     constructor(message, extras = {}) {
@@ -740,9 +742,16 @@ describe('FixedDeposits page', () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /interest & tax report/i })).toBeInTheDocument();
-      expect(screen.getByText(/this report is not tax advice/i)).toBeInTheDocument();
-      expect(screen.getByText(/reversed interest payments are excluded/i)).toBeInTheDocument();
     });
+    const section = screen.getByRole('region', {
+      name: /fixed deposit interest and tax report/i,
+    });
+    expect(
+      within(section).getAllByText(/this report is not tax advice/i).length
+    ).toBeGreaterThanOrEqual(1);
+    expect(
+      within(section).getByText(/reversed interest payments are excluded/i)
+    ).toBeInTheDocument();
   });
 
   it('loads interest report with date filters and shows totals', async () => {

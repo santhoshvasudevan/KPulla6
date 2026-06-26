@@ -2,7 +2,8 @@
 
 **ID:** FD-TAX-2  
 **Branch:** `agent/009-fd-tax-2`  
-**Depends on:** 008
+**Depends on:** 008  
+**Status:** **Done** (2026-06-26)
 
 ## Goal
 
@@ -10,9 +11,9 @@ Add **CSV export** for the FD interest and tax withheld report (deferred from FD
 
 ## Scope
 
-- New endpoint: `GET /api/v1/reports/fixed-deposit-interest/export` (or `?format=csv` on existing report)
-  - Same filters as JSON report: scope, dates, `display_currency`, `group_by`
-  - CSV columns: stable header row documented in API spec
+- New endpoint: `GET /api/v1/reports/fixed-deposit-interest/export.csv`
+  - Same filters as JSON report: scope, dates, `display_currency` (`group_by` ignored — detail rows only)
+  - CSV columns: stable 16-column header documented in API spec
   - Content-Type `text/csv`; filename includes date range
 - Frontend: Export CSV button on Fixed Deposits report section
 - Read-only — no ledger mutations
@@ -35,9 +36,10 @@ Add **CSV export** for the FD interest and tax withheld report (deferred from FD
 
 | Area | Files |
 |------|--------|
-| Report service | backend report module |
-| Views | report export view |
-| Frontend | Fixed Deposits page, `api.js` |
+| Report service | `backend/debt/interest_report_service.py` (shared) |
+| CSV builder | `backend/debt/interest_report_csv.py` |
+| Views | `backend/debt/report_views.py` |
+| Frontend | `FixedDepositInterestReport.jsx`, `api.js` |
 | Tests | `backend/tests/test_fixed_deposit_interest_report_api.py` |
 
 ## Tests / commands

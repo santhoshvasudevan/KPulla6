@@ -22,7 +22,7 @@
 | **Exclusions** | Reversed payments; zero-interest settlement/renewal; `CANCELLED` FD rows |
 | **Semantics** | `gross_interest`, `tax_withheld`, `net_interest` as stored at source; optional `display_currency` conversion with date-aware FX + fill |
 | **Scope** | User-scoped; portfolio filter via existing scope params |
-| **Not in scope** | Tax advice; CSV/export (FD-TAX-2); no ledger/performance/summary changes |
+| **Not in scope** | Tax advice; no ledger/performance/summary changes |
 
 ## FD-TAX-1A UI polish (2026-06-26)
 
@@ -34,6 +34,17 @@
 | **Warnings** | FX partial and mixed-currency warnings shown near totals |
 | **Table** | Source, Bank/Institution, FD account, display currency columns; readable source labels |
 | **No changes** | Report service, ledger, performance, or accounting behavior |
+
+## FD-TAX-2 CSV export (2026-06-26)
+
+| Item | FD-TAX-2 outcome |
+|------|------------------|
+| **API** | `GET /api/v1/reports/fixed-deposit-interest/export.csv` |
+| **Filters** | Same as JSON report: `portfolio_scope` / `portfolio_id`, `start_date`, `end_date`, `display_currency`; `group_by` ignored (detail rows only) |
+| **Exclusions** | Same as FD-TAX-1: reversed payments; zero-interest settlement/renewal; `CANCELLED` FD rows |
+| **CSV** | UTF-8 `text/csv`; `Content-Disposition` attachment; 16-column header; rows-only (no footer totals); header-only when no rows |
+| **Frontend** | **Export CSV** on `FixedDepositInterestReport`; uses current filters; warnings shown in UI only |
+| **No changes** | Ledger, performance, summary, or report aggregation logic beyond shared read path |
 
 ---
 

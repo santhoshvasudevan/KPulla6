@@ -1,5 +1,13 @@
 # Changelog — KPulla6
 
+## 2026-06-26 — FD-TAX-2: FD Interest & Tax report CSV export
+
+- **API:** `GET /api/v1/reports/fixed-deposit-interest/export.csv` — read-only CSV export; same filters/exclusions as JSON report; detail rows only (`group_by` ignored).
+- **CSV:** UTF-8; `Content-Disposition` filename `fd-interest-tax-{start}-to-{end}.csv`; 16 documented columns including display-currency fields when requested.
+- **Frontend:** **Export CSV** button on Interest & Tax report; uses current portfolio scope, dates, and display currency; helper text; inline export errors.
+- **Tests:** CSV API tests in `test_fixed_deposit_interest_report_api.py`; `exportFixedDepositInterestReportCsv` + component export tests.
+- **Deferred:** PDF/email/scheduled reports; tax advice.
+
 ## 2026-06-26 — FD-TAX-1A: FD Interest & Tax report UI polish
 
 - **Filters:** `group_by=bank` exposed in UI; **Reset filters** restores current-calendar-year default range and `group_by=none`.

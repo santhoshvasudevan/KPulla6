@@ -283,6 +283,7 @@ Design doc: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md). MVP:
 | **FD-ACC-10B** | Manual cash + FD interest reversal framework; classifier offsets | **Done** |
 | **FD-TAX-1** | FD interest/tax withheld read-only report API + Fixed Deposits UI | **Done** |
 | **FD-TAX-1A** | Report UI polish — filters, notes, warnings, grouped totals, empty state | **Done** (2026-06-26) |
+| **FD-TAX-2** | FD interest/tax report CSV export (read-only; same filters/exclusions as JSON) | **Done** (2026-06-26) |
 | **FD-CASH-ASOF-1** | FD create as-of bank balance diagnostics, balance API, create modal UX | **Done** |
 | **FD-ACC-10A-REPAIR** | `repair_deactivated_fd_openings` management command for pre-10A deactivated FDs | **Done** |
 

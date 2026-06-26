@@ -11,7 +11,11 @@ import {
   AppTableCell,
   AppTableHeaderCell,
 } from './ui';
-import { fetchFixedDepositInterestReport } from '../api';
+import {
+  fetchFixedDepositInterestReport,
+  exportFixedDepositInterestReportCsv,
+  downloadBlobFile,
+} from '../api';
 import { usePortfolio } from '../portfolioContext';
 
 export const SOURCE_LABELS = {
@@ -77,6 +81,8 @@ export default function FixedDepositInterestReport() {
   const [report, setReport] = useState(emptyReport);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
 
   const displayCurrency = useMemo(
     () => selectedDisplayCurrency || 'EUR',
@@ -86,17 +92,22 @@ export default function FixedDepositInterestReport() {
   const totalsCurrency = report.totals.display_currency || report.totals.currency;
   const showDisplayCurrencyColumn = Boolean(report.totals.display_currency);
 
+  const reportQueryParams = useMemo(
+    () => ({
+      ...apiQuery,
+      display_currency: displayCurrency,
+      start_date: startDate,
+      end_date: endDate,
+      group_by: groupBy,
+    }),
+    [apiQuery, displayCurrency, startDate, endDate, groupBy]
+  );
+
   const loadReport = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const data = await fetchFixedDepositInterestReport({
-        ...apiQuery,
-        display_currency: displayCurrency,
-        start_date: startDate,
-        end_date: endDate,
-        group_by: groupBy,
-      });
+      const data = await fetchFixedDepositInterestReport(reportQueryParams);
       setReport({
         rows: Array.isArray(data?.rows) ? data.rows : [],
         totals: data?.totals || emptyReport().totals,
@@ -109,7 +120,7 @@ export default function FixedDepositInterestReport() {
     } finally {
       setLoading(false);
     }
-  }, [apiQuery, displayCurrency, startDate, endDate, groupBy]);
+  }, [reportQueryParams]);
 
   useEffect(() => {
     loadReport();
@@ -120,6 +131,25 @@ export default function FixedDepositInterestReport() {
     setStartDate(next.startDate);
     setEndDate(next.endDate);
     setGroupBy(next.groupBy);
+    setExportError('');
+  };
+
+  const handleExportCsv = async () => {
+    setExporting(true);
+    setExportError('');
+    try {
+      const { blob, filename } = await exportFixedDepositInterestReportCsv({
+        ...apiQuery,
+        display_currency: displayCurrency,
+        start_date: startDate,
+        end_date: endDate,
+      });
+      downloadBlobFile(blob, filename);
+    } catch (e) {
+      setExportError(e?.message || 'CSV export failed.');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const valueFor = (row, field) => {
@@ -165,10 +195,24 @@ export default function FixedDepositInterestReport() {
             settlement interest, and renewal interest. This report is not tax advice.
           </p>
         </div>
-        <Button type="button" variant="secondary" onClick={loadReport} disabled={loading}>
-          Refresh
-        </Button>
+        <div className="fd-interest-report__header-actions">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleExportCsv}
+            disabled={loading || exporting}
+          >
+            {exporting ? 'Exporting…' : 'Export CSV'}
+          </Button>
+          <Button type="button" variant="secondary" onClick={loadReport} disabled={loading}>
+            Refresh
+          </Button>
+        </div>
       </div>
+
+      <p className="fd-interest-report__export-hint">
+        CSV export uses the current filters. This report is not tax advice.
+      </p>
 
       <ul className="fd-interest-report__notes" aria-label="Report notes">
         <li>Reversed interest payments are excluded.</li>
@@ -221,6 +265,9 @@ export default function FixedDepositInterestReport() {
       </div>
 
       {error ? <ErrorState message={error} onRetry={loadReport} /> : null}
+      {exportError ? (
+        <WarningBanner severity="error" message={exportError} className="fd-banner" />
+      ) : null}
 
       {loading ? (
         <LoadingState message="Loading interest report…" />

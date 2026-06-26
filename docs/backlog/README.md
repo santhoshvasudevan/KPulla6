@@ -112,7 +112,7 @@ Execute in order within each epic unless the planner reprioritizes.
 | 6 | [006-fx-1.md](./006-fx-1.md) | FX-1 | Open | 005 (recommended) |
 | 7 | [007-fx-2.md](./007-fx-2.md) | FX-2 | Open | 006 |
 | 8 | [008-fd-tax-1a.md](./008-fd-tax-1a.md) | FD-TAX-1a | **Done** | — |
-| 9 | [009-fd-tax-2.md](./009-fd-tax-2.md) | FD-TAX-2 | Open | 008 |
+| 9 | [009-fd-tax-2.md](./009-fd-tax-2.md) | FD-TAX-2 | **Done** | 008 |
 | 10 | [010-fd-acc-10c.md](./010-fd-acc-10c.md) | FD-ACC-10C | Open | — |
 | 11 | [011-fd-acc-10d.md](./011-fd-acc-10d.md) | FD-ACC-10D | Open | 010 |
 | 12 | [012-cash-corr-1.md](./012-cash-corr-1.md) | CASH-CORR-1 | Open | 005, 004a |

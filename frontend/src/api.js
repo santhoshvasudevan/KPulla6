@@ -960,8 +960,8 @@ export async function fetchFixedDepositSettlements(fdId) {
   return fetchWithHandling(`/fixed-deposits/${fdId}/settlements`);
 }
 
-/** GET /api/v1/reports/fixed-deposit-interest */
-export async function fetchFixedDepositInterestReport(query = {}) {
+/** Build query params for FD interest report JSON/CSV endpoints. */
+export function buildFixedDepositInterestReportParams(query = {}) {
   const params = new URLSearchParams();
   if (query.portfolio_id != null) {
     params.set('portfolio_id', String(query.portfolio_id));
@@ -974,7 +974,55 @@ export async function fetchFixedDepositInterestReport(query = {}) {
   if (query.start_date) params.set('start_date', query.start_date);
   if (query.end_date) params.set('end_date', query.end_date);
   if (query.group_by) params.set('group_by', query.group_by);
+  return params;
+}
+
+function parseContentDispositionFilename(header) {
+  if (!header) return null;
+  const match = /filename="([^"]+)"/i.exec(header);
+  return match ? match[1] : null;
+}
+
+/** GET /api/v1/reports/fixed-deposit-interest */
+export async function fetchFixedDepositInterestReport(query = {}) {
+  const params = buildFixedDepositInterestReportParams(query);
   return fetchWithHandling(`/reports/fixed-deposit-interest?${params.toString()}`);
+}
+
+/** GET /api/v1/reports/fixed-deposit-interest/export.csv — detail rows only. */
+export async function exportFixedDepositInterestReportCsv(query = {}) {
+  const params = buildFixedDepositInterestReportParams(query);
+  params.delete('group_by');
+  const response = await fetch(
+    buildUrl(`/reports/fixed-deposit-interest/export.csv?${params.toString()}`),
+    defaultFetchOptions()
+  );
+  if (response.status === 401 && _onUnauthorized) {
+    _onUnauthorized();
+  }
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const detail = errorData.detail;
+    const message =
+      typeof detail === 'string'
+        ? detail
+        : errorData.message || `Export failed (${response.status})`;
+    throw new Error(message);
+  }
+  const blob = await response.blob();
+  const filename =
+    parseContentDispositionFilename(response.headers.get('Content-Disposition')) ||
+    'fd-interest-tax.csv';
+  return { blob, filename };
+}
+
+export function downloadBlobFile(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 /** GET /api/v1/fixed-deposit-settlements/{settlement_id} */
