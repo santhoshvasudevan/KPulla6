@@ -15,6 +15,17 @@
 - **Unassigned toggle:** Always-visible **Show unassigned / ambiguous bank accounts** (`include_unassigned=true`).
 - **Deferred:** Automated correction/reclassification (CASH-CORR-1); broker-funded FD.
 
+## 2026-06-26 — FD-TAX-1A: FD Interest & Tax report UI polish (implemented)
+
+- **UI:** `group_by=bank` in selector; reset filters; current-year default range; exclusion/disclaimer notes; row-count KPI; FX/mixed-currency warnings near totals; improved empty state and table columns.
+- **No accounting changes:** read-only report; CSV deferred to FD-TAX-2.
+
+## 2026-06-26 — CASH-UNIFY-4A: Cash unification stream stabilized (audit)
+
+- **Scope:** Read-only audit across broker/bank overview, link/delink, reversal, FD derivation, display currency; no new business features.
+- **Diagnostics:** `manage.py cash_overview_diagnostics` for manual-data sanity checks.
+- **Deferred:** CASH-UNIFY-5 transfer, FD-FUND-BROKER, broader CASH-CORR-1, FX-1/FX-2, FD-TAX-1A.
+
 ## 2026-06-26 — CASH-UNIFY-4B: Bank link modal + display currency auto-select (implemented)
 
 - **Bank link UX:** Link/change-link actions open a modal selector; delink remains one-click `portfolio_id=null`. Fixes CASH-UNIFY-4 bug where actions only scrolled to buried edit form.

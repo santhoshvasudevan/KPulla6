@@ -1,7 +1,7 @@
 # Cash Unification — Domain Model & Roadmap (CASH-UNIFY-0)
 
-**Status:** Design only (CASH-UNIFY-0) — **no runtime changes**.  
-**Last updated:** 2026-06-24
+**Status:** **Stabilized** (CASH-UNIFY-4A, 2026-06-26) — phases 0–4B implemented and audited.  
+**Last updated:** 2026-06-26
 
 **Related:** [cash-ledger.md](./cash-ledger.md) (broker cash) · [fixed-deposits-accounting.md](./fixed-deposits-accounting.md) (bank ledger) · [fixed-deposits.md](./fixed-deposits.md) · [architecture.md](./architecture.md) · [decisions.md](./decisions.md) · [product-rules.md](./product-rules.md)
 
@@ -172,7 +172,9 @@ Example: A manual broker deposit that should have been a bank deposit is **not**
 | **CASH-UNIFY-3** | **Done** — Cash page shows Broker + Bank Cash separately |
 | **CASH-UNIFY-3A** | Cash page verification: correct row attribution, broker actions visible, source diagnostics |
 | **CASH-UNIFY-4** | **Done** — Link/delink UX; inclusion stabilization; terminology |
-| **CASH-CORR-1** | Safe reclassification for mistaken broker ↔ bank entries |
+| **CASH-UNIFY-4A** | **Done** — Final audit/stabilization; diagnostics command; docs/tests |
+| **CASH-CORR-1A** | **Done** — Safe broker cash reversal (opposite entry; bank unaffected) |
+| **CASH-CORR-1** | Broader reclassification for mistaken broker ↔ bank entries |
 | **CASH-UNIFY-5** | Actual broker ↔ bank transfer workflow (deferred) |
 | **FD-FUND-BROKER** | *Deferred* | Broker-cash-funded FD create (single-source; no partial split) |
 

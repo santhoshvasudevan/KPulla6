@@ -115,4 +115,69 @@ describe('PortfolioProvider display currency sync', () => {
       expect(getByTestId('display-currency')).toHaveTextContent('INR');
     });
   });
+
+  it('preserves display currency when selecting All Portfolios', async () => {
+    function SelectAllProbe() {
+      const { selectAllPortfolios } = usePortfolio();
+      return (
+        <button type="button" onClick={() => selectAllPortfolios()}>
+          Select all portfolios
+        </button>
+      );
+    }
+
+    const { getByRole, getByTestId } = render(
+      <PortfolioProvider>
+        <SelectAllProbe />
+        <ApiQueryProbe />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => {
+      expect(getByTestId('display-currency')).toHaveTextContent('EUR');
+    });
+
+    fireEvent.click(getByRole('button', { name: 'Select all portfolios' }));
+
+    await waitFor(() => {
+      expect(api.updateSettings).not.toHaveBeenCalled();
+      expect(getByTestId('display-currency')).toHaveTextContent('EUR');
+    });
+  });
+
+  it('does not change display currency for unsupported portfolio base currency', async () => {
+    function SelectJpyProbe() {
+      const { selectPortfolio } = usePortfolio();
+      return (
+        <button
+          type="button"
+          onClick={() =>
+            selectPortfolio(3, 'Japan PF', {
+              portfolio: { id: 3, name: 'Japan PF', base_currency: 'JPY' },
+            })
+          }
+        >
+          Select JPY portfolio
+        </button>
+      );
+    }
+
+    const { getByRole, getByTestId } = render(
+      <PortfolioProvider>
+        <SelectJpyProbe />
+        <ApiQueryProbe />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => {
+      expect(getByTestId('display-currency')).toHaveTextContent('EUR');
+    });
+
+    fireEvent.click(getByRole('button', { name: 'Select JPY portfolio' }));
+
+    await waitFor(() => {
+      expect(api.updateSettings).not.toHaveBeenCalled();
+      expect(getByTestId('display-currency')).toHaveTextContent('EUR');
+    });
+  });
 });

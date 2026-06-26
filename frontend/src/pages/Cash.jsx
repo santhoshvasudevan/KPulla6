@@ -1583,7 +1583,10 @@ export default function Cash() {
           default. Use the toggle to include them for review. Assign a portfolio in Settings →
           Bank Accounts before creating fixed deposits. If a balance appears under the wrong
           section, check the Source column — broker amounts come from CashLedgerEntry; bank
-          amounts from CashMovement. Correction workflows are deferred to CASH-CORR-1.
+          amounts from CashMovement. To correct a mistaken broker cash entry, use{' '}
+          <strong>Reverse broker cash entry</strong> on the ledger below — do not add duplicate
+          bank cash; the bank ledger may already hold the correct balance. Broader
+          reclassification workflows are deferred to CASH-CORR-1.
         </p>
         {(excludedUnassigned > 0 || excludedAmbiguous > 0) && !includeUnassigned ? (
           <p className="cash-page__exclusions-count">

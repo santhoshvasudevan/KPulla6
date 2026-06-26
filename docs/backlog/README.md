@@ -108,9 +108,10 @@ Execute in order within each epic unless the planner reprioritizes.
 | 4 | [004-cash-unify-3.md](./004-cash-unify-3.md) | CASH-UNIFY-3 | **Done** | 003 |
 | 4a | [004a-cash-unify-3a.md](./004a-cash-unify-3a.md) | CASH-UNIFY-3A | Done | 004 |
 | 5 | [005-cash-unify-4.md](./005-cash-unify-4.md) | CASH-UNIFY-4 | **Done** | 004, 004a |
+| 5a | *(in-repo — CASH-UNIFY-4A)* | CASH-UNIFY-4A | **Done** | 005 |
 | 6 | [006-fx-1.md](./006-fx-1.md) | FX-1 | Open | 005 (recommended) |
 | 7 | [007-fx-2.md](./007-fx-2.md) | FX-2 | Open | 006 |
-| 8 | [008-fd-tax-1a.md](./008-fd-tax-1a.md) | FD-TAX-1a | Open | — |
+| 8 | [008-fd-tax-1a.md](./008-fd-tax-1a.md) | FD-TAX-1a | **Done** | — |
 | 9 | [009-fd-tax-2.md](./009-fd-tax-2.md) | FD-TAX-2 | Open | 008 |
 | 10 | [010-fd-acc-10c.md](./010-fd-acc-10c.md) | FD-ACC-10C | Open | — |
 | 11 | [011-fd-acc-10d.md](./011-fd-acc-10d.md) | FD-ACC-10D | Open | 010 |
@@ -124,7 +125,7 @@ Execute in order within each epic unless the planner reprioritizes.
 
 ## Epic summaries
 
-### CASH-UNIFY (001–005, 004a, 012)
+### CASH-UNIFY (001–005, 004a, 4A, 012)
 
 Clarify and surface the **two-ledger cash model** (portfolio broker cash vs bank ledger) without merging storage. Portfolio `CashLedgerEntry` and bank `CashMovement` remain separate per `docs/decisions.md` and [cash-unification.md](../cash-unification.md).
 
@@ -137,7 +138,9 @@ Clarify and surface the **two-ledger cash model** (portfolio broker cash vs bank
 | **2** | 003 | FD create derives portfolio from linked bank account (**done**) |
 | **3** | 004 | Unified Cash page UI (**done**) |
 | **3A** | 004a | Cash page verification: attribution, broker actions, diagnostics (**done**) |
-| **4** | 005 | Bank account link/delink UX + inclusion + display-currency stabilization |
+| **4** | 005 | Bank account link/delink UX + inclusion + display-currency stabilization (**done**) |
+| **4A** | — | Final audit/stabilization; diagnostics; docs/tests (**done**) |
+| **CORR-1A** | — | Safe broker cash reversal (**done**) |
 | **CORR** | 012 | Reconciliation diagnostics + safe reclassification (mistaken broker ↔ bank entries) |
 
 **Deferred (not in backlog index):** CASH-UNIFY-5 broker ↔ bank **transfer** workflow (actual movements); CASH-UNIFY-6 physical/offline cash account.

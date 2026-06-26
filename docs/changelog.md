@@ -1,5 +1,25 @@
 # Changelog — KPulla6
 
+## 2026-06-26 — FD-TAX-1A: FD Interest & Tax report UI polish
+
+- **Filters:** `group_by=bank` exposed in UI; **Reset filters** restores current-calendar-year default range and `group_by=none`.
+- **Defaults:** Date range defaults to Jan 1 of current year through today (unchanged intent, documented).
+- **Copy:** Notes for reversed-payment exclusion, zero-interest settlement/renewal exclusion, and not-tax-advice disclaimer.
+- **Totals:** Row count KPI; FX/mixed-currency warnings shown near summary cards.
+- **Table:** Clearer columns (Source, Bank / Institution, FD account, display currency when converted); readable source labels.
+- **Grouped totals:** User-readable group labels (e.g. “Grouped by Bank account”).
+- **Empty state:** Explains dependency on recorded interest, settlement, or renewal interest.
+- **Tests:** `FixedDepositInterestReport.test.jsx`; `FixedDeposits.test.jsx` updates.
+- **Deferred:** CSV export (FD-TAX-2); no accounting/API changes.
+
+## 2026-06-26 — CASH-UNIFY-4A: Cash unification audit and stabilization
+
+- **Audit:** Verified broker/bank cash separation, link/delink (no movements/balance change), All Portfolios no double-count, FD portfolio derivation, broker reversal (bank unaffected), display-currency auto-switch (portfolio base / All Portfolios preserve / unsupported unchanged).
+- **Diagnostics:** Read-only `manage.py cash_overview_diagnostics [--portfolio-id ID] [--username USER] [--json]` — broker/bank summaries, unlinked accounts, heuristic same-date/same-amount broker+bank duplicate hints.
+- **UI polish:** Cash page copy warns not to add duplicate bank cash when reversing mistaken broker entries; Settings → Bank Accounts uses **Linked portfolio** terminology throughout.
+- **Docs:** Cash unification stream marked **stabilized**; deferred items indexed (CASH-UNIFY-5, FD-FUND-BROKER, CASH-CORR-1, FX-1/FX-2, FD-TAX-1A).
+- **Tests:** `test_cash_overview_diagnostics.py`; `portfolioContext` All Portfolios / unsupported base currency; `Cash.test.jsx` duplicate-bank-cash warning.
+
 ## 2026-06-26 — CASH-UNIFY-4B: Bank link modal fix + portfolio display currency auto-select
 
 - **Bank link UI fix:** “Link to portfolio” / “Change linked portfolio” now open a dedicated modal with portfolio selector (CASH-UNIFY-4 had wired these to the full edit form at the bottom of the page — invisible without scrolling).

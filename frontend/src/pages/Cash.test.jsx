@@ -404,9 +404,11 @@ describe('Cash page', () => {
     await screen.findByRole('heading', { name: 'Broker Cash' });
     const brokerSection = container.querySelector('.cash-page__broker-cash');
     const bankSection = container.querySelector('.cash-page__bank-cash');
-    expect(
-      within(brokerSection).getAllByText('Broker cash ledger (CashLedgerEntry)').length
-    ).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(
+        within(brokerSection).getAllByText('Broker cash ledger (CashLedgerEntry)').length
+      ).toBeGreaterThan(0);
+    });
     expect(
       within(bankSection).getByText('Bank account ledger (CashMovement)')
     ).toBeInTheDocument();
@@ -551,6 +553,14 @@ describe('Cash page', () => {
         expect.objectContaining({ include_unassigned: true })
       );
     });
+  });
+
+  it('warns not to add duplicate bank cash when reversing mistaken broker entries', async () => {
+    renderCash();
+    expect(
+      await screen.findByText(/do not add duplicate bank cash/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText(/reverse broker cash entry/i)).toBeInTheDocument();
   });
 
   it('shows FX warning when overview reports partial FX', async () => {

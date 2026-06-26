@@ -516,7 +516,8 @@ KPulla6 has **two cash ledgers** that represent **cash holdings** within a portf
 
 - Overview API: `GET /api/v1/cash/overview` with optional `include_unassigned`.
 - **Broker reversal (CASH-CORR-1A):** `POST /api/v1/cash/ledger/{id}/reverse` or `manage.py reverse_broker_cash_entry` creates opposite broker entry; original preserved; **bank `CashMovement` unchanged**.
-- **Diagnosis:** If a balance appears under the wrong section, check the row **Source** column. Amount in `cash_ledger_entries` only → broker data (reverse if mistaken). Amount only in `cash_movements` → bank data. Unlinked bank → link in Settings → Bank Accounts (CASH-UNIFY-4) or toggle unassigned view.
+- **Diagnosis:** If a balance appears under the wrong section, check the row **Source** column. Amount in `cash_ledger_entries` only → broker data (reverse if mistaken — **do not** add duplicate bank cash). Amount only in `cash_movements` → bank data. Unlinked bank → link in Settings → Bank Accounts (CASH-UNIFY-4) or toggle unassigned view.
+- **Read-only diagnostics (CASH-UNIFY-4A):** `manage.py cash_overview_diagnostics [--portfolio-id ID] [--username USER] [--json]` — broker/bank summaries, unlinked accounts, heuristic same-date/same-amount duplicate hints; no mutations.
 
 ---
 

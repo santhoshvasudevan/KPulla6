@@ -1,7 +1,7 @@
 # Current State — KPulla6 (Portfolio Insight)
 
 ## Last Updated
-2026-06-24 (CASH-MODEL-REFINE-0 — bank account portfolio link semantics, docs only)
+2026-06-26 (CASH-UNIFY-4A — cash unification stream stabilized)
 
 **Documentation index:** [README.md](./README.md)
 
@@ -32,7 +32,7 @@ Product rules index: [product-rules.md](./product-rules.md). Release checklist: 
 | Dashboard read-path optimization | Deferred — STAB-5B baseline acceptable (< 1 s critical paths) |
 | Background sync scheduler (Celery/RQ) | Not configured |
 | Full browser E2E suite (Playwright/Cypress) | Not present |
-| Display-currency cash totals on `/cash` | Deferred |
+| Display-currency cash totals on `/cash` | **Done** (CASH-UNIFY-4) — cached FX only; partial FX warnings |
 | Dividends / interest / taxes ledger types | Deferred |
 
 See [performance/dashboard-read-paths.md](./performance/dashboard-read-paths.md) for optimization backlog (STAB-5C+ when targets exceeded).
@@ -237,7 +237,9 @@ Design doc: [cash-ledger.md](./cash-ledger.md).
 
 **Tester repair:** `PUT /api/v1/portfolios/{id}` with `"cash_aware_enabled": true` on the tester default portfolio (no user deletion).
 
-**Next recommended phase:** [CASH-UNIFY-5](./backlog/006-cash-unify-5.md) — broker ↔ bank transfer workflow (if queued). Broker cash reversal available via CASH-CORR-1A.
+**Next recommended business feature:** CASH-UNIFY-5 broker ↔ bank transfer workflow (deferred — no backlog file yet) or [FX-1](./backlog/006-fx-1.md) same-portfolio FX conversion legs. Cash unification stream **stabilized** (CASH-UNIFY-4A).
+
+**Cash unification (CASH-UNIFY-4A — done 2026-06-26):** Final audit/stabilization — behavior verified across overview, link/delink, reversal, FD derivation, display currency; read-only `cash_overview_diagnostics` command; UI copy polish; no new business features.
 
 **Cash unification (CASH-UNIFY-4B — done 2026-06-26):** Bank link/change-link opens dedicated modal (fixes invisible edit-form bug). Portfolio view switch auto-selects display currency from portfolio `base_currency` when supported; All Portfolios preserves current currency.
 
@@ -280,6 +282,7 @@ Design doc: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md). MVP:
 | **FD-ACC-10A** | FD cancel reverses opening debit; deactivate blocked for ledger-backed FDs | **Done** |
 | **FD-ACC-10B** | Manual cash + FD interest reversal framework; classifier offsets | **Done** |
 | **FD-TAX-1** | FD interest/tax withheld read-only report API + Fixed Deposits UI | **Done** |
+| **FD-TAX-1A** | Report UI polish — filters, notes, warnings, grouped totals, empty state | **Done** (2026-06-26) |
 | **FD-CASH-ASOF-1** | FD create as-of bank balance diagnostics, balance API, create modal UX | **Done** |
 | **FD-ACC-10A-REPAIR** | `repair_deactivated_fd_openings` management command for pre-10A deactivated FDs | **Done** |
 

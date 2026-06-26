@@ -179,7 +179,7 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 | **Cash-aware** | `CashAwarePortfolioStatus`; enable for selected legacy portfolio; all-scope explanatory note. |
 | **Broker Cash** | `DataTableShell` + `AppTable` from overview `BROKER_CASH` rows (portfolio, account label, currency, native + display balance, available for, source). |
 | **Bank Cash** | `DataTableShell` + `AppTable` from overview `BANK_CASH` rows — read-only; assignment status; include-in-portfolio-value; link → Settings → Bank Accounts. |
-| **Exclusions** | Warnings/counts for unlinked/ambiguous banks; always-visible toggle **Show unassigned / ambiguous bank accounts** (`include_unassigned`); copy references Settings → Bank Accounts link |
+| **Exclusions** | Warnings/counts for unlinked/ambiguous banks; always-visible toggle **Show unassigned / ambiguous bank accounts** (`include_unassigned`); copy warns not to add duplicate bank cash when reversing mistaken broker entries |
 | **Broker ledger** | `AppCard` with filter bar + nested `DataTableShell` + `AppTable`; manual edit/delete/**reverse** on eligible broker rows only. |
 | **Bulk / transfer** | Unchanged broker write flows (`CashBulkEntriesWizard`, transfer modal). |
 
@@ -215,7 +215,7 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 | **Interest payments** | Expand/list per-FD payments; Record Interest modal with payment date, gross interest, tax withheld, display-only net; backend warnings (e.g. compounded FD) shown. |
 | **Maturity/settlement** | Mark Matured for active FDs; Settle/Close modal with principal returned, gross final interest, tax withheld, display-only net/total; settled/closed rows hide settlement actions. |
 | **Renewal** | Renew action for eligible ACTIVE/MATURED FDs; modal with new terms, direct rollover, cash payout, tax fields, bank cash warnings; hidden when settled or already renewed. |
-| **Interest & Tax report (FD-TAX-1)** | Date range + group-by filters; KPI cards (gross/tax/net); grouped totals table; detail rows table; disclaimer (“not tax advice”). Read-only — no accounting changes. |
+| **Interest & Tax report (FD-TAX-1 / FD-TAX-1A)** | Default range = current calendar year; date + group-by filters (incl. **Bank account**); **Reset filters**; KPI cards (gross/tax/net/row count); grouped totals with readable labels; exclusion/disclaimer notes; FX/mixed-currency warnings near totals; improved empty state. Read-only — no accounting changes. |
 
 **States:** waits for `settingsLoaded && apiQuery`, loading, API error, empty list, no-bank-account warning, unseeded opening balance warning, insufficient ledger warning/error, lifecycle success/error banners, report empty/error states.
 

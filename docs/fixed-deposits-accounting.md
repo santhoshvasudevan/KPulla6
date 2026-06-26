@@ -24,6 +24,17 @@
 | **Scope** | User-scoped; portfolio filter via existing scope params |
 | **Not in scope** | Tax advice; CSV/export (FD-TAX-2); no ledger/performance/summary changes |
 
+## FD-TAX-1A UI polish (2026-06-26)
+
+| Item | FD-TAX-1A outcome |
+|------|-------------------|
+| **Component** | `FixedDepositInterestReport.jsx` on Fixed Deposits page |
+| **Filters** | Default range = current calendar year; **Reset filters**; `group_by` includes **bank** |
+| **Notes** | Reversed payments excluded; zero-interest settlement/renewal excluded; not tax advice |
+| **Warnings** | FX partial and mixed-currency warnings shown near totals |
+| **Table** | Source, Bank/Institution, FD account, display currency columns; readable source labels |
+| **No changes** | Report service, ledger, performance, or accounting behavior |
+
 ---
 
 ## FD-ACC-10B implementation notes (2026-06-24)
@@ -275,7 +286,7 @@ These ledgers must **not** be merged in storage. Cross-ledger transfers (e.g. ba
 
 **Unified domain model (CASH-UNIFY-0 + CASH-MODEL-REFINE-0):** Both ledgers represent **cash holdings** at the product level. `BankAccount` is independent; `BankAccount.portfolio` is a **current portfolio link** (not ownership). Link/delink changes inclusion only — no movements. See [cash-unification.md](./cash-unification.md) §4.
 
-**FD portfolio alignment (CASH-UNIFY-2 + CASH-UNIFY-4):** New FDs require a **linked** bank account; portfolio derives from `bank_account.portfolio`. Link/delink in Settings changes inclusion only — existing FD rows are not rewritten. Legacy mismatches flagged read-only (`portfolio_mismatch_warning`); no automatic rewrites.
+**FD portfolio alignment (CASH-UNIFY-2 + CASH-UNIFY-4 + 4A):** New FDs require a **linked** bank account; portfolio derives from `bank_account.portfolio`. Link/delink in Settings changes inclusion only — existing FD rows are not rewritten; opening debit still checks bank ledger balance as-of `investment_date`. Legacy mismatches flagged read-only (`portfolio_mismatch_warning`); no automatic rewrites. Broker-funded FD **deferred**.
 
 ---
 

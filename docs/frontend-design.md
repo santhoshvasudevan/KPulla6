@@ -135,7 +135,7 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 - **Cash movements (FD-ACC-10B):** Reverse action on eligible manual rows; status labels (Reversed / Reversal / reverses #id); reversal reason shown when present
 - **Mark matured / Settle (FD-ACC-5):** mark matured for `ACTIVE` FDs; Settle/Close modal with principal, final interest, TDS; settled/closed rows hide settlement actions
 - **Renew (FD-ACC-6):** Renew action for `ACTIVE`/`MATURED` (hidden when settled or `has_renewal`); modal with new FD terms, gross/tax/cash payout, direct rollover and bank-cash warnings; no `FD_OPENING` implied for renewal
-- **Interest & Tax report (FD-TAX-1):** section `#fd-interest-report` on Fixed Deposits page; date range + group-by filters; KPI cards and tables from `fetchFixedDepositInterestReport`; disclaimer that report is not tax advice; read-only (no accounting changes)
+- **Interest & Tax report (FD-TAX-1 / FD-TAX-1A):** section `#fd-interest-report` on Fixed Deposits page; default date range = current calendar year; date range + group-by filters (including **Bank account**); **Reset filters**; KPI cards (gross/tax/net/row count); grouped totals; exclusion/disclaimer notes; FX/mixed-currency warnings near totals; `fetchFixedDepositInterestReport`; read-only (no accounting changes)
 - Interest/settlement credits bank ledger; when bank cash is included in portfolio value, headline total stays stable for principal (cash ↔ FD reclassification)
 - Dashboard allocation pie chart renders `summary.allocation_buckets` from backend only
 
@@ -400,7 +400,7 @@ Overview and tables use `GET /api/v1/cash/overview` (`fetchCashOverview`) with `
 
 **Removed:** Cash shortfall backfill (Cash-7A/7B/7C). Display-currency headline edge cases → CASH-UNIFY-4. Link/delink UX → CASH-UNIFY-4.
 
-**Cash page (CASH-UNIFY-3 / 3A / CASH-CORR-1A):** `/cash` title **Cash / Liquid Holdings**. Overview from `fetchCashOverview`; Broker and Bank sections filter `ledger_type`. Per-row source labels distinguish `CashLedgerEntry` vs `CashMovement`. **Broker Cash actions** in header only. Bank Cash read-only with link to Settings. Toggle **Show unassigned / ambiguous bank accounts** always visible. **Reverse** on eligible manual broker ledger rows (reason + date required; bank cash unaffected).
+**Cash page (CASH-UNIFY-3 / 3A / 4 / 4A / CASH-CORR-1A):** `/cash` title **Cash / Liquid Holdings**. Overview from `fetchCashOverview`; Broker and Bank sections filter `ledger_type`. Per-row source labels distinguish `CashLedgerEntry` vs `CashMovement`. **Broker Cash actions** in header only. Bank Cash read-only with link to Settings. Toggle **Show unassigned / ambiguous bank accounts** always visible. **Reverse** on eligible manual broker ledger rows (reason + date required; bank cash unaffected; do not add duplicate bank cash). Display currency auto-syncs on portfolio change (4B).
 
 Page layout: [page-layouts.md](./page-layouts.md) §8. Design: [cash-ledger.md](./cash-ledger.md) · [cash-unification.md](./cash-unification.md).
 

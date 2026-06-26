@@ -45,7 +45,7 @@ Key design choices documented there:
 - **New FDs (FD-ACC-3):** principal debited from **linked** bank account via `FD_OPENING` movement at create time (bank funding path — **only path implemented today**)
 - **FD funding (target — CASH-MODEL-REFINE-0):** one clear source per FD — **linked bank account** OR **broker cash** from selected portfolio; **no** partial bank+broker split; unlinked bank cannot fund until linked
 - **Backdated FDs:** seed opening balance and manual deposits must be dated on or before `investment_date`; seeding with today’s date does not fund an earlier investment date. **Current ledger balance** (today) may exceed **available as of investment date** — FD create validates the latter (FD-CASH-ASOF-1).
-- **Cash tab vs bank ledger:** Portfolio Cash (`/cash/balances`) is broker cash; FD opening debits use the linked **bank account** cash ledger (`CashMovement`). Unified product model: [cash-unification.md](./cash-unification.md).
+- **Cash tab vs bank ledger:** Portfolio Cash (`/cash`) shows broker and bank cash separately via overview API (CASH-UNIFY-3/4); FD opening debits use the linked **bank account** cash ledger (`CashMovement`). Unified product model: [cash-unification.md](./cash-unification.md). **Stabilized** CASH-UNIFY-4A (2026-06-26).
 - **Interest payments (FD-ACC-4):** periodic payouts via `FD_INTEREST`; immutable; COMPOUNDED soft warning
 - **Settlement (FD-ACC-5):** `POST /mark-matured` (no ledger); `POST /settle` credits bank for principal + net final interest; FD leaves portfolio value; bank cash still excluded
 - **Renewal (FD-ACC-6):** `POST /renew` settles old FD and creates renewed FD; direct rollover skips bank movements for reinvested principal; renewed FD has no `FD_OPENING` debit; partial `cash_payout_amount` credits bank
@@ -157,7 +157,7 @@ Use the action that matches the real-world event. These are **not** interchangea
 
 **Do not fix pre-10A deactivated FDs with a manual deposit** — use the repair command. Manual deposits are external contributions and distort XIRR/TWROR. cancelled FDs are excluded from FD principal history entirely, but included bank cash still reflects the original `FD_OPENING` debit until the reversal date — headline PV may dip between opening and cancellation. Settlement/renewal/cancel-FD reversal → **FD-ACC-10C**.
 
-### FD interest / tax report (FD-TAX-1)
+### FD interest / tax report (FD-TAX-1 / FD-TAX-1A)
 
 | Method | Path | Behavior |
 |--------|------|----------|
@@ -166,6 +166,8 @@ Use the action that matches the real-world event. These are **not** interchangea
 **Query:** `portfolio_scope` / `portfolio_id`, `start_date`, `end_date`, optional `display_currency`, `group_by` (`year`, `portfolio`, `bank`, `fd`, `source`, `none`).
 
 **Excludes:** reversed interest payments; zero-interest settlement/renewal rows; `CANCELLED` FD rows; renewal-linked settlement rows (renewal group used instead).
+
+**UI (FD-TAX-1A):** Fixed Deposits → **Interest & Tax** section — default date range = current calendar year; **Reset filters**; `group_by` includes **Bank account**; KPI cards (gross/tax/net/row count); grouped totals with readable labels; exclusion/disclaimer notes; FX and mixed-currency warnings near totals; improved empty state.
 
 **Not tax advice.** CSV/export deferred (FD-TAX-2). No ledger or performance side effects.
 
