@@ -170,7 +170,7 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 **Files:** `pages/Cash.jsx` · `pages/Cash.css` · `components/CashBulkEntriesWizard.jsx`
 
-**Layout status:** **Implemented (P5 + CASH-UNIFY-3)** — unified Cash / Liquid Holdings page. [cash-unification.md](./cash-unification.md) §5.
+**Layout status:** **Implemented (P5 + CASH-UNIFY-3..4A)** — unified Cash / Liquid Holdings page; stream complete (MILESTONE-CLOSEOUT-1). [cash-unification.md](./cash-unification.md) §5.
 
 | Section | Layout |
 |---------|--------|
@@ -271,7 +271,7 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 | **Display & tax** | `AppCard` with responsive form grid: tax rate, display currency, Save button, success/error banners. |
 | **Portfolios** | `AppCard` wrapping `PortfolioManagement` — CRUD, max active enforcement, cash-aware toggle. |
 | **Bank accounts** | `AppCard` with `BankAccountManagement` (linked portfolio column; link/change-link **modal**; delink action; helper text) and nested `CashMovementManagement`. |
-| **Portfolio / currency** | Header **Portfolio View** selector; **Display Currency** auto-syncs to portfolio `base_currency` on portfolio switch (4B). |
+| **Portfolio / currency** | Header **Portfolio View** selector; **Display Currency** auto-syncs to portfolio `base_currency` on portfolio switch when supported (4B); **All Portfolios** preserves current display currency; unsupported base unchanged. |
 | **Data & sync** | `AppCard` with cached-data and backend refresh guidance (no live sync UI). |
 
 **States:** initial loading/error, settings save success/error, portfolio validation errors, bank-account ledger/unseeded warnings, cash movement errors.

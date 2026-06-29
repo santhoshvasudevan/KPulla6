@@ -371,3 +371,5 @@ Migration: `debt/0007_reversal_framework` adds `REVERSAL`, `FD_INTEREST_REVERSAL
 | `opening_balance` | Seed/display only; conversion to `OPENING_BALANCE` movement via **opt-in wizard only** — never auto-backfill |
 | `include_in_portfolio_value` | Default **false**; when **true**, ledger `current_balance` included in summary/holdings/allocation per scope rules (FD-ACC-7) |
 | `portfolio` | Nullable FK → `Portfolio` (`SET_NULL`); **current portfolio link** / default investment portfolio (**CASH-UNIFY-1**; semantics refined **CASH-MODEL-REFINE-0**). Link/delink changes inclusion only — no ledger movements. `portfolio_assignment_status` on API |
+
+**Diagnostics (read-only):** `manage.py cash_overview_diagnostics` — broker/bank summaries, unlinked accounts, heuristic duplicate hints (**CASH-UNIFY-4A**). See [cash-unification.md](./cash-unification.md) §9.

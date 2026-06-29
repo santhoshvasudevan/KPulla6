@@ -1,5 +1,11 @@
 # Architecture Decisions — KPulla6
 
+## 2026-06-26 — MILESTONE-CLOSEOUT-1: Cash unification + FD tax reporting (docs closeout)
+
+- **Cash stream complete:** CASH-UNIFY-0..4B, 4A audit, CASH-CORR-1A broker reversal — documented in [cash-unification.md](./cash-unification.md), [current-state.md](./current-state.md), backlog index.
+- **FD tax stream complete:** FD-TAX-1 JSON report, FD-TAX-1A UI polish, FD-TAX-2 CSV export — read-only; not tax advice; no ledger/performance changes.
+- **Deferred:** CASH-UNIFY-5 transfer, FD-FUND-BROKER, broader CASH-CORR-1, FX-1/FX-2, FD-ACC-10C/10D, FD-ANALYTICS-1/2.
+
 ## 2026-06-26 — CASH-CORR-1A: Broker cash ledger reversal
 
 - Reversal creates opposite manual broker entry; original row kept; `is_reversal` / `reverses` / `reversal_reason` on `CashLedgerEntry`.
@@ -18,13 +24,13 @@
 ## 2026-06-26 — FD-TAX-1A: FD Interest & Tax report UI polish (implemented)
 
 - **UI:** `group_by=bank` in selector; reset filters; current-year default range; exclusion/disclaimer notes; row-count KPI; FX/mixed-currency warnings near totals; improved empty state and table columns.
-- **No accounting changes:** read-only report; CSV deferred to FD-TAX-2.
+- **No accounting changes:** read-only report. CSV export → **FD-TAX-2** (done).
 
 ## 2026-06-26 — CASH-UNIFY-4A: Cash unification stream stabilized (audit)
 
 - **Scope:** Read-only audit across broker/bank overview, link/delink, reversal, FD derivation, display currency; no new business features.
 - **Diagnostics:** `manage.py cash_overview_diagnostics` for manual-data sanity checks.
-- **Deferred:** CASH-UNIFY-5 transfer, FD-FUND-BROKER, broader CASH-CORR-1, FX-1/FX-2, FD-TAX-1A.
+- **Deferred:** CASH-UNIFY-5 transfer, FD-FUND-BROKER, broader CASH-CORR-1, FX-1/FX-2.
 
 ## 2026-06-26 — CASH-UNIFY-4B: Bank link modal + display currency auto-select (implemented)
 
@@ -97,7 +103,7 @@
 - **Reporting only** — `GET /api/v1/reports/fixed-deposit-interest` aggregates stored gross/tax/net from interest payments, settlements, and renewals without mutating ledger, summary, or performance.
 - **Reversed** interest payments excluded; **zero-interest** settlement/renewal rows excluded; **renewal settlements** excluded from settlement source (renewal group row used instead).
 - **Cancelled FD** rows excluded from report.
-- **Not tax advice**; CSV/export deferred to FD-TAX-2.
+- **Not tax advice**; CSV export implemented in FD-TAX-2.
 
 ## 2026-06-24 — FD-ACC-10A-FX-TERMINAL-FIX: All-scope value terminal alignment
 

@@ -1,9 +1,27 @@
 # Current State — KPulla6 (Portfolio Insight)
 
 ## Last Updated
-2026-06-26 (CASH-UNIFY-4A — cash unification stream stabilized)
+2026-06-26 (MILESTONE-CLOSEOUT-1 — cash unification + FD tax reporting stream closed out)
 
 **Documentation index:** [README.md](./README.md)
+
+## Milestone — Cash unification + FD tax reporting (closed)
+
+**Status:** **Complete** (CASH-UNIFY-0..4B, 4A, CASH-CORR-1A, FD-TAX-1/1A/2). Docs-only closeout: [changelog](./changelog.md) MILESTONE-CLOSEOUT-1.
+
+| Area | Implemented behavior |
+|------|----------------------|
+| **Bank account model** | `BankAccount` is user-scoped and independent; `BankAccount.portfolio` is a **current portfolio link** (default investment context), not ownership |
+| **Link/delink** | `PUT /bank-accounts/{id}` `portfolio_id` — inclusion/classification only; **no** `CashMovement` or balance change |
+| **Two ledgers** | Broker cash (`CashLedgerEntry`) and bank cash (`CashMovement`) remain separate; unified at read/UI layer only |
+| **Cash page** | `/cash` — **Cash / Liquid Holdings**; Broker Cash (writes) + Bank Cash (read-only); `GET /cash/overview` |
+| **Broker reversal** | `POST /cash/ledger/{id}/reverse` + `reverse_broker_cash_entry` command (CASH-CORR-1A) |
+| **Diagnostics** | `manage.py cash_overview_diagnostics` (read-only; CASH-UNIFY-4A) |
+| **FD funding** | Linked-bank path only (`FD_OPENING`); portfolio derived from bank link (CASH-UNIFY-2); broker-funded FD **deferred** |
+| **FD interest/tax report** | `GET /reports/fixed-deposit-interest` + `GET .../export.csv` (FD-TAX-1/2); UI on Fixed Deposits — **not tax advice** |
+| **Display currency** | Portfolio switch → auto-select supported `base_currency`; All Portfolios preserves current; unsupported base unchanged (CASH-UNIFY-4B) |
+
+**Deferred next:** [CASH-UNIFY-5](./backlog/README.md) broker ↔ bank transfer · [FX-1](./backlog/006-fx-1.md) · [CASH-CORR-1](./backlog/012-cash-corr-1.md) cross-ledger reclassification · [FD-ACC-10C](./backlog/010-fd-acc-10c.md) · FD-FUND-BROKER · FD-ANALYTICS.
 
 ## MVP Status
 
@@ -19,7 +37,7 @@
 - **Bulk Cash Entries** for historical funding (backfill wizard/APIs **removed**)
 - Stock + mutual fund transactions, CSV import, holdings, dashboard performance
 - **Fixed Deposits (FD MVP):** bank accounts, fixed deposit CRUD, principal-only summary/holdings integration, dashboard allocation buckets — see [fixed-deposits.md](./fixed-deposits.md)
-- **FD Accounting Phase 1 (FD-ACC-1..10B) + FD-TAX-1 report:** bank cash ledger, mandatory FD opening debit, interest/TDS, maturity/settlement, renewal, opt-in bank cash in portfolio value, value history + return metrics, FD cancel/deactivate accounting, reversal/correction framework, **FD interest/tax withheld report (read-only)** — [fixed-deposits-accounting.md](./fixed-deposits-accounting.md); **implemented and audited (FD-ACC-9; FD-ACC-10A; FD-ACC-10B; FD-TAX-1)**
+- **FD Accounting Phase 1 (FD-ACC-1..10B) + FD-TAX-1/1A/2:** bank cash ledger, mandatory FD opening debit, interest/TDS, maturity/settlement, renewal, opt-in bank cash in portfolio value, value history + return metrics, FD cancel/deactivate accounting, reversal/correction framework, **FD interest/tax withheld report (read-only) + CSV export** — [fixed-deposits-accounting.md](./fixed-deposits-accounting.md); **implemented and audited (FD-ACC-9; FD-ACC-10A; FD-ACC-10B; FD-TAX-1/1A/2)**
 
 Product rules index: [product-rules.md](./product-rules.md). Release checklist: [mvp-release-checklist.md](./mvp-release-checklist.md). API contract index: [api-contracts.md](./api-contracts.md).
 
@@ -237,7 +255,7 @@ Design doc: [cash-ledger.md](./cash-ledger.md).
 
 **Tester repair:** `PUT /api/v1/portfolios/{id}` with `"cash_aware_enabled": true` on the tester default portfolio (no user deletion).
 
-**Next recommended business feature:** CASH-UNIFY-5 broker ↔ bank transfer workflow (deferred — no backlog file yet) or [FX-1](./backlog/006-fx-1.md) same-portfolio FX conversion legs. Cash unification stream **stabilized** (CASH-UNIFY-4A).
+**Next recommended implementation:** [FX-1](./backlog/006-fx-1.md) same-portfolio FX conversion legs, [CASH-UNIFY-5](./backlog/README.md) broker ↔ bank transfer (deferred — no backlog file), or [CASH-CORR-1](./backlog/012-cash-corr-1.md) cross-ledger reclassification. Cash unification + FD tax reporting streams **closed** (MILESTONE-CLOSEOUT-1).
 
 **Cash unification (CASH-UNIFY-4A — done 2026-06-26):** Final audit/stabilization — behavior verified across overview, link/delink, reversal, FD derivation, display currency; read-only `cash_overview_diagnostics` command; UI copy polish; no new business features.
 

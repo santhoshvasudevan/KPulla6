@@ -505,7 +505,14 @@ KPulla6 has **two cash ledgers** that represent **cash holdings** within a portf
 - Summary/performance may **aggregate** both for headline value when bank cash is opt-in included (FD-ACC-7/8).
 - FD workflows debit **bank** ledger for bank-funded opens; stock/MF settlements use **broker** ledger.
 
-**Roadmap:** [cash-unification.md](./cash-unification.md) — portfolio link, unified Cash page, link/delink UX. Bank ledger detail: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md) § A.
+**Roadmap:** [cash-unification.md](./cash-unification.md) — **stream complete** (MILESTONE-CLOSEOUT-1). Bank ledger detail: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md) § A.
+
+### Display currency on portfolio switch (CASH-UNIFY-4B)
+
+- Selecting a **specific portfolio** auto-selects display currency from that portfolio's `base_currency` when supported.
+- **All Portfolios** preserves the current display currency (no forced switch).
+- Unsupported `base_currency` leaves display currency unchanged.
+- Implemented in `portfolioContext.jsx`; tested in `portfolioContext.test.jsx`.
 
 ### Cash page — unified overview (CASH-UNIFY-3 / 3A)
 

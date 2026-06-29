@@ -32,11 +32,11 @@ This phase adds **Fixed Deposits** as a debt investment type with **principal-on
 
 Schema fields (`renewal_of`, `opening_balance`, `current_balance`, `include_in_portfolio_value`) are reserved for clean future extension.
 
-### Accounting Phase 1 (FD-ACC-1..10B implemented; FD-TAX-1 report)
+### Accounting Phase 1 (FD-ACC-1..10B implemented; FD-TAX-1/1A/2)
 
 **Full design:** [fixed-deposits-accounting.md](./fixed-deposits-accounting.md)
 
-Implemented: bank ledger, manual movements (FD-ACC-2), mandatory `FD_OPENING` debit (FD-ACC-3), interest payments (FD-ACC-4), **maturity/closure settlement** (FD-ACC-5), **renewal workflow** (FD-ACC-6), **optional bank cash in portfolio value** (FD-ACC-7), performance/XIRR (FD-ACC-8B/8C), **FD cancel / deactivate accounting** (FD-ACC-10A), **reversal/correction framework** (FD-ACC-10B), **interest/tax withheld report** (FD-TAX-1, read-only).
+Implemented: bank ledger, manual movements (FD-ACC-2), mandatory `FD_OPENING` debit (FD-ACC-3), interest payments (FD-ACC-4), **maturity/closure settlement** (FD-ACC-5), **renewal workflow** (FD-ACC-6), **optional bank cash in portfolio value** (FD-ACC-7), performance/XIRR (FD-ACC-8B/8C), **FD cancel / deactivate accounting** (FD-ACC-10A), **reversal/correction framework** (FD-ACC-10B), **interest/tax withheld report + CSV export** (FD-TAX-1/1A/2, read-only; not tax advice).
 
 Key design choices documented there:
 

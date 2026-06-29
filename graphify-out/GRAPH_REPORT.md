@@ -1,16 +1,16 @@
-# Graph Report - KPulla6  (2026-06-24)
+# Graph Report - KPulla6  (2026-06-26)
 
 ## Corpus Check
-- 510 files · ~11,081,544 words
+- 553 files · ~13,258,092 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 7319 nodes · 14684 edges · 423 communities (387 shown, 36 thin omitted)
-- Extraction: 74% EXTRACTED · 26% INFERRED · 0% AMBIGUOUS · INFERRED: 3832 edges (avg confidence: 0.66)
+- 8273 nodes · 16161 edges · 485 communities (448 shown, 37 thin omitted)
+- Extraction: 74% EXTRACTED · 26% INFERRED · 0% AMBIGUOUS · INFERRED: 4169 edges (avg confidence: 0.66)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `dca28360`
+- Built from commit: `285e2a3d`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -380,18 +380,77 @@
 - [[_COMMUNITY_Community 417|Community 417]]
 - [[_COMMUNITY_Community 418|Community 418]]
 - [[_COMMUNITY_Community 419|Community 419]]
+- [[_COMMUNITY_Community 423|Community 423]]
+- [[_COMMUNITY_Community 424|Community 424]]
+- [[_COMMUNITY_Community 425|Community 425]]
+- [[_COMMUNITY_Community 426|Community 426]]
+- [[_COMMUNITY_Community 427|Community 427]]
+- [[_COMMUNITY_Community 428|Community 428]]
+- [[_COMMUNITY_Community 429|Community 429]]
+- [[_COMMUNITY_Community 430|Community 430]]
+- [[_COMMUNITY_Community 431|Community 431]]
+- [[_COMMUNITY_Community 432|Community 432]]
+- [[_COMMUNITY_Community 433|Community 433]]
+- [[_COMMUNITY_Community 434|Community 434]]
+- [[_COMMUNITY_Community 435|Community 435]]
+- [[_COMMUNITY_Community 436|Community 436]]
+- [[_COMMUNITY_Community 437|Community 437]]
+- [[_COMMUNITY_Community 438|Community 438]]
+- [[_COMMUNITY_Community 439|Community 439]]
+- [[_COMMUNITY_Community 440|Community 440]]
+- [[_COMMUNITY_Community 441|Community 441]]
+- [[_COMMUNITY_Community 442|Community 442]]
+- [[_COMMUNITY_Community 443|Community 443]]
+- [[_COMMUNITY_Community 444|Community 444]]
+- [[_COMMUNITY_Community 445|Community 445]]
+- [[_COMMUNITY_Community 446|Community 446]]
+- [[_COMMUNITY_Community 447|Community 447]]
+- [[_COMMUNITY_Community 448|Community 448]]
+- [[_COMMUNITY_Community 449|Community 449]]
+- [[_COMMUNITY_Community 450|Community 450]]
+- [[_COMMUNITY_Community 451|Community 451]]
+- [[_COMMUNITY_Community 452|Community 452]]
+- [[_COMMUNITY_Community 453|Community 453]]
+- [[_COMMUNITY_Community 454|Community 454]]
+- [[_COMMUNITY_Community 455|Community 455]]
+- [[_COMMUNITY_Community 456|Community 456]]
+- [[_COMMUNITY_Community 457|Community 457]]
+- [[_COMMUNITY_Community 458|Community 458]]
+- [[_COMMUNITY_Community 459|Community 459]]
+- [[_COMMUNITY_Community 460|Community 460]]
+- [[_COMMUNITY_Community 461|Community 461]]
+- [[_COMMUNITY_Community 462|Community 462]]
+- [[_COMMUNITY_Community 463|Community 463]]
+- [[_COMMUNITY_Community 464|Community 464]]
+- [[_COMMUNITY_Community 465|Community 465]]
+- [[_COMMUNITY_Community 466|Community 466]]
+- [[_COMMUNITY_Community 467|Community 467]]
+- [[_COMMUNITY_Community 468|Community 468]]
+- [[_COMMUNITY_Community 469|Community 469]]
+- [[_COMMUNITY_Community 470|Community 470]]
+- [[_COMMUNITY_Community 471|Community 471]]
+- [[_COMMUNITY_Community 472|Community 472]]
+- [[_COMMUNITY_Community 473|Community 473]]
+- [[_COMMUNITY_Community 474|Community 474]]
+- [[_COMMUNITY_Community 475|Community 475]]
+- [[_COMMUNITY_Community 476|Community 476]]
+- [[_COMMUNITY_Community 477|Community 477]]
+- [[_COMMUNITY_Community 479|Community 479]]
+- [[_COMMUNITY_Community 480|Community 480]]
+- [[_COMMUNITY_Community 481|Community 481]]
+- [[_COMMUNITY_Community 482|Community 482]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `ensure_default_portfolio()` - 458 edges
-2. `Changelog — KPulla6` - 165 edges
-3. `PortfolioNotFoundError` - 80 edges
-4. `fund_bank_account()` - 78 edges
-5. `Portfolio` - 68 edges
-6. `ResolvedPortfolioScope` - 61 edges
-7. `create_fixed_deposit()` - 61 edges
-8. `fetchWithHandling()` - 57 edges
-9. `CashLedgerEntry` - 53 edges
-10. `FixedDeposit` - 51 edges
+1. `ensure_default_portfolio()` - 511 edges
+2. `Changelog — KPulla6` - 179 edges
+3. `fund_bank_account()` - 101 edges
+4. `PortfolioNotFoundError` - 88 edges
+5. `Portfolio` - 74 edges
+6. `ResolvedPortfolioScope` - 65 edges
+7. `create_fixed_deposit()` - 63 edges
+8. `FixedDeposit` - 60 edges
+9. `CashLedgerEntry` - 59 edges
+10. `fetchWithHandling()` - 58 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `test_sync_fx_rates_command_calls_service()` --calls--> `type`  [INFERRED]
@@ -405,31 +464,31 @@
 - `test_sync_market_data_command_includes_mutual_funds()` --calls--> `type`  [INFERRED]
   backend/tests/test_mutual_fund_nav_refresh_api.py → frontend/package.json
 
-## Communities (423 total, 36 thin omitted)
+## Communities (485 total, 37 thin omitted)
 
 ### Community 0 - "Community 0"
-Cohesion: 0.05
-Nodes (79): BankAccountManagement(), CURRENCIES, emptyForm(), account, accountAfterSeed, accountRow, API_ROOT, appendCashQueryParams() (+71 more)
+Cohesion: 0.06
+Nodes (83): BankAccountManagement(), CURRENCIES, emptyForm(), API_ROOT, appendCashQueryParams(), applyCashBulkEntries(), buildApiErrorMessage(), buildCashBulkEntriesBody() (+75 more)
 
 ### Community 1 - "Community 1"
-Cohesion: 0.10
-Nodes (46): ensure_default_portfolio(), test_cash_ledger_adjustment_allows_negative(), test_cash_ledger_entry_invalid_currency_rejected(), test_cash_ledger_entry_sign_validation(), test_cash_ledger_entry_valid_deposit(), test_cash_ledger_entry_zero_amount_rejected(), test_cash_transfer_group_same_portfolio_rejected(), test_cash_transfer_group_valid() (+38 more)
+Cohesion: 0.07
+Nodes (62): ensure_default_portfolio(), test_cash_ledger_adjustment_allows_negative(), test_cash_ledger_entry_invalid_currency_rejected(), test_cash_ledger_entry_sign_validation(), test_cash_ledger_entry_valid_deposit(), test_cash_ledger_entry_zero_amount_rejected(), test_cash_transfer_group_same_portfolio_rejected(), test_cash_transfer_group_valid() (+54 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.06
-Nodes (77): bulk_entries_preview_to_response_dict(), future_cash_impact_payload(), _bulk_entries_validation_response(), NavCoverageIssue, SettlementIssue, _get_active_portfolio(), resolve_portfolio_id_or_default(), str (+69 more)
+Cohesion: 0.07
+Nodes (69): SettlementIssue, _get_active_portfolio(), resolve_portfolio_id_or_default(), PlannedSettlement, SettlementSyncPlan, CsvCashPreviewResult, CsvImportCashPreviewRequired, preview_to_response_dict() (+61 more)
 
 ### Community 3 - "Community 3"
 Cohesion: 0.16
-Nodes (32): fund_bank_account(), Shared helpers for debt / fixed-deposit tests., Credit a bank account via MANUAL_DEPOSIT so FD opening debits can succeed., _bank(), _create_fd(), _enable_bank_inclusion(), _seed_stock(), test_all_scope_aggregates_fds() (+24 more)
+Nodes (31): _bank(), _create_fd(), _enable_bank_inclusion(), _seed_stock(), test_all_scope_aggregates_fds(), test_allocation_buckets_fd_not_double_counted(), test_bank_account_balance_not_in_summary(), test_bank_cash_fx_conversion_in_summary() (+23 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.10
-Nodes (34): collect_fx_pairs(), _earliest_fx_date(), earliest_required_fx_date(), FxSyncResult, _latest_fx_date(), _norm_ccy(), _pair_has_rates_in_range(), Currency pairs implied by transactions, price rows, and display currency. (+26 more)
+Cohesion: 0.13
+Nodes (21): FXRate, Meta, collect_fx_pairs(), _earliest_fx_date(), earliest_required_fx_date(), FxSyncResult, _latest_fx_date(), _norm_ccy() (+13 more)
 
 ### Community 5 - "Community 5"
-Cohesion: 0.06
-Nodes (71): build_split_adjusted_lot_snapshots(), calculate_fifo_cost_basis_metrics(), FifoCostBasisMetrics, _Lot, Per-transaction-date cumulative qty and invested amount after split-adjusted FIF, FIFO cost basis metrics for a single asset.      Fees are intentionally ignored, FIFO cost basis metrics for a single asset.      Fees are intentionally ignored, _zero_metrics() (+63 more)
+Cohesion: 0.17
+Nodes (31): calculate_fifo_cost_basis_metrics(), FIFO cost basis metrics for a single asset.      Fees are intentionally ignored, FIFO cost basis metrics for a single asset.      Fees are intentionally ignored, apply_stock_split_adjustments(), Return BUY/SELL transactions with quantities/prices adjusted for prior STOCK_SPL, _split_factor(), _buy(), _sell() (+23 more)
 
 ### Community 6 - "Community 6"
 Cohesion: 0.07
@@ -440,32 +499,32 @@ Cohesion: 0.08
 Nodes (44): _count_txns(), _import(), test_direct_stock_split_rejects_currency_in_price_share(), test_import_all_or_nothing(), test_import_assigns_provided_portfolio_id(), test_import_buy_rows(), test_import_defaults_fees_to_zero(), test_import_defaults_portfolio_to_default() (+36 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.15
-Nodes (15): Asset detail, code:json ({), code:json ({), code:json ({), code:json ({), code:json ({), code:json ({), Common error response (target) (+7 more)
+Cohesion: 0.20
+Nodes (12): Asset detail, code:json ({), code:json ({), code:json ({), code:json ({), code:json ({), CSV import, Holdings (+4 more)
 
 ### Community 9 - "Community 9"
 Cohesion: 0.10
 Nodes (29): _payload(), _split_payload(), test_delete_does_not_remove_other_transactions(), test_delete_removes_transaction(), test_list_asset_symbol_filter_case_insensitive(), test_list_default_is_portfolio_scope_all(), test_list_portfolio_id_filter(), test_list_portfolio_scope_all_active_portfolios() (+21 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.09
-Nodes (51): cash_allocation_rows(), Allocation slices for cash — one row per native currency in scope., Allocation slices for cash — one row per native currency in scope., check_nav_coverage(), _held_schemes_by_portfolio(), portfolio_id -> scheme -> (first_date, txns). Only schemes with open units., detect_oversell(), True when a SELL quantity exceeds available lots at that point in time     (afte (+43 more)
+Cohesion: 0.14
+Nodes (34): detect_oversell(), True when a SELL quantity exceeds available lots at that point in time     (afte, convert_amount_with_fill(), Convert using same-date FX, falling back to prior dates within max_fill_days., AssetDetailResult, build_asset_detail(), _build_holding_item(), build_holdings() (+26 more)
 
 ### Community 11 - "Community 11"
-Cohesion: 0.11
-Nodes (42): _buy(), _cash_deposit(), _cash_withdrawal(), _enable_cash_aware(), _legacy_cash_mode(), _price(), _sell(), test_all_scope_mixed_cash_aware_and_legacy_xirr() (+34 more)
+Cohesion: 0.12
+Nodes (39): _buy(), _cash_deposit(), _cash_withdrawal(), _enable_cash_aware(), _legacy_cash_mode(), _price(), _sell(), test_all_scope_mixed_cash_aware_and_legacy_xirr() (+31 more)
 
 ### Community 12 - "Community 12"
-Cohesion: 0.18
-Nodes (18): list_active_portfolios_for_user(), Meta, PortfolioCreateSerializer, PortfolioSerializer, PortfolioUpdateSerializer, _active_count(), _active_name_exists(), create_portfolio() (+10 more)
+Cohesion: 0.20
+Nodes (16): Meta, PortfolioCreateSerializer, PortfolioSerializer, PortfolioUpdateSerializer, _active_count(), _active_name_exists(), create_portfolio(), deactivate_portfolio() (+8 more)
 
 ### Community 13 - "Community 13"
-Cohesion: 0.05
-Nodes (92): cash_summary_payload(), build_bank_cash_external_flows(), _eligible_accounts(), External bank-cash flows by date for included accounts in scope., External bank-cash flows by date for included accounts in scope., allocation_buckets_payload(), bank_account_associated_portfolio_ids(), bank_account_includable_in_scope() (+84 more)
+Cohesion: 0.06
+Nodes (53): allocation_buckets_payload(), bank_account_associated_portfolio_ids(), bank_account_includable_in_scope(), build_bank_cash_holding_rows(), build_bank_cash_value_timeseries(), build_fd_holding_rows(), build_fd_value_timeseries(), calculate_allocation_buckets() (+45 more)
 
 ### Community 14 - "Community 14"
-Cohesion: 0.16
-Nodes (27): DailyPrice, _buy(), MockPriceProvider, test_benchmark_symbol_caret_preserved(), test_benchmark_sync_anchor_uses_earliest_transaction_including_mf(), test_benchmark_sync_backfills_when_anchor_predates_earliest_cached(), test_benchmark_sync_incremental_idempotent(), test_benchmark_sync_stores_index_rows() (+19 more)
+Cohesion: 0.12
+Nodes (38): DailyPrice, _earliest_stock_price_date(), _latest_stock_price_date(), Incremental sync for one stock symbol. Returns False on provider failure., Choose provider fetch start for incremental stock price sync.      - No cached r, Incremental sync for one stock symbol. Returns False on provider failure., resolve_stock_sync_start_date(), _stock_price_filter() (+30 more)
 
 ### Community 15 - "Community 15"
 Cohesion: 0.09
@@ -473,11 +532,11 @@ Nodes (21): dependencies, lucide-react, react, react-dom, react-router-dom, rech
 
 ### Community 16 - "Community 16"
 Cohesion: 0.07
-Nodes (28): Accepted limitations (MVP), Backend Status, Cash Ledger (Cash-1 implemented), Commit-prep summary (single stabilization commit), Constraints, Current State — KPulla6 (Portfolio Insight), Deferred / Not Yet Implemented, Fixed Deposits — Accounting (FD-ACC-1..9) (+20 more)
+Nodes (29): Accepted limitations (MVP), Backend Status, Cash Ledger (Cash-1 implemented), Commit-prep summary (single stabilization commit), Constraints, Current State — KPulla6 (Portfolio Insight), Deferred / Not Yet Implemented, Fixed Deposits — Accounting (FD-ACC-1..9) (+21 more)
 
 ### Community 17 - "Community 17"
-Cohesion: 0.08
-Nodes (8): BaseCommand, Command, Command, Command, Command, Command, Command, Command
+Cohesion: 0.09
+Nodes (7): BaseCommand, Command, Command, Command, Command, Command, Command
 
 ### Community 18 - "Community 18"
 Cohesion: 0.05
@@ -492,20 +551,20 @@ Cohesion: 0.15
 Nodes (24): align_multi_subject_returns(), Intersect daily return dates across multiple subjects.      Only dates present i, DailyReturnPoint, Cash-flow-adjusted daily period return (fraction, not percent)., _assert_approx(), _assert_frac(), test_active_return_constant_spread(), test_align_multi_subject_returns_exact_intersection() (+16 more)
 
 ### Community 21 - "Community 21"
-Cohesion: 0.07
-Nodes (29): API, API direction, Architecture — KPulla6 (Portfolio Insight), Backend, Backend module plan (`backend/finance/` — framework-independent), Cash Ledger (Cash-1 foundation), Cash Ledger (implemented — Cash-1 through Cash-8B), code:block1 (subjects=asset:AAPL,asset:MSFT) (+21 more)
+Cohesion: 0.06
+Nodes (30): API, API direction, Architecture — KPulla6 (Portfolio Insight), Backend, Backend module plan (`backend/finance/` — framework-independent), Cash Ledger (Cash-1 foundation), Cash Ledger (implemented — Cash-1 through Cash-8B), code:block1 (subjects=asset:AAPL,asset:MSFT) (+22 more)
 
 ### Community 22 - "Community 22"
-Cohesion: 0.11
-Nodes (30): Command, Backfill missing BUY/SELL settlement rows for cash-aware portfolios., _deposit(), _enable_cash_aware(), _price(), CASH-HIST-1 — historical settlement backfill command and service., _stock_buy(), _stock_sell() (+22 more)
+Cohesion: 0.10
+Nodes (23): analyze_future_cash_impact(), _collect_affected_entries(), ledger_entries_queryset(), ledger_entry_to_point(), _ledger_points_for_currency(), Simulate ledger balances in ``currency`` after a proposed manual edit/delete., Simulate ledger balances in ``currency`` after a proposed manual edit/delete., Simulate ledger balances in ``currency`` after a proposed manual edit/delete. (+15 more)
 
 ### Community 23 - "Community 23"
-Cohesion: 0.20
-Nodes (9): code:block1 (KPulla6/), code:bash (cp .env.example .env), Current scope, Overview, Planned (from KPulla5), Project Summary — KPulla6 (Portfolio Insight), Repository layout, Running locally (+1 more)
+Cohesion: 0.18
+Nodes (10): code:block1 (KPulla6/), code:bash (cp .env.example .env), Current scope, Deferred (post-milestone), Overview, Planned (from KPulla5), Project Summary — KPulla6 (Portfolio Insight), Repository layout (+2 more)
 
 ### Community 24 - "Community 24"
-Cohesion: 0.12
-Nodes (14): market_data_sync_response_payload(), mutual_fund_nav_sync_warnings(), Build API payload for full market-data sync (stocks + benchmarks + FX + MF NAV)., run_mutual_fund_nav_refresh(), BenchmarkIndicesView, NavRefreshView, PortfolioForceSyncView, PricesRefreshView (+6 more)
+Cohesion: 0.13
+Nodes (12): market_data_sync_response_payload(), Build API payload for full market-data sync (stocks + benchmarks + FX + MF NAV)., BenchmarkIndicesView, NavRefreshView, PortfolioForceSyncView, PricesRefreshView, Manual historical price refresh (synchronous).     May call external market-data, Manual historical price refresh (synchronous).     May call external market-data (+4 more)
 
 ### Community 25 - "Community 25"
 Cohesion: 0.12
@@ -517,11 +576,11 @@ Nodes (16): PriceProvider, Return daily closes and optional quote currency for t
 
 ### Community 27 - "Community 27"
 Cohesion: 0.12
-Nodes (15): Asset detail — MF-4 implemented, code:json ("cash_summary": {), `GET /api/v1/portfolio/performance`, `GET /api/v1/portfolio/summary`, Holdings (`GET /api/v1/portfolio/holdings`) — MF-4 implemented, Implemented Endpoint Index, Implemented: Mutual fund transactions (MF-3), Indian Mutual Funds (+7 more)
+Nodes (15): code:json ("cash_summary": {), FD create — mandatory opening debit (FD-ACC-3), FD interest payments (FD-ACC-4), FD interest / tax report (FD-TAX-1), FD lifecycle actions (FD-ACC-10A), FD maturity / closure settlement (FD-ACC-5), FD renewal (FD-ACC-6), Fixed Deposits — Bank cash ledger (implemented — FD-ACC-1) (+7 more)
 
 ### Community 28 - "Community 28"
-Cohesion: 0.05
-Nodes (41): 2026-05-19 — Greenfield stack, 2026-05-26 — MF-10: Live mutual fund NAV provider, 2026-05-26 — MF-1: Mutual fund schema foundation, 2026-05-26 — MF-2: Mutual fund NAV cache and sync foundation, 2026-05-26 — MF-3: Mutual fund transaction API, 2026-05-26 — MF-4: Mutual fund holdings and asset detail, 2026-05-26 — MF-5: Mutual fund summary and performance, 2026-05-26 — MF-6: Mutual fund NAV validation (+33 more)
+Cohesion: 0.04
+Nodes (52): 2026-05-19 — Greenfield stack, 2026-05-26 — MF-10: Live mutual fund NAV provider, 2026-05-26 — MF-1: Mutual fund schema foundation, 2026-05-26 — MF-2: Mutual fund NAV cache and sync foundation, 2026-05-26 — MF-3: Mutual fund transaction API, 2026-05-26 — MF-4: Mutual fund holdings and asset detail, 2026-05-26 — MF-5: Mutual fund summary and performance, 2026-05-26 — MF-6: Mutual fund NAV validation (+44 more)
 
 ### Community 29 - "Community 29"
 Cohesion: 0.25
@@ -532,68 +591,68 @@ Cohesion: 0.08
 Nodes (24): Access from iPad / home LAN (frontend only), Cash ledger work, code:bash (cp .env.example .env), code:bash (make backup-db), code:bash (make db-safety-check), code:bash (graphify update .), code:bash (cd backend), code:bash (cd backend) (+16 more)
 
 ### Community 33 - "Community 33"
-Cohesion: 0.10
-Nodes (40): APIView, get_fd_opening_cash_movement_id(), FixedDepositCancellationError, FD cannot be cancelled in its current state., FixedDepositInterestReportView, GET /api/v1/reports/fixed-deposit-interest — FD interest and tax withheld report, BankAccountCreateSerializer, BankAccountSerializer (+32 more)
+Cohesion: 0.17
+Nodes (55): CashMovementValidationError, FixedDepositBankPortfolioError, FD portfolio must derive from bank account portfolio (CASH-UNIFY-2)., CashMovementNotFoundError, InsufficientBankBalanceError, OpeningBalanceAlreadySeededError, FixedDepositCancellationError, FD cannot be cancelled in its current state. (+47 more)
 
 ### Community 34 - "Community 34"
 Cohesion: 0.33
 Nodes (6): latest_historical_price(), normalize_asset_symbol(), Latest STOCK (or legacy null asset_type) close for symbol, case-insensitive., test_latest_price_returns_newest_by_date(), test_missing_latest_price_returns_none(), test_stock_latest_price_unaffected_by_mutual_fund_rows()
 
 ### Community 35 - "Community 35"
-Cohesion: 0.09
-Nodes (23): 2026-05-19 — Initial foundation (Django + DRF + React + Docker PostgreSQL), 2026-06-23 — P7: Fixed Deposits redesign, Added, Added, Added, Added, Added, Added (+15 more)
+Cohesion: 0.07
+Nodes (29): 2026-05-19 — Initial foundation (Django + DRF + React + Docker PostgreSQL), 2026-06-23 — P7: Fixed Deposits redesign, Added, Added, Added, Added, Added, Added (+21 more)
 
 ### Community 36 - "Community 36"
-Cohesion: 0.08
-Nodes (25): 2026-05-19 — Phase 2: Django models, migrations, seed, Added, Added, Added, Added, Added, Added, Docs updated (+17 more)
+Cohesion: 0.07
+Nodes (29): 2026-05-19 — Phase 2: Django models, migrations, seed, Added, Added, Added, Added, Added, Added, Added (+21 more)
 
 ### Community 37 - "Community 37"
-Cohesion: 0.09
-Nodes (23): 2026-05-19 — Phase 3: Settings and Portfolios APIs, Added, Added, Added, Added, Docs updated, Docs updated, Docs updated (+15 more)
+Cohesion: 0.07
+Nodes (27): 2026-05-19 — Phase 3: Settings and Portfolios APIs, Added, Added, Added, Added, Added, Docs updated, Docs updated (+19 more)
 
 ### Community 38 - "Community 38"
-Cohesion: 0.09
-Nodes (23): 2026-05-19 — Phase 4: Transaction CRUD APIs, Added, Added, Added, Added, Added, Added, Docs updated (+15 more)
+Cohesion: 0.07
+Nodes (27): 2026-05-19 — Phase 4: Transaction CRUD APIs, Added, Added, Added, Added, Added, Added, Added (+19 more)
 
 ### Community 39 - "Community 39"
-Cohesion: 0.40
-Nodes (3): MutualFundNavProvider, Return the provider's latest NAV for scheme_code, or None if unavailable., Return daily NAV rows for scheme_code in [start, end] inclusive.
+Cohesion: 0.12
+Nodes (43): cash_summary_payload(), BankCashHoldingsCalc, calculate_bank_cash_for_scope(), Aggregate ledger-derived bank cash for included accounts in scope., Aggregate ledger-derived bank cash for included accounts in scope., _aggregate_timeseries_from_children(), _aggregate_timeseries_lists(), _build_all_active_portfolio_summary() (+35 more)
 
 ### Community 40 - "Community 40"
 Cohesion: 0.08
 Nodes (67): _balances_by_currency(), _deposit(), _enable_cash_aware(), _legacy_portfolio(), _mf_payload(), Cash-4A — cash-aware BUY/SELL settlement on asset transactions., Same-currency enforcement: USD cash does not fund a EUR stock BUY., EUR BUY considers EUR ledger only; USD balance is ignored for sufficiency. (+59 more)
 
 ### Community 42 - "Community 42"
-Cohesion: 0.13
-Nodes (15): 2026-05-29 — FEAT: Transactions page column filters (portfolio / symbol / date), Added, Added, Added, Added, Changed, Changed, Changed (+7 more)
+Cohesion: 0.12
+Nodes (16): 2026-05-29 — FEAT: Transactions page column filters (portfolio / symbol / date), Added, Added, Added, Added, Changed, Changed, Changed (+8 more)
 
 ### Community 43 - "Community 43"
-Cohesion: 0.11
-Nodes (18): 2026-05-19 — Phase 8: Historical prices, FX cache, benchmark sync, Added, Added, Added, Added, Added, Notes, Notes (+10 more)
+Cohesion: 0.10
+Nodes (21): 2026-05-19 — Phase 8: Historical prices, FX cache, benchmark sync, Added, Added, Added, Added, Added, Added, Notes (+13 more)
 
 ### Community 44 - "Community 44"
-Cohesion: 0.11
-Nodes (19): 2026-05-19 — Phase 9: Portfolio summary API, Added, Added, Added, Added, Added, Added, Not included (+11 more)
+Cohesion: 0.09
+Nodes (22): 2026-05-19 — Phase 9: Portfolio summary API, Added, Added, Added, Added, Added, Added, Added (+14 more)
 
 ### Community 45 - "Community 45"
-Cohesion: 0.05
-Nodes (36): 2026-05-19 — Phase 7: Holdings and asset detail APIs, 2026-06-04 — REVERT: Cash backfill wizard UI removed (Cash-7C), Added, Added, Added, Added, Added, Added (+28 more)
+Cohesion: 0.10
+Nodes (21): 2026-05-19 — Phase 7: Holdings and asset detail APIs, Added, Added, Added, Added, Added, Added, Not included (+13 more)
 
 ### Community 46 - "Community 46"
-Cohesion: 0.20
-Nodes (9): A. Cash Ledger rules, B. Cash-aware vs legacy portfolios, C. Transaction and settlement rules, D. Portfolio return rules, E. Metric Sheet rules, F. Transfer rules, G. Frontend rules, H. Data-safety rules (+1 more)
+Cohesion: 0.18
+Nodes (10): A. Cash Ledger rules, B. Cash-aware vs legacy portfolios, C. Transaction and settlement rules, D. Portfolio return rules, E. Metric Sheet rules, F. Transfer rules, G. Frontend rules, H. Data-safety rules (+2 more)
 
 ### Community 48 - "Community 48"
 Cohesion: 0.04
-Nodes (53): 2026-05-19 — Phase 11: React frontend integration, 2026-06-06 — DOCS: Dashboard performance decision and optimization backlog (STAB-5B), 2026-06-06 — DOCS: MVP maintenance baseline (STAB-1), 2026-06-06 — FEAT: User-entered cross-currency portfolio transfer (Cash-8B), 2026-06-14 — FD-ACC-0.1: FD Accounting approved product decisions (design only), 2026-06-14 — FD-ACC-2: Manual cash movement UI, 2026-06-19 — Docs: Frontend redesign readiness governance, 2026-06-24 — FD-TAX-1: Fixed Deposit interest and tax withheld report (+45 more)
+Nodes (52): 2026-05-19 — Phase 11: React frontend integration, 2026-06-06 — DOCS: Dashboard performance decision and optimization backlog (STAB-5B), 2026-06-06 — DOCS: MVP maintenance baseline (STAB-1), 2026-06-06 — FEAT: User-entered cross-currency portfolio transfer (Cash-8B), 2026-06-24 — CASH-UNIFY-1: Bank account portfolio ownership + cash overview API, 2026-06-24 — FD-TAX-1: Fixed Deposit interest and tax withheld report, Added, Added (+44 more)
 
 ### Community 49 - "Community 49"
-Cohesion: 0.13
-Nodes (15): 2026-05-30 — FEAT: Core Metric Sheet performance metrics (Phase 3), Added, Added, Added, Added, Added, Changed, Changed (+7 more)
+Cohesion: 0.11
+Nodes (18): 2026-05-30 — FEAT: Core Metric Sheet performance metrics (Phase 3), Added, Added, Added, Added, Added, Added, Changed (+10 more)
 
 ### Community 51 - "Community 51"
-Cohesion: 0.18
-Nodes (10): AGENTS.md — KPulla6, Before any destructive DB operation, Cash Ledger, Data safety (mandatory), Graphify, Never on the live dev database, Product rules, Reference (+2 more)
+Cohesion: 0.12
+Nodes (15): AGENTS.md — KPulla6, Background Agent Operating Rules, Before any destructive DB operation, Cash Ledger, Data safety (mandatory), Final response (required), Graphify, Never on the live dev database (+7 more)
 
 ### Community 86 - "Community 86"
 Cohesion: 0.08
@@ -604,56 +663,56 @@ Cohesion: 0.06
 Nodes (59): _deposit(), _post_cross_currency_transfer(), _post_deposit(), _post_transfer(), _post_withdrawal(), _put_ledger(), test_balances_as_of_date_filters(), test_balances_group_by_portfolio_and_currency() (+51 more)
 
 ### Community 88 - "Community 88"
-Cohesion: 0.06
-Nodes (35): CashAwarePortfolioStatus(), cashAwarePortfolio, legacyPortfolio, FixedDepositInterestReport(), SOURCE_LABELS, cashLink, dashboardLink, displayCurrency (+27 more)
+Cohesion: 0.04
+Nodes (51): CashAwarePortfolioStatus(), cashAwarePortfolio, legacyPortfolio, CURRENCIES, PortfolioManagement(), card, mockAssetDetail, mockMetricSheet (+43 more)
 
 ### Community 89 - "Community 89"
-Cohesion: 0.08
-Nodes (51): _asset_subject_block(), _benchmark_block_for_subject(), _benchmark_daily_returns(), build_analytics_compare(), build_asset_performance_metrics(), _build_asset_value_timeseries(), build_drawdown_periods_block(), build_drawdown_series_block() (+43 more)
+Cohesion: 0.07
+Nodes (60): _asset_subject_block(), _benchmark_block_for_subject(), _benchmark_daily_returns(), build_analytics_compare(), build_asset_performance_metrics(), _build_asset_value_timeseries(), build_drawdown_periods_block(), build_drawdown_series_block() (+52 more)
 
 ### Community 90 - "Community 90"
 Cohesion: 0.15
 Nodes (29): active_return(), align_return_series(), AlignedReturnPoint, alpha(), _annualized_mean(), benchmark_summary(), BenchmarkSummary, beta() (+21 more)
 
 ### Community 91 - "Community 91"
-Cohesion: 0.06
-Nodes (72): _active_portfolio_for_transfer(), analyze_future_cash_impact(), assert_delete_entries_would_not_make_cash_negative(), assert_delete_settlement_would_not_make_cash_negative(), assert_sufficient_cash_for_purchase(), build_cash_display_summary(), build_cash_value_timeseries(), cash_balances_for_scope() (+64 more)
+Cohesion: 0.07
+Nodes (46): broker_cash_balance_preview(), is_reversible_manual_entry(), _opposite_manual_entry_type(), _opposite_signed_amount(), Broker cash ledger reversal services (CASH-CORR-1A)., Read-only broker cash balance for portfolio currency after a write., reverse_broker_cash_ledger_entry(), _validate_reversible_manual_entry() (+38 more)
 
 ### Community 92 - "Community 92"
-Cohesion: 0.06
-Nodes (27): AuthLinks(), AuthShell(), GoogleSignInButton(), Login(), mockLogin, mockNavigate, ProtectedRoute(), PublicOnlyRoute() (+19 more)
+Cohesion: 0.04
+Nodes (32): AuthLinks(), AuthShell(), GoogleSignInButton(), Login(), mockLogin, mockNavigate, ProtectedRoute(), PublicOnlyRoute() (+24 more)
 
 ### Community 93 - "Community 93"
-Cohesion: 0.12
-Nodes (23): DATE_MODES, importBannerSeverity(), PAGE_SIZE_OPTIONS, Transactions(), holdingRowKey(), holdingSymbolLabel(), isMutualFundTransaction(), NAV_STATUS_LABELS (+15 more)
+Cohesion: 0.09
+Nodes (39): ASSET_DETAIL_SECTION_NAV, assetClassFromDetail(), AssetDetail(), formatQuantity(), kpiVariantFromTone(), plTone(), ASSETS_SECTION_NAV, avgCostValue() (+31 more)
 
 ### Community 94 - "Community 94"
 Cohesion: 0.04
 Nodes (47): Downside deviation (cross-reference), Drawdown and downside risk, Drawdown series, Example interpretation, Example interpretation, Example interpretation, Example interpretation, Formula intuition (+39 more)
 
 ### Community 95 - "Community 95"
-Cohesion: 0.12
-Nodes (36): AssetDailyMetricsInputs, CompareResult, CompareSubjectsError, parse_compare_subjects(), ParsedCompareSubject, PerformanceMetricsResult, Invalid compare `subjects` query parameter., Parse `subjects=asset:AAPL,asset:MSFT` (MVP: exactly two asset subjects). (+28 more)
+Cohesion: 0.10
+Nodes (52): AssetDailyMetricsInputs, CompareResult, CompareSubjectsError, ParsedCompareSubject, PerformanceMetricsResult, Invalid compare `subjects` query parameter., _resolve_asset_metrics_context(), ResolvedAssetMetricsContext (+44 more)
 
 ### Community 96 - "Community 96"
 Cohesion: 0.08
 Nodes (21): filter_nav_rows_by_range(), mfapi_status_ok(), normalize_api_scheme_code(), parse_mfapi_date(), parse_mfapi_latest_nav(), parse_mfapi_nav_decimal(), parse_mfapi_nav_entries(), Parse MFAPI (AMFI-sourced) JSON — no network I/O. (+13 more)
 
 ### Community 97 - "Community 97"
-Cohesion: 0.10
-Nodes (33): getChartCrosshairCursorProps(), CHART_LEGEND_STYLE, CHART_TOOLTIP_STYLE, chartAxisTick, chartGridProps, FALLBACK, getChartAxisStroke(), getChartAxisTick() (+25 more)
+Cohesion: 0.12
+Nodes (28): getChartCrosshairCursorProps(), CHART_LEGEND_STYLE, CHART_TOOLTIP_STYLE, chartAxisTick, chartGridProps, FALLBACK, getChartAxisStroke(), getChartAxisTick() (+20 more)
 
 ### Community 98 - "Community 98"
-Cohesion: 0.12
-Nodes (16): 2026-06-06 — DOCS: MVP release checklist and API contracts index (STAB-2), 2026-06-14 — FD-ACC-1: Bank CashMovement ledger foundation, Added, Added, Added, Added, Changed, Changed (+8 more)
+Cohesion: 0.09
+Nodes (22): 2026-06-06 — DOCS: MVP release checklist and API contracts index (STAB-2), 2026-06-14 — FD-ACC-1: Bank CashMovement ledger foundation, Added, Added, Added, Added, Added, Added (+14 more)
 
 ### Community 99 - "Community 99"
 Cohesion: 0.05
-Nodes (41): 10. Portfolio value integration (planned), 11. API roadmap (planned — not implemented), 12. Implementation phases, 13. Open questions, 1. Product mental model, 2. Cash ledger model (Cash-1 implemented), 3. Supported cash currencies, 4. TWROR design impact (+33 more)
+Nodes (44): 10. Portfolio value integration (planned), 11. API roadmap (planned — not implemented), 12. Implementation phases, 13. Open questions, 1. Product mental model, 2. Cash ledger model (Cash-1 implemented), 3. Supported cash currencies, 4. TWROR design impact (+36 more)
 
 ### Community 100 - "Community 100"
 Cohesion: 0.05
-Nodes (42): App shell, App shell (Executive Portfolio OS — P4.4+), Appearance preference (Light / Dark / System), Asset Detail, Asset Detail — Metric Sheet section (Phase 8C — implemented), Assets, Cash-aware portfolio status (Cash-4A.2) — **Implemented**, Cash Ledger — frontend guardrails (+34 more)
+Nodes (43): App shell, App shell (Executive Portfolio OS — P4.4+), Appearance preference (Light / Dark / System), Asset Detail, Asset Detail — Metric Sheet section (Phase 8C — implemented), Assets, Cash-aware portfolio status (Cash-4A.2) — **Implemented**, Cash Ledger — frontend guardrails (+35 more)
 
 ### Community 101 - "Community 101"
 Cohesion: 0.10
@@ -668,48 +727,48 @@ Cohesion: 0.05
 Nodes (36): Alternative: asset-linked price table (future), Asset classification, Asset model concept, code:mermaid (erDiagram), code:text (NavProvider (planned)), Folio model concept, Frontend impact, Future exposure model (not MVP) (+28 more)
 
 ### Community 104 - "Community 104"
-Cohesion: 0.11
-Nodes (21): Asset, AssetType, HistoricalPrice, Meta, MutualFundProfile, PrimaryAssetClass, latest_nav_for_asset(), NavLookupResult (+13 more)
+Cohesion: 0.16
+Nodes (11): Asset, AssetType, HistoricalPrice, Meta, MutualFundProfile, PrimaryAssetClass, latest_nav_for_asset(), NavLookupResult (+3 more)
 
 ### Community 105 - "Community 105"
 Cohesion: 0.07
-Nodes (42): build_cash_aware_external_flows(), build_cash_aware_twror_external_flows(), build_cash_aware_xirr_external_flows(), is_cash_aware_external_ledger_entry(), Cash ledger entry classification and external-flow amounts (TWROR / XIRR)., XIRR helper returns ``(flows_by_date, fx_missing)`` for compatibility., XIRR helper returns ``(flows_by_date, fx_missing)`` for compatibility., TWROR external flow in native ledger currency.      Positive = contribution (``C (+34 more)
+Nodes (41): build_cash_aware_external_flows(), build_cash_aware_twror_external_flows(), build_cash_aware_xirr_external_flows(), is_cash_aware_external_ledger_entry(), Cash ledger entry classification and external-flow amounts (TWROR / XIRR)., XIRR helper returns ``(flows_by_date, fx_missing)`` for compatibility., XIRR helper returns ``(flows_by_date, fx_missing)`` for compatibility., TWROR external flow in native ledger currency.      Positive = contribution (``C (+33 more)
 
 ### Community 106 - "Community 106"
 Cohesion: 0.16
 Nodes (32): _buy(), _index_price(), _last_performance_fraction(), _metrics_url(), _price(), Analytics must use portfolios.xirr_service, not private summary XIRR helpers., Metric Sheet all-scope must not use pooled INR-base value/flow path., Metric Sheet cumulative return must match performance chart terminal point. (+24 more)
 
 ### Community 107 - "Community 107"
-Cohesion: 0.07
-Nodes (21): FREQUENCY_OPTIONS, SUPPORTED_CASH_CURRENCIES, activePortfolios, allBalancesFixture, bulkApplyFixture, bulkPreviewFixture, { container }, emptyBalancesFixture (+13 more)
+Cohesion: 0.09
+Nodes (13): FREQUENCY_OPTIONS, SUPPORTED_CASH_CURRENCIES, CashReverseModal(), SOURCE_LABELS, CashApiError, amountTone(), cashEntryBadgeStatus(), cashEntryTypeLabel() (+5 more)
 
 ### Community 108 - "Community 108"
-Cohesion: 0.17
-Nodes (16): _mf_payload(), Transactions page column filters — backend filter params and options., _stock(), test_date_after_before_aliases(), test_filter_by_asset_symbol_case_insensitive(), test_filter_by_portfolio_id(), test_filter_by_symbols_multi_select(), test_filter_date_between() (+8 more)
+Cohesion: 0.10
+Nodes (20): parse_compare_subjects(), Parse `subjects=asset:AAPL,asset:MSFT` (MVP: exactly two asset subjects)., _parse_metrics_query(), Shared query parsing for portfolio and asset Metric Sheet endpoints., future_cash_impact_payload(), _bulk_apply_confirmation_response(), _bulk_entries_validation_response(), _cash_write_error_response() (+12 more)
 
 ### Community 109 - "Community 109"
 Cohesion: 0.10
 Nodes (29): classification_fields_dict(), classify_mutual_fund(), _contains_any(), _haystack(), is_explicit_primary_asset_class(), MutualFundClassification, _normalized(), Pure mutual fund primary_asset_class inference (no Django imports). (+21 more)
 
 ### Community 110 - "Community 110"
-Cohesion: 0.04
-Nodes (50): 2026-06-03 — FEAT: App shell theme selector (Light / Dark / System), 2026-06-14 — FD-ACC-3.1: FD opening balance as-of-date UX, 2026-06-14 — FD-ACC-4: Fixed Deposit interest payments, 2026-06-22 — P4.4: Navigation architecture unified, 2026-06-22 — P4R: Dashboard anchor scroll offset and shell review, 2026-06-23 — P11: Final frontend redesign audit, 2026-06-23 — P5: Transactions and Cash redesign, 2026-06-23 — P6: Assets and Asset Detail redesign (+42 more)
+Cohesion: 0.06
+Nodes (35): 2026-06-03 — FEAT: App shell theme selector (Light / Dark / System), 2026-06-14 — FD-ACC-0.1: FD Accounting approved product decisions (design only), 2026-06-19 — Docs: Frontend redesign readiness governance, 2026-06-22 — P4.4: Navigation architecture unified, 2026-06-24 — CASH-MODEL-REFINE-0: Bank account portfolio link & FD funding semantics (docs only), 2026-06-24 — CASH-UNIFY-0: Unified cash domain model (design only), 2026-06-24 — CASH-UNIFY-2: FD portfolio derived from bank account, 2026-06-24 — CASH-UNIFY-3: Unified Cash / Liquid Holdings page UI (+27 more)
 
 ### Community 111 - "Community 111"
 Cohesion: 0.18
 Nodes (26): _assert_metric_sheet_metrics_shape(), _buy(), _buy_msft(), _compare_url(), _index_price(), _mf_buy(), _mf_nav(), _mf_payload() (+18 more)
 
 ### Community 112 - "Community 112"
-Cohesion: 0.08
-Nodes (40): scope_has_cash_ledger_entries(), align_single_benchmark_to_portfolio_calendar(), build_benchmark_comparison_data(), first_portfolio_metric_index(), merge_performance_and_benchmarks(), _normalize_series_index_to_naive_dates(), PerformancePoint, Benchmark index helpers for performance comparison (framework-independent).  Ben (+32 more)
+Cohesion: 0.09
+Nodes (36): merge_cash_into_value_timeseries(), Add daily cash display totals to investment ``portfolio_value`` rows.      When, Add daily cash display totals to investment ``portfolio_value`` rows.      When, Add daily cash display totals to investment ``portfolio_value`` rows.      When, scope_has_cash_ledger_entries(), align_single_benchmark_to_portfolio_calendar(), build_benchmark_comparison_data(), first_portfolio_metric_index() (+28 more)
 
 ### Community 113 - "Community 113"
-Cohesion: 0.13
-Nodes (15): 2026-06-04 — FEAT: Cash-aware TWROR and cumulative return (Cash-6C.2), Added, Added, Added, Added, Next, Next, Next (+7 more)
+Cohesion: 0.12
+Nodes (17): 2026-06-04 — FEAT: Cash-aware TWROR and cumulative return (Cash-6C.2), Added, Added, Added, Added, Next, Next, Next (+9 more)
 
 ### Community 114 - "Community 114"
 Cohesion: 0.07
-Nodes (27): _apply_display_conversion(), build_fixed_deposit_interest_report(), _exclude_cancelled(), FixedDepositInterestReportResult, _group_rows(), InterestReportGroupedTotal, InterestReportTotals, _portfolio_filter() (+19 more)
+Nodes (29): _apply_display_conversion(), build_fixed_deposit_interest_report(), _exclude_cancelled(), FixedDepositInterestReportResult, _group_rows(), InterestReportGroupedTotal, InterestReportTotals, _portfolio_filter() (+21 more)
 
 ### Community 115 - "Community 115"
 Cohesion: 0.22
@@ -729,31 +788,31 @@ Nodes (23): 1. Automated tests (preferred), 2. Ad-hoc Django exploration, 3. Dev
 
 ### Community 119 - "Community 119"
 Cohesion: 0.07
-Nodes (39): build_negative_cash_report(), check_negative_cash(), format_negative_cash_report(), NegativeCashIssue, Negative cash balance diagnostics (read-only)., _scan_portfolio_currency(), cash_balance_by_currency(), cash_balance_on_date() (+31 more)
+Nodes (46): cash_balance_by_currency(), cash_balance_on_date(), cash_balance_timeseries(), cash_balances_as_mapping(), cash_shortfall(), has_sufficient_cash(), mf_buy_cash_required(), mf_sell_cash_proceeds() (+38 more)
 
 ### Community 120 - "Community 120"
-Cohesion: 0.25
-Nodes (18): NavPoint, test_holdings_read_does_not_call_nav_provider(), test_nav_refresh_handles_provider_failure_per_scheme(), _mf_asset(), _mf_buy_with_detail(), _mf_profile(), MockNavProvider, MF-2 — mutual fund NAV sync and lookup tests. (+10 more)
+Cohesion: 0.27
+Nodes (17): NavPoint, test_holdings_read_does_not_call_nav_provider(), test_nav_refresh_handles_provider_failure_per_scheme(), _mf_asset(), _mf_buy_with_detail(), _mf_profile(), MockNavProvider, MF-2 — mutual fund NAV sync and lookup tests. (+9 more)
 
 ### Community 121 - "Community 121"
-Cohesion: 0.18
-Nodes (11): 2026-05-25 — Phase 5A: Assets page structure and holdings table, Changed, Changed, Changed, Changed, Changed, Notes, Notes (+3 more)
+Cohesion: 0.15
+Nodes (13): 2026-05-25 — Phase 5A: Assets page structure and holdings table, Changed, Changed, Changed, Changed, Changed, Changed, Notes (+5 more)
 
 ### Community 122 - "Community 122"
 Cohesion: 0.06
 Nodes (33): 10. Compare (`/compare`), 10. Proposed change template, 11. Page ownership table, 11. Settings (`/settings`), 12. Auth pages (`/login`, `/register`, `/forgot-password`), 12. Cash page (`/cash`) — **Implemented** (Cash-3B), 13. Frontend Redesign API Preservation Checklist, 14. Layout change process (+25 more)
 
 ### Community 123 - "Community 123"
-Cohesion: 0.08
-Nodes (23): addButton, clickSpy, deleteButton, downloadSpy, editButton, file, futureImpactError, input (+15 more)
+Cohesion: 0.07
+Nodes (24): addButton, clickSpy, deleteButton, downloadSpy, editButton, file, futureImpactError, input (+16 more)
 
 ### Community 124 - "Community 124"
-Cohesion: 0.08
-Nodes (16): get_or_create_initial_owner(), ensure_benchmark_indices(), assert_no_virtual_portfolio_rows(), ensure_app_settings(), cash_aware_portfolio(), legacy_seeded(), Default portfolio in legacy cash mode (pre–Cash-4A.1 rows).      Use for tests t, Default portfolio in legacy cash mode (pre–Cash-4A.1 rows).      Use for tests t (+8 more)
+Cohesion: 0.12
+Nodes (10): Command, ensure_benchmark_indices(), assert_no_virtual_portfolio_rows(), ensure_app_settings(), seeded(), test_all_portfolios_not_stored(), test_app_settings_seed_idempotent(), test_benchmark_seed_idempotent() (+2 more)
 
 ### Community 125 - "Community 125"
-Cohesion: 0.18
-Nodes (11): 2026-05-25 — Phase 6: Transactions page polish, Changed, Changed, Changed, Changed, Changed, Notes, Notes (+3 more)
+Cohesion: 0.15
+Nodes (13): 2026-05-25 — Phase 6: Transactions page polish, Changed, Changed, Changed, Changed, Changed, Changed, Notes (+5 more)
 
 ### Community 126 - "Community 126"
 Cohesion: 0.23
@@ -768,20 +827,20 @@ Cohesion: 0.24
 Nodes (21): _buy_stock(), _mf_buy(), _mf_nav(), _mf_payload(), _mf_sell(), MF-5 — mutual fund summary and performance integration tests., _stock_price(), test_performance_benchmark_still_works_with_mf() (+13 more)
 
 ### Community 129 - "Community 129"
-Cohesion: 0.19
-Nodes (19): CashLedgerPoint, Framework-independent cash ledger row for balance math., _build_sim_rows(), _cash_effect(), CsvCashPreviewResult, CsvCashPreviewSummary, CsvCashShortfallRow, CsvProposedDeposit (+11 more)
+Cohesion: 0.06
+Nodes (33): 10. Open questions (resolved or deferred), 11. References, 1. Problem statement, 2.1 Portfolio composition, 2.2 Account taxonomy, 2.3 Naming glossary, 2. Unified cash domain model, 3.1 Two ledgers remain separate internally (+25 more)
 
 ### Community 130 - "Community 130"
 Cohesion: 0.09
 Nodes (21): Asset allocation and diversification, Diversification concepts (mostly planned), Example interpretation, Formula intuition, How KPulla6 should display it, How to approximate today, Implementation notes, Implemented: holdings allocation (display) (+13 more)
 
 ### Community 131 - "Community 131"
-Cohesion: 0.12
-Nodes (18): type, MarketDataSyncResult, Run stock prices, benchmarks, and optional FX sync., Run stock prices, benchmarks, optional FX, and optional mutual fund NAV sync., sync_all_market_data(), AppSettings, Meta, _nav_provider_with_history() (+10 more)
+Cohesion: 0.11
+Nodes (20): type, MutualFundNavProvider, Return the provider's latest NAV for scheme_code, or None if unavailable., Return daily NAV rows for scheme_code in [start, end] inclusive., MarketDataSyncResult, Run stock prices, benchmarks, and optional FX sync., Run stock prices, benchmarks, optional FX, and optional mutual fund NAV sync., sync_all_market_data() (+12 more)
 
 ### Community 132 - "Community 132"
-Cohesion: 0.09
-Nodes (13): KPulla6GoogleOAuth2Adapter, Google OAuth adapter with a stable callback URL for local dev (Vite proxy)., Use a fixed redirect URI so authorize + token exchange always match., GoogleOAuth2Adapter, _register_payload(), test_google_oauth_callback_url_is_canonical(), test_register_completes_incomplete_user(), test_register_creates_user_portfolio_and_settings() (+5 more)
+Cohesion: 0.14
+Nodes (8): _register_payload(), test_register_completes_incomplete_user(), test_register_creates_user_portfolio_and_settings(), test_register_duplicate_email_returns_400(), test_register_duplicate_username_returns_400(), test_register_is_atomic_when_settings_setup_fails(), test_register_password_mismatch_returns_400(), test_register_weak_password_returns_400()
 
 ### Community 133 - "Community 133"
 Cohesion: 0.19
@@ -800,28 +859,28 @@ Cohesion: 0.10
 Nodes (19): All Portfolios, Annualization, API endpoints, Benchmark alignment, code:json ({), Critical conventions, Daily return input, Frontend display (`frontend/src`) (+11 more)
 
 ### Community 137 - "Community 137"
-Cohesion: 0.18
-Nodes (16): LoginSerializer, Meta, PasswordResetRequestSerializer, RegisterSerializer, UserSerializer, authenticate_username_or_email(), is_registration_incomplete(), register_user() (+8 more)
+Cohesion: 0.27
+Nodes (12): LoginSerializer, Meta, PasswordResetRequestSerializer, RegisterSerializer, UserSerializer, CsrfView, CurrentUserView, LoginView (+4 more)
 
 ### Community 138 - "Community 138"
 Cohesion: 0.07
-Nodes (27): bankHasLedger(), computeDisplayNetInterest(), emptyForm(), emptyRenewalForm(), emptySettlementForm(), FD_SECTION_NAV, FixedDeposits(), formatMoneyAmount() (+19 more)
+Nodes (28): bankBlocksFdCreate(), bankHasLedger(), bankPortfolioAssignmentMessage(), computeDisplayNetInterest(), emptyForm(), emptyRenewalForm(), emptySettlementForm(), FD_SECTION_NAV (+20 more)
 
 ### Community 139 - "Community 139"
-Cohesion: 0.13
-Nodes (25): CashMovementValidationError, movement_has_been_reversed(), BankCashFlowKind, CashMovement, CashMovementType, FixedDepositInterestPayment, FixedDepositStatus, Meta (+17 more)
+Cohesion: 0.12
+Nodes (29): compute_twror_series(), Chain-link TWROR over a daily valuation series (one row per calendar day).    Ea, TwrorPoint, _assert_twror_pct(), (110 - 0 - 100) / 100 = 10% cumulative., (200 - 100 - 100) / 100 = 0%., (220 - 100 - 100) / 100 = 20%., (100 - (-100) - 200) / 200 = 0%. (+21 more)
 
 ### Community 140 - "Community 140"
 Cohesion: 0.19
 Nodes (17): _mf_payload(), MF-3 — mutual fund transaction API tests., test_create_mf_buy_success(), test_create_mf_sell_success(), test_mf_create_atomic_rollback_on_detail_failure(), test_mf_create_does_not_call_external_nav_provider(), test_mf_delete_removes_detail_keeps_asset_profile_folio(), test_mf_fees_computed_from_paid_and_market_value() (+9 more)
 
 ### Community 141 - "Community 141"
-Cohesion: 0.18
-Nodes (11): 2026-05-25 — Phase 8B: Legacy CSS alias removal, Changed, Changed, Changed, Changed, Changed, Notes, Notes (+3 more)
+Cohesion: 0.15
+Nodes (13): 2026-05-25 — Phase 8B: Legacy CSS alias removal, Changed, Changed, Changed, Changed, Changed, Changed, Notes (+5 more)
 
 ### Community 142 - "Community 142"
-Cohesion: 0.18
-Nodes (11): 2026-05-29 — PERF: Dashboard summary skips unused timeseries, Changed, Changed, Changed, Changed, Changed, Impact, Impact (+3 more)
+Cohesion: 0.15
+Nodes (13): 2026-05-29 — PERF: Dashboard summary skips unused timeseries, Changed, Changed, Changed, Changed, Changed, Changed, Impact (+5 more)
 
 ### Community 143 - "Community 143"
 Cohesion: 0.35
@@ -832,8 +891,8 @@ Cohesion: 0.11
 Nodes (5): test_default_portfolio_is_returned(), test_delete_rejects_default_portfolio(), test_existing_portfolio_stays_legacy_on_re_ensure(), test_post_enforces_max_active_portfolios(), test_put_enable_cash_aware_blocks_buy_without_cash()
 
 ### Community 145 - "Community 145"
-Cohesion: 0.20
-Nodes (13): OPTIONS, ThemeSelector(), ThemeProbe(), ThemeContext, ThemeProvider(), useTheme(), applyResolvedThemeToDocument(), getSystemResolvedTheme() (+5 more)
+Cohesion: 0.11
+Nodes (22): cashLink, dashboardLink, displayCurrency, inner, main, portfolioView, primaryNav, TestHarness() (+14 more)
 
 ### Community 146 - "Community 146"
 Cohesion: 0.15
@@ -841,7 +900,7 @@ Nodes (8): BenchmarkRow(), formatDrawdownStatus(), MetricRow(), formatMetricDays
 
 ### Community 147 - "Community 147"
 Cohesion: 0.12
-Nodes (21): ASSET_DETAIL_SECTION_NAV, assetClassFromDetail(), AssetDetail(), formatQuantity(), kpiVariantFromTone(), plTone(), ASSETS_SECTION_NAV, avgCostValue() (+13 more)
+Nodes (26): convert_amount_on_date(), get_fx_rate_on_date(), Same-date FX only (no latest-rate fallback for historical dates).     Returns di, Convert using same-date FX only. Status is ok or fx_unavailable., upsert_fx_rate(), DailyFxRate, MockFxProvider, Bulk FX maps must resolve rates stored only in the inverse direction. (+18 more)
 
 ### Community 148 - "Community 148"
 Cohesion: 0.29
@@ -852,36 +911,36 @@ Cohesion: 0.24
 Nodes (15): _buy(), _price(), Regression tests for split-adjusted historical price × quantity valuation., _seed_goog_split_scenario(), _split(), test_cumulative_return_no_artificial_split_loss(), test_no_yfinance_on_performance_split_scenario(), test_no_yfinance_on_summary_split_scenario() (+7 more)
 
 ### Community 150 - "Community 150"
-Cohesion: 0.23
-Nodes (17): _add_months(), apply_bulk_cash_entries(), bulk_entries_apply_to_response_dict(), BulkEntriesApplyResult, BulkEntriesPreviewResult, BulkEntryRow, _create_manual_entry(), _find_existing_manual_entry() (+9 more)
+Cohesion: 0.30
+Nodes (14): _add_months(), apply_bulk_cash_entries(), bulk_entries_apply_to_response_dict(), bulk_entries_preview_to_response_dict(), _create_manual_entry(), _find_existing_manual_entry(), generate_schedule_dates(), _ledger_amount() (+6 more)
 
 ### Community 151 - "Community 151"
 Cohesion: 0.21
 Nodes (14): _buy(), _price(), Regression tests: Metric Sheet analytics × stock splits × cached price history., Scenario A: yfinance-style split-adjusted price history (Adj Close constant)., Scenario B: raw nominal pre-split price + post-split price (unsupported)., _seed_adjusted_price_split_scenario(), _seed_raw_nominal_price_split_scenario(), _split() (+6 more)
 
 ### Community 152 - "Community 152"
-Cohesion: 0.23
-Nodes (16): _create_bank(), test_adjustment_credit_and_debit(), test_bank_balance_not_in_portfolio_summary(), test_cash_movement_delete_not_allowed(), test_get_cash_movement_detail(), test_list_cash_movements_user_scoped(), test_list_filters_by_bank_account_id(), test_post_manual_deposit_updates_balance() (+8 more)
+Cohesion: 0.15
+Nodes (29): _bank(), _create_manual(), FD-ACC-10B: manual cash movement reversal API tests., _reverse(), test_cannot_reverse_a_reversal_row(), test_cannot_reverse_another_users_movement(), test_cannot_reverse_twice(), test_cannot_reverse_unsupported_system_movement() (+21 more)
 
 ### Community 153 - "Community 153"
-Cohesion: 0.09
-Nodes (30): build_bank_cash_xirr_external_flows(), build_legacy_portfolio_xirr_flows(), merge_portfolio_xirr(), Mutual fund cash-flow helpers for portfolio XIRR (no Django imports)., Portfolio XIRR from stock BUY/SELL (transaction date, qty×price±fees) plus MF, Legacy portfolio external XIRR flows (BUY/SELL + MF paid_value) by date.      St, calculate_portfolio_xirr(), Return annualized XIRR or None when inputs are empty or pyxirr cannot solve. (+22 more)
+Cohesion: 0.11
+Nodes (27): build_bank_cash_xirr_external_flows(), build_legacy_portfolio_xirr_flows(), merge_portfolio_xirr(), Mutual fund cash-flow helpers for portfolio XIRR (no Django imports)., Portfolio XIRR from stock BUY/SELL (transaction date, qty×price±fees) plus MF, Legacy portfolio external XIRR flows (BUY/SELL + MF paid_value) by date.      St, compute_scope_xirr(), _portfolio_base_currency() (+19 more)
 
 ### Community 154 - "Community 154"
-Cohesion: 0.15
-Nodes (37): create_fd_opening_cash_movement(), create_fixed_deposit(), _bank(), _fd_payload(), Deposit on 2023-09-24; FD on 2023-09-23 must fail despite higher current balance, test_create_fd_and_opening_movement_atomic(), test_create_fd_fails_when_opening_balance_not_seeded(), test_create_fd_rejects_insufficient_bank_balance() (+29 more)
+Cohesion: 0.09
+Nodes (61): cash_diagnostics_to_dict(), create_fd_opening_cash_movement(), create_bank_account(), create_fixed_deposit(), fund_bank_account(), Credit a bank account via MANUAL_DEPOSIT so FD opening debits can succeed., Credit a bank account via MANUAL_DEPOSIT so FD opening debits can succeed., test_link_delink_creates_no_cash_movement() (+53 more)
 
 ### Community 155 - "Community 155"
 Cohesion: 0.13
 Nodes (14): “Am I beating the market?”, “Am I winning?”, Behavioral interpretation for users, code:bash (make refresh), Copy patterns for UI (KPulla6), Emotional mapping (drawdowns), FAQ-style misconceptions, Golden rules (+6 more)
 
 ### Community 156 - "Community 156"
-Cohesion: 0.18
-Nodes (11): 2026-06-04 — FEAT: Transaction edit/delete future-impact errors (TXN-AUDIT-2/3), Added, Added, Added, Added, Added, Documented, Documented (+3 more)
+Cohesion: 0.15
+Nodes (13): 2026-06-04 — FEAT: Transaction edit/delete future-impact errors (TXN-AUDIT-2/3), Added, Added, Added, Added, Added, Added, Documented (+5 more)
 
 ### Community 157 - "Community 157"
-Cohesion: 0.17
-Nodes (7): _parse_bool(), SettingsSerializer, SettingsUpdateSerializer, get_settings(), is_valid_display_currency(), update_settings(), SettingsView
+Cohesion: 0.22
+Nodes (6): SettingsSerializer, SettingsUpdateSerializer, get_settings(), is_valid_display_currency(), update_settings(), SettingsView
 
 ### Community 158 - "Community 158"
 Cohesion: 0.14
@@ -892,8 +951,8 @@ Cohesion: 0.29
 Nodes (9): _mf_nav_freshness_issue(), Return ``missing`` or ``stale`` when an MF NAV warning is warranted, else None., _mf_buy(), _mf_nav(), _mf_txns(), test_mf_nav_freshness_missing_warning_when_no_cached_nav(), test_mf_nav_freshness_no_warning_for_recent_friday_nav_on_sunday_end(), test_mf_nav_freshness_no_warning_within_five_calendar_days() (+1 more)
 
 ### Community 160 - "Community 160"
-Cohesion: 0.12
-Nodes (26): _earliest_stock_price_date(), _latest_stock_price_date(), Incremental sync for one stock symbol. Returns False on provider failure., Incrementally sync STOCK historical prices for transaction symbols.     When onl, Incrementally sync STOCK historical prices for transaction symbols.     When onl, Choose provider fetch start for incremental stock price sync.      - No cached r, Incremental sync for one stock symbol. Returns False on provider failure., resolve_stock_sync_start_date() (+18 more)
+Cohesion: 0.14
+Nodes (17): Incrementally sync STOCK historical prices for transaction symbols.     When onl, Incrementally sync STOCK historical prices for transaction symbols.     When onl, StockSyncResult, sync_stock_prices(), earliest_stock_transaction_date(), earliest_transaction_date(), earliest_transaction_date_for_symbol(), _mutual_fund_asset_symbols() (+9 more)
 
 ### Community 161 - "Community 161"
 Cohesion: 0.15
@@ -1008,8 +1067,8 @@ Cohesion: 0.18
 Nodes (11): Example interpretation, Formula intuition, How KPulla6 should display it, Implementation notes, Related metrics, Simple meaning, Tracking error (annualized), What it means to the user (+3 more)
 
 ### Community 189 - "Community 189"
-Cohesion: 0.13
-Nodes (31): Command, One-time repair for FDs deactivated before FD-ACC-10A cancel workflow., get_unreversed_fd_opening_cash_movement(), assess_deactivated_fd_opening_repair(), _fd_queryset(), find_deactivated_fd_opening_repair_candidates(), One-time repair for FDs deactivated before FD-ACC-10A cancel workflow (FD-ACC-10, Repair a single deactivated FD by reversing its unreversed FD_OPENING. (+23 more)
+Cohesion: 0.09
+Nodes (40): Command, One-time repair for FDs deactivated before FD-ACC-10A cancel workflow., PortfolioAssignmentStatus, get_fd_opening_cash_movement_id(), get_unreversed_fd_opening_cash_movement(), FixedDeposit, Fixed deposit debt investment linked to a portfolio and bank account., Fixed deposit debt investment linked to a portfolio and bank account. (+32 more)
 
 ### Community 190 - "Community 190"
 Cohesion: 0.23
@@ -1020,8 +1079,8 @@ Cohesion: 0.24
 Nodes (10): Authentication (implemented), code:json ({), code:json ({), code:json ({), code:json ({), code:json ({), Health, Implemented in KPulla6 (+2 more)
 
 ### Community 192 - "Community 192"
-Cohesion: 0.13
-Nodes (15): Cash API surface (implemented vs planned), Cash Ledger, code:json ({), code:json ({), code:json ({), `DELETE /api/v1/cash/ledger/{id}` — **204 No Content**, Future impact error (Cash-4D) — **409 Conflict**, Implemented (Cash-3D / Cash-4D) — edit / delete manual ledger entries (+7 more)
+Cohesion: 0.17
+Nodes (13): Cash API surface (implemented vs planned), Cash Ledger, code:json ({), code:json ({), code:json ({), Common error response (target), Implemented (Cash-4A) — cash-aware BUY/SELL settlements, Implemented (Cash-7D) — bulk cash entries schedule (+5 more)
 
 ### Community 193 - "Community 193"
 Cohesion: 0.20
@@ -1040,60 +1099,60 @@ Cohesion: 0.67
 Nodes (3): normalized_cumulative_return_series(), Rebased cumulative fractional returns for side-by-side comparison.      The firs, test_normalized_cumulative_return_series_first_point_zero()
 
 ### Community 197 - "Community 197"
-Cohesion: 0.14
-Nodes (31): build_bank_cash_twror_external_flows(), classify_bank_cash_movement(), _classify_non_reversal_movement(), _offset_kind(), Bank cash movement classification for portfolio return metrics (FD-ACC-8C)., Classify a bank ``CashMovement`` for portfolio return metrics.      Only movemen, TWROR external flow in native currency (contribution +, withdrawal -)., Investor-perspective XIRR flow (contribution -, withdrawal +). (+23 more)
+Cohesion: 0.23
+Nodes (22): build_bank_cash_twror_external_flows(), classify_bank_cash_movement(), Classify a bank ``CashMovement`` for portfolio return metrics.      Only movemen, Classify a bank ``CashMovement`` for portfolio return metrics.      Only movemen, _bank(), _enable(), FD-ACC-8C: bank cash movement classification for return metrics., _scope() (+14 more)
 
 ### Community 198 - "Community 198"
 Cohesion: 0.36
 Nodes (7): last_stock_prices_on_or_before(), latest_stock_prices_by_symbol(), list_index_prices_in_range(), list_stock_prices_in_range(), Benchmark index rows (asset_type INDEX), ascending by date., Latest cached stock row per symbol with ``date <= as_of`` (for range bootstrap)., _stock_filter()
 
 ### Community 199 - "Community 199"
-Cohesion: 0.23
-Nodes (28): create_fixed_deposit_interest_payment(), _bank(), _create_fd(), FD-TAX-1: fixed deposit interest and tax withheld report API., _report(), test_report_date_range_filter(), test_report_display_currency_conversion(), test_report_does_not_mutate_accounting_state() (+20 more)
+Cohesion: 0.12
+Nodes (57): create_fixed_deposit_interest_payment(), _bank(), _create_fd(), _fd_payload(), _interest_payload(), test_backend_uses_fd_bank_account_only(), test_compounded_fd_returns_warning_but_succeeds(), test_create_interest_payment_creates_fd_interest_credit() (+49 more)
 
 ### Community 200 - "Community 200"
 Cohesion: 0.07
 Nodes (29): Allocation / Composition Widgets, Card Style, Chart Layout, Chart Style, Clutter Control, Color System, Context Sidebar, Dark / Light Mode (+21 more)
 
 ### Community 201 - "Community 201"
-Cohesion: 0.13
-Nodes (21): getChartAnimationProps(), prefersReducedMotion(), CHART_DENSITY_VARIANTS, DENSITY_CONFIG, getChartDensity(), getChartHeight(), getChartMargin(), getChartMinTickGap() (+13 more)
+Cohesion: 0.14
+Nodes (18): getChartAnimationProps(), prefersReducedMotion(), CHART_DENSITY_VARIANTS, DENSITY_CONFIG, getChartDensity(), getChartHeight(), getChartMargin(), getChartMinTickGap() (+10 more)
 
 ### Community 202 - "Community 202"
 Cohesion: 0.29
 Nodes (6): Document map, How to use these docs, Implementation status (summary), Metric article template, Portfolio Finance Knowledge Base — KPulla6 (Portfolio Insight), Related project docs
 
 ### Community 203 - "Community 203"
-Cohesion: 0.29
-Nodes (6): defaultFetchOptions, file, mockResponse, params, payload, responseBody
+Cohesion: 0.25
+Nodes (7): blob, defaultFetchOptions, file, mockResponse, params, payload, responseBody
 
 ### Community 204 - "Community 204"
 Cohesion: 0.08
 Nodes (23): emptyCashForm(), CashShortfallDisplay(), purchaseShortfallGuidance(), appendSellSettlementFields(), buildMutualFundPayload(), buildStockPayload(), emptyMutualFundForm(), emptyStockForm() (+15 more)
 
 ### Community 205 - "Community 205"
-Cohesion: 0.08
-Nodes (60): BulkEntriesBlockedError, BulkEntriesValidationError, Apply blocked — e.g. withdrawal schedule would drive balance negative., CashEntryType, CashLedgerEntry, CashTransferGroup, Meta, Portfolio cash ledger row. Signed ``amount``: positive increases cash,     negat (+52 more)
+Cohesion: 0.07
+Nodes (81): BulkEntriesApplyResult, BulkEntriesBlockedError, BulkEntriesPreviewResult, BulkEntriesValidationError, BulkEntryRow, Apply blocked — e.g. withdrawal schedule would drive balance negative., CashEntryType, CashLedgerEntry (+73 more)
 
 ### Community 206 - "Community 206"
-Cohesion: 0.14
-Nodes (42): bank_account_has_ledger(), bank_account_ledger_metadata(), CashMovementListResult, CashMovementNotFoundError, CashMovementValidationError, compute_bank_account_balance(), create_cash_movement(), create_fd_interest_cash_movement() (+34 more)
+Cohesion: 0.07
+Nodes (55): bank_account_has_ledger(), bank_account_ledger_metadata(), CashMovementListResult, CashMovementValidationError, compute_bank_account_balance(), create_cash_movement(), create_fd_interest_cash_movement(), create_fd_opening_reversal_cash_movement() (+47 more)
 
 ### Community 207 - "Community 207"
 Cohesion: 0.33
 Nodes (6): code:json ({), code:json ({), `GET /api/v1/cash/balances`, `GET /api/v1/cash/ledger`, Implemented (Cash-2) — read APIs, Portfolios — `cash_aware_enabled` (Cash-2, Cash-4A.1)
 
 ### Community 209 - "Community 209"
-Cohesion: 0.13
-Nodes (36): Positive cash need for a stock/ETF BUY settlement., Positive cash credited for a stock/ETF SELL settlement (gross minus fees)., stock_buy_cash_required(), stock_sell_cash_proceeds(), test_stock_buy_and_sell_settlement_amounts(), _apply_settlement_spec(), delete_linked_settlement_before_transaction(), _delete_surplus_linked_entries() (+28 more)
+Cohesion: 0.09
+Nodes (47): assert_delete_entries_would_not_make_cash_negative(), assert_delete_settlement_would_not_make_cash_negative(), assert_sufficient_cash_for_purchase(), Raise ``InsufficientCashError`` when buy settlement cannot be funded., Raise ``InsufficientCashError`` when buy settlement cannot be funded., Raise ``InsufficientCashError`` when buy settlement cannot be funded., Block deleting a settlement that would drive later balances negative., Block deleting linked settlements when net removal would drive balances negative (+39 more)
 
 ### Community 210 - "Community 210"
-Cohesion: 0.10
-Nodes (20): 2026-05-27 — Fix split-adjusted value history valuation, Added, Added, Added, Added, Changed, Changed, Changed (+12 more)
+Cohesion: 0.09
+Nodes (22): 2026-05-27 — Fix split-adjusted value history valuation, Added, Added, Added, Added, Changed, Changed, Changed (+14 more)
 
 ### Community 211 - "Community 211"
-Cohesion: 0.11
-Nodes (18): 2026-05-28 — SYNC-1: Incremental sync correctness and benchmark backfill parity, Added, Added, Added, Added, Changed, Changed, Changed (+10 more)
+Cohesion: 0.09
+Nodes (22): 2026-05-28 — SYNC-1: Incremental sync correctness and benchmark backfill parity, Added, Added, Added, Added, Added, Changed, Changed (+14 more)
 
 ### Community 212 - "Community 212"
 Cohesion: 0.31
@@ -1104,12 +1163,16 @@ Cohesion: 0.29
 Nodes (21): _bank(), _create_fd(), _fd_payload(), _settle_payload(), test_bank_cash_not_in_portfolio_summary_after_settlement(), test_legacy_fd_without_opening_movement_can_be_settled(), test_list_settlements_for_fd(), test_mark_matured_active_to_matured_no_cash_movement() (+13 more)
 
 ### Community 214 - "Community 214"
-Cohesion: 0.11
-Nodes (19): 2026-06-04 — FEAT: Same-currency cash enforcement verification (Cash-4E), Added, Added, Added, Documented, Documented, Documented, Documented (+11 more)
+Cohesion: 0.09
+Nodes (23): 2026-06-04 — FEAT: Same-currency cash enforcement verification (Cash-4E), Added, Added, Added, Added, Documented, Documented, Documented (+15 more)
 
 ### Community 215 - "Community 215"
-Cohesion: 0.07
-Nodes (28): 2026-05-31 — FIX: All Portfolios cumulative_return and TWROR gaps (Phase 12B follow-up #3), 2026-05-31 — PERF: Range-aware all-scope value series builder (Phase B2B), Added, Added, Added, Added, Added, Added (+20 more)
+Cohesion: 0.12
+Nodes (17): 2026-05-31 — PERF: Range-aware all-scope value series builder (Phase B2B), Added, Added, Added, Added, Added, Changed, Changed (+9 more)
+
+### Community 216 - "Community 216"
+Cohesion: 0.12
+Nodes (23): _mf_holding_key(), _scheme_name_for_mf_txns(), normalize_scheme_code(), AMFI scheme_code: strip whitespace only (do not uppercase numeric codes)., mutual_fund_nav_sync_warnings(), run_mutual_fund_nav_refresh(), last_mutual_fund_navs_on_or_before(), latest_mutual_fund_navs_by_scheme() (+15 more)
 
 ### Community 217 - "Community 217"
 Cohesion: 0.11
@@ -1120,164 +1183,164 @@ Cohesion: 0.07
 Nodes (26): Allocation And Composition, Allocation Charts, Asset Detail Chart, Chart Data And Interaction Patterns, Chart UX Patterns Found, Compare Chart, Dashboard Chart, Dashboard Performance Chart (+18 more)
 
 ### Community 219 - "Community 219"
-Cohesion: 0.13
-Nodes (15): 2026-05-25 — Phase 1: UI primitive components, Added, Added, Added, Added, Changed, Changed, Changed (+7 more)
+Cohesion: 0.11
+Nodes (18): 2026-05-25 — Phase 1: UI primitive components, Added, Added, Added, Added, Added, Changed, Changed (+10 more)
 
 ### Community 220 - "Community 220"
-Cohesion: 0.13
-Nodes (15): 2026-05-25 — Phase 3B: Dashboard chart container and theme, Added, Added, Added, Added, Added, Changed, Changed (+7 more)
+Cohesion: 0.11
+Nodes (18): 2026-05-25 — Phase 3B: Dashboard chart container and theme, Added, Added, Added, Added, Added, Added, Changed (+10 more)
 
 ### Community 221 - "Community 221"
-Cohesion: 0.14
-Nodes (14): 2026-05-26 — Phase MF-0: Indian Mutual Funds design documentation, Added, Added, Added, Added, Added, Changed, Changed (+6 more)
+Cohesion: 0.12
+Nodes (17): 2026-05-26 — Phase MF-0: Indian Mutual Funds design documentation, Added, Added, Added, Added, Added, Added, Changed (+9 more)
 
 ### Community 222 - "Community 222"
-Cohesion: 0.12
-Nodes (16): 2026-05-26 — Phase MF-10: Live mutual fund NAV provider, Added, Added, Added, Added, Added, Changed, Changed (+8 more)
+Cohesion: 0.11
+Nodes (19): 2026-05-26 — Phase MF-10: Live mutual fund NAV provider, Added, Added, Added, Added, Added, Added, Changed (+11 more)
 
 ### Community 223 - "Community 223"
-Cohesion: 0.14
-Nodes (14): 2026-05-26 — Phase MF-1: Mutual fund schema foundation, Added, Added, Added, Added, Added, Changed, Changed (+6 more)
+Cohesion: 0.12
+Nodes (17): 2026-05-26 — Phase MF-1: Mutual fund schema foundation, Added, Added, Added, Added, Added, Added, Changed (+9 more)
 
 ### Community 224 - "Community 224"
-Cohesion: 0.12
-Nodes (16): 2026-05-26 — Phase MF-3: Mutual fund transaction API, Added, Added, Added, Added, Added, Changed, Changed (+8 more)
+Cohesion: 0.11
+Nodes (19): 2026-05-26 — Phase MF-3: Mutual fund transaction API, Added, Added, Added, Added, Added, Added, Changed (+11 more)
 
 ### Community 225 - "Community 225"
 Cohesion: 0.11
 Nodes (17): 1. STAB-5B decision, 2. Frontend → backend mapping, 3. Real Postgres dev baseline (2026-06-06), 4. MVP performance targets, 5.1 Summary — repeated FX, prices, transactions, 5.2 Metric Sheet — duplicates value and flow work, 5.3 cumulative_return and TWROR — duplicate return construction, 5.4 ALL range — points vs queries (+9 more)
 
 ### Community 226 - "Community 226"
-Cohesion: 0.08
-Nodes (26): 2026-05-26 — Phase MF-5: Mutual fund summary and performance, 2026-05-31 — FIX: Metric Sheet polish (Phase 10B), Added, Added, Added, Added, Added, Changed (+18 more)
+Cohesion: 0.06
+Nodes (31): 2026-05-26 — Phase MF-5: Mutual fund summary and performance, 2026-05-31 — FIX: Metric Sheet polish (Phase 10B), Added, Added, Added, Added, Added, Added (+23 more)
 
 ### Community 227 - "Community 227"
-Cohesion: 0.25
-Nodes (20): _enable_cash_aware(), _error_text(), _ledger_points(), _legacy_portfolio(), _mf_payload(), CASH-SELL-1B — actual SELL proceeds with TAX_WITHHELD ledger row., _stock_payload(), test_buy_rejects_actual_cash_received() (+12 more)
+Cohesion: 0.13
+Nodes (36): build_ledger_entry_details(), _fallback_details(), _fmt_decimal(), _fmt_money(), _fx_conversion_details(), _join_parts(), _manual_entry_details(), _mf_calculated_proceeds() (+28 more)
 
 ### Community 228 - "Community 228"
-Cohesion: 0.11
-Nodes (19): 2026-05-31 — AUDIT: Metric Sheet release readiness (Phase 12A), Added, Added, Added, Added, Changed, Changed, Changed (+11 more)
+Cohesion: 0.10
+Nodes (21): 2026-05-31 — AUDIT: Metric Sheet release readiness (Phase 12A), Added, Added, Added, Added, Changed, Changed, Changed (+13 more)
 
 ### Community 229 - "Community 229"
-Cohesion: 0.21
-Nodes (11): emit_json(), portfolios_for_scope(), print_scope_header(), Shared helpers for read-only diagnostic scripts., resolve_diagnostic_scope(), resolve_user(), build_nav_coverage_report(), format_nav_coverage_report() (+3 more)
+Cohesion: 0.17
+Nodes (15): emit_json(), portfolios_for_scope(), print_scope_header(), Shared helpers for read-only diagnostic scripts., resolve_diagnostic_scope(), resolve_user(), build_nav_coverage_report(), check_nav_coverage() (+7 more)
 
 ### Community 230 - "Community 230"
-Cohesion: 0.13
-Nodes (15): 2026-05-27 — MF-11a: Mutual fund CSV import (backend), Added, Added, Added, Added, Changed, Changed, Changed (+7 more)
+Cohesion: 0.12
+Nodes (17): 2026-05-27 — MF-11a: Mutual fund CSV import (backend), Added, Added, Added, Added, Added, Changed, Changed (+9 more)
 
 ### Community 231 - "Community 231"
-Cohesion: 0.12
-Nodes (16): 2026-05-27 — Data safety guardrails, Added, Added, Added, Added, Added, Changed, Changed (+8 more)
+Cohesion: 0.11
+Nodes (18): 2026-05-27 — Data safety guardrails, Added, Added, Added, Added, Added, Changed, Changed (+10 more)
 
 ### Community 232 - "Community 232"
-Cohesion: 0.32
-Nodes (19): _bank(), _create_fd(), _fd_payload(), _interest_payload(), test_backend_uses_fd_bank_account_only(), test_compounded_fd_returns_warning_but_succeeds(), test_create_interest_payment_creates_fd_interest_credit(), test_interest_payment_detail_get() (+11 more)
+Cohesion: 0.10
+Nodes (19): Command, Infer BankAccount.portfolio from linked FDs and cash movements (CASH-UNIFY-1)., apply_bank_account_portfolio_inference(), bank_account_associated_portfolio_ids(), bank_account_portfolio_assignment_status(), _bank_accounts_for_inference(), BankAccountInferenceReport, build_bank_account_inference_report() (+11 more)
 
 ### Community 233 - "Community 233"
-Cohesion: 0.23
-Nodes (13): build_dashboard_endpoint_cases(), _count_warnings(), EndpointNotes, EndpointProfile, format_profile_table(), _normalize_sql(), profile_call(), profile_dashboard_read_paths() (+5 more)
+Cohesion: 0.16
+Nodes (21): build_dashboard_endpoint_cases(), _count_warnings(), EndpointNotes, EndpointProfile, format_profile_table(), _normalize_sql(), profile_call(), profile_dashboard_read_paths() (+13 more)
 
 ### Community 234 - "Community 234"
-Cohesion: 0.08
-Nodes (25): 2026-05-27 — LAN / iPad access via Vite (port 5173), 2026-05-27 — MF-11b: Mutual fund CSV import guidance (frontend), Added, Added, Added, Added, Added, Changed (+17 more)
+Cohesion: 0.12
+Nodes (16): 2026-05-27 — MF-11b: Mutual fund CSV import guidance (frontend), Added, Added, Added, Added, Added, Added, Changed (+8 more)
 
 ### Community 235 - "Community 235"
 Cohesion: 0.12
-Nodes (16): 2026-05-27 — Portfolio CRUD UI + bulk transaction assignment, Added, Added, Added, Added, Added, Changed, Changed (+8 more)
+Nodes (17): 2026-05-27 — Portfolio CRUD UI + bulk transaction assignment, Added, Added, Added, Added, Added, Added, Changed (+9 more)
 
 ### Community 236 - "Community 236"
-Cohesion: 0.12
-Nodes (16): 2026-05-27 — Stock price sync backfill for coverage gaps, Added, Added, Added, Added, Added, Fixed, Fixed (+8 more)
+Cohesion: 0.11
+Nodes (19): 2026-05-27 — Stock price sync backfill for coverage gaps, Added, Added, Added, Added, Added, Added, Fixed (+11 more)
 
 ### Community 237 - "Community 237"
-Cohesion: 0.13
-Nodes (15): 2026-05-28 — FIX-1: Dashboard display-currency flicker and stale API responses, Added, Added, Added, Added, Changed, Changed, Changed (+7 more)
+Cohesion: 0.11
+Nodes (18): 2026-05-28 — FIX-1: Dashboard display-currency flicker and stale API responses, Added, Added, Added, Added, Added, Changed, Changed (+10 more)
 
 ### Community 238 - "Community 238"
-Cohesion: 0.12
-Nodes (16): 2026-05-28 — FIX-2: All Portfolios summary aggregation (mixed currency / MF), Added, Added, Added, Added, Added, Changed, Changed (+8 more)
+Cohesion: 0.11
+Nodes (18): 2026-05-28 — FIX-2: All Portfolios summary aggregation (mixed currency / MF), Added, Added, Added, Added, Added, Changed, Changed (+10 more)
 
 ### Community 239 - "Community 239"
 Cohesion: 0.19
 Nodes (17): contributes_to_portfolio_value(), expected_maturity_value(), fixed_deposit_principal_value(), Pure fixed-deposit valuation helpers (no Django imports)., Return True when principal should count toward portfolio value., Principal-only portfolio value for a fixed deposit.      MVP: no interest accrua, Estimate maturity value (not used in portfolio current value in MVP).      COMPO, _years_between() (+9 more)
 
 ### Community 240 - "Community 240"
-Cohesion: 0.09
-Nodes (22): Approved product decisions (FD-ACC-0.1), B. MVP accounting principles, FD-ACC-10A implementation notes (2026-06-24), FD-ACC-1 implementation notes (2026-06-14), FD-ACC-4 implementation notes (2026-06-14), FD-ACC-5 implementation notes (2026-06-14), FD-ACC-6 implementation notes (2026-06-14), FD-ACC-7 implementation notes (2026-06-14) (+14 more)
+Cohesion: 0.08
+Nodes (24): Approved product decisions (FD-ACC-0.1), B. MVP accounting principles, FD-ACC-10A implementation notes (2026-06-24), FD-ACC-1 implementation notes (2026-06-14), FD-ACC-4 implementation notes (2026-06-14), FD-ACC-5 implementation notes (2026-06-14), FD-ACC-6 implementation notes (2026-06-14), FD-ACC-7 implementation notes (2026-06-14) (+16 more)
 
 ### Community 241 - "Community 241"
-Cohesion: 0.13
-Nodes (15): 2026-05-30 — FEAT: Asset Detail Metric Sheet integration (Phase 8C), Added, Added, Added, Added, Added, Changed, Changed (+7 more)
+Cohesion: 0.11
+Nodes (18): 2026-05-30 — FEAT: Asset Detail Metric Sheet integration (Phase 8C), Added, Added, Added, Added, Added, Added, Changed (+10 more)
 
 ### Community 242 - "Community 242"
-Cohesion: 0.12
-Nodes (17): 2026-05-19 — Phase 5: CSV import and stock splits, Added, Added, Added, Added, Added, Docs updated, Not included (+9 more)
+Cohesion: 0.10
+Nodes (20): 2026-05-19 — Phase 5: CSV import and stock splits, Added, Added, Added, Added, Added, Added, Docs updated (+12 more)
 
 ### Community 243 - "Community 243"
-Cohesion: 0.12
-Nodes (16): 2026-05-30 — FEAT: Benchmark-relative Metric Sheet metrics (Phase 4), Added, Added, Added, Added, Added, Changed, Changed (+8 more)
+Cohesion: 0.11
+Nodes (19): 2026-05-30 — FEAT: Benchmark-relative Metric Sheet metrics (Phase 4), Added, Added, Added, Added, Added, Added, Changed (+11 more)
 
 ### Community 244 - "Community 244"
-Cohesion: 0.15
-Nodes (17): ChartRechartsTooltip(), CHART_SERIES_ROLES, getSeriesColorForRole(), getBenchmarkLineColors(), getBenchmarkSeriesColor(), getPortfolioSeriesColor(), getSeriesColor(), buildDashboardPerformanceChartConfig() (+9 more)
+Cohesion: 0.22
+Nodes (7): ChartRechartsTooltip(), CHART_SERIES_ROLES, getSeriesColorForRole(), getBenchmarkLineColors(), getBenchmarkSeriesColor(), getPortfolioSeriesColor(), getSeriesColor()
 
 ### Community 245 - "Community 245"
-Cohesion: 0.13
-Nodes (15): 2026-05-30 — FEAT: Dashboard Metric Sheet integration (Phase 8B), Added, Added, Added, Added, Added, Changed, Changed (+7 more)
+Cohesion: 0.11
+Nodes (19): 2026-05-30 — FEAT: Dashboard Metric Sheet integration (Phase 8B), Added, Added, Added, Added, Added, Added, Changed (+11 more)
 
 ### Community 246 - "Community 246"
-Cohesion: 0.13
-Nodes (15): 2026-05-30 — FEAT: Metric Sheet frontend foundation (Phase 8A), Added, Added, Added, Added, Added, Changed, Changed (+7 more)
+Cohesion: 0.11
+Nodes (18): 2026-05-30 — FEAT: Metric Sheet frontend foundation (Phase 8A), Added, Added, Added, Added, Added, Added, Changed (+10 more)
 
 ### Community 247 - "Community 247"
-Cohesion: 0.17
-Nodes (24): fixed_deposit_has_unreversed_opening_cash_movement(), cancel_fixed_deposit(), Fixed deposit cancellation with FD_OPENING bank ledger reversal (FD-ACC-10A)., deactivate_bank_account(), deactivate_fixed_deposit(), _fixed_deposits_queryset(), FixedDepositNotFoundError, FixedDepositValidationError (+16 more)
+Cohesion: 0.07
+Nodes (23): fixed_deposit_has_opening_cash_movement(), fixed_deposit_has_unreversed_opening_cash_movement(), cancel_fixed_deposit(), Fixed deposit cancellation with FD_OPENING bank ledger reversal (FD-ACC-10A)., BankAccountSerializer, CashMovementSerializer, FixedDepositSerializer, deactivate_bank_account() (+15 more)
 
 ### Community 248 - "Community 248"
-Cohesion: 0.12
-Nodes (16): 2026-05-30 — FEAT: Portfolio analytics API (Phase 5), Added, Added, Added, Added, Added, Changed, Changed (+8 more)
+Cohesion: 0.11
+Nodes (19): 2026-05-30 — FEAT: Portfolio analytics API (Phase 5), Added, Added, Added, Added, Added, Added, Changed (+11 more)
 
 ### Community 249 - "Community 249"
-Cohesion: 0.09
-Nodes (22): 2026-05-19 — Phase 6: Finance domain layer, 2026-06-24 — FD-ACC-10B: General reversal / correction framework, Added, Added, Added, Added, Added, Added (+14 more)
+Cohesion: 0.10
+Nodes (20): 2026-05-19 — Phase 6: Finance domain layer, Added, Added, Added, Added, Added, Added, Not included (+12 more)
 
 ### Community 250 - "Community 250"
-Cohesion: 0.10
-Nodes (20): Accounting Phase 1 (FD-ACC-1..10B implemented; FD-TAX-1 report), Accounting Phase 1 (FD-ACC-1..5 implemented), Allocation buckets (dashboard), API contracts, Bank accounts, BankAccount model, code:json ({), Dashboard UX (+12 more)
+Cohesion: 0.09
+Nodes (22): Accounting Phase 1 (FD-ACC-1..10B implemented; FD-TAX-1/1A/2), Accounting Phase 1 (FD-ACC-1..10B implemented; FD-TAX-1 report), Accounting Phase 1 (FD-ACC-1..5 implemented), Allocation buckets (dashboard), API contracts, Bank accounts, BankAccount model, code:json ({) (+14 more)
 
 ### Community 251 - "Community 251"
-Cohesion: 0.11
-Nodes (19): 2026-05-31 — FIX: Dashboard Metric Sheet layout + MF NAV freshness warnings (Phase 12B), Added, Added, Added, Added, Changed, Changed, Changed (+11 more)
+Cohesion: 0.09
+Nodes (22): 2026-05-31 — FIX: Dashboard Metric Sheet layout + MF NAV freshness warnings (Phase 12B), Added, Added, Added, Added, Added, Changed, Changed (+14 more)
 
 ### Community 252 - "Community 252"
-Cohesion: 0.13
-Nodes (15): 2026-05-31 — FEAT: Metric Sheet monthly returns grid (Phase 11A), Added, Added, Added, Added, Added, Changed, Changed (+7 more)
+Cohesion: 0.11
+Nodes (18): 2026-05-31 — FEAT: Metric Sheet monthly returns grid (Phase 11A), Added, Added, Added, Added, Added, Added, Changed (+10 more)
 
 ### Community 253 - "Community 253"
-Cohesion: 0.07
-Nodes (54): build_portfolio_performance_metrics(), Calm data-quality warnings when cached prices or NAVs are missing in-range., Pre-build per-symbol value series only for symbols with stock splits., Detect likely raw (non-split-adjusted) cached prices when STOCK_SPLIT rows exist, _slice_timeseries_for_range(), _split_adjusted_price_inconsistency_warnings(), _split_symbol_timeseries_cache(), _timeseries_to_value_points() (+46 more)
+Cohesion: 0.14
+Nodes (25): performance_list_payload(), _to_response_point(), _assert_points_match(), _mf_buy(), _mf_nav(), _mf_payload(), pln_mf_scope(), _points_by_date() (+17 more)
 
 ### Community 254 - "Community 254"
-Cohesion: 0.29
-Nodes (15): build_ledger_entry_details(), _fallback_details(), _fmt_decimal(), _fmt_money(), _fx_conversion_details(), _join_parts(), _manual_entry_details(), _mf_calculated_proceeds() (+7 more)
+Cohesion: 0.11
+Nodes (21): _bank_account_in_overview_scope(), _bank_accounts_for_user(), _broker_rows_for_scope(), build_cash_overview(), cash_overview_to_response_dict(), CashOverviewResult, Read-only unified broker + bank cash overview (CASH-UNIFY-1)., Return (include, exclusion_reason) where exclusion_reason is     'unassigned' | (+13 more)
 
 ### Community 255 - "Community 255"
-Cohesion: 0.12
-Nodes (16): 2026-05-31 — FIX: All Portfolios value history gap after DNP.WA buy (Phase 12B follow-up #2), Added, Added, Added, Added, Added, Fixed, Fixed (+8 more)
+Cohesion: 0.11
+Nodes (18): 2026-05-31 — FIX: All Portfolios value history gap after DNP.WA buy (Phase 12B follow-up #2), Added, Added, Added, Added, Added, Added, Fixed (+10 more)
 
 ### Community 256 - "Community 256"
-Cohesion: 0.09
-Nodes (22): 2026-05-31 — PERF: All-scope bulk FX maps for performance and Metric Sheet (Phase B1), 2026-06-08 — CASH-SELL-1B: Actual SELL proceeds + TAX_WITHHELD ledger row, Added, Added, Added, Added, Added, Added (+14 more)
+Cohesion: 0.12
+Nodes (17): 2026-05-31 — PERF: All-scope bulk FX maps for performance and Metric Sheet (Phase B1), Added, Added, Added, Added, Changed, Changed, Changed (+9 more)
 
 ### Community 257 - "Community 257"
-Cohesion: 0.14
-Nodes (14): 2026-06-02 — Phase 13A: Sidebar context controls at top, Added, Added, Added, Added, Changed, Changed, Changed (+6 more)
+Cohesion: 0.12
+Nodes (16): 2026-06-02 — Phase 13A: Sidebar context controls at top, Added, Added, Added, Added, Added, Changed, Changed (+8 more)
 
 ### Community 258 - "Community 258"
-Cohesion: 0.13
-Nodes (15): 2026-06-03 — FEAT: User authentication and per-user data scoping, Added, Added, Added, Added, Added, Changed, Changed (+7 more)
+Cohesion: 0.12
+Nodes (17): 2026-06-03 — FEAT: User authentication and per-user data scoping, Added, Added, Added, Added, Added, Added, Changed (+9 more)
 
 ### Community 259 - "Community 259"
 Cohesion: 0.18
@@ -1288,60 +1351,60 @@ Cohesion: 0.18
 Nodes (10): captured_at, display_currency, endpoints, portfolio_ids, scope_kind, totals, endpoint_count, total_elapsed_ms (+2 more)
 
 ### Community 261 - "Community 261"
-Cohesion: 0.18
-Nodes (12): get_fixed_deposit_interest_payment(), InterestPaymentCreateResult, InterestPaymentNotFoundError, InterestPaymentValidationError, list_fixed_deposit_interest_payments(), Fixed deposit interest payment services (ORM only, no HTTP)., _validate_fd_for_interest_payment(), _validate_interest_amounts() (+4 more)
+Cohesion: 0.20
+Nodes (6): get_fixed_deposit_interest_payment(), InterestPaymentCreateResult, list_fixed_deposit_interest_payments(), Fixed deposit interest payment services (ORM only, no HTTP)., _validate_fd_for_interest_payment(), _validate_interest_amounts()
 
 ### Community 262 - "Community 262"
-Cohesion: 0.05
-Nodes (39): 2026-05-19 — Assets page fixes (post Phase 11), 2026-06-06 — QA: Same-currency transfer validation (Cash-8A-QA), 2026-06-06 — TEST: Full backend suite restored after cash-aware default (STAB-3B), 2026-06-14 — FD-ACC-3 fix: unseeded opening balance UI mismatch, 2026-06-14 — FD: Fixed Deposits / Debt investments MVP, 2026-06-24 — FD-ACC-10A-FX-TERMINAL-FIX: All Portfolio value-history terminal alignment, Added, Added (+31 more)
+Cohesion: 0.08
+Nodes (27): 2026-05-19 — Assets page fixes (post Phase 11), 2026-06-06 — QA: Same-currency transfer validation (Cash-8A-QA), 2026-06-14 — FD-ACC-3 fix: unseeded opening balance UI mismatch, 2026-06-24 — FD-ACC-10A-FX-TERMINAL-FIX: All Portfolio value-history terminal alignment, Fixed, Fixed, Fixed, Fixed (+19 more)
 
 ### Community 263 - "Community 263"
-Cohesion: 0.14
-Nodes (14): 2026-06-04 — DOCS: Cash Ledger architecture and migration design (Cash-0), Added, Added, Added, Added, Changed, Changed, Changed (+6 more)
+Cohesion: 0.12
+Nodes (17): 2026-06-04 — DOCS: Cash Ledger architecture and migration design (Cash-0), Added, Added, Added, Added, Added, Changed, Changed (+9 more)
 
 ### Community 264 - "Community 264"
-Cohesion: 0.05
-Nodes (41): 2026-06-04 — FEAT: Add missing cash and continue purchase (Cash-4C), 2026-06-04 — FEAT: Cash page UI (Cash-3B), 2026-06-14 — FD-ACC-6: Fixed Deposit renewal workflow, 2026-06-21 — Docs: Frontend redesign PRD, Added, Added, Added, Added (+33 more)
+Cohesion: 0.12
+Nodes (16): 2026-06-04 — FEAT: Cash page UI (Cash-3B), Added, Added, Added, Added, Added, Next, Next (+8 more)
 
 ### Community 265 - "Community 265"
-Cohesion: 0.06
-Nodes (36): 2026-06-04 — FEAT: Cash-aware BUY/SELL settlements (Cash-4A), 2026-06-04 — FEAT: Cash in portfolio value history (Cash-6B), 2026-06-14 — FD-ACC-7: Optional bank cash in portfolio value, Added, Added, Added, Added, Added (+28 more)
+Cohesion: 0.12
+Nodes (17): 2026-06-04 — FEAT: Cash in portfolio value history (Cash-6B), Added, Added, Added, Added, Added, Next, Next (+9 more)
 
 ### Community 266 - "Community 266"
-Cohesion: 0.14
-Nodes (14): 2026-06-04 — FEAT: Cash-aware portfolio-level XIRR (Cash-6C.1), Added, Added, Added, Added, Added, Next, Next (+6 more)
+Cohesion: 0.12
+Nodes (17): 2026-06-04 — FEAT: Cash-aware portfolio-level XIRR (Cash-6C.1), Added, Added, Added, Added, Added, Added, Next (+9 more)
 
 ### Community 267 - "Community 267"
 Cohesion: 0.12
 Nodes (15): A. Product overview, B. Architecture, C. Product rules, D. API contracts, E. Cash ledger, F. Portfolio analytics / Metric Sheet, G. Frontend design, H. Development workflow (+7 more)
 
 ### Community 268 - "Community 268"
-Cohesion: 0.14
-Nodes (14): 2026-06-04 — FEAT: Cash backfill preview API (Cash-7A), Added, Added, Added, Next, Next, Next, Next (+6 more)
+Cohesion: 0.12
+Nodes (17): 2026-06-04 — FEAT: Cash backfill preview API (Cash-7A), Added, Added, Added, Added, Next, Next, Next (+9 more)
 
 ### Community 269 - "Community 269"
-Cohesion: 0.12
-Nodes (16): 2026-06-04 — FEAT: Cash backfill wizard UI (Cash-7C), Added, Added, Added, Added, Added, Behavior, Behavior (+8 more)
+Cohesion: 0.11
+Nodes (18): 2026-06-04 — FEAT: Cash backfill wizard UI (Cash-7C), Added, Added, Added, Added, Added, Behavior, Behavior (+10 more)
 
 ### Community 270 - "Community 270"
 Cohesion: 0.23
 Nodes (10): buildMonthlyReturnsGrid(), MONTH_LABELS, MONTH_NAMES_FULL, monthlyCellAriaLabel(), rows, MONTHLY_HEATMAP_THRESHOLDS, monthlyHeatmapTone(), monthlyHeatmapToneClass() (+2 more)
 
 ### Community 271 - "Community 271"
-Cohesion: 0.07
-Nodes (27): 2026-06-04 — FEAT: Cash in summary current value and allocation (Cash-6A), 2026-06-04 — FEAT: Unified Add Transaction modal (Cash-3G), Added, Added, Added, Added, Added, Added (+19 more)
+Cohesion: 0.06
+Nodes (32): 2026-06-04 — FEAT: Cash in summary current value and allocation (Cash-6A), 2026-06-04 — FEAT: Unified Add Transaction modal (Cash-3G), Added, Added, Added, Added, Added, Added (+24 more)
 
 ### Community 272 - "Community 272"
 Cohesion: 0.13
 Nodes (11): btn, { container }, depositPromise, initialData, mfTxn, onClose, onSuccess, portfolios (+3 more)
 
 ### Community 273 - "Community 273"
-Cohesion: 0.22
-Nodes (8): Analytics (Quantitative Statistics / Metric Sheet), API Contracts Index — KPulla6, Cash, Portfolio, Portfolios and settings, Quick detail links, Shared error and warning shapes, Transactions
+Cohesion: 0.18
+Nodes (10): Analytics (Quantitative Statistics / Metric Sheet), API Contracts Index — KPulla6, Bank accounts (debt / bank ledger), Cash, Portfolio, Portfolios and settings, Quick detail links, Reports (FD tax) (+2 more)
 
 ### Community 274 - "Community 274"
-Cohesion: 0.09
-Nodes (23): 2026-06-04 — FEAT: New portfolios cash-aware by default (Cash-4A.1), 2026-06-14 — FD-ACC-9: FD accounting stabilization and audit, 2026-06-23 — P10: Auth pages and global polish, Added, Added, Added, Cash-flow classification (included bank accounts), Changed (+15 more)
+Cohesion: 0.07
+Nodes (30): 2026-06-04 — FEAT: New portfolios cash-aware by default (Cash-4A.1), 2026-06-14 — FD-ACC-9: FD accounting stabilization and audit, 2026-06-23 — P10: Auth pages and global polish, Added, Added, Added, Added, Added (+22 more)
 
 ### Community 275 - "Community 275"
 Cohesion: 0.22
@@ -1352,104 +1415,104 @@ Cohesion: 0.40
 Nodes (4): test_transaction_to_finance_dto(), Map Django Transaction rows to finance DTOs (Django allowed here, not in finance, transaction_to_finance_dto(), transactions_to_finance_dtos()
 
 ### Community 277 - "Community 277"
-Cohesion: 0.18
-Nodes (11): 2026-06-04 — FEAT: Cash Ledger schema foundation (Cash-1), Added, Added, Added, Added, Added, Impact, Impact (+3 more)
+Cohesion: 0.15
+Nodes (13): 2026-06-04 — FEAT: Cash Ledger schema foundation (Cash-1), Added, Added, Added, Added, Added, Added, Impact (+5 more)
 
 ### Community 278 - "Community 278"
-Cohesion: 0.08
-Nodes (21): card, mockAssetDetail, mockMetricSheet, section, btn30, btnYtd, card, DASHBOARD_SUMMARY_OPTS (+13 more)
+Cohesion: 0.10
+Nodes (18): activePortfolios, allBalancesFixture, bankSection, brokerSection, bulkApplyFixture, bulkPreviewFixture, { container }, emptyBalancesFixture (+10 more)
 
 ### Community 279 - "Community 279"
 Cohesion: 0.50
 Nodes (3): Acronyms, Glossary, See also
 
 ### Community 280 - "Community 280"
-Cohesion: 0.17
-Nodes (11): COMPARE_HIGHLIGHT, COMPARE_HIGHLIGHT_LABELS, getCompareHighlightStates(), getMetricCompareDirection(), METRIC_COMPARE_DIRECTION, cellValue(), CompareMetricCell(), CompareMetricRow() (+3 more)
+Cohesion: 0.23
+Nodes (9): COMPARE_HIGHLIGHT, COMPARE_HIGHLIGHT_LABELS, getCompareHighlightStates(), getMetricCompareDirection(), METRIC_COMPARE_DIRECTION, cellValue(), CompareMetricCell(), CompareMetricRow() (+1 more)
 
 ### Community 284 - "Community 284"
-Cohesion: 0.13
-Nodes (15): 2026-05-30 — FEAT: Asset-level analytics Metric Sheet API (Phase 6), Added, Added, Added, Added, Changed, Changed, Changed (+7 more)
+Cohesion: 0.11
+Nodes (18): 2026-05-30 — FEAT: Asset-level analytics Metric Sheet API (Phase 6), Added, Added, Added, Added, Added, Changed, Changed (+10 more)
 
 ### Community 285 - "Community 285"
-Cohesion: 0.18
-Nodes (11): 2026-05-25 — Phase 3A: Dashboard structure, states, and KPI cards, Changed, Changed, Changed, Changed, Changed, Notes, Notes (+3 more)
+Cohesion: 0.15
+Nodes (13): 2026-05-25 — Phase 3A: Dashboard structure, states, and KPI cards, Changed, Changed, Changed, Changed, Changed, Changed, Notes (+5 more)
 
 ### Community 286 - "Community 286"
 Cohesion: 0.11
 Nodes (11): CashMovementManagement(), directionForType(), MOVEMENT_TYPES, REVERSIBLE_MOVEMENT_TYPES, onAccountUpdated, { rerender }, sampleAccount, sampleMovements (+3 more)
 
 ### Community 287 - "Community 287"
-Cohesion: 0.18
-Nodes (11): 2026-05-25 — Phase 5B: Assets allocation chart and closed holdings polish, Changed, Changed, Changed, Changed, Changed, Notes, Notes (+3 more)
+Cohesion: 0.15
+Nodes (13): 2026-05-25 — Phase 5B: Assets allocation chart and closed holdings polish, Changed, Changed, Changed, Changed, Changed, Changed, Notes (+5 more)
 
 ### Community 288 - "Community 288"
-Cohesion: 0.18
-Nodes (11): 2026-05-26 — Phase MF-2: Mutual fund NAV cache and sync foundation, Added, Added, Added, Added, Added, Notes, Notes (+3 more)
+Cohesion: 0.15
+Nodes (13): 2026-05-26 — Phase MF-2: Mutual fund NAV cache and sync foundation, Added, Added, Added, Added, Added, Added, Notes (+5 more)
 
 ### Community 289 - "Community 289"
-Cohesion: 0.29
-Nodes (7): 2026-06-06 — FEAT: Same-currency portfolio cash transfers (Cash-8A), Added, Added, Added, Added, Added, Documented
+Cohesion: 0.25
+Nodes (8): 2026-06-06 — FEAT: Same-currency portfolio cash transfers (Cash-8A), Added, Added, Added, Added, Added, Added, Documented
 
 ### Community 291 - "Community 291"
-Cohesion: 0.18
-Nodes (11): 2026-05-30 — DOCS: Quantitative Statistics / Metric Sheet architecture (Phase 1), Added, Added, Added, Added, Added, Impact, Impact (+3 more)
+Cohesion: 0.15
+Nodes (13): 2026-05-30 — DOCS: Quantitative Statistics / Metric Sheet architecture (Phase 1), Added, Added, Added, Added, Added, Added, Impact (+5 more)
 
 ### Community 292 - "Community 292"
-Cohesion: 0.14
-Nodes (14): 2026-05-26 — Phase MF-6: Mutual fund NAV validation, Added, Added, Added, Added, Added, Changed, Changed (+6 more)
+Cohesion: 0.12
+Nodes (17): 2026-05-26 — Phase MF-6: Mutual fund NAV validation, Added, Added, Added, Added, Added, Added, Changed (+9 more)
 
 ### Community 293 - "Community 293"
-Cohesion: 0.13
-Nodes (15): 2026-05-26 — Phase MF-8: Frontend mutual fund transactions, Added, Added, Added, Added, Added, Changed, Changed (+7 more)
+Cohesion: 0.12
+Nodes (17): 2026-05-26 — Phase MF-8: Frontend mutual fund transactions, Added, Added, Added, Added, Added, Changed, Changed (+9 more)
 
 ### Community 294 - "Community 294"
-Cohesion: 0.14
-Nodes (14): 2026-05-26 — Phase MF-9: Mutual fund NAV refresh API and combined sync, Added, Added, Added, Added, Added, Changed, Changed (+6 more)
+Cohesion: 0.11
+Nodes (18): 2026-05-26 — Phase MF-9: Mutual fund NAV refresh API and combined sync, Added, Added, Added, Added, Added, Added, Changed (+10 more)
 
 ### Community 295 - "Community 295"
-Cohesion: 0.18
-Nodes (11): 2026-06-04 — DOC/TEST: Cash-only multi-currency FX return behavior, Added, Added, Added, Added, Added, Documented, Documented (+3 more)
+Cohesion: 0.15
+Nodes (13): 2026-06-04 — DOC/TEST: Cash-only multi-currency FX return behavior, Added, Added, Added, Added, Added, Added, Documented (+5 more)
 
 ### Community 296 - "Community 296"
-Cohesion: 0.13
-Nodes (15): 2026-05-27 — FX sync backfill for coverage gaps, Added, Added, Added, Added, Added, Fixed, Fixed (+7 more)
+Cohesion: 0.11
+Nodes (18): 2026-05-27 — FX sync backfill for coverage gaps, Added, Added, Added, Added, Added, Fixed, Fixed (+10 more)
 
 ### Community 297 - "Community 297"
-Cohesion: 0.13
-Nodes (15): 2026-05-28 — Stock price sync excludes mutual fund scheme codes, Added, Added, Added, Added, Fixed, Fixed, Fixed (+7 more)
+Cohesion: 0.11
+Nodes (18): 2026-05-28 — Stock price sync excludes mutual fund scheme codes, Added, Added, Added, Added, Added, Fixed, Fixed (+10 more)
 
 ### Community 298 - "Community 298"
-Cohesion: 0.13
-Nodes (15): 2026-05-30 — FEAT: Compare API for Quantitative Statistics (Phase 7), Added, Added, Added, Added, Added, Changed, Changed (+7 more)
+Cohesion: 0.11
+Nodes (18): 2026-05-30 — FEAT: Compare API for Quantitative Statistics (Phase 7), Added, Added, Added, Added, Added, Added, Changed (+10 more)
 
 ### Community 299 - "Community 299"
-Cohesion: 0.13
-Nodes (15): 2026-05-31 — FEAT: Compare Metric Sheet UI (Phase 8D), Added, Added, Added, Added, Changed, Changed, Changed (+7 more)
+Cohesion: 0.11
+Nodes (18): 2026-05-31 — FEAT: Compare Metric Sheet UI (Phase 8D), Added, Added, Added, Added, Added, Changed, Changed (+10 more)
 
 ### Community 300 - "Community 300"
-Cohesion: 0.10
-Nodes (21): 2026-06-04 — FEAT: Cash ledger edit/delete with future impact validation (Cash-4D), 2026-06-04 — FEAT: Cash read APIs (Cash-2), Added, Added, Added, Added, Added, Added (+13 more)
+Cohesion: 0.15
+Nodes (13): 2026-06-04 — FEAT: Cash ledger edit/delete with future impact validation (Cash-4D), Added, Added, Added, Added, Added, Added, Unchanged (+5 more)
 
 ### Community 301 - "Community 301"
-Cohesion: 0.13
-Nodes (15): 2026-05-31 — FEAT: Metric Sheet periodic returns and drawdown periods (Phase 9A), Added, Added, Added, Added, Changed, Changed, Changed (+7 more)
+Cohesion: 0.11
+Nodes (18): 2026-05-31 — FEAT: Metric Sheet periodic returns and drawdown periods (Phase 9A), Added, Added, Added, Added, Added, Changed, Changed (+10 more)
 
 ### Community 311 - "Community 311"
-Cohesion: 0.13
-Nodes (15): 2026-05-31 — FEAT: Metric Sheet periodic returns and drawdown periods UI (Phase 9B), Added, Added, Added, Added, Added, Changed, Changed (+7 more)
+Cohesion: 0.12
+Nodes (17): 2026-05-31 — FEAT: Metric Sheet periodic returns and drawdown periods UI (Phase 9B), Added, Added, Added, Added, Added, Changed, Changed (+9 more)
 
 ### Community 313 - "Community 313"
-Cohesion: 0.14
-Nodes (14): 2026-06-04 — FEAT: Transaction modal BUY shortfall UX (Cash-4B), Added, Added, Added, Added, Next, Next, Next (+6 more)
+Cohesion: 0.12
+Nodes (17): 2026-06-04 — FEAT: Transaction modal BUY shortfall UX (Cash-4B), Added, Added, Added, Added, Added, Next, Next (+9 more)
 
 ### Community 315 - "Community 315"
 Cohesion: 0.27
 Nodes (23): _bank(), _create_fd(), _enable_bank_inclusion(), _perf_map(), FD-ACC-8B: FD principal and included bank cash in portfolio value history., _summary_value(), test_active_and_matured_fd_contribute(), test_all_scope_includes_bank_account_once() (+15 more)
 
 ### Community 316 - "Community 316"
-Cohesion: 0.15
-Nodes (23): create_bank_account(), test_model_validation_empty_name(), _bank(), _enable_inclusion(), _metrics(), _perf_points(), FD-ACC-9: End-to-end fixed deposit accounting scenario audits., Direct rollover and partial cash payout without double-counting. (+15 more)
+Cohesion: 0.14
+Nodes (23): _bank(), _enable_inclusion(), _metrics(), _perf_points(), FD-ACC-9: End-to-end fixed deposit accounting scenario audits., Direct rollover and partial cash payout without double-counting., Direct rollover and partial cash payout without double-counting., Bank cash excluded: FD open steps PV up; settle steps PV down. (+15 more)
 
 ### Community 331 - "Community 331"
 Cohesion: 0.20
@@ -1460,108 +1523,112 @@ Cohesion: 0.18
 Nodes (10): captured_at, display_currency, endpoints, portfolio_ids, scope_kind, totals, endpoint_count, total_elapsed_ms (+2 more)
 
 ### Community 333 - "Community 333"
-Cohesion: 0.14
-Nodes (14): 2026-05-30 — HARDENING: Metric Sheet stock split × cached price invariant (Phase 6B), Added, Added, Added, Added, Added, Changed, Changed (+6 more)
+Cohesion: 0.12
+Nodes (17): 2026-05-30 — HARDENING: Metric Sheet stock split × cached price invariant (Phase 6B), Added, Added, Added, Added, Added, Added, Changed (+9 more)
 
 ### Community 334 - "Community 334"
-Cohesion: 0.14
-Nodes (14): 2026-05-31 — FEAT: Compare metric scanability (Phase 11B), Added, Added, Added, Added, Changed, Changed, Changed (+6 more)
+Cohesion: 0.12
+Nodes (17): 2026-05-31 — FEAT: Compare metric scanability (Phase 11B), Added, Added, Added, Added, Added, Changed, Changed (+9 more)
 
 ### Community 335 - "Community 335"
-Cohesion: 0.14
-Nodes (14): 2026-06-02 — FEAT: Metric Sheet drawdown series + Calendar-Year Return contract (Phase 13B), Added, Added, Added, Added, Added, Changed, Changed (+6 more)
+Cohesion: 0.12
+Nodes (16): 2026-06-02 — FEAT: Metric Sheet drawdown series + Calendar-Year Return contract (Phase 13B), Added, Added, Added, Added, Added, Changed, Changed (+8 more)
 
 ### Community 336 - "Community 336"
-Cohesion: 0.17
-Nodes (12): Bank account balance read (extend existing), Cash movements, `DELETE /api/v1/cash-movements/{id}`, E. API design proposal, Fixed deposit interest payments, `GET /api/v1/bank-accounts` / `{id}`, `GET /api/v1/cash-movements`, `GET /api/v1/cash-movements/{id}` (+4 more)
+Cohesion: 0.18
+Nodes (11): Bank account balance read (extend existing), E. API design proposal, Fixed deposit interest payments, Fixed deposit lifecycle, `GET /api/v1/bank-accounts` / `{id}`, `GET /api/v1/fixed-deposits/{id}/interest-payments`, Mark matured (status only), `POST /api/v1/fixed-deposits/{id}/close` (+3 more)
 
 ### Community 337 - "Community 337"
-Cohesion: 0.24
-Nodes (7): bank_cash_balance(), Pure bank cash movement balance helpers (no Django imports)., Return signed ledger delta: CREDIT positive, DEBIT negative., Sum signed movement amounts; optional as-of filter by movement_date., signed_movement_amount(), test_bank_cash_balance_as_of_date(), test_signed_movement_amount_credit_debit()
+Cohesion: 0.10
+Nodes (19): Branch and commit conventions, CASH-CORR (012), CASH-UNIFY (001–005, 004a, 4A, 4B, CORR-1A, 012), code:bash (git checkout -b agent/NNN-short-slug), code:bash (make backup-db), Epic summaries, FD-ACC reversal completion (010–011), FD-ANALYTICS (013–014) (+11 more)
 
 ### Community 338 - "Community 338"
-Cohesion: 0.15
-Nodes (13): 2026-06-01 — FIX: Metric Sheet cumulative return and CAGR aligned with performance chart, Added, Added, Added, Added, Changed, Changed, Changed (+5 more)
+Cohesion: 0.12
+Nodes (16): 2026-06-01 — FIX: Metric Sheet cumulative return and CAGR aligned with performance chart, Added, Added, Added, Added, Added, Changed, Changed (+8 more)
 
 ### Community 339 - "Community 339"
-Cohesion: 0.17
-Nodes (12): 2026-06-04 — QA: Cash-aware return validation (Cash-6D), Added, Added, Added, Added, Added, Next, Next (+4 more)
+Cohesion: 0.14
+Nodes (14): 2026-06-04 — QA: Cash-aware return validation (Cash-6D), Added, Added, Added, Added, Added, Added, Next (+6 more)
+
+### Community 340 - "Community 340"
+Cohesion: 0.10
+Nodes (20): 2026-06-04 — REVERT: Cash backfill wizard UI removed (Cash-7C), Next, Product, Product, Product, Product, Product, Product (+12 more)
 
 ### Community 341 - "Community 341"
-Cohesion: 0.18
-Nodes (11): 2026-05-25 — Page layout governance documentation, Added, Added, Added, Added, Added, Notes, Notes (+3 more)
+Cohesion: 0.15
+Nodes (13): 2026-05-25 — Page layout governance documentation, Added, Added, Added, Added, Added, Added, Notes (+5 more)
 
 ### Community 342 - "Community 342"
-Cohesion: 0.18
-Nodes (11): 2026-05-25 — Phase 2: App shell / sidebar polish, Changed, Changed, Changed, Changed, Changed, Notes, Notes (+3 more)
+Cohesion: 0.15
+Nodes (13): 2026-05-25 — Phase 2: App shell / sidebar polish, Changed, Changed, Changed, Changed, Changed, Changed, Notes (+5 more)
 
 ### Community 343 - "Community 343"
-Cohesion: 0.18
-Nodes (11): 2026-05-25 — Phase 7B: Frontend cleanup, Changed, Changed, Changed, Changed, Changed, Notes, Notes (+3 more)
+Cohesion: 0.15
+Nodes (13): 2026-05-25 — Phase 7B: Frontend cleanup, Changed, Changed, Changed, Changed, Changed, Changed, Notes (+5 more)
 
 ### Community 344 - "Community 344"
-Cohesion: 0.18
-Nodes (11): 2026-05-27 — Makefile: `make refresh` includes mutual fund NAVs, Changed, Changed, Changed, Changed, Changed, Notes, Notes (+3 more)
+Cohesion: 0.17
+Nodes (12): 2026-05-27 — Makefile: `make refresh` includes mutual fund NAVs, Changed, Changed, Changed, Changed, Changed, Notes, Notes (+4 more)
 
 ### Community 345 - "Community 345"
-Cohesion: 0.18
-Nodes (11): 2026-05-28 — Dashboard KPI overflow for large INR amounts, Added, Added, Added, Added, Added, Fixed, Fixed (+3 more)
+Cohesion: 0.15
+Nodes (13): 2026-05-28 — Dashboard KPI overflow for large INR amounts, Added, Added, Added, Added, Added, Added, Fixed (+5 more)
 
 ### Community 346 - "Community 346"
-Cohesion: 0.18
-Nodes (11): 2026-05-30 — DOCS: Analytics documentation terminology cleanup (Phase 1B), Changed, Changed, Changed, Changed, Changed, Impact, Impact (+3 more)
+Cohesion: 0.15
+Nodes (13): 2026-05-30 — DOCS: Analytics documentation terminology cleanup (Phase 1B), Changed, Changed, Changed, Changed, Changed, Changed, Impact (+5 more)
 
 ### Community 347 - "Community 347"
-Cohesion: 0.18
-Nodes (11): 2026-05-30 — REFACTOR: Analytics Metric Sheet API boundaries (Phase 5B), Changed, Changed, Changed, Changed, Changed, Impact, Impact (+3 more)
+Cohesion: 0.15
+Nodes (13): 2026-05-30 — REFACTOR: Analytics Metric Sheet API boundaries (Phase 5B), Changed, Changed, Changed, Changed, Changed, Changed, Impact (+5 more)
 
 ### Community 348 - "Community 348"
-Cohesion: 0.18
-Nodes (11): 2026-05-31 — FIX: All Portfolios value history vs summary current value (Phase 12B follow-up), Fixed, Fixed, Fixed, Fixed, Fixed, Impact, Impact (+3 more)
+Cohesion: 0.17
+Nodes (12): 2026-05-31 — FIX: All Portfolios value history vs summary current value (Phase 12B follow-up), Fixed, Fixed, Fixed, Fixed, Fixed, Fixed, Impact (+4 more)
 
 ### Community 349 - "Community 349"
 Cohesion: 0.11
-Nodes (19): 2026-06-04 — REMOVE: Cash shortfall backfill APIs (Cash-7A/7B), 2026-06-07 — FIX: Historical cash settlement sync (CASH-HIST-1), 2026-06-14 — FD-ACC-8B: FD principal + included bank cash in value history, Added, Added, Added, Changed, Changed (+11 more)
+Nodes (19): 2026-06-07 — FIX: Historical cash settlement sync (CASH-HIST-1), 2026-06-14 — FD-ACC-8B: FD principal + included bank cash in value history, Added, Added, Added, Added, Added, Changed (+11 more)
 
 ### Community 350 - "Community 350"
 Cohesion: 0.22
 Nodes (9): C. Proposed data model, `CashMovement` (table: `cash_movements`), FD status lifecycle (approved — FD-ACC-0.1), `FixedDepositInterestPayment` (table: `fixed_deposit_interest_payments`), `FixedDepositRenewal` — recommendation, `FixedDepositSettlement` — recommendation, `movement_type` enum, `portfolio` — nullable, denormalized (recommended) (+1 more)
 
 ### Community 351 - "Community 351"
-Cohesion: 0.10
-Nodes (13): AssetDetailMetricSheet(), isFolioRequiredError(), METRIC_SHEET_RANGE_OPTIONS, Compare(), COMPARE_SECTION_NAV, isMultiFolioCompareError(), RANGE_OPTIONS, fetchBenchmarkIndices() (+5 more)
+Cohesion: 0.15
+Nodes (11): formatCompareRangeContext(), text, Compare(), COMPARE_SECTION_NAV, isMultiFolioCompareError(), RANGE_OPTIONS, compareBenchmarkLabel(), compareOptionLabel() (+3 more)
 
 ### Community 352 - "Community 352"
 Cohesion: 0.15
 Nodes (20): _annualize_daily_stdev(), _annualized_mean_excess(), annualized_volatility(), downside_deviation(), Risk metrics from daily fractional returns (Metric Sheet).  Conventions --------, Annualized mean excess return / annualized downside deviation.      Returns ``No, Sample std dev of daily returns × ``sqrt(periods_per_year)``.      Returns ``Dec, Sample std dev of returns strictly below ``target_return``, annualized.      Ret (+12 more)
 
 ### Community 353 - "Community 353"
-Cohesion: 0.20
-Nodes (10): 2026-05-25 — Phase 4: Asset Detail Metric Sheet migration, Changed, Changed, Changed, Changed, Notes, Notes, Notes (+2 more)
+Cohesion: 0.17
+Nodes (12): 2026-05-25 — Phase 4: Asset Detail Metric Sheet migration, Changed, Changed, Changed, Changed, Changed, Notes, Notes (+4 more)
 
 ### Community 354 - "Community 354"
-Cohesion: 0.20
-Nodes (10): 2026-05-31 — FEAT: Metric Sheet UX hardening (Phase 8E), Changed, Changed, Changed, Changed, Changed, Impact, Impact (+2 more)
+Cohesion: 0.17
+Nodes (12): 2026-05-31 — FEAT: Metric Sheet UX hardening (Phase 8E), Changed, Changed, Changed, Changed, Changed, Impact, Impact (+4 more)
 
 ### Community 355 - "Community 355"
-Cohesion: 0.20
-Nodes (10): 2026-06-04 — FEAT: Cash-aware status and enable UI (Cash-4A.2), Added, Added, Added, Added, Unchanged, Unchanged, Unchanged (+2 more)
+Cohesion: 0.17
+Nodes (12): 2026-06-04 — FEAT: Cash-aware status and enable UI (Cash-4A.2), Added, Added, Added, Added, Added, Unchanged, Unchanged (+4 more)
 
 ### Community 356 - "Community 356"
-Cohesion: 0.25
-Nodes (8): 2026-05-19 — Phase 5 assumptions closed (pre–Phase 6), Docs, Tests, Tests, Tests, Tests, Tests, Tests
+Cohesion: 0.22
+Nodes (9): 2026-05-19 — Phase 5 assumptions closed (pre–Phase 6), Docs, Tests, Tests, Tests, Tests, Tests, Tests (+1 more)
 
 ### Community 357 - "Community 357"
-Cohesion: 0.20
-Nodes (10): 2026-06-06 — DOCS/TOOLS: Dashboard read-path baseline (STAB-5A), Added, Added, Added, Notes, Notes, Notes, Updated (+2 more)
+Cohesion: 0.15
+Nodes (13): 2026-06-06 — DOCS/TOOLS: Dashboard read-path baseline (STAB-5A), Added, Added, Added, Added, Notes, Notes, Notes (+5 more)
 
 ### Community 358 - "Community 358"
-Cohesion: 0.20
-Nodes (10): 2026-06-06 — DOCS/TOOLS: Read-only diagnostics scripts (STAB-4), Added, Added, Added, Notes, Notes, Notes, Updated (+2 more)
+Cohesion: 0.15
+Nodes (13): 2026-06-06 — DOCS/TOOLS: Read-only diagnostics scripts (STAB-4), Added, Added, Added, Added, Notes, Notes, Notes (+5 more)
 
 ### Community 359 - "Community 359"
-Cohesion: 0.29
-Nodes (7): 2026-06-04 — FEAT: Cash deposit and withdrawal write APIs (Cash-3A), Added, Added, Added, Added, Added, Impact
+Cohesion: 0.25
+Nodes (8): 2026-06-04 — FEAT: Cash deposit and withdrawal write APIs (Cash-3A), Added, Added, Added, Added, Added, Added, Impact
 
 ### Community 360 - "Community 360"
 Cohesion: 0.33
@@ -1576,36 +1643,40 @@ Cohesion: 0.26
 Nodes (21): _bank(), _create_fd(), _enable_bank(), _perf_map(), FD-ACC-10A: cancel ledger-backed FD restores bank cash and portfolio value., _summary_value(), test_all_scope_value_stable_after_cancel(), test_cancel_ledger_fd_restores_bank_cash() (+13 more)
 
 ### Community 363 - "Community 363"
-Cohesion: 0.29
-Nodes (7): 2026-06-06 — QA: MVP release checklist execution (STAB-6), Executed (automated), Notes, Notes, Pending, Updated, Updated
+Cohesion: 0.22
+Nodes (9): 2026-06-06 — QA: MVP release checklist execution (STAB-6), Executed (automated), Notes, Notes, Notes, Pending, Updated, Updated (+1 more)
 
 ### Community 364 - "Community 364"
 Cohesion: 0.09
 Nodes (21): 10. Dashboard Requirements, 11. Chart Requirements, 12. Page-By-Page Requirements, 13. Data Table Requirements, 14. Portfolio Health / X-Ray Requirements, 15. Implementation Phases, 16. Protective Tests Before Implementation, 17. Acceptance Criteria (+13 more)
 
 ### Community 365 - "Community 365"
-Cohesion: 0.22
-Nodes (9): 2026-06-14 — FD-ACC-5: Fixed Deposit maturity / closure settlement, Added, Added, Changed, Changed, Documentation, Documentation, Unchanged (+1 more)
+Cohesion: 0.15
+Nodes (13): 2026-06-14 — FD-ACC-5: Fixed Deposit maturity / closure settlement, Added, Added, Added, Changed, Changed, Changed, Documentation (+5 more)
 
 ### Community 366 - "Community 366"
 Cohesion: 0.40
 Nodes (5): Compute on read vs cache, D. BankAccount balance strategy, `include_in_portfolio_value` (future — FD-ACC-6), Negative balances (approved — FD-ACC-0.1), Opening balance vs ledger-derived balance
 
+### Community 367 - "Community 367"
+Cohesion: 0.20
+Nodes (16): _create_bank(), _deposit(), Regression: broker and bank native totals must not be swapped (CASH-UNIFY-3A)., test_overview_all_scope_broker_and_assigned_bank(), test_overview_all_scope_no_double_count_after_relink(), test_overview_delinked_bank_hidden_until_include_unassigned(), test_overview_display_currency_conversion(), test_overview_excludes_ambiguous_bank() (+8 more)
+
 ### Community 368 - "Community 368"
-Cohesion: 0.10
-Nodes (20): 2026-06-04 — FEAT: Bulk cash entries schedule (Cash-7D), 2026-06-06 — DOCS/TEST: Test infrastructure and golden-flow targets (STAB-3), Added, Added, Added, Added, Added, Added (+12 more)
+Cohesion: 0.15
+Nodes (13): 2026-06-06 — DOCS/TEST: Test infrastructure and golden-flow targets (STAB-3), Added, Added, Added, Added, Notes, Notes, Notes (+5 more)
 
 ### Community 369 - "Community 369"
-Cohesion: 0.18
-Nodes (15): list_active_bank_accounts(), list_active_bank_accounts_for_user(), Alias used by serializers/views., Alias used by serializers/views., _create_account(), test_bank_account_balance_endpoint_current_and_as_of(), test_bank_account_model_stores_full_account_number(), test_cannot_access_other_users_bank_account() (+7 more)
+Cohesion: 0.12
+Nodes (22): list_active_bank_accounts(), list_active_bank_accounts_for_user(), Alias used by serializers/views., Alias used by serializers/views., Alias used by serializers/views., _create_account(), test_bank_account_balance_endpoint_current_and_as_of(), test_bank_account_model_stores_full_account_number() (+14 more)
 
 ### Community 370 - "Community 370"
-Cohesion: 0.12
-Nodes (4): FixedDepositSettlementSerializer, FixedDepositSettlementWriteSerializer, get_fixed_deposit_settlement(), FixedDepositSettleView
+Cohesion: 0.21
+Nodes (8): create_fixed_deposit_settlement(), get_fixed_deposit_settlement(), list_fixed_deposit_settlements(), mark_fixed_deposit_matured(), Fixed deposit maturity/closure settlement services (ORM only, no HTTP)., SettlementCreateResult, _validate_fd_for_settlement(), _validate_settlement_amounts()
 
 ### Community 371 - "Community 371"
-Cohesion: 0.23
-Nodes (14): _bank(), _buy(), _cash_deposit(), _create_fd(), _deactivate_pre_10a(), _perf_values(), _price(), All-scope value history must not drop to cancelled-FD or cash-only artifacts. (+6 more)
+Cohesion: 0.16
+Nodes (18): create_test_bank_account(), Create a bank account with portfolio assigned (CASH-UNIFY-2 default)., _bank(), _buy(), _cash_deposit(), _deactivate_pre_10a(), _perf_values(), _price() (+10 more)
 
 ### Community 372 - "Community 372"
 Cohesion: 0.67
@@ -1616,63 +1687,63 @@ Cohesion: 0.29
 Nodes (13): _buy(), _last_perf_value(), _price(), All-scope performance terminal value must align with summary for same currency., Historical partial/null is allowed; terminal must still match summary., Mirror production: recent INR->EUR rows without direct EUR->INR rows., Terminal INR value history must include EUR portfolio via inverse FX rows., _seed_inverse_only_inr_eur_rates() (+5 more)
 
 ### Community 385 - "Community 385"
-Cohesion: 0.13
-Nodes (15): 2026-05-26 — Phase MF-4: Mutual fund holdings and asset detail, Added, Added, Added, Added, Added, Changed, Changed (+7 more)
+Cohesion: 0.11
+Nodes (18): 2026-05-26 — Phase MF-4: Mutual fund holdings and asset detail, Added, Added, Added, Added, Added, Added, Changed (+10 more)
 
 ### Community 386 - "Community 386"
-Cohesion: 0.13
-Nodes (15): 2026-06-04 — FEAT: Cash ledger edit/delete (Cash-3D), Added, Added, Added, Added, Added, Next, Next (+7 more)
+Cohesion: 0.11
+Nodes (18): 2026-06-04 — FEAT: Cash ledger edit/delete (Cash-3D), Added, Added, Added, Added, Added, Added, Next (+10 more)
 
 ### Community 387 - "Community 387"
-Cohesion: 0.13
-Nodes (15): 2026-06-04 — FEAT: CSV import cash shortfall preview (Cash-5), Added, Added, Added, Added, Next, Next, Next (+7 more)
+Cohesion: 0.11
+Nodes (18): 2026-06-04 — FEAT: CSV import cash shortfall preview (Cash-5), Added, Added, Added, Added, Added, Next, Next (+10 more)
 
 ### Community 388 - "Community 388"
-Cohesion: 0.42
-Nodes (13): _bank(), _create_manual(), FD-ACC-10B: manual cash movement reversal API tests., _reverse(), test_cannot_reverse_a_reversal_row(), test_cannot_reverse_another_users_movement(), test_cannot_reverse_twice(), test_cannot_reverse_unsupported_system_movement() (+5 more)
+Cohesion: 0.22
+Nodes (17): _deposit(), _enable_cash_aware(), _price(), CASH-HIST-1 — historical settlement backfill command and service., _stock_buy(), _stock_sell(), test_apply_blocked_when_cash_would_go_negative(), test_apply_creates_settlement() (+9 more)
 
 ### Community 389 - "Community 389"
-Cohesion: 0.14
-Nodes (14): 2026-05-19 — Phase 10: Portfolio performance API, Added, Added, Added, Added, Added, Added, Not included (+6 more)
+Cohesion: 0.12
+Nodes (16): 2026-05-19 — Phase 10: Portfolio performance API, Added, Added, Added, Added, Added, Added, Added (+8 more)
 
 ### Community 390 - "Community 390"
-Cohesion: 0.14
-Nodes (14): 2026-05-26 — Phase MF-7: Mutual fund classification, Added, Added, Added, Added, Added, Changed, Changed (+6 more)
+Cohesion: 0.12
+Nodes (17): 2026-05-26 — Phase MF-7: Mutual fund classification, Added, Added, Added, Added, Added, Added, Changed (+9 more)
 
 ### Community 391 - "Community 391"
-Cohesion: 0.14
-Nodes (14): 2026-05-30 — FEAT: Finance return-series foundation (Phase 2), Added, Added, Added, Added, Changed, Changed, Changed (+6 more)
+Cohesion: 0.11
+Nodes (18): 2026-05-30 — FEAT: Finance return-series foundation (Phase 2), Added, Added, Added, Added, Added, Changed, Changed (+10 more)
 
 ### Community 392 - "Community 392"
-Cohesion: 0.14
-Nodes (14): 2026-06-02 — FEAT: Metric Sheet visualization charts (Phase 13C), Added, Added, Added, Added, Added, Changed, Changed (+6 more)
+Cohesion: 0.12
+Nodes (17): 2026-06-02 — FEAT: Metric Sheet visualization charts (Phase 13C), Added, Added, Added, Added, Added, Added, Changed (+9 more)
 
 ### Community 393 - "Community 393"
-Cohesion: 0.15
-Nodes (13): 2026-05-19 — Phase 4 contracts documented and tested, Added, Added, Added, Added, Added, Added, Docs updated (+5 more)
+Cohesion: 0.13
+Nodes (15): 2026-05-19 — Phase 4 contracts documented and tested, Added, Added, Added, Added, Added, Added, Added (+7 more)
 
 ### Community 394 - "Community 394"
 Cohesion: 0.38
 Nodes (11): create_manual_cash_movement(), _bank(), test_adjustment_requires_direction(), test_cash_movement_model_requires_positive_amount(), test_manual_deposit_increases_current_balance(), test_manual_withdrawal_decreases_balance(), test_reject_foreign_bank_account(), test_reject_foreign_portfolio() (+3 more)
 
 ### Community 395 - "Community 395"
-Cohesion: 0.17
-Nodes (12): 2026-06-14 — FD-ACC-3: Mandatory FD opening bank cash outflow, 2026-06-24 — FD-ACC-10A: FD cancel / deactivate accounting fix, Added, Added, Changed, Changed, Deferred, Deferred (+4 more)
+Cohesion: 0.08
+Nodes (25): 2026-06-14 — FD-ACC-3: Mandatory FD opening bank cash outflow, 2026-06-23 — P5: Transactions and Cash redesign, 2026-06-24 — FD-ACC-10A: FD cancel / deactivate accounting fix, Added, Added, Added, Changed, Changed (+17 more)
 
 ### Community 396 - "Community 396"
-Cohesion: 0.20
-Nodes (9): cash_aware_portfolio(), legacy_portfolio(), Lightweight tests for read-only diagnostics helpers (STAB-4)., _stock_buy(), test_dashboard_read_profile_runs(), test_negative_cash_detects_running_deficit(), test_settlement_integrity_missing_buy_settlement(), test_settlement_integrity_split_must_not_have_settlement() (+1 more)
+Cohesion: 0.25
+Nodes (7): cash_aware_portfolio(), legacy_portfolio(), Lightweight tests for read-only diagnostics helpers (STAB-4)., _stock_buy(), test_dashboard_read_profile_runs(), test_settlement_integrity_missing_buy_settlement(), test_settlement_integrity_split_must_not_have_settlement()
 
 ### Community 397 - "Community 397"
-Cohesion: 0.18
-Nodes (11): 2026-05-25 — Dev stack stop commands, Added, Added, Added, Added, Added, Notes, Notes (+3 more)
+Cohesion: 0.15
+Nodes (13): 2026-05-25 — Dev stack stop commands, Added, Added, Added, Added, Added, Added, Notes (+5 more)
 
 ### Community 398 - "Community 398"
-Cohesion: 0.18
-Nodes (11): 2026-06-04 — FEAT: Cash backfill apply API (Cash-7B), Added, Added, Added, Added, Added, Unchanged, Unchanged (+3 more)
+Cohesion: 0.15
+Nodes (13): 2026-06-04 — FEAT: Cash backfill apply API (Cash-7B), Added, Added, Added, Added, Added, Added, Unchanged (+5 more)
 
 ### Community 399 - "Community 399"
-Cohesion: 0.29
+Cohesion: 0.39
 Nodes (6): buildDrawdownChartData(), buildDrawdownShadeRegions(), buildYearlyReturnChartData(), drawdownRankOpacity(), data, regions
 
 ### Community 400 - "Community 400"
@@ -1684,64 +1755,284 @@ Cohesion: 0.31
 Nodes (8): build_settlement_report(), check_settlement_integrity(), _expected_settlement(), format_settlement_report(), _issue_counts(), Settlement ledger integrity checks (read-only)., Return (entry_type, amount, ledger_date) from production settlement rules., main()
 
 ### Community 402 - "Community 402"
-Cohesion: 0.36
-Nodes (8): build_summary_performance_report(), check_summary_vs_performance(), format_summary_performance_report(), _last_performance_value(), mismatch_detected(), Summary vs performance value consistency (read-only)., SummaryPerformanceMismatch, main()
+Cohesion: 0.33
+Nodes (9): build_summary_performance_report(), check_summary_vs_performance(), format_summary_performance_report(), _last_performance_value(), mismatch_detected(), Summary vs performance value consistency (read-only)., SummaryPerformanceMismatch, main() (+1 more)
 
 ### Community 403 - "Community 403"
-Cohesion: 0.22
-Nodes (9): 2026-06-07 — UX: Cash page full-width layout + ledger details (CASH-UI-1), Added, Added, Fixed, Fixed, Tests, Tests, Updated (+1 more)
+Cohesion: 0.15
+Nodes (13): 2026-06-07 — UX: Cash page full-width layout + ledger details (CASH-UI-1), Added, Added, Added, Fixed, Fixed, Fixed, Tests (+5 more)
 
 ### Community 404 - "Community 404"
-Cohesion: 0.22
-Nodes (6): err, overview, panel, sampleFd, seededBankAccount, unseededBankAccount
+Cohesion: 0.18
+Nodes (8): err, overview, panel, sampleFd, section, seededBankAccount, unassignedBankAccount, unseededBankAccount
 
 ### Community 405 - "Community 405"
-Cohesion: 0.25
-Nodes (8): 2026-06-06 — RELEASE: MVP sign-off (MVP-RELEASE-1), Accepted limitations, Notes, Notes, Sign-off, Status, Updated, Updated
+Cohesion: 0.20
+Nodes (10): 2026-06-06 — RELEASE: MVP sign-off (MVP-RELEASE-1), Accepted limitations, Notes, Notes, Notes, Sign-off, Status, Updated (+2 more)
 
 ### Community 406 - "Community 406"
-Cohesion: 0.25
-Nodes (8): 2026-06-14 — FD-ACC-8A: FD / bank cash performance design review, Added, Added, Changed, Changed, Recommendation, Unchanged, Unchanged
+Cohesion: 0.18
+Nodes (11): 2026-06-14 — FD-ACC-8A: FD / bank cash performance design review, Added, Added, Added, Changed, Changed, Changed, Recommendation (+3 more)
 
 ### Community 407 - "Community 407"
-Cohesion: 0.29
-Nodes (7): FD create — mandatory opening debit (FD-ACC-3), FD interest payments (FD-ACC-4), FD interest / tax report (FD-TAX-1), FD lifecycle actions (FD-ACC-10A), FD maturity / closure settlement (FD-ACC-5), FD renewal (FD-ACC-6), Fixed Deposits — Bank cash ledger (implemented — FD-ACC-1)
+Cohesion: 0.22
+Nodes (16): find_bank_account_inference_reports(), create_legacy_fixed_deposit(), create_legacy_fixed_deposit_with_opening(), Shared helpers for debt / fixed-deposit tests., Insert FD row directly for legacy / inference / scope test fixtures., Legacy FD row plus opening bank debit (multi-portfolio scope fixtures)., _create_bank(), _legacy_fd() (+8 more)
 
 ### Community 408 - "Community 408"
-Cohesion: 0.29
-Nodes (7): 2026-06-07 — DOCS: Developer documentation index (STAB-7), Added, Added, Notes, Notes, Updated, Updated
+Cohesion: 0.14
+Nodes (14): 2026-06-07 — DOCS: Developer documentation index (STAB-7), 2026-06-22 — P4R: Dashboard anchor scroll offset and shell review, Added, Added, Added, Changed, Changed, Notes (+6 more)
 
 ### Community 409 - "Community 409"
-Cohesion: 0.29
-Nodes (7): 2026-06-14 — FD-ACC-0: Fixed Deposit Accounting Phase 1 (design only), Added, Added, Runtime, Runtime, Updated, Updated
+Cohesion: 0.20
+Nodes (10): 2026-06-14 — FD-ACC-0: Fixed Deposit Accounting Phase 1 (design only), Added, Added, Added, Runtime, Runtime, Runtime, Updated (+2 more)
 
 ### Community 410 - "Community 410"
-Cohesion: 0.50
-Nodes (3): _parse_date(), _parse_group_by(), Read-only FD report API views.
+Cohesion: 0.15
+Nodes (14): currentYearStart(), defaultReportFilters(), FixedDepositInterestReport(), GROUP_BY_LABELS, GROUP_BY_OPTIONS, SOURCE_LABELS, defaults, end (+6 more)
 
 ### Community 411 - "Community 411"
+Cohesion: 0.12
+Nodes (17): 2026-05-31 — FIX: All Portfolios cumulative_return and TWROR gaps (Phase 12B follow-up #3), Added, Added, Added, Added, Added, Added, Fixed (+9 more)
+
+### Community 423 - "Community 423"
+Cohesion: 0.12
+Nodes (16): 2026-06-04 — FEAT: Add missing cash and continue purchase (Cash-4C), Added, Added, Added, Added, Next, Next, Next (+8 more)
+
+### Community 424 - "Community 424"
+Cohesion: 0.12
+Nodes (16): 2026-06-04 — FEAT: Cash-aware BUY/SELL settlements (Cash-4A), Added, Added, Added, Added, Next, Next, Next (+8 more)
+
+### Community 425 - "Community 425"
+Cohesion: 0.30
+Nodes (14): _deposit(), CASH-CORR-1A: broker cash ledger reversal API tests., _reverse(), test_cannot_reverse_a_reversal_row(), test_cannot_reverse_already_reversed_entry(), test_cannot_reverse_linked_settlement(), test_cannot_reverse_transfer_entry(), test_ledger_lists_reversal_fields() (+6 more)
+
+### Community 426 - "Community 426"
+Cohesion: 0.16
+Nodes (13): build_bank_cash_external_flows(), _classify_non_reversal_movement(), _eligible_accounts(), _offset_kind(), Bank cash movement classification for portfolio return metrics (FD-ACC-8C)., TWROR external flow in native currency (contribution +, withdrawal -)., Investor-perspective XIRR flow (contribution -, withdrawal +)., External bank-cash flows by date for included accounts in scope. (+5 more)
+
+### Community 427 - "Community 427"
+Cohesion: 0.14
+Nodes (13): 005 — CASH-UNIFY-4: Bank account link/delink UX + portfolio inclusion stabilization, Bank account link/delink UX, code:bash (make test-critical), Display-currency & terminology, Do not implement, Documentation, Expected files / areas, Final response format (+5 more)
+
+### Community 428 - "Community 428"
+Cohesion: 0.25
+Nodes (8): formatChartTooltipCurrency(), formatChartTooltipPercent(), formatChartTooltipValue(), CurrencyValue(), PercentValue(), currencyPrefix(), formatCurrency(), formatPercent()
+
+### Community 429 - "Community 429"
+Cohesion: 0.22
+Nodes (9): _abs_amount(), _bank_cash_by_portfolio(), _broker_cash_by_portfolio(), build_cash_diagnostics(), CashDiagnosticsResult, _find_possible_duplicate_entries(), Read-only cash unification diagnostics (CASH-UNIFY-4A)., Command (+1 more)
+
+### Community 430 - "Community 430"
+Cohesion: 0.21
+Nodes (12): build_xirr_cashflows(), calculate_portfolio_xirr(), calculate_xirr(), Return annualized XIRR or None when pyxirr cannot solve., Return annualized XIRR or None when pyxirr cannot solve., Return annualized XIRR or None when inputs are empty or pyxirr cannot solve., Build XIRR date/amount series from transactions.      - BUY: negative cash flow, Build XIRR date/amount series from transactions.      - BUY: negative cash flow (+4 more)
+
+### Community 431 - "Community 431"
+Cohesion: 0.15
+Nodes (12): 012 — CASH-CORR-1: Cash reconciliation & safe reclassification, code:bash (cd backend && DJANGO_TEST_USE_SQLITE=1 .venv/bin/python -m p), Do not implement, Docs & changelog, Expected files / areas, Final response format, Goal, Read-only diagnostics (+4 more)
+
+### Community 432 - "Community 432"
+Cohesion: 0.15
+Nodes (13): 2026-05-27 — LAN / iPad access via Vite (port 5173), Changed, Changed, Changed, Changed, Changed, Changed, Notes (+5 more)
+
+### Community 433 - "Community 433"
+Cohesion: 0.15
+Nodes (13): 2026-06-14 — FD-ACC-6: Fixed Deposit renewal workflow, Added, Added, Added, Changed, Changed, Changed, Documentation (+5 more)
+
+### Community 434 - "Community 434"
+Cohesion: 0.15
+Nodes (13): 2026-06-14 — FD-ACC-7: Optional bank cash in portfolio value, Added, Added, Added, Changed, Changed, Changed, Documentation (+5 more)
+
+### Community 435 - "Community 435"
+Cohesion: 0.17
+Nodes (11): 002 — CASH-UNIFY-1: Bank account portfolio ownership + unified cash read API, code:bash (make backup-db && make db-safety-check), Do not implement, Expected files / areas, Final response format, Goal, Read API, Safety requirements (+3 more)
+
+### Community 436 - "Community 436"
+Cohesion: 0.17
+Nodes (11): 004a — CASH-UNIFY-3A: Cash page verification & attribution fix, code:bash (cd frontend && npm test -- --run src/pages/Cash.test.jsx), Do not implement, Expected files / areas, Final response format, Goal, Reported issues (manual QA), Resolution (2026-06-25) (+3 more)
+
+### Community 437 - "Community 437"
+Cohesion: 0.36
+Nodes (10): buildDashboardPerformanceChartConfig(), findLatestValidChartReading(), isComparisonPerformancePayload(), isPointsWithWarningsPayload(), isReturnMetric(), mergeComparisonSeries(), normalizePerformancePointValue(), resolvePerformancePoints() (+2 more)
+
+### Community 438 - "Community 438"
+Cohesion: 0.17
+Nodes (12): 2026-06-04 — FEAT: Bulk cash entries schedule (Cash-7D), Added, Added, Added, Added, Added, Behavior, Behavior (+4 more)
+
+### Community 439 - "Community 439"
+Cohesion: 0.17
+Nodes (12): 2026-06-04 — FEAT: Cash read APIs (Cash-2), Added, Added, Added, Added, Added, Impact, Impact (+4 more)
+
+### Community 440 - "Community 440"
+Cohesion: 0.17
+Nodes (12): 2026-06-06 — TEST: Full backend suite restored after cash-aware default (STAB-3B), Fixed, Fixed, Fixed, Notes, Notes, Notes, Notes (+4 more)
+
+### Community 441 - "Community 441"
+Cohesion: 0.17
+Nodes (12): 2026-06-14 — FD: Fixed Deposits / Debt investments MVP, Added, Added, Added, Deferred, Deferred, Deferred, Tests (+4 more)
+
+### Community 442 - "Community 442"
+Cohesion: 0.25
+Nodes (9): Portfolio performance chart date-range resolution (server-side filtering)., First calendar date to include in the chart. Never before portfolio inception., resolve_performance_range_start(), validate_performance_range(), test_resolve_range_clamped_to_inception(), test_resolve_range_start_1y(), test_resolve_range_start_ytd(), test_validate_performance_range_default() (+1 more)
+
+### Community 443 - "Community 443"
+Cohesion: 0.18
+Nodes (10): 006 — FX-1: Same-portfolio FX conversion legs, code:bash (make backup-db), code:bash (cd backend && DJANGO_TEST_USE_SQLITE=1 .venv/bin/python -m p), Do not implement, Expected files / areas, Final response format, Goal, Safety requirements (+2 more)
+
+### Community 444 - "Community 444"
+Cohesion: 0.18
+Nodes (10): 010 — FD-ACC-10C: Settlement / renewal / cancel-FD reversals, code:bash (make backup-db), code:bash (make backup-db), Do not implement, Expected files / areas, Final response format, Goal, Safety requirements (+2 more)
+
+### Community 445 - "Community 445"
+Cohesion: 0.22
+Nodes (7): authenticate_username_or_email(), get_or_create_initial_owner(), is_registration_incomplete(), register_user(), request_password_reset(), test_data_migration_assigns_existing_portfolios_to_initial_owner(), test_google_sociallogin_links_existing_owner_by_verified_email()
+
+### Community 446 - "Community 446"
+Cohesion: 0.20
+Nodes (9): 003 — CASH-UNIFY-2: FD portfolio derived from bank account, code:bash (cd backend && DJANGO_TEST_USE_SQLITE=1 .venv/bin/python -m p), Do not implement, Expected files / areas, Final response format, Goal, Safety requirements, Scope (+1 more)
+
+### Community 447 - "Community 447"
+Cohesion: 0.20
+Nodes (9): 007 — FX-2: Cash FX warnings and gap hardening, code:bash (cd backend && DJANGO_TEST_USE_SQLITE=1 .venv/bin/python -m p), Do not implement, Expected files / areas, Final response format, Goal, Safety requirements, Scope (+1 more)
+
+### Community 448 - "Community 448"
+Cohesion: 0.20
+Nodes (9): 008 — FD-TAX-1a: Interest & tax report polish, code:bash (cd backend && DJANGO_TEST_USE_SQLITE=1 .venv/bin/python -m p), Do not implement, Expected files / areas, Final response format, Goal, Safety requirements, Scope (+1 more)
+
+### Community 449 - "Community 449"
+Cohesion: 0.20
+Nodes (9): 009 — FD-TAX-2: Interest & tax report CSV export, code:bash (cd backend && DJANGO_TEST_USE_SQLITE=1 .venv/bin/python -m p), Do not implement, Expected files / areas, Final response format, Goal, Safety requirements, Scope (+1 more)
+
+### Community 450 - "Community 450"
+Cohesion: 0.20
+Nodes (9): 011 — FD-ACC-10D: Reversal framework audit & stabilization, code:bash (make test-critical), Do not implement, Expected files / areas, Final response format, Goal, Safety requirements, Scope (+1 more)
+
+### Community 451 - "Community 451"
+Cohesion: 0.20
+Nodes (9): 013 — FD-ANALYTICS-1: Standalone FD performance API (design + MVP), code:bash (cd backend && DJANGO_TEST_USE_SQLITE=1 .venv/bin/python -m p), Do not implement, Expected files / areas, Final response format, Goal, Safety requirements, Scope (+1 more)
+
+### Community 452 - "Community 452"
+Cohesion: 0.20
+Nodes (9): 014 — FD-ANALYTICS-2: FD analytics dashboard surfacing, code:bash (cd frontend && npm test -- --run src/pages/FixedDeposits.tes), Do not implement, Expected files / areas, Final response format, Goal, Safety requirements, Scope (+1 more)
+
+### Community 453 - "Community 453"
+Cohesion: 0.20
+Nodes (10): 2026-06-08 — CASH-SELL-1B: Actual SELL proceeds + TAX_WITHHELD ledger row, Added, Added, Added, Tests, Tests, Tests, Updated (+2 more)
+
+### Community 454 - "Community 454"
+Cohesion: 0.20
+Nodes (10): 2026-06-14 — FD-ACC-4: Fixed Deposit interest payments, Added, Added, Added, Documentation, Documentation, Documentation, Unchanged (+2 more)
+
+### Community 455 - "Community 455"
+Cohesion: 0.31
+Nodes (7): build_split_adjusted_lot_snapshots(), FifoCostBasisMetrics, _Lot, Per-transaction-date cumulative qty and invested amount after split-adjusted FIF, _zero_metrics(), Framework-independent transaction DTO for finance calculations., Transaction
+
+### Community 456 - "Community 456"
+Cohesion: 0.22
+Nodes (4): cash_aware_portfolio(), legacy_seeded(), Default portfolio in legacy cash mode (pre–Cash-4A.1 rows).      Use for tests t, Default portfolio in legacy cash mode (pre–Cash-4A.1 rows).      Use for tests t
+
+### Community 457 - "Community 457"
+Cohesion: 0.22
+Nodes (8): 001 — CASH-UNIFY-0: Unified cash model (design), code:bash (git diff --stat), Delivered, Do not implement (confirmed), Final response format, Goal, Safety requirements, Tests / commands
+
+### Community 458 - "Community 458"
+Cohesion: 0.22
+Nodes (9): 2026-06-14 — FD-ACC-2: Manual cash movement UI, Added, Added, Added, Changed, Changed, Changed, Notes (+1 more)
+
+### Community 459 - "Community 459"
+Cohesion: 0.32
+Nodes (7): build_negative_cash_report(), check_negative_cash(), format_negative_cash_report(), NegativeCashIssue, Negative cash balance diagnostics (read-only)., _scan_portfolio_currency(), test_negative_cash_detects_running_deficit()
+
+### Community 460 - "Community 460"
+Cohesion: 0.36
+Nodes (5): _deposit(), CASH-CORR-1A-HOTFIX: reverse_broker_cash_entry management command tests., test_reverse_command_apply_creates_reversal_row(), test_reverse_command_dry_run_succeeds_and_writes_no_rows(), test_reverse_command_missing_reason_fails()
+
+### Community 461 - "Community 461"
+Cohesion: 0.25
+Nodes (7): 004 — CASH-UNIFY-3: Unified Cash page UI, code:bash (cd frontend && npm test -- --run src/pages/Cash.test.jsx), Delivered, Do not implement (deferred), Follow-up, Goal, Tests / commands
+
+### Community 462 - "Community 462"
+Cohesion: 0.25
+Nodes (8): Asset detail — MF-4 implemented, Holdings (`GET /api/v1/portfolio/holdings`) — MF-4 implemented, Implemented: Mutual fund transactions (MF-3), Indian Mutual Funds, NAV sync — management command + HTTP (MF-2 + MF-9), Planned: Scheme lookup (MF-4+), Planned: Settings (MF-10+), Summary and performance — MF-5 implemented
+
+### Community 463 - "Community 463"
+Cohesion: 0.29
+Nodes (5): KPulla6GoogleOAuth2Adapter, Google OAuth adapter with a stable callback URL for local dev (Vite proxy)., Use a fixed redirect URI so authorize + token exchange always match., GoogleOAuth2Adapter, test_google_oauth_callback_url_is_canonical()
+
+### Community 464 - "Community 464"
+Cohesion: 0.38
+Nodes (5): build_interest_report_csv(), _csv_cell(), interest_report_csv_filename(), CSV export for FD interest & tax report (FD-TAX-2)., Return UTF-8 CSV text (detail rows only; no footer totals).
+
+### Community 465 - "Community 465"
+Cohesion: 0.33
+Nodes (7): code:json ({), code:json ({), `DELETE /api/v1/cash/ledger/{id}` — **204 No Content**, Future impact error (Cash-4D) — **409 Conflict**, Implemented (Cash-3D / Cash-4D) — edit / delete manual ledger entries, `POST /api/v1/cash/ledger/{id}/reverse` — **201 Created** (CASH-CORR-1A), `PUT /api/v1/cash/ledger/{id}` — **200 OK**
+
+### Community 466 - "Community 466"
+Cohesion: 0.29
+Nodes (7): 2026-06-14 — FD-ACC-3.1: FD opening balance as-of-date UX, Changed, Changed, Changed, Documentation, Documentation, Documentation
+
+### Community 467 - "Community 467"
+Cohesion: 0.29
+Nodes (7): 2026-06-21 — Docs: Frontend redesign PRD, Added, Added, Changed, Changed, Notes, Notes
+
+### Community 468 - "Community 468"
+Cohesion: 0.29
+Nodes (7): 2026-06-23 — P11: Final frontend redesign audit, Audit, Changed (minor), Notes, Notes, Tests, Tests
+
+### Community 469 - "Community 469"
+Cohesion: 0.29
+Nodes (7): 2026-06-23 — P6: Assets and Asset Detail redesign, Changed, Changed, Notes, Notes, Tests, Tests
+
+### Community 470 - "Community 470"
+Cohesion: 0.29
+Nodes (7): 2026-06-23 — P8: Compare page redesign, Changed, Changed, Notes, Notes, Tests, Tests
+
+### Community 471 - "Community 471"
+Cohesion: 0.29
+Nodes (7): 2026-06-23 — P9: Settings page redesign, Changed, Changed, Notes, Notes, Tests, Tests
+
+### Community 472 - "Community 472"
+Cohesion: 0.29
+Nodes (7): 2026-06-24 — All Portfolios value chart: cancelled-FD / cash-only drop fix, Fixed, Fixed, Problem, Problem, Tests, Tests
+
+### Community 473 - "Community 473"
+Cohesion: 0.29
+Nodes (7): 2026-06-24 — FD-ACC-10B: General reversal / correction framework, Added, Added, Deferred (FD-ACC-10C), Migration, Tests, Tests
+
+### Community 474 - "Community 474"
+Cohesion: 0.33
+Nodes (6): 2026-06-04 — REMOVE: Cash shortfall backfill APIs (Cash-7A/7B), Product, Removed, Unchanged, Unchanged, Unchanged
+
+### Community 475 - "Community 475"
+Cohesion: 0.33
+Nodes (6): Cash movements, `DELETE /api/v1/cash-movements/{id}`, `GET /api/v1/cash-movements`, `GET /api/v1/cash-movements/{id}`, `POST /api/v1/cash-movements`, `PUT /api/v1/cash-movements/{id}`
+
+### Community 476 - "Community 476"
 Cohesion: 0.40
-Nodes (5): Fixed deposit lifecycle, Mark matured (status only), `POST /api/v1/fixed-deposits/{id}/close`, `POST /api/v1/fixed-deposits/{id}/renew`, `POST /api/v1/fixed-deposits/{id}/settle`
+Nodes (4): account, accountAfterSeed, accountRow, dialog
+
+### Community 477 - "Community 477"
+Cohesion: 0.50
+Nodes (4): cash_allocation_rows(), Allocation slices for cash — one row per native currency in scope., Allocation slices for cash — one row per native currency in scope., Allocation slices for cash — one row per native currency in scope.
 
 ## Knowledge Gaps
-- **2864 isolated node(s):** `name`, `private`, `version`, `dev`, `build` (+2859 more)
+- **3449 isolated node(s):** `name`, `private`, `version`, `dev`, `build` (+3444 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **36 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **37 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `ensure_default_portfolio()` connect `Community 1` to `Community 128`, `Community 2`, `Community 3`, `Community 388`, `Community 4`, `Community 6`, `Community 7`, `Community 134`, `Community 133`, `Community 9`, `Community 11`, `Community 12`, `Community 140`, `Community 396`, `Community 14`, `Community 144`, `Community 143`, `Community 137`, `Community 148`, `Community 276`, `Community 22`, `Community 154`, `Community 40`, `Community 315`, `Community 316`, `Community 189`, `Community 197`, `Community 199`, `Community 212`, `Community 213`, `Community 87`, `Community 91`, `Community 227`, `Community 232`, `Community 105`, `Community 362`, `Community 106`, `Community 108`, `Community 109`, `Community 111`, `Community 371`, `Community 115`, `Community 120`, `Community 124`, `Community 253`, `Community 126`?**
-  _High betweenness centrality (0.132) - this node is a cross-community bridge._
-- **Why does `LogoutView` connect `Community 137` to `Community 33`?**
-  _High betweenness centrality (0.100) - this node is a cross-community bridge._
+- **Why does `ensure_default_portfolio()` connect `Community 1` to `Community 128`, `Community 2`, `Community 3`, `Community 4`, `Community 388`, `Community 6`, `Community 7`, `Community 134`, `Community 133`, `Community 9`, `Community 11`, `Community 12`, `Community 140`, `Community 396`, `Community 14`, `Community 144`, `Community 143`, `Community 147`, `Community 148`, `Community 276`, `Community 407`, `Community 152`, `Community 154`, `Community 40`, `Community 425`, `Community 315`, `Community 316`, `Community 189`, `Community 445`, `Community 197`, `Community 199`, `Community 456`, `Community 212`, `Community 213`, `Community 87`, `Community 91`, `Community 227`, `Community 105`, `Community 362`, `Community 106`, `Community 108`, `Community 109`, `Community 367`, `Community 111`, `Community 369`, `Community 371`, `Community 115`, `Community 120`, `Community 124`, `Community 126`?**
+  _High betweenness centrality (0.099) - this node is a cross-community bridge._
+- **Why does `LogoutView` connect `Community 137` to `Community 95`?**
+  _High betweenness centrality (0.070) - this node is a cross-community bridge._
 - **Why does `logout()` connect `Community 0` to `Community 137`?**
-  _High betweenness centrality (0.100) - this node is a cross-community bridge._
-- **Are the 457 inferred relationships involving `ensure_default_portfolio()` (e.g. with `list_active_portfolios()` and `get_portfolio()`) actually correct?**
-  _`ensure_default_portfolio()` has 457 INFERRED edges - model-reasoned connections that need verification._
+  _High betweenness centrality (0.070) - this node is a cross-community bridge._
+- **Are the 510 inferred relationships involving `ensure_default_portfolio()` (e.g. with `list_active_portfolios()` and `get_portfolio()`) actually correct?**
+  _`ensure_default_portfolio()` has 510 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 98 inferred relationships involving `fund_bank_account()` (e.g. with `_create_fd()` and `test_default_bank_account_excluded_from_summary()`) actually correct?**
+  _`fund_bank_account()` has 98 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 83 inferred relationships involving `str` (e.g. with `convert_amount_on_date()` and `convert_amount_with_fill_from_maps()`) actually correct?**
   _`str` has 83 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 77 inferred relationships involving `PortfolioNotFoundError` (e.g. with `CashValidationError` and `CashEntryNotEditableError`) actually correct?**
-  _`PortfolioNotFoundError` has 77 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 76 inferred relationships involving `fund_bank_account()` (e.g. with `_create_fd()` and `test_default_bank_account_excluded_from_summary()`) actually correct?**
-  _`fund_bank_account()` has 76 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 85 inferred relationships involving `PortfolioNotFoundError` (e.g. with `CashValidationError` and `CashEntryNotEditableError`) actually correct?**
+  _`PortfolioNotFoundError` has 85 INFERRED edges - model-reasoned connections that need verification._

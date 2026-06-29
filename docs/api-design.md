@@ -58,7 +58,8 @@ Design: [cash-unification.md](./cash-unification.md).
 | Method | Path | Purpose | Phase |
 |--------|------|---------|-------|
 | GET | `/api/v1/cash/overview` | **Implemented (CASH-UNIFY-1)** — read-only broker + bank cash rows; optional `display_currency`, `include_unassigned` | CASH-UNIFY-1 |
-| — | `BankAccount.portfolio` | **Implemented (CASH-UNIFY-1)** — nullable FK = **current portfolio link** / default investment portfolio; inference via `infer_bank_account_portfolios`. Link/delink does not create movements (CASH-MODEL-REFINE-0). Dedicated link/delink UX → CASH-UNIFY-4 | CASH-UNIFY-1 |
+| — | `BankAccount.portfolio` | **Implemented (CASH-UNIFY-1/4)** — nullable FK = **current portfolio link** / default investment portfolio; inference via `infer_bank_account_portfolios`. Link/delink via Settings (no movements). | CASH-UNIFY-1, 4 |
+| — | `cash_overview_diagnostics` | **Implemented (CASH-UNIFY-4A)** — read-only management command; broker/bank summaries, unlinked accounts | CASH-UNIFY-4A |
 | — | FD create portfolio rule | Derive `portfolio` from `bank_account.portfolio`; reject mismatch | CASH-UNIFY-2 |
 
 **`GET /api/v1/cash/overview` query:** `portfolio_scope=all` or `portfolio_id`; optional `as_of_date`, `display_currency`, `include_unassigned` (default false).

@@ -1,5 +1,14 @@
 # Changelog — KPulla6
 
+## 2026-06-26 — MILESTONE-CLOSEOUT-1: Cash unification + FD tax reporting closeout
+
+- **Docs audit:** Aligned `current-state`, `project-summary`, `decisions`, `cash-unification`, `cash-ledger`, `fixed-deposits*`, `api-design`, `api-contracts`, `database`, `frontend-design`, `page-layouts`, and backlog index with implemented behavior.
+- **Cash stream (complete):** CASH-UNIFY-0..4B, CASH-UNIFY-4A stabilization, CASH-CORR-1A broker reversal — two-ledger model, `/cash/overview`, Cash page Broker/Bank split, bank link/delink (inclusion only), FD portfolio from bank link, display-currency auto-select, diagnostics command.
+- **FD tax stream (complete):** FD-TAX-1 report, FD-TAX-1A polish, FD-TAX-2 CSV export — read-only; not tax advice; no accounting changes.
+- **Deferred (indexed):** CASH-UNIFY-5 transfer, FD-FUND-BROKER, broader CASH-CORR-1 reclassification, FX-1/FX-2, FD-ACC-10C/10D, FD-ANALYTICS-1/2.
+- **Graphify:** `make graphify` (`graphify update .`) when tooling available.
+- **No runtime/code changes** unless Graphify output refreshed.
+
 ## 2026-06-26 — FD-TAX-2: FD Interest & Tax report CSV export
 
 - **API:** `GET /api/v1/reports/fixed-deposit-interest/export.csv` — read-only CSV export; same filters/exclusions as JSON report; detail rows only (`group_by` ignored).

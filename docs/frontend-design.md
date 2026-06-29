@@ -113,7 +113,7 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 
 - `AppCard` sections with sticky section nav: Display & tax; **Portfolios** (CRUD); **Bank accounts** (`BankAccountManagement` + nested `CashMovementManagement`); Data & sync (explainer)
 - **Bank accounts (CASH-UNIFY-4 / 4B):** **Linked portfolio** column; **Link to portfolio** / **Change linked portfolio** open a **modal** with portfolio selector; **Delink from portfolio** inline; helper text that link/delink does not create cash movements or change balance; FD warning in modal when relinking account with active FDs.
-- **Portfolio view (CASH-UNIFY-4B):** Selecting a portfolio auto-sets **Display Currency** to portfolio `base_currency` when supported; **All Portfolios** preserves current display currency.
+- **Portfolio view (CASH-UNIFY-4B):** Selecting a portfolio auto-sets **Display Currency** to portfolio `base_currency` when supported; **All Portfolios** preserves current display currency; unsupported base currency leaves display currency unchanged.
 - Portfolio table: name, base currency, default flag; create form; edit modal; deactivate for non-default only
 - Bank accounts: list active accounts; create/edit; ledger-derived `current_balance`; seed opening balance; per-account cash movements
 - Display currency must stay in sync with **header** display-currency selector

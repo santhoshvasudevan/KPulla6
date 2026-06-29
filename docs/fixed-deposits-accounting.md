@@ -1,6 +1,6 @@
 # Fixed Deposits — Accounting Phase 1
 
-**Status:** **FD-ACC-7 implemented** · **FD-ACC-8B implemented** (value history) · **FD-ACC-8C implemented** (return metrics) · **FD-ACC-9 audited** (2026-06-14) · **FD-ACC-10A implemented** (2026-06-24) · **FD-ACC-10B implemented** (2026-06-24) · **FD-TAX-1 implemented** (2026-06-24) · **FD-CASH-ASOF-1 implemented** (2026-06-24, create as-of balance UX).
+**Status:** **FD-ACC-7 implemented** · **FD-ACC-8B implemented** (value history) · **FD-ACC-8C implemented** (return metrics) · **FD-ACC-9 audited** (2026-06-14) · **FD-ACC-10A implemented** (2026-06-24) · **FD-ACC-10B implemented** (2026-06-24) · **FD-TAX-1/1A/2 implemented** (2026-06-26) · **FD-CASH-ASOF-1 implemented** (2026-06-24, create as-of balance UX).
 
 ## FD-CASH-ASOF-1 implementation notes (2026-06-24)
 

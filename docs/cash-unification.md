@@ -1,6 +1,6 @@
 # Cash Unification — Domain Model & Roadmap (CASH-UNIFY-0)
 
-**Status:** **Stabilized** (CASH-UNIFY-4A, 2026-06-26) — phases 0–4B implemented and audited.  
+**Status:** **Stabilized & closed** (MILESTONE-CLOSEOUT-1, 2026-06-26) — phases 0–4B, 4A, CASH-CORR-1A implemented and audited. FD-TAX-1/1A/2 complete.  
 **Last updated:** 2026-06-26
 
 **Related:** [cash-ledger.md](./cash-ledger.md) (broker cash) · [fixed-deposits-accounting.md](./fixed-deposits-accounting.md) (bank ledger) · [fixed-deposits.md](./fixed-deposits.md) · [architecture.md](./architecture.md) · [decisions.md](./decisions.md) · [product-rules.md](./product-rules.md)
@@ -274,12 +274,15 @@ These apply to **all** CASH-UNIFY implementation phases:
 | ID | Title | Backlog file | Depends on | Runtime |
 |----|-------|--------------|------------|---------|
 | **CASH-UNIFY-0** | Unified cash model design | [001-cash-unify-0.md](./backlog/001-cash-unify-0.md) | — | **Docs only** ✓ |
-| **CASH-UNIFY-1** | Bank account portfolio ownership + unified read API | [002-cash-unify-1.md](./backlog/002-cash-unify-1.md) | 001 | **Done** ✓ |
-| **CASH-UNIFY-2** | FD portfolio derived from bank account | [003-cash-unify-2.md](./backlog/003-cash-unify-2.md) | 002 | Write validation + backfill flags |
+| **CASH-UNIFY-1** | Bank account portfolio link + unified read API | [002-cash-unify-1.md](./backlog/002-cash-unify-1.md) | 001 | **Done** ✓ |
+| **CASH-UNIFY-2** | FD portfolio derived from bank account | [003-cash-unify-2.md](./backlog/003-cash-unify-2.md) | 002 | **Done** ✓ |
 | **CASH-UNIFY-3** | Unified Cash page UI | [004-cash-unify-3.md](./backlog/004-cash-unify-3.md) | 002 (overview API); 003 recommended | **Done** ✓ |
-| **CASH-UNIFY-3A** | Cash page verification & attribution fix | [004a-cash-unify-3a.md](./backlog/004a-cash-unify-3a.md) | 004 | Frontend fix |
-| **CASH-UNIFY-4** | Bank account link/delink UX + inclusion stabilization | [005-cash-unify-4.md](./backlog/005-cash-unify-4.md) | 004, 004a | Read API + UX + docs |
-| **CASH-CORR-1** | Safe cash entry reclassification | [012-cash-corr-1.md](./backlog/012-cash-corr-1.md) | 004, 005 (recommended) | Correction workflow |
+| **CASH-UNIFY-3A** | Cash page verification & attribution fix | [004a-cash-unify-3a.md](./backlog/004a-cash-unify-3a.md) | 004 | **Done** ✓ |
+| **CASH-UNIFY-4** | Bank account link/delink UX + inclusion stabilization | [005-cash-unify-4.md](./backlog/005-cash-unify-4.md) | 004, 004a | **Done** ✓ |
+| **CASH-UNIFY-4B** | Bank link modal + display currency auto-select | *(in-repo hotfix)* | 005 | **Done** ✓ |
+| **CASH-UNIFY-4A** | Final audit + `cash_overview_diagnostics` | *(in-repo)* | 005 | **Done** ✓ |
+| **CASH-CORR-1A** | Safe broker cash reversal | *(in-repo)* | 004a | **Done** ✓ |
+| **CASH-CORR-1** | Cross-ledger reclassification + reconciliation API | [012-cash-corr-1.md](./backlog/012-cash-corr-1.md) | 004, 005 (recommended) | **Partial** — 1A done; broader reclassification open |
 | **CASH-UNIFY-5** | Broker ↔ bank transfer workflow | *Deferred* | 004 | Optional future epic |
 | **CASH-UNIFY-6** | Physical / offline cash account | *Deferred* | — | Optional future account type |
 
@@ -293,12 +296,12 @@ These apply to **all** CASH-UNIFY implementation phases:
 - Bank account APIs expose `portfolio_id`, assignment status.
 - Document in `api-design.md`; `fetchCashOverview` in `api.js` (no page UI required).
 
-**CASH-UNIFY-2 — FD portfolio derived from bank account**
+**CASH-UNIFY-2 — FD portfolio derived from bank account (implemented 2026-06-24)**
 
 - FD create: set `portfolio` from `bank_account.portfolio`; reject mismatch/unassigned bank account.
-- FD create UI: portfolio field read-only or hidden when bank account selected.
+- FD create UI: portfolio field read-only when bank account selected.
 - Existing FD mismatch → warning, no silent rewrite.
-- Tests for create validation and inference edge cases.
+- **Runtime:** linked-bank funding only (`FD_OPENING`); broker-funded FD deferred (FD-FUND-BROKER).
 
 **CASH-UNIFY-3 — Unified Cash page UI (implemented 2026-06-24)**
 
@@ -317,12 +320,20 @@ These apply to **all** CASH-UNIFY implementation phases:
 - IndianInvestments regression covered in tests (broker 0, bank ~1.1M INR).
 - Correction/reclassification deferred to CASH-CORR-1; broker-funded FD deferred.
 
-**CASH-UNIFY-4 — Bank account link/delink + stabilization**
+**CASH-UNIFY-4 — Bank account link/delink + stabilization (implemented 2026-06-26)**
 
 - Clear **link/delink** UX in Settings → Bank Accounts (`BankAccount.portfolio` as current link).
 - Link/delink changes inclusion only — no ledger movements.
 - Linked bank cash in portfolio Cash holdings; delinked as external/unassigned.
-- Display-currency totals and terminology cleanup after link model is stable.
+- Display-currency totals and terminology cleanup (cached FX only).
+
+**CASH-UNIFY-4B — Bank link modal + display currency (implemented 2026-06-26)**
+
+- Link/change-link opens dedicated modal; portfolio switch auto-selects supported `base_currency`; All Portfolios preserves current display currency.
+
+**CASH-UNIFY-4A — Audit + diagnostics (implemented 2026-06-26)**
+
+- Read-only `cash_overview_diagnostics` command; final stream stabilization (MILESTONE-CLOSEOUT-1).
 
 **CASH-CORR-1A — Safe broker cash reversal (implemented 2026-06-26)**
 
@@ -354,6 +365,7 @@ These apply to **all** CASH-UNIFY implementation phases:
 | Bank account portfolio inference | `backend/debt/bank_account_portfolio.py` |
 | Inference command | `backend/debt/management/commands/infer_bank_account_portfolios.py` |
 | Cash overview service | `backend/cash/overview_service.py` |
+| Cash overview diagnostics | `backend/cash/management/commands/cash_overview_diagnostics.py` |
 | Broker ledger model | `backend/cash/models.py` — `CashLedgerEntry` |
 | Bank ledger model | `backend/debt/models.py` — `CashMovement`, `BankAccount` |
 | FD create + opening debit | `backend/debt/services.py`, `backend/debt/bank_ledger_services.py` |
@@ -366,15 +378,17 @@ These apply to **all** CASH-UNIFY implementation phases:
 
 ---
 
-## 10. Open questions (deferred to implementation phases)
+## 10. Open questions (resolved or deferred)
 
-| Question | Deferred to |
-|----------|-------------|
-| Required vs optional `BankAccount.portfolio` for non-FD accounts | CASH-UNIFY-1 product review |
-| Block FD create vs warn when bank account unassigned | CASH-UNIFY-2 |
-| Display-currency total when partial FX unavailable | CASH-UNIFY-4 |
-| Paired broker-bank transfer API shape | CASH-UNIFY-5 |
-| Portfolio-specific bank sub-balances for multi-portfolio accounts | Post CASH-UNIFY-4 / CASH-CORR-1 |
+| Question | Resolution |
+|----------|------------|
+| Required vs optional `BankAccount.portfolio` for non-FD accounts | **Resolved (CASH-UNIFY-1/4):** nullable link; user assigns via Settings |
+| Block FD create vs warn when bank account unassigned | **Resolved (CASH-UNIFY-2):** create blocked (**400**) until linked |
+| Display-currency total when partial FX unavailable | **Resolved (CASH-UNIFY-4):** partial totals + warnings; cached FX only |
+| Paired broker-bank transfer API shape | **Deferred:** CASH-UNIFY-5 |
+| Portfolio-specific bank sub-balances for multi-portfolio accounts | **Deferred:** post CASH-CORR-1 |
+| Broker-cash-funded FD create | **Deferred:** FD-FUND-BROKER |
+| FD interest/tax CSV export | **Resolved (FD-TAX-2):** `GET .../export.csv` |
 
 ---
 

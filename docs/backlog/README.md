@@ -106,9 +106,11 @@ Execute in order within each epic unless the planner reprioritizes.
 | 2 | [002-cash-unify-1.md](./002-cash-unify-1.md) | CASH-UNIFY-1 | **Done** | 001 |
 | 3 | [003-cash-unify-2.md](./003-cash-unify-2.md) | CASH-UNIFY-2 | **Done** | 002 |
 | 4 | [004-cash-unify-3.md](./004-cash-unify-3.md) | CASH-UNIFY-3 | **Done** | 003 |
-| 4a | [004a-cash-unify-3a.md](./004a-cash-unify-3a.md) | CASH-UNIFY-3A | Done | 004 |
+| 4a | [004a-cash-unify-3a.md](./004a-cash-unify-3a.md) | CASH-UNIFY-3A | **Done** | 004 |
 | 5 | [005-cash-unify-4.md](./005-cash-unify-4.md) | CASH-UNIFY-4 | **Done** | 004, 004a |
 | 5a | *(in-repo — CASH-UNIFY-4A)* | CASH-UNIFY-4A | **Done** | 005 |
+| 5b | *(in-repo — CASH-UNIFY-4B)* | CASH-UNIFY-4B | **Done** | 005 |
+| 5c | *(in-repo — CASH-CORR-1A)* | CASH-CORR-1A | **Done** | 004a |
 | 6 | [006-fx-1.md](./006-fx-1.md) | FX-1 | Open | 005 (recommended) |
 | 7 | [007-fx-2.md](./007-fx-2.md) | FX-2 | Open | 006 |
 | 8 | [008-fd-tax-1a.md](./008-fd-tax-1a.md) | FD-TAX-1a | **Done** | — |
@@ -119,13 +121,17 @@ Execute in order within each epic unless the planner reprioritizes.
 | 13 | [013-fd-analytics-1.md](./013-fd-analytics-1.md) | FD-ANALYTICS-1 | Open | 005 |
 | 14 | [014-fd-analytics-2.md](./014-fd-analytics-2.md) | FD-ANALYTICS-2 | Open | 013 |
 
-**Legend:** Open = not started by Background Agent. Planner updates status after review/merge.
+**Legend:** Open = not started by Background Agent. **Done** = implemented and documented. Planner updates status after review/merge.
+
+### Milestone closeout (2026-06-26)
+
+**MILESTONE-CLOSEOUT-1** — Cash unification (CASH-UNIFY-0..4B, 4A, CASH-CORR-1A) and FD tax reporting (FD-TAX-1/1A/2) streams are **complete**. See [current-state.md](../current-state.md) § Milestone.
 
 ---
 
 ## Epic summaries
 
-### CASH-UNIFY (001–005, 004a, 4A, 012)
+### CASH-UNIFY (001–005, 004a, 4A, 4B, CORR-1A, 012)
 
 Clarify and surface the **two-ledger cash model** (portfolio broker cash vs bank ledger) without merging storage. Portfolio `CashLedgerEntry` and bank `CashMovement` remain separate per `docs/decisions.md` and [cash-unification.md](../cash-unification.md).
 
@@ -139,19 +145,26 @@ Clarify and surface the **two-ledger cash model** (portfolio broker cash vs bank
 | **3** | 004 | Unified Cash page UI (**done**) |
 | **3A** | 004a | Cash page verification: attribution, broker actions, diagnostics (**done**) |
 | **4** | 005 | Bank account link/delink UX + inclusion + display-currency stabilization (**done**) |
-| **4A** | — | Final audit/stabilization; diagnostics; docs/tests (**done**) |
-| **CORR-1A** | — | Safe broker cash reversal (**done**) |
-| **CORR** | 012 | Reconciliation diagnostics + safe reclassification (mistaken broker ↔ bank entries) |
+| **4B** | — | Bank link modal fix + display currency auto-select on portfolio switch (**done**) |
+| **4A** | — | Final audit/stabilization; `cash_overview_diagnostics`; docs/tests (**done**) |
+| **CORR-1A** | — | Safe broker cash reversal API + command (**done**) |
+| **CORR** | 012 | Reconciliation diagnostics + cross-ledger reclassification (**partial** — 1A done) |
 
-**Deferred (not in backlog index):** CASH-UNIFY-5 broker ↔ bank **transfer** workflow (actual movements); CASH-UNIFY-6 physical/offline cash account.
+**Deferred (not in backlog index):** CASH-UNIFY-5 broker ↔ bank **transfer** workflow (actual movements); CASH-UNIFY-6 physical/offline cash account; **FD-FUND-BROKER** broker-cash FD create.
 
 ### FX (006–007)
 
 Deferred cash FX features: same-portfolio FX conversion legs (Cash-8C) and display-currency normalization on cash surfaces.
 
-### FD-TAX (008–009)
+### FD-TAX (008–009) — **complete**
 
-FD-TAX-1 report polish (1a), then CSV/export (2).
+| Phase | Scope | Status |
+|-------|--------|--------|
+| FD-TAX-1 | Read-only interest/tax report API + UI | **Done** (pre-backlog) |
+| **1A** | 008 | Report polish — filters, notes, warnings, grouped totals |
+| **2** | 009 | CSV export (`GET .../export.csv`) |
+
+Not tax advice. No accounting changes.
 
 ### FD-ACC reversal completion (010–011)
 
