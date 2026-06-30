@@ -114,11 +114,11 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 **Files:** `pages/AssetDetail.jsx` · `pages/AssetDetail.css`
 
-**Layout status:** **Implemented (P6)** — premium asset tear-sheet using Executive Portfolio OS primitives.
+**Layout status:** **Implemented (P6)** — premium asset Metric Sheet layout using Executive Portfolio OS primitives.
 
 | Section | Layout |
 |---------|--------|
-| **Header** | Tear-sheet `PageHeader` with `AssetClassPill` eyebrow, symbol title, breadcrumb to Assets, scope/currency subtitle. |
+| **Header** | Metric Sheet `PageHeader` with `AssetClassPill` eyebrow, symbol title, breadcrumb to Assets, scope/currency subtitle. |
 | **Warnings** | FX and API `warnings[]` banners. |
 | **Hero KPIs** | `KpiCard` grid: Current Value (hero), Quantity, Unrealized P/L, XIRR — backend values only. |
 | **Section nav** | Sticky in-page anchors: Overview, Metrics, Details, Transactions. |
@@ -199,14 +199,16 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 **Files:** `pages/FixedDeposits.jsx` · `pages/FixedDeposits.css` · `utils/fdDisplay.js`
 
-**Status:** **Redesigned (P7)** — Executive Portfolio OS layout; no backend/API behavior changes.
+**Status:** **Redesigned (P7)** — Executive Portfolio OS layout; FD-HOLDINGS-UX-1 adds maturity display fallback + action strip (API dynamic estimate for legacy rows).
 
 | Section | Layout |
 |---------|--------|
 | **Header** | `PageHeader` with FD/debt workflow subtitle and Add Fixed Deposit primary action. |
 | **Overview** | `KpiCard` strip: total deposits, active, matured, settled/closed counts from backend status fields only (no finance math). |
 | **Section nav** | Sticky Overview \| Deposits \| Interest & Tax anchor links (`#fd-overview`, `#fd-deposits`, `#fd-interest-report`). |
-| **Table** | `DataTableShell` + `AppTable`: institution, deposit account, principal (right-aligned), rate, investment/maturity dates, payout frequency (`fdPayoutLabel`), `StatusBadge` lifecycle status, action buttons. |
+| **Table** | `DataTableShell` + `AppTable`: institution, deposit account, principal (right-aligned), rate, investment/maturity dates, payout frequency (`fdPayoutLabel`), **maturity value** (compounded uplift or payout principal) + source badge + interest sublines (`fdDisplay` helpers), `StatusBadge` lifecycle status. |
+| **Create/edit preview (FD-INTEREST-MATURITY-LOGIC-1)** | Compounded: **Expected maturity value** card. Payout: **Expected interest payout** — principal returned at maturity, periodic + total interest estimates, simple payout method note. |
+| **Action strip (FD-HOLDINGS-UX-1)** | Full-width row below each FD: grouped buttons (Record interest, Interest payments \| Mark matured, Settle/Close, Renew \| Edit, Cancel FD, Deactivate); responsive wrap; Cancel uses danger styling. |
 | **Interest history** | Expandable nested `AppTable` per FD row; backend payment fields only. |
 | **Bank account dependency** | Fetches active bank accounts and portfolios. Create is blocked/guided when no active bank account exists. |
 | **Create modal** | Portfolio dropdown (required); bank account dropdown as funding source; copy explains funding vs tracking; currency read-only from selected bank account; principal/rate/dates/status; shows **current** and **as-of investment date** ledger balances (balance API); insufficient as-of balance shows missing amount + inline **Seed missing balance** panel (`seed-balance` API); Cash tab vs Bank Ledger note; structured insufficient-balance error panel with auto-scroll/focus. |
@@ -278,7 +280,7 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 **APIs:** `getSettings`, `updateSettings`, `createPortfolio`, `updatePortfolio`, `deletePortfolio`, `fetchBankAccounts`, `createBankAccount`, `updateBankAccount`, `deleteBankAccount`, `seedBankAccountOpeningBalance`, `fetchCashMovements`, `createCashMovement`, `reverseCashMovement`, `reloadPortfolios()`.
 
-**Preserve in redesign:** display currency must stay synchronized with sidebar context; All Portfolios remains virtual and cannot be created/assigned; default portfolio cannot be deactivated; bank ledger/current balance rules are backend-owned.
+**Preserve in redesign:** display currency must stay synchronized with header portfolio/currency context; All Portfolios remains virtual and cannot be created/assigned; default portfolio cannot be deactivated; bank ledger/current balance rules are backend-owned.
 
 **Tests:** `Settings.test.jsx`, `BankAccountManagement.test.jsx`, `CashMovementManagement.test.jsx`, `Layout.test.jsx`.
 
@@ -387,7 +389,7 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 | 2026-06-22 | P4.4 navigation architecture: single top nav, no duplicate left sidebar, Dashboard in-page anchors only | Implemented |
 | 2026-06-22 | P4R: Dashboard anchor scroll offset; Settings left-heavy layout deferred to P9 | Implemented |
 | 2026-06-23 | P5: Transactions and Cash redesigned as premium ledger/overview pages; no API/backend changes | Implemented |
-| 2026-06-23 | P6: Assets and Asset Detail redesigned as holdings hub and asset tear-sheet; no API/backend changes | Implemented |
+| 2026-06-23 | P6: Assets and Asset Detail redesigned as holdings hub and asset Metric Sheet; no API/backend changes | Implemented |
 | 2026-06-23 | P7: Fixed Deposits redesigned with KPI overview, lifecycle badges, premium table; no API/backend changes | Implemented |
 | 2026-06-23 | P8: Compare redesigned as analytics workstation with setup panel, ChartFrame, KPI strip; no API/backend changes | Implemented |
 | 2026-06-23 | P9: Settings redesigned as centered workspace with section nav and AppCard sections; no API/backend changes | Implemented |

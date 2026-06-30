@@ -1,4 +1,4 @@
-.PHONY: db db-stop db-logs db-shell db-reset backup-db db-safety-check backend frontend migrate seed bootstrap test test-backend test-frontend test-fast test-critical test-all dev setup-backend setup-frontend sync-prices sync-benchmarks sync-fx sync-mutual-fund-navs sync-market-data refresh graphify ports stop-backend stop-frontend stop-dev stop-all clean-dev
+.PHONY: db db-stop db-logs db-shell db-reset backup-db db-safety-check backend frontend migrate seed bootstrap test test-backend test-frontend test-fast test-critical test-all dev setup-backend setup-frontend setup-docs docs-serve docs-build docs-check sync-prices sync-benchmarks sync-fx sync-mutual-fund-navs sync-market-data refresh graphify ports stop-backend stop-frontend stop-docs stop-dev stop-all clean-dev
 
 BACKEND_DIR := backend
 FRONTEND_DIR := frontend
@@ -8,6 +8,7 @@ PIP := .venv/bin/pip
 
 BACKEND_PORT ?= 8000
 FRONTEND_PORT ?= 5173
+DOCS_PORT ?= 8002
 POSTGRES_CONTAINER := kpulla6_postgres
 POSTGRES_DB ?= portfolio_insight_kpulla6
 POSTGRES_USER ?= santhosh_admin
@@ -53,6 +54,22 @@ setup-backend:
 
 setup-frontend:
 	cd $(FRONTEND_DIR) && npm install
+
+setup-docs: setup-backend
+	cd $(BACKEND_DIR) && $(PIP) install -r ../requirements-docs.txt
+
+docs-serve: setup-docs
+	@set -a && [ -f .env ] && . ./.env; set +a; \
+	cd $(BACKEND_DIR) && $(PYTHON) -m mkdocs serve -f ../mkdocs.yml -a 127.0.0.1:$(DOCS_PORT)
+
+docs-build: setup-docs
+	@set -a && [ -f .env ] && . ./.env; set +a; \
+	cd $(BACKEND_DIR) && $(PYTHON) -m mkdocs build -f ../mkdocs.yml
+
+docs-check: setup-docs
+	@set -a && [ -f .env ] && . ./.env; set +a; \
+	cd $(BACKEND_DIR) && $(PYTHON) -m mkdocs build -f ../mkdocs.yml --strict
+	cd $(BACKEND_DIR) && $(PYTHON) ../scripts/check_docs_consistency.py --strict
 
 backend: setup-backend db
 	@set -a && [ -f .env ] && . ./.env; set +a; \
@@ -146,9 +163,10 @@ sync-market-data: setup-backend db migrate
 refresh: sync-market-data
 	@echo "==> Refresh complete (stocks, benchmarks, FX, mutual fund NAVs)"
 
-dev: setup-backend setup-frontend db migrate
+dev: setup-backend setup-frontend setup-docs db migrate
 	@set -a && [ -f .env ] && . ./.env; set +a; \
 	cd $(BACKEND_DIR) && $(PYTHON) manage.py runserver 0.0.0.0:$(BACKEND_PORT) & \
+	cd $(BACKEND_DIR) && $(PYTHON) -m mkdocs serve -f ../mkdocs.yml -a 127.0.0.1:$(DOCS_PORT) & \
 	cd $(FRONTEND_DIR) && npm run dev -- --host 0.0.0.0 --port $(FRONTEND_PORT)
 
 graphify:
@@ -160,6 +178,9 @@ ports:
 	@echo ""
 	@echo "Port $(FRONTEND_PORT) (frontend):"
 	@lsof -nP -iTCP:$(FRONTEND_PORT) -sTCP:LISTEN 2>/dev/null || echo "  (none)"
+	@echo ""
+	@echo "Port $(DOCS_PORT) (docs):"
+	@lsof -nP -iTCP:$(DOCS_PORT) -sTCP:LISTEN 2>/dev/null || echo "  (none)"
 
 stop-backend:
 	@for PID in $$(lsof -ti :$(BACKEND_PORT) 2>/dev/null); do \
@@ -173,7 +194,13 @@ stop-frontend:
 		kill $$PID 2>/dev/null || true; \
 	done
 
-stop-dev: stop-backend stop-frontend
+stop-docs:
+	@for PID in $$(lsof -ti :$(DOCS_PORT) 2>/dev/null); do \
+		echo "Stopping docs PID $$PID on port $(DOCS_PORT)"; \
+		kill $$PID 2>/dev/null || true; \
+	done
+
+stop-dev: stop-backend stop-frontend stop-docs
 
 stop-all: stop-dev
 	docker compose stop postgres

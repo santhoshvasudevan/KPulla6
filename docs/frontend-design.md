@@ -122,6 +122,9 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 ### Fixed Deposits (`/fixed-deposits`)
 
 - Table lists backend FD fields only (no interest or portfolio value calculations in React)
+- **Holdings maturity value (FD-HOLDINGS-UX-1, FD-INTEREST-MATURITY-LOGIC-1):** compounded FDs show expected maturity + **Auto estimate** / **User confirmed** badge; payout FDs show principal returned + est. total/periodic interest + **Principal returned** badge (not inflated maturity)
+- **Create/edit preview:** compounded → heading **Expected maturity value**; payout → **Expected interest payout** with principal-at-maturity copy; override checkbox differs (bank maturity value vs confirmed principal)
+- **Action strip:** full-width grouped buttons below each FD row (common / lifecycle / maintenance); Cancel FD uses `danger` variant; responsive wrap on narrow screens
 - Add/Edit modal: **Portfolio to track this FD** dropdown (required on create); **Funding bank account** dropdown; unlinked bank does not block create; insufficient as-of balance → inline historical seed panel; currency read-only from selected bank account
 - **Create:** explainer that principal debits linked bank account; shows **current ledger balance** and **available as of investment date** (from balance API); backend rejects when as-of balance insufficient; structured error panel with auto-scroll/focus
 - **Edit:** when `has_opening_cash_movement`, principal/bank/currency/investment date/portfolio fields disabled; backend enforces immutability
@@ -368,7 +371,7 @@ Component: `CashEntryFormFields.jsx` (shared cash form fields); `TransactionModa
 
 ## Cash-aware portfolio status (Cash-4A.2) — **Implemented**
 
-`CashAwarePortfolioStatus.jsx` — shown on **Cash** and **Transactions** when a single portfolio is selected in the sidebar:
+`CashAwarePortfolioStatus.jsx` — shown on **Cash** and **Transactions** when a single portfolio is selected in the header:
 
 | State | Copy | Actions |
 |-------|------|---------|
@@ -382,7 +385,7 @@ Existing portfolios stay legacy until enabled; new portfolios default on (Cash-4
 
 ## Cash page (`/cash`) — **Implemented** (Cash-3B + CASH-UNIFY-3)
 
-Route: `pages/Cash.jsx` · `pages/Cash.css` · sidebar nav **Cash** (after Transactions). Page title: **Cash / Liquid Holdings**.
+Route: `pages/Cash.jsx` · `pages/Cash.css` · top nav **Cash** (after Transactions). Page title: **Cash / Liquid Holdings**.
 
 Overview and tables use `GET /api/v1/cash/overview` (`fetchCashOverview`) with `portfolioContext.apiQuery` (scope + `display_currency`). Broker ledger writes still use `/cash/*`. React **displays only** — no client-side cash aggregation.
 

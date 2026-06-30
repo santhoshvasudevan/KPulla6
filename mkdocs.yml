@@ -1,0 +1,132 @@
+# MkDocs Material — Diátaxis documentation site for KPulla6.
+# Serve: make docs-serve  |  Build: make docs-build  |  Check: make docs-check
+site_name: "KPulla6 Docs"
+site_description: Local-first portfolio tracker — tutorials, concepts, API reference, and workflows
+site_url: "http://docs.kpulla6.com/"
+copyright: Copyright &copy; KPulla6 contributors
+
+repo_url: https://github.com/santhoshvasudevan/KPulla6
+repo_name: santhoshvasudevan/KPulla6
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+site_dir: site
+use_directory_urls: true
+dev_addr: "127.0.0.1:8002"
+strict: false
+
+exclude_docs: |
+  README.md
+
+validation:
+  omitted_files: ignore
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+hooks:
+  - scripts/mkdocs_hooks.py
+
+theme:
+  name: material
+  language: en
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - toc.follow
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Overview: getting-started/overview.md
+    - Quickstart run locally: getting-started/quickstart.md
+    - Login and first use: getting-started/login-and-first-use.md
+    - Common commands: getting-started/common-commands.md
+  - Tutorials:
+    - Add your first portfolio: tutorials/add-first-portfolio.md
+    - Import stock transactions: tutorials/import-stock-transactions.md
+    - Add mutual fund transactions: tutorials/add-mutual-fund-transactions.md
+    - Refresh market data: tutorials/refresh-market-data.md
+    - Read the dashboard: tutorials/read-the-dashboard.md
+  - How-to Guides:
+    - Run the app on iPad / LAN: how-to/run-on-ipad-lan.md
+    - Configure Google OAuth: how-to/configure-google-oauth.md
+    - Refresh prices, FX, benchmarks, and NAVs: how-to/refresh-market-cache.md
+    - Back up and restore the database: how-to/backup-restore-database.md
+    - Add a backend API endpoint: how-to/add-backend-api-endpoint.md
+    - Add a frontend page: how-to/add-frontend-page.md
+    - Investigate dashboard performance: how-to/investigate-dashboard-performance.md
+    - Audit docs vs code: how-to/audit-docs-vs-code.md
+    - Local docs domain: how-to/local-docs-domain.md
+  - Concepts:
+    - Architecture overview: concepts/architecture-overview.md
+    - Transactions as source of truth: concepts/transactions-source-of-truth.md
+    - Cached market data: concepts/cached-market-data.md
+    - Portfolio performance: concepts/portfolio-performance.md
+    - Metric Sheet: concepts/metric-sheet.md
+    - Mutual funds: concepts/mutual-funds.md
+    - Cash ledger: concepts/cash-ledger.md
+    - Fixed deposits / debt: concepts/fixed-deposits-debt.md
+    - Data safety: concepts/data-safety.md
+  - Reference:
+    - API reference: reference/api-reference.md
+    - Database schema: reference/database-schema.md
+    - Make commands: reference/make-commands.md
+    - Environment variables: reference/environment-variables.md
+    - CSV formats: reference/csv-formats.md
+    - Frontend routes: reference/frontend-routes.md
+    - Backend module map: reference/backend-module-map.md
+    - Test commands: reference/test-commands.md
+  - Maintenance:
+    - Agent rules: maintenance/agent-rules.md
+    - Cursor maintenance workflow: maintenance/cursor-maintenance-workflow.md
+    - Docs consistency checks: maintenance/docs-consistency-checks.md
+    - Obsolete backend code audit: maintenance/obsolete-code-audit.md
+    - Release checklist: maintenance/release-checklist.md
+  - Troubleshooting:
+    - Login issues: troubleshooting/login-issues.md
+    - Google OAuth errors: troubleshooting/google-oauth-errors.md
+    - Missing prices or NAVs: troubleshooting/missing-prices-navs.md
+    - Dashboard is slow: troubleshooting/dashboard-slow.md
+    - Database safety problems: troubleshooting/database-safety.md
+    - Dev server and port issues: troubleshooting/dev-server-ports.md
+  - Decisions:
+    - Architecture decisions: decisions/architecture-decisions.md
+  - Changelog:
+    - Changelog: changelog/index.md

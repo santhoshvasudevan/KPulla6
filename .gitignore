@@ -71,5 +71,8 @@ graphify-out/graph.html
 graphify-out/manifest.json
 graphify-out/wiki/
 
+# MkDocs build output
+site/
+
 # Optional: keep only the compact report if desired
 !graphify-out/GRAPH_REPORT.md

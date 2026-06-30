@@ -174,4 +174,4 @@ When changing a formula:
 
 - [api-design.md](../api-design.md) — Analytics section  
 - [architecture.md](../architecture.md) — Metric Sheet architecture  
-- [AGENTS.md](../../AGENTS.md)
+- [AGENTS.md](../agents.md)

@@ -1,6 +1,6 @@
 # Development Workflow — KPulla6
 
-**Documentation index:** [README.md](./README.md)
+**Documentation index:** [Home](index.md)
 
 ## Prerequisites
 - Python 3.11+
@@ -14,6 +14,7 @@ make dev
 ```
 - Backend: http://127.0.0.1:8000
 - Frontend: http://127.0.0.1:5173
+- Docs: http://127.0.0.1:8002 (or http://docs.kpulla6.com:8002 with local hosts — see [local-docs-domain.md](how-to/local-docs-domain.md))
 - API health: http://127.0.0.1:8000/api/v1/health
 
 ## Start and stop
@@ -21,7 +22,7 @@ make dev
 | Action | Command |
 |--------|---------|
 | Start full dev stack | `make dev` |
-| Stop backend + frontend only | `make stop-dev` |
+| Stop backend + frontend + docs | `make stop-dev` |
 | Stop backend, frontend, and Postgres | `make stop-all` |
 | Check occupied dev ports | `make ports` |
 | Clean stop + port check | `make clean-dev` |
@@ -84,12 +85,17 @@ Agent rules: `.cursor/rules/320-cash-ledger.mdc` · design: [cash-ledger.md](./c
 | `make test-fast` | Finance unit + cash service pytest subset (~1 min) |
 | `make test-critical` | Golden-flow backend APIs + key frontend page tests |
 | `make test-all` | Full `make test` + frontend production build |
+| `make setup-docs` | Install MkDocs Material into backend venv (`requirements-docs.txt`) |
+| `make docs-serve` | Browse docs at http://127.0.0.1:8002 (MkDocs Material) |
+| `make docs-build` | Build static site to `site/` |
+| `make docs-check` | Strict MkDocs build + `scripts/check_docs_consistency.py` |
 | `make graphify` | Regenerate code graph (`graphify update .`) — see § Graphify Usage |
-| `make dev` | db + migrate + backend + frontend |
-| `make ports` | Show processes on backend/frontend dev ports |
+| `make dev` | db + migrate + backend + frontend + docs |
+| `make ports` | Show processes on backend/frontend/docs dev ports |
 | `make stop-backend` | Stop process on `BACKEND_PORT` (default 8000) |
 | `make stop-frontend` | Stop process on `FRONTEND_PORT` (default 5173) |
-| `make stop-dev` | Stop backend and frontend only |
+| `make stop-docs` | Stop process on `DOCS_PORT` (default 8002) |
+| `make stop-dev` | Stop backend, frontend, and docs |
 | `make stop-all` | Stop backend, frontend, and Postgres container |
 | `make clean-dev` | `stop-all` then `ports` |
 

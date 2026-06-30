@@ -1,5 +1,50 @@
 # Changelog — KPulla6
 
+## 2026-06-30 — FD-INTEREST-MATURITY-LOGIC-1: Compounded vs payout FD estimates
+
+- **Compounded FD:** estimated maturity value = principal + compounded interest (Actual/365 fractional years).
+- **Payout FD (monthly/quarterly/half-yearly/annual):** maturity value = principal; `estimated_total_interest` and `estimated_periodic_interest` for payout schedule.
+- **API:** `estimate_type`, `estimated_total_interest`, `estimated_periodic_interest`, `estimate_message`; `maturity_value_source` adds `AUTO_PRINCIPAL` for payout FDs.
+- **UI:** Separate preview headings and holdings display; payout rows show "Principal returned" not inflated maturity.
+- **Legacy:** Payout FDs with inflated stored auto values display/correct to principal dynamically; `recalculate_fd_maturity_estimates --apply` persists fix.
+
+## 2026-06-30 — FD edit: allow investment date correction on ledger-backed FDs
+
+- **Edit FD:** Investment date and maturity date are editable after `FD_OPENING`; changing investment date moves the linked opening bank debit to the same date and recalculates maturity estimates.
+- **Still locked after opening:** principal, currency, funding bank account, portfolio.
+- **Validation:** Funding balance as of new investment date (excluding the FD opening debit); rejects if interest payments exist before the new date.
+
+## 2026-06-30 — FD-HOLDINGS-UX-1: Maturity value in holdings + action strip UX
+
+- **API:** `resolve_maturity_display()` on FD list/detail returns dynamic maturity estimates when stored fields are null (legacy rows); never overwrites user-confirmed semantics in DB.
+- **Command:** `python manage.py recalculate_fd_maturity_estimates` (dry-run default; `--apply` persists estimate fields only).
+- **UI:** Holdings table shows maturity value with Auto estimate / User confirmed badge; full-width action strip below each FD row (grouped: common, lifecycle, maintenance).
+- **Not changed:** Settlement accounting; estimates are display-only, not auto-settlement proceeds.
+
+## 2026-06-30 — Diátaxis docs site + `make dev` integration
+
+- **Navigation:** MkDocs reorganized by reader intent (Getting Started, Tutorials, How-to, Concepts, Reference, Maintenance, Troubleshooting, Decisions, Changelog). Detailed legacy specs remain in `docs/` and are linked from summary pages.
+- **Dev stack:** `make dev` now starts MkDocs on port **8002** alongside Postgres, Django, and Vite. `make stop-dev` / `make stop-all` stop the docs server; `make ports` includes :8002.
+- **Local domain:** `site_url` and `dev_addr` set for `docs.kpulla6.com` — see `docs/how-to/local-docs-domain.md`.
+- **Checks:** `make docs-check` runs `mkdocs build --strict` plus `scripts/check_docs_consistency.py` (required Diátaxis pages, nav, links, API paths, stale phrases).
+- **Hooks:** `scripts/mkdocs_hooks.py` debounces live reload during `docs-serve`.
+
+## 2026-06-30 — MkDocs documentation portal + maintenance checks
+
+- **Portal:** MkDocs Material site (`mkdocs.yml`, `docs/index.md`); browse with `make docs-serve` (port 8002).
+- **Commands:** `make setup-docs`, `make docs-build`, `make docs-check` (strict MkDocs + `scripts/check_docs_consistency.py`).
+- **Deps:** `requirements-docs.txt` installed into backend venv (no production dependency changes).
+- **Maintenance:** `docs/maintenance/obsolete-code-audit.md` — conservative backend dead-code report (no deletions).
+- **Build output:** `site/` gitignored.
+
+## 2026-06-30 — Docs consistency audit (rules/docs/code alignment)
+
+- **current-state.md:** Removed stale MF “Not wired” notes (MF-1..MF-11b are implemented); updated MF summary table; aligned app-shell wording with Executive Portfolio OS top-nav layout (no permanent left sidebar).
+- **api-design.md:** Renamed cash-unification section from “Planned” to “Implemented”.
+- **auth.md**, **frontend-design.md**, **page-layouts.md:** Replaced outdated “sidebar” references with header/top-nav where the shell uses sticky header controls.
+- **320-cash-ledger.mdc:** Updated Cash-6 phase gate — cash in portfolio analytics is implemented, not future work.
+- **No code or API behavior changes.**
+
 ## 2026-06-29 — FD-MATURITY-VALUE-1: Estimated and user-confirmed maturity value
 
 - **Model:** `estimated_maturity_value`, `expected_maturity_value`, `maturity_value_source` (`AUTO_ESTIMATE` \| `USER_CONFIRMED`), `maturity_estimate_method`, `maturity_value_note` on `FixedDeposit`.

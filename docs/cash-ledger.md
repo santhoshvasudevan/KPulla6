@@ -2,7 +2,7 @@
 
 **Status:** Cash-1 through Cash-7D **done**; **Cash-8A** same-currency and **Cash-8B** user-entered cross-currency portfolio transfers **done**. Transfer fees and same-portfolio FX conversion remain deferred.
 
-**Related:** [architecture.md](./architecture.md) · [database.md](./database.md) · [api-design.md](./api-design.md) · [frontend-design.md](./frontend-design.md) · [data-safety.md](./data-safety.md) · [cash-unification.md](./cash-unification.md) · Cursor rule [`.cursor/rules/320-cash-ledger.mdc`](../.cursor/rules/320-cash-ledger.mdc)
+**Related:** [architecture.md](./architecture.md) · [database.md](./database.md) · [api-design.md](./api-design.md) · [frontend-design.md](./frontend-design.md) · [data-safety.md](./data-safety.md) · [cash-unification.md](./cash-unification.md) · Cursor rule [320-cash-ledger](cursor-rules/320-cash-ledger.md)
 
 ---
 

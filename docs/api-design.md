@@ -53,7 +53,7 @@ Quick reference for MVP endpoints. Detail sections below. Product rules: [produc
 
 **Removed (not active):** `POST /api/v1/cash/backfill-preview`, `POST /api/v1/cash/backfill-apply` — use deposits/withdrawals or bulk entries instead.
 
-### Planned — Cash unification (CASH-UNIFY-1..4)
+### Implemented — Cash unification (CASH-UNIFY-1..4)
 
 Design: [cash-unification.md](./cash-unification.md).
 
@@ -810,7 +810,7 @@ When `common_point_count < 2`, subject metrics are null, `periodic_returns` / `d
 
 ## Cash Ledger
 
-Full design: [cash-ledger.md](./cash-ledger.md) · agent rules: [.cursor/rules/320-cash-ledger.mdc](../.cursor/rules/320-cash-ledger.mdc). **Auth:** authenticated session; data limited to the current user’s active portfolios. Scope rules match holdings/summary (`portfolio_scope=all` default; cannot combine with `portfolio_id` → **422**; unknown/inactive/not-owned `portfolio_id` → **404**).
+Full design: [cash-ledger.md](./cash-ledger.md) · agent rules: [320-cash-ledger](cursor-rules/320-cash-ledger.md). **Auth:** authenticated session; data limited to the current user’s active portfolios. Scope rules match holdings/summary (`portfolio_scope=all` default; cannot combine with `portfolio_id` → **422**; unknown/inactive/not-owned `portfolio_id` → **404**).
 
 ### Cash API surface (implemented vs planned)
 
@@ -1289,8 +1289,9 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 
 | Method | Path | Notes |
 |--------|------|--------|
-| POST | `/api/v1/fixed-deposits` | **Done** — atomically creates `FD_OPENING` `CashMovement` (SYSTEM DEBIT); **400** on insufficient bank balance with `required`, `available`, `shortfall`, `currency`. **CASH-MODEL-REFINE-1:** `portfolio_id` **required**; explicit FD portfolio; bank account link optional; **400** if omitted: “Select the portfolio that should own this Fixed Deposit.” **FD-MATURITY-VALUE-1:** optional `expected_maturity_value` + `maturity_value_note` for user-confirmed maturity; auto-computes `estimated_maturity_value` and sets `maturity_value_source`. |
-| GET | `/api/v1/fixed-deposits/maturity-estimate` | **Done (FD-MATURITY-VALUE-1)** — query: `principal_amount`, `interest_rate_percent`, `interest_payout_frequency`, `investment_date`, `maturity_date`; returns `estimated_maturity_value`, `estimated_interest`, `maturity_estimate_method`, `maturity_estimate_method_label` |
+| POST | `/api/v1/fixed-deposits` | **Done** — atomically creates `FD_OPENING` `CashMovement` (SYSTEM DEBIT); **400** on insufficient bank balance with `required`, `available`, `shortfall`, `currency`. **CASH-MODEL-REFINE-1:** `portfolio_id` **required**; explicit FD portfolio; bank account link optional; **400** if omitted: “Select the portfolio that should own this Fixed Deposit.” **FD-MATURITY-VALUE-1 / FD-INTEREST-MATURITY-LOGIC-1:** optional `expected_maturity_value` + `maturity_value_note` for user-confirmed value; auto-computes estimates — compounded maturity uplift vs payout principal + interest fields; sets `maturity_value_source` (`AUTO_ESTIMATE`, `AUTO_PRINCIPAL`, `USER_CONFIRMED`). |
+| GET | `/api/v1/fixed-deposits` | **Done** — list includes maturity fields; **FD-HOLDINGS-UX-1:** `resolve_maturity_display()` fills estimates dynamically when stored values are null (legacy rows). **FD-INTEREST-MATURITY-LOGIC-1:** payout FDs return principal as maturity; `estimate_type`, `estimated_total_interest`, `estimated_periodic_interest`. |
+| GET | `/api/v1/fixed-deposits/maturity-estimate` | **Done** — query: `principal_amount`, `interest_rate_percent`, `interest_payout_frequency`, `investment_date`, `maturity_date`; returns `estimate_type` (`COMPOUNDED_MATURITY` \| `PAYOUT_INTEREST`), `estimated_maturity_value`, `estimated_total_interest`, `estimated_periodic_interest` (payout), `maturity_estimate_method`, `maturity_estimate_method_label`, `estimate_message` |
 
 **Create body:** `bank_account_id` required; `portfolio_id` optional (must match bank account when supplied). Bank account must be **ASSIGNED** before create.
 

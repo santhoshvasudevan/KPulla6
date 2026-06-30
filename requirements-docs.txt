@@ -1,0 +1,4 @@
+# Documentation site (MkDocs Material). Install via: make setup-docs
+# Uses the backend virtualenv — see Makefile docs-* targets.
+mkdocs>=1.6,<2
+mkdocs-material>=9.5,<10

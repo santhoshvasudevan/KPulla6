@@ -42,6 +42,10 @@ Add tests **first where practical**; at minimum in the **same phase** as product
 
 Optional navigation aid — code, tests, migrations, and docs are source of truth. Regenerate only after significant architecture/module/API/routing changes: `graphify update .` or `make graphify`. Policy: `docs/workflows.md` § Graphify Usage.
 
+## Documentation site
+
+Browse project docs locally with MkDocs Material: `make docs-serve` or `make dev` (http://127.0.0.1:8002 · http://docs.kpulla6.com:8002 with local hosts). After doc or API contract edits, run `make docs-check`.
+
 ## Data safety (mandatory)
 
 Local Postgres (`portfolio_insight_kpulla6`) holds real dev portfolio data. Treat it as production-like.

@@ -1,9 +1,9 @@
 # Current State — KPulla6 (Portfolio Insight)
 
 ## Last Updated
-2026-06-26 (MILESTONE-CLOSEOUT-1 — cash unification + FD tax reporting stream closed out)
+2026-06-30 (consistency audit — MF status notes, Executive Portfolio OS shell wording)
 
-**Documentation index:** [README.md](./README.md)
+**Documentation index:** [Home](index.md)
 
 ## Milestone — Cash unification + FD tax reporting (closed)
 
@@ -17,7 +17,7 @@
 | **Cash page** | `/cash` — **Cash / Liquid Holdings**; Broker Cash (writes) + Bank Cash (read-only); `GET /cash/overview` |
 | **Broker reversal** | `POST /cash/ledger/{id}/reverse` + `reverse_broker_cash_entry` command (CASH-CORR-1A) |
 | **Diagnostics** | `manage.py cash_overview_diagnostics` (read-only; CASH-UNIFY-4A) |
-| **FD funding** | Bank-funded path only (`FD_OPENING`); explicit `portfolio_id` + `bank_account_id`; funding-aware as-of balance + historical seed; **expected maturity value** (auto estimate or user-confirmed) on FD rows; broker-funded FD **deferred** |
+| **FD funding** | Bank-funded path only (`FD_OPENING`); explicit `portfolio_id` + `bank_account_id`; funding-aware as-of balance + historical seed; **maturity/interest estimates** — compounded FDs show maturity above principal; payout FDs show principal at maturity + estimated total/periodic interest (**FD-INTEREST-MATURITY-LOGIC-1**); dynamic API fallback for legacy rows; holdings **action strip** UX; broker-funded FD **deferred** |
 | **FD interest/tax report** | `GET /reports/fixed-deposit-interest` + `GET .../export.csv` (FD-TAX-1/2); UI on Fixed Deposits — **not tax advice** |
 | **Display currency** | Portfolio switch → auto-select supported `base_currency`; All Portfolios preserves current; unsupported base unchanged (CASH-UNIFY-4B) |
 
@@ -117,12 +117,12 @@ See [performance/dashboard-read-paths.md](./performance/dashboard-read-paths.md)
 - **Auth (session):** `GET /api/v1/auth/me`, `POST /api/v1/auth/login|logout|register|password-reset`, `GET /api/v1/auth/csrf` — see `docs/auth.md`
 - Google OAuth: `GET /accounts/google/login/` (django-allauth; redirect after login to `FRONTEND_URL`)
 - Services: `transactions/services.py`, `portfolios/scope.py`, `portfolios/holdings_service.py`
+- **Mutual funds (MF-1..MF-11b):** schema, NAV cache/sync, transaction API, holdings/summary/performance, NAV validation, classification, frontend form, live MFAPI provider, CSV import + UI guidance — **implemented**. Deferred: scheme search, allocation/exposure redesign, tax classification, stock sample CSV download. See summary table below.
 - **Mutual fund schema foundation** (Phase MF-1):
   - `market_data.models`: `Asset`, `MutualFundProfile`, `PrimaryAssetClass`; `AssetType.MUTUAL_FUND`; nullable `HistoricalPrice.asset` FK
   - `transactions.models`: `Folio`, `MutualFundTransactionDetail`, `NavVerificationStatus`
   - Migrations: `market_data/0002_mutual_fund_schema`, `transactions/0002_mutual_fund_schema`
   - Tests: `backend/tests/test_models_mutual_funds.py` (12 cases)
-  - **Not wired:** MF transaction API, holdings/summary/performance integration, frontend
 - **Mutual fund NAV cache + sync** (Phase MF-2):
   - `market_data/providers/mutual_fund_nav_provider.py` — `NavPoint`, `MutualFundNavProvider`, live `AmfiNavProvider` (MFAPI)
   - `market_data/providers/amfi_nav_parser.py` — MFAPI response parsing (MF-10)
@@ -130,56 +130,52 @@ See [performance/dashboard-read-paths.md](./performance/dashboard-read-paths.md)
   - `market_data/nav_lookup.py`, `market_data/nav_repository.py` — DB-only latest/range NAV lookup
   - Management: `sync_mutual_fund_navs` (`--scheme-code` optional)
   - Tests: `backend/tests/test_mutual_fund_nav_sync.py` (12 cases)
-  - **Not wired:** holdings/summary/performance MF-specific metrics beyond cached NAV rows
 - **Mutual fund transaction API** (Phase MF-3):
   - `POST/PUT /api/v1/transactions` with `asset_type=MUTUAL_FUND` — BUY/SELL with scheme, folio, dual dates, NAV, units, paid/market value
   - `transactions/mutual_fund_services.py`, `MutualFundTransactionWriteSerializer`
   - Auto upsert Asset, MutualFundProfile, Folio; atomic Transaction + detail
   - Optional cached NAV compare sets `nav_verification_status` (no external provider)
   - Tests: `backend/tests/test_mutual_fund_transactions_api.py` (16 cases)
-  - **Not wired:** summary/performance integration, frontend MF form, CSV import
 - **Mutual fund holdings + asset detail** (Phase MF-4):
   - `GET /api/v1/portfolio/holdings` — MF rows grouped by `scheme_code` + `folio_number`; cached NAV via `latest_nav_for_asset`
   - `GET /api/v1/portfolio/assets/{scheme_code}?folio_number=...` — folio-scoped MF detail; `folio_number` required when multiple folios exist
   - `portfolios/holdings_service.py` — stock path unchanged; MF FIFO per folio; `nav_status`, `holding_key`, `latest_nav`
   - Tests: `backend/tests/test_mutual_fund_holdings_api.py` (14 cases)
-  - **Not wired:** frontend MF form, CSV import
 - **Mutual fund summary + performance** (Phase MF-5):
   - `GET /api/v1/portfolio/summary` — MF totals, timeseries (NAV forward-fill), XIRR with `investment_date`/`paid_value` cash flows
   - `GET /api/v1/portfolio/performance` — `value`, `cumulative_return`, `twror` include MF via shared timeseries builder
   - `finance/mutual_fund_cashflows.py`, `market_data/nav_repository.py` batch helpers
   - Tests: `backend/tests/test_mutual_fund_summary_performance_api.py` (14 cases)
-  - **Not wired:** frontend MF form, CSV import
 - **Mutual fund NAV validation** (Phase MF-6):
   - `transactions/mf_nav_validation.py` — cached NAV + market_value compare on MF create/update
   - Status: `VERIFIED`, `NAV_MISSING`, `NAV_MISMATCH`, `VALUE_MISMATCH` (+ legacy MF-3 values)
   - Tolerances: 0.01 INR NAV, 1 INR market value; mismatch does not block save
   - Tests: `backend/tests/test_mutual_fund_nav_validation.py` (11 cases)
-  - **Not wired:** frontend validation UX, CSV import
+  - **Deferred:** richer frontend validation UX beyond status badge
 - **Mutual fund classification** (Phase MF-7):
   - `finance/mutual_fund_classification.py` — metadata inference (HYBRID ≠ EQUITY)
   - MF holdings/asset detail: `primary_asset_class`, `classification_source`, optional `classification_notes`
   - Create/update upserts `Asset.primary_asset_class` when unset/UNKNOWN
   - Tests: `backend/tests/test_mutual_fund_classification.py` (16 cases)
-  - **Not wired:** allocation chart, exposure split, tax classification
+  - **Deferred:** allocation chart exposure split, tax classification
 - **Mutual fund NAV refresh + combined sync** (Phase MF-9):
   - `POST /api/v1/nav/refresh` — optional `scheme_codes`; synced/skipped/failed counts
   - `sync_market_data` / `force-sync` include MF NAV sync (`--skip-mutual-funds` to opt out)
   - `market_data/nav_refresh.py`; per-scheme failure does not fail stock/FX/benchmark sync
   - Tests: `backend/tests/test_mutual_fund_nav_refresh_api.py` (11 cases)
-  - **Not wired:** live AMFI provider, scheme search, MF CSV import
+  - **Deferred:** scheme search
 - **Mutual fund frontend** (Phase MF-8):
   - `TransactionModal` — asset type selector (Stock default, Mutual fund); MF create/edit with backend field names
   - Transactions table — scheme/folio/NAV status display; stock rows unchanged
   - Assets holdings — safe MF row labels (`scheme_name`, folio) without stock regression
   - Tests: `TransactionModal.test.jsx`, `Transactions.test.jsx`, `transactionDisplay.test.js`
-  - **Not wired:** scheme search, allocation redesign
+  - **Deferred:** scheme search, allocation redesign
   - MF CSV import guidance on Transactions page (MF-11b)
 - **Live mutual fund NAV provider** (Phase MF-10):
   - `AmfiNavProvider` — MFAPI fetch for latest NAV + date-range history; injectable `http_get`
   - Parser: `amfi_nav_parser.py`; timeout/network/malformed response handling
   - Tests: `backend/tests/test_amfi_nav_provider.py` (20 cases); all HTTP mocked
-  - **Not wired:** scheme search, grouping setting
+  - **Deferred:** scheme search, grouping setting
 - **Mutual fund CSV import** (Phase MF-11a):
   - `POST /api/v1/transactions/import-csv` — dedicated MF CSV headers; `parse_mutual_fund_transaction_csv` + `create_mutual_fund_transaction()`
   - Cached NAV verification only on import; all-or-nothing; same `portfolio_id` query rules as stock CSV
@@ -187,15 +183,14 @@ See [performance/dashboard-read-paths.md](./performance/dashboard-read-paths.md)
 - **Mutual fund CSV import guidance** (Phase MF-11b):
   - Transactions page — expandable stock vs MF format panel, rules, inline example, client-side sample MF CSV download
   - `frontend/src/utils/csvImportGuidance.js`; tests in `csvImportGuidance.test.js`, `Transactions.test.jsx`
-  - **Not wired:** stock sample CSV download
+  - **Deferred:** stock sample CSV download
 
 ## Frontend (Phase 11 + design migration)
 - React Router app shell with virtual **All Portfolios** + real portfolio selector
-- **Portfolio management (Settings):** create, rename/edit, deactivate non-default portfolios; max 5 active; Default Portfolio cannot be deactivated; sidebar selector refreshes via `reloadPortfolios()`
+- **Portfolio management (Settings):** create, rename/edit, deactivate non-default portfolios; max 5 active; Default Portfolio cannot be deactivated; header portfolio selector refreshes via `reloadPortfolios()`
 - **Bulk transaction assignment (Transactions):** row selection + assign selected rows to a real portfolio via full PUT payloads (stock, MF, STOCK_SPLIT)
-- Display currency from settings (sidebar + Settings page); **`portfolioContext` waits for `GET /settings` before exposing `apiQuery`**; Dashboard summary/performance fetches use request-sequence guards so stale responses cannot overwrite newer currency scope
-- **Sidebar layout (Phase 13A):** Portfolio View and Display Currency selectors sit directly below the brand header, above navigation links, so primary context controls are visible without scrolling
-- **App shell header:** Theme selector (Light / Dark / System, persisted in `localStorage`), signed-in user label, and Log out — top-right of the main column, always visible without scrolling the sidebar
+- Display currency from settings (header + Settings page); **`portfolioContext` waits for `GET /settings` before exposing `apiQuery`**; Dashboard summary/performance fetches use request-sequence guards so stale responses cannot overwrite newer currency scope
+- **App shell (Executive Portfolio OS — P4.4+):** sticky top header with brand, global nav, portfolio view + display currency selectors, theme selector, account label, and Log out — no permanent left sidebar
 - Dashboard: summary cards via `GET /portfolio/summary?include_timeseries=false` (headline metrics only; chart uses performance API), performance chart (value / cumulative return / TWROR), range pills, benchmark overlay
 - Assets: holdings table, allocation chart, closed/oversold/price_missing states
 - Asset detail: FIFO metrics + transaction history (scoped)
@@ -349,9 +344,9 @@ Design doc: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md). MVP:
 | Dashboard / Asset Detail / Compare Metric Sheet UI (Phase 8B–8D, 9B–13C) | **Done** |
 | Periodic returns, drawdown periods/series, monthly grid, charts | **Done** |
 
-## Planned — Indian Mutual Funds (MF-4+)
+## Indian Mutual Funds (MF-1..MF-11b — complete)
 
-Design doc: [mutual-funds.md](./mutual-funds.md). **MF-1 schema, MF-2 NAV sync, and MF-3 transaction API implemented.**
+Design doc: [mutual-funds.md](./mutual-funds.md). **MF-1 through MF-11b implemented** (schema through CSV import + UI guidance).
 
 | Topic | Status |
 |-------|--------|
@@ -365,7 +360,8 @@ Design doc: [mutual-funds.md](./mutual-funds.md). **MF-1 schema, MF-2 NAV sync, 
 | Frontend MF transaction form + list display | **MF-8 done** |
 | NAV refresh HTTP + combined sync | **MF-9 done** |
 | Live NAV provider (MFAPI) | **MF-10 done** |
-| Scheme-only grouping / frontend MF CSV UX | MF-11 |
+| MF CSV import + Transactions page guidance | **MF-11a/11b done** |
+| Scheme search, grouping setting, allocation redesign, stock sample CSV | **Deferred** |
 
 ## Phase 6 contracts (verified in tests)
 - FIFO cost basis, realized/unrealized P/L, stock split adjustments

@@ -4,7 +4,7 @@
 
 **Canonical deep docs:** [cash-ledger.md](./cash-ledger.md) · [cash-unification.md](./cash-unification.md) · [architecture.md](./architecture.md) · [api-design.md](./api-design.md) · [api-contracts.md](./api-contracts.md) · [frontend-design.md](./frontend-design.md) · [decisions.md](./decisions.md) · [mvp-release-checklist.md](./mvp-release-checklist.md)
 
-**Agent rules:** [AGENTS.md](../AGENTS.md) · [.cursor/rules/320-cash-ledger.mdc](../.cursor/rules/320-cash-ledger.mdc)
+**Agent rules:** [AGENTS.md](agents.md) · [Cash Ledger Cursor rule](cursor-rules/320-cash-ledger.md)
 
 ---
 

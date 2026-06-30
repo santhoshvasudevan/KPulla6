@@ -46,7 +46,7 @@ Django domain apps (`portfolios`, `cash`, `transactions`, `analytics`, `market_d
 
 **[product-rules.md](./product-rules.md)** is the canonical index of MVP product rules — cash, returns, Metric Sheet, transfers, frontend guardrails, and data safety. Do not duplicate rules here; follow the index and linked deep specs.
 
-**Also:** [cash-ledger.md](./cash-ledger.md) · Cursor rule [`.cursor/rules/320-cash-ledger.mdc`](../.cursor/rules/320-cash-ledger.mdc)
+**Also:** [cash-ledger.md](./cash-ledger.md) · Cursor rule [320-cash-ledger](cursor-rules/320-cash-ledger.md)
 
 ---
 
@@ -91,7 +91,9 @@ Institutional Slate design system — analytics-first layout, CSS tokens, shared
 
 Local stack: Docker Postgres, `make dev`, session auth. Data-sensitive work requires backup and safety checks before any destructive operation.
 
-**Read next:** [workflows.md](./workflows.md) · [data-safety.md](./data-safety.md) · [AGENTS.md](../AGENTS.md)
+**Documentation portal:** `make docs-serve` or `make dev` (MkDocs Material at http://127.0.0.1:8002) · `make docs-check` after doc/API edits · Diátaxis nav in `mkdocs.yml`.
+
+**Read next:** [workflows.md](./workflows.md) · [data-safety.md](./data-safety.md) · [AGENTS.md](agents.md)
 
 ---
 
