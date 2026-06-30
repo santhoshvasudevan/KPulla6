@@ -1,11 +1,14 @@
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import FixedDeposits from './FixedDeposits';
+import FixedDepositDetail from './FixedDepositDetail';
 import * as api from '../api';
 import { PortfolioProvider } from '../portfolioContext';
 
 vi.mock('../api', () => ({
   fetchFixedDeposits: vi.fn(),
+  fetchFixedDepositDetail: vi.fn(),
   fetchFixedDepositMaturityEstimate: vi.fn(),
   fetchPortfolios: vi.fn(),
   seedBankAccountHistoricalBalance: vi.fn(),
@@ -126,9 +129,11 @@ const unseededBankAccount = {
 
 function renderPage() {
   return render(
-    <PortfolioProvider disableFetch initialPortfolios={[{ id: 1, name: 'Default Portfolio', is_active: true }]}>
-      <FixedDeposits />
-    </PortfolioProvider>
+    <MemoryRouter>
+      <PortfolioProvider disableFetch initialPortfolios={[{ id: 1, name: 'Default Portfolio', is_active: true }]}>
+        <FixedDeposits />
+      </PortfolioProvider>
+    </MemoryRouter>
   );
 }
 
@@ -1189,6 +1194,33 @@ describe('FixedDeposits page', () => {
     fireEvent.click(screen.getByRole('button', { name: /interest payments/i }));
     await waitFor(() => {
       expect(api.fetchFixedDepositInterestPayments).toHaveBeenCalledWith(1);
+    });
+  });
+
+  it('navigates to detail page when holding row is clicked', async () => {
+    api.fetchFixedDepositDetail.mockResolvedValue({
+      fixed_deposit: sampleFd,
+      expected_interest_schedule: [],
+      term_totals: {},
+      detailed_calculation: { approximation_note: 'estimate' },
+      financial_year_options: [],
+      warnings: [],
+    });
+    render(
+      <MemoryRouter initialEntries={['/fixed-deposits']}>
+        <PortfolioProvider disableFetch initialPortfolios={[{ id: 1, name: 'Default Portfolio', is_active: true }]}>
+          <Routes>
+            <Route path="/fixed-deposits" element={<FixedDeposits />} />
+            <Route path="/fixed-deposits/:fdId" element={<FixedDepositDetail />} />
+          </Routes>
+        </PortfolioProvider>
+      </MemoryRouter>
+    );
+    await waitFor(() => screen.getByText('HDFC'));
+    fireEvent.click(screen.getByRole('link', { name: /view fixed deposit hdfc fd-001/i }));
+    await waitFor(() => {
+      expect(api.fetchFixedDepositDetail).toHaveBeenCalledWith('1', {});
+      expect(screen.getByRole('heading', { name: /fixed deposit detail/i })).toBeInTheDocument();
     });
   });
 });

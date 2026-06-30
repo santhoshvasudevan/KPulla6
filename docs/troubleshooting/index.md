@@ -1,44 +1,46 @@
 # Troubleshooting
 
-Pick the symptom. Each page has copy-paste checks and fixes.
+Pick a **symptom**. Run the quick checks first.
 
 ## Quick checks
 
-**Are dev servers running?**
-
 ```bash
 make ports
-```
-
-**Expected:** listeners on `8000`, `5173`, `8002`. If not:
-
-```bash
-make stop-dev && make dev
-```
-
-**Is the API up?**
-
-```bash
 curl -s http://127.0.0.1:8000/api/v1/health
 ```
 
-**Expected:** HTTP 200 with `"status":"ok"`.
+| Check | Expected |
+|-------|----------|
+| `make ports` | Listeners on `8000`, `5173`, `8002` |
+| Health `curl` | HTTP 200, `"status":"ok"` |
+
+If ports are wrong: [Dev server and port issues](dev-server-ports.md)
 
 ## By symptom
 
-| Problem | Page |
+| Symptom | Page |
 |---------|------|
-| Cannot log in or redirect loops | [Login issues](login-issues.md) |
-| Google OAuth errors | [Google OAuth errors](google-oauth-errors.md) |
-| Missing prices or NAVs on dashboard | [Missing prices or NAVs](missing-prices-navs.md) |
-| Dashboard feels slow | [Dashboard is slow](dashboard-slow.md) |
-| Worried about database safety | [Database safety problems](database-safety.md) |
-| Port already in use / wrong URL | [Dev server and port issues](dev-server-ports.md) |
+| Cannot log in / redirect loop | [Login issues](login-issues.md) |
+| Google OAuth error | [Google OAuth errors](google-oauth-errors.md) |
+| Missing prices or NAVs | [Missing prices or NAVs](missing-prices-navs.md) |
+| Dashboard slow | [Dashboard is slow](dashboard-slow.md) |
+| Database safety concern | [Database safety problems](database-safety.md) |
+| Port in use / wrong URL | [Dev server and port issues](dev-server-ports.md) |
+
+!!! tip "Template"
+    Contributors: follow [Doc page templates](../maintenance/doc-page-templates.md) § Troubleshooting.
 
 ## Still stuck?
 
-1. Run `make docs-check` if you changed docs.
-2. Run `make test-critical` if you changed code.
-3. See [Data safety](../concepts/data-safety.md) before any destructive DB action.
+1. `make docs-check` — if you changed docs
+2. `make test-critical` — if you changed code
+3. [Data safety](../concepts/data-safety.md) — before any destructive DB action
 
-Deep workflow: [workflows.md](../workflows.md)
+## Next
+
+- [Quickstart](../getting-started/quickstart.md)
+- [Common commands](../getting-started/common-commands.md)
+
+## Related
+
+- [workflows.md](../workflows.md) · [data-safety.md](../data-safety.md)

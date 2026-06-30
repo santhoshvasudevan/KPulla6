@@ -62,6 +62,12 @@
 - **Deferred:** Multi-portfolio bank sub-balances; broker-cash FD create API/UI.
 - Design: [cash-unification.md](./cash-unification.md) §4–§5 · backlog: [004a-cash-unify-3a.md](./backlog/004a-cash-unify-3a.md), [005-cash-unify-4.md](./backlog/005-cash-unify-4.md).
 
+## 2026-06-30 — FD-DETAIL-CALC-1: FD detail page with interest schedule
+
+- **Decision:** Split expected schedule (read-only forecast) from actual interest credits (user-recorded, ledger-backed).
+- **Schedule:** Payout FDs generate calendar payout rows; compounded FDs show single maturity accrual row.
+- **FY:** Indian April–March filter on detail API; summaries use expected payout date vs actual credited date.
+
 ## 2026-06-30 — FD-INTEREST-MATURITY-LOGIC-1: Compounded vs payout maturity estimates
 
 - **Decision:** Maturity value above principal applies only to **COMPOUNDED** FDs. Payout frequencies return principal at maturity; interest is estimated as total + periodic payout amounts.
@@ -176,6 +182,14 @@
 - **Portfolio:** cancelled FD excluded from summary, holdings, value history, XIRR/TWROR terminal; bank cash restored via reversal credit.
 - **Audit:** cancel sets `CANCELLED` + `is_active=false` — **no destructive delete**.
 - **Deferred:** full correction/reversal framework → **FD-ACC-10B**.
+
+## 2026-06-30 — FD-PERF-2: Portfolio-attributed FD payout income
+
+- Payout FD interest counts as portfolio return for the FD’s portfolio even when bank cash is excluded from value.
+- Performance uses **net** interest; gross/tax remain in FD detail/tax reports.
+- **Value chart** (`metric=value`) unchanged; **return metrics** and XIRR include attributed income when bank excluded.
+- Included bank cash in PV prevents double counting (same net interest not added twice).
+- Compounded FD accrual and gross-of-tax performance mode deferred.
 
 ## 2026-06-14 — FD-ACC-8C: FD / bank cash return metrics alignment
 

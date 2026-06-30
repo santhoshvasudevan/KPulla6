@@ -284,6 +284,27 @@ describe('API Service', () => {
     );
   });
 
+  it('fetchFixedDepositDetail calls detail endpoint with financial year', async () => {
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+    await api.fetchFixedDepositDetail(3, { financial_year: '2024-25' });
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/fixed-deposits/3/detail?financial_year=2024-25',
+      expect.objectContaining(defaultFetchOptions)
+    );
+  });
+
+  it('updateFixedDepositInterestPayment patches payment', async () => {
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 1 }) });
+    await api.updateFixedDepositInterestPayment(12, { gross_interest: '1000' });
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/fixed-deposit-interest-payments/12',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ gross_interest: '1000' }),
+      })
+    );
+  });
+
   it('fetchFixedDepositInterestReport calls report endpoint with filters', async () => {
     global.fetch.mockResolvedValueOnce({
       ok: true,

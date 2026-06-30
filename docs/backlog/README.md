@@ -120,6 +120,7 @@ Execute in order within each epic unless the planner reprioritizes.
 | 12 | [012-cash-corr-1.md](./012-cash-corr-1.md) | CASH-CORR-1 | Open | 005, 004a |
 | 13 | [013-fd-analytics-1.md](./013-fd-analytics-1.md) | FD-ANALYTICS-1 | Open | 005 |
 | 14 | [014-fd-analytics-2.md](./014-fd-analytics-2.md) | FD-ANALYTICS-2 | Open | 013 |
+| 15 | [015-fd-perf-2.md](./015-fd-perf-2.md) | FD-PERF-2 | **Done** | FD-PERF-1-DIAG |
 
 **Legend:** Open = not started by Background Agent. **Done** = implemented and documented. Planner updates status after review/merge.
 
@@ -148,6 +149,7 @@ Clarify and surface the **two-ledger cash model** (portfolio broker cash vs bank
 | **4** | [008](./008-fd-maturity-value-1.md) | FD expected maturity value estimate + user override (**done**) |
 | **4b** | [008b](./008b-fd-holdings-ux-1.md) | Holdings maturity display + action strip UX (**done**) |
 | **5** | [010](./010-fd-interest-maturity-logic-1.md) | Compounded vs payout FD maturity/interest estimates (**done**) |
+| **6** | [011](./011-fd-detail-calc-1.md) | FD detail page with expected schedule, actuals, FY filter (**done**) |
 | **3** | 004 | Unified Cash page UI (**done**) |
 | **3A** | 004a | Cash page verification: attribution, broker actions, diagnostics (**done**) |
 | **4** | 005 | Bank account link/delink UX + inclusion + display-currency stabilization (**done**) |

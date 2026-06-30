@@ -1,51 +1,79 @@
 # API reference
 
-Quick smoke tests and pointers to the full contract.
+Resource-oriented API docs with copy-paste `curl` examples. Full contract: [api-design.md](../api-design.md).
 
-## Base URL
+**Base URL:** `http://127.0.0.1:8000/api/v1`
 
-```text
-http://127.0.0.1:8000/api/v1
-```
+## Before you call the API
 
-Start the API:
+1. `make dev`
+2. Sign in at http://127.0.0.1:5173 (session cookie)
+3. Read [API authentication](api-auth.md) for CSRF + cookies in `curl`
 
-```bash
-make dev
-```
-
-## Health check
+## Health (no auth)
 
 ```bash
 curl -s http://127.0.0.1:8000/api/v1/health
 ```
 
-**Expected:** HTTP 200, JSON with `"status":"ok"`.
+**Expected (200):**
 
-## Auth
+```json
+{"status":"ok","service":"kpulla6","database":"ok"}
+```
 
-Session auth via django-allauth. Use the app at http://127.0.0.1:5173 — not raw `:8000` for UI workflows.
+## Resource guides
 
-Setup: [Configure Google OAuth](../how-to/configure-google-oauth.md) · [auth.md](../auth.md)
+<div class="grid cards" markdown>
 
-## Common read endpoints
+-   **[Authentication](api-auth.md)**
 
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /portfolio/summary` | Dashboard KPIs |
-| `GET /portfolio/performance` | Performance chart |
-| `GET /holdings` | Holdings table |
-| `GET /fixed-deposits` | FD list |
+    ---
 
-All require login. Pass `portfolio_scope` or `portfolio_id` as documented in the full spec.
+    Login, CSRF, session cookies.
 
-## Full documentation
+-   **[Transactions](api-transactions.md)**
 
-| Doc | Contents |
-|-----|----------|
-| [api-design.md](../api-design.md) | Every endpoint, payloads, errors |
-| [api-contracts.md](../api-contracts.md) | Thin contract index |
+    ---
 
-## Adding endpoints
+    List, create, CSV import.
 
-Contributor checklist: [Add a backend API endpoint](../how-to/add-backend-api-endpoint.md)
+-   **[Fixed deposits](api-fixed-deposits.md)**
+
+    ---
+
+    FD list, create, maturity estimate.
+
+-   **[Cash](api-cash.md)**
+
+    ---
+
+    Balances, overview, ledger, movements.
+
+-   **[Analytics](api-analytics.md)**
+
+    ---
+
+    Summary, performance, Metric Sheet.
+
+</div>
+
+## Other endpoints
+
+| Area | Examples |
+|------|----------|
+| Portfolios | `GET /portfolios`, `POST /portfolios` |
+| Settings | `GET /settings`, `PUT /settings` |
+| Market sync | `POST /prices/refresh`, `POST /nav/refresh`, `POST /portfolio/force-sync` |
+| Bank accounts | `GET /bank-accounts`, `POST /cash-movements` |
+
+Index: [api-contracts.md](../api-contracts.md)
+
+## Next
+
+- [API authentication](api-auth.md)
+- [Transactions API](api-transactions.md)
+
+## Related
+
+- [Reference overview](index.md) · [Add backend endpoint](../how-to/add-backend-api-endpoint.md)

@@ -10,6 +10,7 @@ from debt.views import (
     CashMovementListCreateView,
     CashMovementReverseView,
     FixedDepositDetailView,
+    FixedDepositDetailCalcView,
     FixedDepositInterestPaymentDetailView,
     FixedDepositInterestPaymentListCreateView,
     FixedDepositInterestPaymentReverseView,
@@ -66,6 +67,11 @@ urlpatterns = [
         "fixed-deposits/<int:fd_id>",
         FixedDepositDetailView.as_view(),
         name="fixed-deposit-detail",
+    ),
+    path(
+        "fixed-deposits/<int:fd_id>/detail",
+        FixedDepositDetailCalcView.as_view(),
+        name="fixed-deposit-detail-calc",
     ),
     path(
         "fixed-deposits/<int:fd_id>/interest-payments",

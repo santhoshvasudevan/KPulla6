@@ -594,6 +594,58 @@ class FixedDepositInterestPaymentWriteSerializer(serializers.Serializer):
         return attrs
 
 
+class FixedDepositInterestPaymentUpdateSerializer(serializers.Serializer):
+    payment_date = serializers.DateField(required=False)
+    gross_interest = serializers.DecimalField(
+        max_digits=18, decimal_places=4, required=False
+    )
+    tax_withheld = serializers.DecimalField(
+        max_digits=18, decimal_places=4, required=False
+    )
+    comment = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_gross_interest(self, value: Decimal) -> Decimal:
+        if value <= 0:
+            raise serializers.ValidationError("gross_interest must be greater than zero.")
+        return value
+
+    def validate_tax_withheld(self, value: Decimal) -> Decimal:
+        if value < 0:
+            raise serializers.ValidationError("tax_withheld must be zero or positive.")
+        return value
+
+    def validate(self, attrs):
+        gross = attrs.get("gross_interest")
+        tax = attrs.get("tax_withheld")
+        if gross is not None and tax is not None and tax > gross:
+            raise serializers.ValidationError(
+                {"tax_withheld": "tax_withheld cannot exceed gross_interest."}
+            )
+        return attrs
+
+
+class FixedDepositDetailQuerySerializer(serializers.Serializer):
+    financial_year = serializers.CharField(required=False, allow_blank=True)
+    fy_start = serializers.DateField(required=False)
+    fy_end = serializers.DateField(required=False)
+
+    def validate(self, attrs):
+        fy = (attrs.get("financial_year") or "").strip()
+        fy_start = attrs.get("fy_start")
+        fy_end = attrs.get("fy_end")
+        if fy and (fy_start or fy_end):
+            raise serializers.ValidationError(
+                "Use either financial_year or fy_start/fy_end, not both."
+            )
+        if (fy_start and not fy_end) or (fy_end and not fy_start):
+            raise serializers.ValidationError(
+                "fy_start and fy_end must be supplied together."
+            )
+        if fy:
+            attrs["financial_year"] = fy
+        return attrs
+
+
 class FixedDepositSettlementSerializer(serializers.ModelSerializer):
     fixed_deposit_id = serializers.IntegerField(source="fixed_deposit.id", read_only=True)
     fixed_deposit_status = serializers.CharField(source="fixed_deposit.status", read_only=True)

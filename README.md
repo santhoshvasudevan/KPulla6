@@ -78,6 +78,8 @@ Browse project documentation with MkDocs Material:
 2. Open http://127.0.0.1:8002
 3. Or, after adding `127.0.0.1 docs.kpulla6.com` to `/etc/hosts`, open http://docs.kpulla6.com:8002
 
+**Update policy:** every change must decide if docs need updates. See [Documentation update policy](docs/maintenance/documentation-update-policy.md). After doc edits: `make docs-build` and `make docs-check`.
+
 ```bash
 make docs-build    # static output in site/
 make docs-check    # strict build + link/API/stale-phrase checks

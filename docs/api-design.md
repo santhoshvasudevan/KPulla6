@@ -606,7 +606,7 @@ Validation: invalid `metric` / `range` / `display_currency` → **400**; `portfo
 
 **Metrics:**
 - `value` — daily portfolio value in `display_currency` (investment + cash, Cash-6B).
-- `twror` / `cumulative_return` — cash-inclusive daily values and cash-aware external flows when `cash_aware_enabled=true` (Cash-6C.2); legacy mode unchanged. Optional `warnings` (e.g. missing FX on external flows) may wrap `points` in `{"points", "warnings"}` like `metric=value`.
+- `twror` / `cumulative_return` — cash-inclusive daily values and cash-aware external flows when `cash_aware_enabled=true` (Cash-6C.2); legacy mode unchanged. Return PV may include cumulative portfolio-attributed FD **net** payout interest when the receiving bank is excluded from scope value (**FD-PERF-2**). Optional `warnings` (e.g. missing FX on external flows) may wrap `points` in `{"points", "warnings"}` like `metric=value`.
 - `cumulative_return` — `((value + withdrawals - contributions) / contributions - 1) * 100`; `null` when contributions ≤ 0 or flows/FX unknown.
 - `twror` — chain-linked period returns from Phase 6 `compute_twror_series`; `null` on first day or zero prior value. For `range != ALL`, TWROR is recomputed on the sliced window only (not rebased from full history).
 
@@ -1291,7 +1291,9 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 |--------|------|--------|
 | POST | `/api/v1/fixed-deposits` | **Done** — atomically creates `FD_OPENING` `CashMovement` (SYSTEM DEBIT); **400** on insufficient bank balance with `required`, `available`, `shortfall`, `currency`. **CASH-MODEL-REFINE-1:** `portfolio_id` **required**; explicit FD portfolio; bank account link optional; **400** if omitted: “Select the portfolio that should own this Fixed Deposit.” **FD-MATURITY-VALUE-1 / FD-INTEREST-MATURITY-LOGIC-1:** optional `expected_maturity_value` + `maturity_value_note` for user-confirmed value; auto-computes estimates — compounded maturity uplift vs payout principal + interest fields; sets `maturity_value_source` (`AUTO_ESTIMATE`, `AUTO_PRINCIPAL`, `USER_CONFIRMED`). |
 | GET | `/api/v1/fixed-deposits` | **Done** — list includes maturity fields; **FD-HOLDINGS-UX-1:** `resolve_maturity_display()` fills estimates dynamically when stored values are null (legacy rows). **FD-INTEREST-MATURITY-LOGIC-1:** payout FDs return principal as maturity; `estimate_type`, `estimated_total_interest`, `estimated_periodic_interest`. |
-| GET | `/api/v1/fixed-deposits/maturity-estimate` | **Done** — query: `principal_amount`, `interest_rate_percent`, `interest_payout_frequency`, `investment_date`, `maturity_date`; returns `estimate_type` (`COMPOUNDED_MATURITY` \| `PAYOUT_INTEREST`), `estimated_maturity_value`, `estimated_total_interest`, `estimated_periodic_interest` (payout), `maturity_estimate_method`, `maturity_estimate_method_label`, `estimate_message` |
+| GET | `/api/v1/fixed-deposits/maturity-estimate` | **Done** — query: `principal_amount`, `interest_rate_percent`, `interest_payout_frequency`, `investment_date`, `maturity_date`; returns estimate fields for create/edit preview |
+| GET | `/api/v1/fixed-deposits/{id}/detail` | **Done (FD-DETAIL-CALC-1)** — composite detail: estimate summary, `expected_interest_schedule`, actual payments, `financial_year_summary`, `term_totals`, `detailed_calculation`; query `financial_year` or `fy_start`/`fy_end` |
+| PATCH | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | **Done (FD-DETAIL-CALC-1)** — update actual credited date/gross/tax/note; updates linked `FD_INTEREST` cash movement and bank balance |
 
 **Create body:** `bank_account_id` required; `portfolio_id` optional (must match bank account when supplied). Bank account must be **ASSIGNED** before create.
 

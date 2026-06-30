@@ -17,7 +17,7 @@
 | **Cash page** | `/cash` — **Cash / Liquid Holdings**; Broker Cash (writes) + Bank Cash (read-only); `GET /cash/overview` |
 | **Broker reversal** | `POST /cash/ledger/{id}/reverse` + `reverse_broker_cash_entry` command (CASH-CORR-1A) |
 | **Diagnostics** | `manage.py cash_overview_diagnostics` (read-only; CASH-UNIFY-4A) |
-| **FD funding** | Bank-funded path only (`FD_OPENING`); explicit `portfolio_id` + `bank_account_id`; funding-aware as-of balance + historical seed; **maturity/interest estimates** — compounded FDs show maturity above principal; payout FDs show principal at maturity + estimated total/periodic interest (**FD-INTEREST-MATURITY-LOGIC-1**); dynamic API fallback for legacy rows; holdings **action strip** UX; broker-funded FD **deferred** |
+| **FD funding** | Bank-funded path only (`FD_OPENING`); explicit `portfolio_id` + `bank_account_id`; funding-aware as-of balance + historical seed; **maturity/interest estimates** — compounded FDs show maturity above principal; payout FDs show principal at maturity + estimated total/periodic interest (**FD-INTEREST-MATURITY-LOGIC-1**); **FD detail page** with expected schedule, actual credits, FY filter (**FD-DETAIL-CALC-1**); dynamic API fallback for legacy rows; holdings **action strip** UX; broker-funded FD **deferred** |
 | **FD interest/tax report** | `GET /reports/fixed-deposit-interest` + `GET .../export.csv` (FD-TAX-1/2); UI on Fixed Deposits — **not tax advice** |
 | **Display currency** | Portfolio switch → auto-select supported `base_currency`; All Portfolios preserves current; unsupported base unchanged (CASH-UNIFY-4B) |
 
@@ -293,6 +293,7 @@ Design doc: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md). MVP:
 | **FD-ACC-8A** | FD/bank cash performance design review | **Done** (docs only) |
 | **FD-ACC-8B** | Value history — FD principal + included bank cash in `metric=value` | **Done** |
 | **FD-ACC-8C** | Cashflow-aware XIRR/TWROR for FD/bank events | **Done** |
+| **FD-PERF-2** | Portfolio-attributed FD payout income in return metrics (excluded bank) | **Done** |
 | **FD-ACC-9** | Stabilization, E2E audit, docs verification, Graphify refresh | **Done** |
 | **FD-ACC-10A** | FD cancel reverses opening debit; deactivate blocked for ledger-backed FDs | **Done** |
 | **FD-ACC-10B** | Manual cash + FD interest reversal framework; classifier offsets | **Done** |
@@ -302,7 +303,7 @@ Design doc: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md). MVP:
 | **FD-CASH-ASOF-1** | FD create as-of bank balance diagnostics, balance API, create modal UX | **Done** |
 | **FD-ACC-10A-REPAIR** | `repair_deactivated_fd_openings` management command for pre-10A deactivated FDs | **Done** |
 
-**Performance:** Summary/holdings, **`metric=value`**, **XIRR**, **TWROR**, and **cumulative return** include FD principal + opt-in bank cash where applicable (FD-ACC-8B/8C). Internal FD/bank movements are excluded from external-flow maps; manual deposits/withdrawals and opening-balance seeds are external.
+**Performance:** Summary/holdings and **`metric=value`** include FD principal + opt-in bank cash (FD-ACC-8B). **TWROR**, **cumulative return**, and **XIRR** use return PV that includes cumulative portfolio-attributed **net** FD payout interest when the receiving bank is excluded from scope value; when bank is included, net interest is reflected via bank cash only (no double count) (**FD-PERF-2**). Internal FD/bank movements remain excluded from external-flow maps; manual deposits/withdrawals and opening-balance seeds are external (FD-ACC-8C).
 
 **E2E audit (FD-ACC-9):** `test_fixed_deposit_end_to_end_accounting.py` — full lifecycle, renewal, excluded bank cash, unseeded balance, portfolio scope.
 

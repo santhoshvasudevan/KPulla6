@@ -11,7 +11,11 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction as db_transaction
 from django.db.models import QuerySet
 
-from debt.bank_ledger_services import create_fd_interest_cash_movement
+from debt.bank_ledger_services import (
+    create_fd_interest_cash_movement,
+    movement_has_been_reversed,
+    refresh_bank_account_balance,
+)
 from debt.models import (
     COMPOUNDED_FD_INTEREST_WARNING,
     FixedDeposit,
@@ -104,6 +108,67 @@ def create_fixed_deposit_interest_payment(
         ) from exc
 
     return InterestPaymentCreateResult(payment=payment, warning=warning)
+
+
+@db_transaction.atomic
+def update_fixed_deposit_interest_payment(
+    user: AbstractBaseUser,
+    payment_id: int,
+    *,
+    payment_date: date | None = None,
+    gross_interest: Decimal | None = None,
+    tax_withheld: Decimal | None = None,
+    comment: str | None = None,
+) -> FixedDepositInterestPayment:
+    payment = get_fixed_deposit_interest_payment(user, payment_id)
+    if payment.is_reversed:
+        raise InterestPaymentValidationError(
+            "Reversed interest payments cannot be edited. Record a new payment instead."
+        )
+    movement = payment.cash_movement
+    if movement is None or movement_has_been_reversed(movement):
+        raise InterestPaymentValidationError(
+            "Linked bank cash movement is missing or reversed; payment cannot be edited."
+        )
+
+    new_date = payment_date if payment_date is not None else payment.payment_date
+    new_gross = gross_interest if gross_interest is not None else payment.gross_interest
+    new_tax = tax_withheld if tax_withheld is not None else payment.tax_withheld
+    net_interest = _validate_interest_amounts(new_gross, new_tax)
+
+    if comment is not None:
+        description = comment.strip()
+        payment.comment = description
+    else:
+        description = payment.comment
+
+    if not description:
+        description = (
+            f"Fixed deposit interest: {payment.fixed_deposit.institution_name}/"
+            f"{payment.fixed_deposit.deposit_account_number}"
+        )
+
+    payment.payment_date = new_date
+    payment.gross_interest = new_gross
+    payment.tax_withheld = new_tax
+    payment.net_interest = net_interest
+    payment.save(
+        update_fields=[
+            "payment_date",
+            "gross_interest",
+            "tax_withheld",
+            "net_interest",
+            "comment",
+            "updated_at",
+        ]
+    )
+
+    movement.amount = net_interest
+    movement.movement_date = new_date
+    movement.description = description
+    movement.save(update_fields=["amount", "movement_date", "description", "updated_at"])
+    refresh_bank_account_balance(payment.bank_account)
+    return payment
 
 
 def list_fixed_deposit_interest_payments(

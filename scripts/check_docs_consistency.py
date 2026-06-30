@@ -8,9 +8,11 @@ Usage (from repo root):
 
 Checks:
   - mkdocs.yml nav entries point to existing files under docs/
+  - Required Diátaxis pages exist
   - Local Markdown links between docs resolve
   - Key API paths in docs/api-design.md appear in Django URL configs
   - Stale wording in current docs (conservative heuristics)
+  - Screenshot backlog: Done rows must have files; placeholders vs existing PNGs
 """
 
 from __future__ import annotations
@@ -24,6 +26,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCS_DIR = REPO_ROOT / "docs"
 MKDOCS_YML = REPO_ROOT / "mkdocs.yml"
 API_DESIGN = DOCS_DIR / "api-design.md"
+VISUAL_BACKLOG = DOCS_DIR / "maintenance" / "docs-visual-backlog.md"
+IMAGES_DIR = DOCS_DIR / "assets" / "images"
 
 # Files where historical wording is expected.
 HISTORICAL_DOC_GLOBS = {
@@ -66,11 +70,13 @@ REQUIRED_PAGES = [
     "getting-started/quickstart.md",
     "getting-started/login-and-first-use.md",
     "getting-started/common-commands.md",
+    "tutorials/index.md",
     "tutorials/add-first-portfolio.md",
     "tutorials/import-stock-transactions.md",
     "tutorials/add-mutual-fund-transactions.md",
     "tutorials/refresh-market-data.md",
     "tutorials/read-the-dashboard.md",
+    "how-to/index.md",
     "how-to/run-on-ipad-lan.md",
     "how-to/configure-google-oauth.md",
     "how-to/refresh-market-cache.md",
@@ -89,7 +95,13 @@ REQUIRED_PAGES = [
     "concepts/cash-ledger.md",
     "concepts/fixed-deposits-debt.md",
     "concepts/data-safety.md",
+    "reference/index.md",
     "reference/api-reference.md",
+    "reference/api-auth.md",
+    "reference/api-transactions.md",
+    "reference/api-fixed-deposits.md",
+    "reference/api-cash.md",
+    "reference/api-analytics.md",
     "reference/database-schema.md",
     "reference/make-commands.md",
     "reference/environment-variables.md",
@@ -98,8 +110,11 @@ REQUIRED_PAGES = [
     "reference/backend-module-map.md",
     "reference/test-commands.md",
     "maintenance/agent-rules.md",
+    "maintenance/documentation-update-policy.md",
     "maintenance/cursor-maintenance-workflow.md",
     "maintenance/docs-consistency-checks.md",
+    "maintenance/doc-page-templates.md",
+    "maintenance/docs-visual-backlog.md",
     "maintenance/obsolete-code-audit.md",
     "maintenance/release-checklist.md",
     "troubleshooting/index.md",
@@ -305,6 +320,43 @@ def check_stale_phrases(warnings: list[str]) -> None:
                 )
 
 
+def check_screenshot_backlog(warnings: list[str]) -> None:
+    """Conservative visual-backlog checks (manual workflow)."""
+    if not VISUAL_BACKLOG.is_file():
+        return
+    backlog_text = VISUAL_BACKLOG.read_text(encoding="utf-8", errors="replace")
+    done_row = re.compile(
+        r"\|\s*`([^`]+\.(?:png|webp|gif))`\s*\|\s*\*\*Done\*\*",
+        re.I,
+    )
+    for match in done_row.finditer(backlog_text):
+        filename = match.group(1)
+        image_path = IMAGES_DIR / filename
+        if not image_path.is_file():
+            warnings.append(
+                "Visual backlog marks "
+                f"{filename} Done but file missing: docs/assets/images/{filename}"
+            )
+
+    if not IMAGES_DIR.is_dir():
+        return
+    pending_image = re.compile(
+        r"docs/assets/images/([A-Za-z0-9._-]+\.(?:png|webp|gif))",
+        re.I,
+    )
+    for md_file in _collect_markdown_files():
+        if "Screenshot pending" not in md_file.read_text(encoding="utf-8", errors="replace"):
+            continue
+        text = md_file.read_text(encoding="utf-8", errors="replace")
+        for match in pending_image.finditer(text):
+            filename = match.group(1)
+            if (IMAGES_DIR / filename).is_file():
+                warnings.append(
+                    f"Screenshot file exists but placeholder remains in "
+                    f"{md_file.relative_to(REPO_ROOT)}: {filename}"
+                )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="KPulla6 docs consistency checks")
     parser.add_argument(
@@ -320,6 +372,7 @@ def main() -> int:
     check_markdown_links(warnings)
     check_api_paths(warnings)
     check_stale_phrases(warnings)
+    check_screenshot_backlog(warnings)
 
     if warnings:
         print(f"docs-check: {len(warnings)} warning(s)\n")
@@ -327,7 +380,10 @@ def main() -> int:
             print(f"  - {w}")
         return 1 if args.strict else 0
 
-    print("docs-check: OK (required pages, nav, links, API paths, stale phrases)")
+    print(
+        "docs-check: OK (required pages, nav, links, API paths, "
+        "stale phrases, screenshot backlog)"
+    )
     return 0
 
 

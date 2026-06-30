@@ -48,9 +48,11 @@ theme:
     - navigation.expand
     - navigation.top
     - navigation.indexes
+    - navigation.footer
     - search.suggest
     - search.highlight
     - content.code.copy
+    - content.tabs.link
     - toc.follow
 
 plugins:
@@ -70,6 +72,11 @@ markdown_extensions:
   - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
 nav:
   - Home: index.md
@@ -79,12 +86,14 @@ nav:
     - Login and first use: getting-started/login-and-first-use.md
     - Common commands: getting-started/common-commands.md
   - Tutorials:
+    - Overview: tutorials/index.md
     - Add your first portfolio: tutorials/add-first-portfolio.md
     - Import stock transactions: tutorials/import-stock-transactions.md
     - Add mutual fund transactions: tutorials/add-mutual-fund-transactions.md
     - Refresh market data: tutorials/refresh-market-data.md
     - Read the dashboard: tutorials/read-the-dashboard.md
   - How-to Guides:
+    - Overview: how-to/index.md
     - Run the app on iPad / LAN: how-to/run-on-ipad-lan.md
     - Configure Google OAuth: how-to/configure-google-oauth.md
     - Refresh prices, FX, benchmarks, and NAVs: how-to/refresh-market-cache.md
@@ -105,7 +114,13 @@ nav:
     - Fixed deposits / debt: concepts/fixed-deposits-debt.md
     - Data safety: concepts/data-safety.md
   - Reference:
+    - Overview: reference/index.md
     - API reference: reference/api-reference.md
+    - API authentication: reference/api-auth.md
+    - API transactions: reference/api-transactions.md
+    - API fixed deposits: reference/api-fixed-deposits.md
+    - API cash: reference/api-cash.md
+    - API analytics: reference/api-analytics.md
     - Database schema: reference/database-schema.md
     - Make commands: reference/make-commands.md
     - Environment variables: reference/environment-variables.md
@@ -114,9 +129,12 @@ nav:
     - Backend module map: reference/backend-module-map.md
     - Test commands: reference/test-commands.md
   - Maintenance:
+    - Documentation update policy: maintenance/documentation-update-policy.md
     - Agent rules: maintenance/agent-rules.md
     - Cursor maintenance workflow: maintenance/cursor-maintenance-workflow.md
     - Docs consistency checks: maintenance/docs-consistency-checks.md
+    - Doc page templates: maintenance/doc-page-templates.md
+    - Docs visual backlog: maintenance/docs-visual-backlog.md
     - Obsolete backend code audit: maintenance/obsolete-code-audit.md
     - Release checklist: maintenance/release-checklist.md
   - Troubleshooting:

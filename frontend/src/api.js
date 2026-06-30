@@ -889,6 +889,22 @@ export async function fetchFixedDeposits(scopeParams = null) {
   return fetchWithHandling(`/fixed-deposits?${params.toString()}`);
 }
 
+/** GET /api/v1/fixed-deposits/{id}/detail — FD detail with schedule, actuals, FY summary */
+export async function fetchFixedDepositDetail(fdId, query = {}) {
+  const params = new URLSearchParams();
+  if (query.financial_year) {
+    params.set('financial_year', query.financial_year);
+  }
+  if (query.fy_start) {
+    params.set('fy_start', query.fy_start);
+  }
+  if (query.fy_end) {
+    params.set('fy_end', query.fy_end);
+  }
+  const qs = params.toString();
+  return fetchWithHandling(`/fixed-deposits/${fdId}/detail${qs ? `?${qs}` : ''}`);
+}
+
 /** GET /api/v1/fixed-deposits/maturity-estimate — read-only maturity estimate preview */
 export async function fetchFixedDepositMaturityEstimate({
   principal_amount,
@@ -939,6 +955,14 @@ export async function fetchFixedDepositInterestPayments(fdId) {
 export async function createFixedDepositInterestPayment(fdId, payload) {
   return fetchWithHandling(`/fixed-deposits/${fdId}/interest-payments`, {
     method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** PATCH /api/v1/fixed-deposit-interest-payments/{payment_id} */
+export async function updateFixedDepositInterestPayment(paymentId, payload) {
+  return fetchWithHandling(`/fixed-deposit-interest-payments/${paymentId}`, {
+    method: 'PATCH',
     body: JSON.stringify(payload),
   });
 }

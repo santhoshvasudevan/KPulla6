@@ -1,50 +1,85 @@
 # KPulla6 Docs
 
-**Portfolio Insight** tracks stocks, mutual funds, cash, and fixed deposits on your Mac. The API owns all math. The UI displays results.
+**Portfolio Insight** — local-first portfolio tracker. The API computes holdings and returns. The UI displays results.
+
+## Start here
+
+<div class="grid cards" markdown>
+
+-   **[Quickstart](getting-started/quickstart.md)**
+
+    ---
+
+    Bootstrap Postgres, run the app, open the dashboard.
+
+-   **[Login](getting-started/login-and-first-use.md)**
+
+    ---
+
+    Set a password and sign in for the first time.
+
+-   **[Tutorials](tutorials/index.md)**
+
+    ---
+
+    Learn by doing: portfolio, CSV, refresh, dashboard.
+
+-   **[API reference](reference/api-reference.md)**
+
+    ---
+
+    Copy-paste `curl` examples against local `:8000`.
+
+</div>
 
 ## I want to…
 
-| Goal | Start here |
-|------|------------|
-| Run the app | [Quickstart](getting-started/quickstart.md) |
-| Sign in | [Login and first use](getting-started/login-and-first-use.md) |
-| Add a portfolio or import CSV | [Tutorials](tutorials/add-first-portfolio.md) |
-| Refresh prices or NAVs | [Refresh market data](tutorials/refresh-market-data.md) |
+| Goal | Page |
+|------|------|
+| Run locally | [Quickstart](getting-started/quickstart.md) |
+| Daily commands | [Common commands](getting-started/common-commands.md) |
+| Refresh prices / NAVs | [Refresh market data](tutorials/refresh-market-data.md) |
 | Understand returns | [Portfolio performance](concepts/portfolio-performance.md) |
-| Look up an API | [API reference](reference/api-reference.md) |
-| Fix something broken | [Troubleshooting](troubleshooting/index.md) |
+| Fix an error | [Troubleshooting](troubleshooting/index.md) |
+| Contribute | [Cursor workflow](maintenance/cursor-maintenance-workflow.md) |
 
 ## Local URLs
-
-Start everything:
 
 ```bash
 make dev
 ```
 
-| What | URL |
-|------|-----|
+| Service | URL |
+|---------|-----|
 | App | http://127.0.0.1:5173 |
-| API health | http://127.0.0.1:8000/api/v1/health |
-| Docs (this site) | http://127.0.0.1:8002 |
-| Docs with local hostname | http://docs.kpulla6.com:8002 — [setup](how-to/local-docs-domain.md) |
+| API | http://127.0.0.1:8000/api/v1/health |
+| Docs | http://127.0.0.1:8002 |
 
-Stop app + docs (Postgres keeps running):
+Stop app + docs (Postgres keeps running): `make stop-dev`
 
-```bash
-make stop-dev
-```
+## App screenshots
+
+!!! info "Visual pass 1 — placeholders"
+    Dashboard, Transactions filters, and Settings display screenshots are **pending**. Capture manually while logged in — see [How to capture screenshots](maintenance/docs-visual-backlog.md#how-to-capture-screenshots). Tutorial pages show labeled placeholder callouts until PNGs are saved under `docs/assets/images/`.
 
 ## How this site is organized
 
-| Section | Use when you want to… |
-|---------|------------------------|
-| [Getting Started](getting-started/overview.md) | Install and run locally |
-| [Tutorials](tutorials/add-first-portfolio.md) | Learn by doing a first task |
-| [How-to Guides](how-to/local-docs-domain.md) | Solve one specific problem |
-| [Concepts](concepts/architecture-overview.md) | Understand why it works this way |
-| [Reference](reference/make-commands.md) | Look up commands, API, schema |
-| [Troubleshooting](troubleshooting/index.md) | Fix errors |
-| [Maintenance](maintenance/cursor-maintenance-workflow.md) | Contribute or review |
+| Section | When to use it |
+|---------|----------------|
+| [Getting Started](getting-started/overview.md) | Install and run |
+| [Tutorials](tutorials/index.md) | First-time tasks |
+| [How-to Guides](how-to/index.md) | One specific problem |
+| [Concepts](concepts/architecture-overview.md) | Why it works this way |
+| [Reference](reference/index.md) | API, commands, schema |
+| [Troubleshooting](troubleshooting/index.md) | Something broke |
 
-Long-form specs (`api-design.md`, `architecture.md`, etc.) stay in the repo and are linked from summary pages — not duplicated here.
+Deep specs (`api-design.md`, `architecture.md`, …) live in the repo and are linked from reference pages.
+
+## Next
+
+- New user → [Quickstart](getting-started/quickstart.md)
+- API integrator → [API reference](reference/api-reference.md)
+
+## Related
+
+- [Product rules](product-rules.md) · [Current state](current-state.md) · [Changelog](changelog/index.md)

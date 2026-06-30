@@ -114,6 +114,18 @@ Approved decisions (FD-ACC-0.1): see accounting doc § Approved product decision
 
 **Settlement:** Realized maturity/closure proceeds remain separate from estimated maturity value.
 
+### FD detail page (FD-DETAIL-CALC-1)
+
+| Topic | Behavior |
+|-------|----------|
+| **Route** | `/fixed-deposits/:id` (UI) · `GET /fixed-deposits/{id}/detail` (API) |
+| **Expected schedule** | Read-only forecast from FD terms; payout FDs get per-period rows; compounded FDs get one maturity accrual row |
+| **Actual credits** | User-recorded `FixedDepositInterestPayment`; creates bank `FD_INTEREST` CREDIT for net amount |
+| **Tax withheld** | Per payment; net credited = gross − tax |
+| **Indian FY filter** | April–March; `financial_year=2025-26` or `fy_start`/`fy_end` |
+| **Edit actual** | `PATCH /fixed-deposit-interest-payments/{id}` updates payment + linked cash movement |
+| **Estimates** | Not settlement, not tax advice, not auto interest accrual |
+
 ### Portfolio value rules (MVP; extended by accounting design)
 
 | Condition | Contributes principal? |
@@ -194,9 +206,9 @@ Use the action that matches the real-world event. These are **not** interchangea
 
 - `GET /portfolio/summary` — FD principal added to `total_invested`, `current_value`; optional `allocation_buckets`; `has_fixed_deposits: true` when contributing FDs exist
 - `GET /portfolio/holdings` — FD rows with `asset_type=FIXED_DEPOSIT`, `value_status=principal_only`, `asset_symbol` label (e.g. `FD HDFC`)
-- `GET /portfolio/performance?metric=value` — includes FD principal + included bank cash (**FD-ACC-8B**).
-- `GET /portfolio/performance?metric=twror|cumulative_return` — aligned PV + internal/external flow rules (**FD-ACC-8C**).
-- Summary/Metric Sheet XIRR terminal aligns with headline `current_value` (**FD-ACC-8C**).
+- `GET /portfolio/performance?metric=value` — includes FD principal + included bank cash (**FD-ACC-8B**); paid-out interest to excluded banks does **not** increase value chart.
+- `GET /portfolio/performance?metric=twror|cumulative_return` — return PV includes cumulative portfolio-attributed **net** payout interest when bank excluded (**FD-PERF-2**); included bank avoids double count (**FD-ACC-8C**).
+- Summary/Metric Sheet XIRR: terminal = headline wealth; positive attributed-interest flows on payment dates when bank excluded (**FD-PERF-2**).
 
 ### Dashboard UX
 
@@ -235,5 +247,5 @@ React renders buckets only; no frontend finance calculations.
 | Summary/holdings | `tests/test_fixed_deposit_summary_api.py` |
 | E2E accounting audit | `tests/test_fixed_deposit_end_to_end_accounting.py` |
 | FD cancel / deactivate accounting | `tests/test_fixed_deposit_cancellation_accounting.py` |
-| Performance / returns | `tests/test_fd_performance_timeseries_api.py`, `tests/test_fd_cash_flow_classification.py` |
+| Performance / returns | `tests/test_fd_performance_timeseries_api.py`, `tests/test_fd_cash_flow_classification.py`, `tests/test_fd_attributed_income.py` |
 | Frontend | `FixedDeposits.test.jsx`, `BankAccountManagement.test.jsx`, `Assets.test.jsx`, `api.test.js`, `Dashboard.test.jsx` |

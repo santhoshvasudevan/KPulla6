@@ -2,6 +2,16 @@
 
 **Status:** **FD-ACC-7 implemented** · **FD-ACC-8B implemented** (value history) · **FD-ACC-8C implemented** (return metrics) · **FD-ACC-9 audited** (2026-06-14) · **FD-ACC-10A implemented** (2026-06-24) · **FD-ACC-10B implemented** (2026-06-24) · **FD-TAX-1/1A/2 implemented** (2026-06-26) · **FD-CASH-ASOF-1 implemented** (2026-06-24, create as-of balance UX).
 
+## FD-DETAIL-CALC-1 expected schedule vs actual credits (2026-06-30)
+
+| Topic | Rule |
+|-------|------|
+| **Expected schedule** | Read-only forecast from FD terms; does not create cash movements |
+| **Actual credits** | User-recorded `FixedDepositInterestPayment`; creates `FD_INTEREST` bank CREDIT for net amount |
+| **Matching** | Display-only link by period date or proximity; no DB schedule row |
+| **FY filter** | Indian FY April–March; actuals by credited date, expected by payout date |
+| **Edit** | `PATCH` updates payment + linked cash movement; reversed payments excluded from totals |
+
 ## FD-INTEREST-MATURITY-LOGIC-1 maturity vs payout estimates (2026-06-30)
 
 | Topic | Rule |
@@ -143,6 +153,22 @@ All bank ledger and FD accounting corrections use **linked reversal rows** (`is_
 
 ---
 
+## FD-PERF-2 implementation notes (2026-06-30)
+
+| Item | FD-PERF-2 outcome |
+|------|-------------------|
+| **Attribution** | `FixedDeposit.portfolio_id` — bank is credit destination only |
+| **Amount** | `net_interest` for performance; gross/tax in reports only |
+| **Value metric** | Unchanged — principal + included bank cash (wealth still held in portfolio) |
+| **Return PV** | `merge_fd_attributed_income_into_return_timeseries` adds cumulative net income when bank not in scope PV |
+| **XIRR** | `build_fd_attributed_xirr_flows` — positive investor flows on payment dates when bank excluded |
+| **Anti-double-count** | `bank_represents_interest_in_performance_scope` skips attributed layer when included bank already in PV |
+| **Compounded FD** | No periodic attribution without actual payment; principal-only valuation unchanged |
+| **Deferred** | Compounded daily accrual; gross-of-tax performance mode |
+| **Tests** | `test_fd_attributed_income.py` |
+
+---
+
 ## FD-ACC-8C implementation notes (2026-06-14)
 
 | Item | FD-ACC-8C outcome |
@@ -151,8 +177,8 @@ All bank ledger and FD accounting corrections use **linked reversal rows** (`is_
 | **XIRR** | Terminal = stocks/MF + broker cash + FD principal + included bank cash |
 | **TWROR / cumulative** | Daily PV from FD-ACC-8B merge; external flows += bank manual/seed/adjustment only |
 | **Opening balance** | External contribution at seed date |
-| **Interest** | Income via PV increase (included bank cash); not external flow |
-| **Bank excluded** | FD step changes only; documented conservative behavior |
+| **Interest** | Income via PV increase (included bank cash) or portfolio-attributed return layer (excluded bank — **FD-PERF-2**); not external flow |
+| **Bank excluded** | FD principal in value; payout interest in return metrics via attributed income (**FD-PERF-2**) |
 | **Tests** | `test_fd_cash_flow_classification.py` |
 
 ---

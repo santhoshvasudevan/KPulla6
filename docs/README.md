@@ -93,6 +93,8 @@ Local stack: Docker Postgres, `make dev`, session auth. Data-sensitive work requ
 
 **Documentation portal:** `make docs-serve` or `make dev` (MkDocs Material at http://127.0.0.1:8002) · `make docs-check` after doc/API edits · Diátaxis nav in `mkdocs.yml`.
 
+**Documentation update policy:** every feature, fix, or contract change must decide whether docs need updates. Canonical guide: [maintenance/documentation-update-policy.md](./maintenance/documentation-update-policy.md). End tasks with **Docs updated:** … or **Docs not needed because:** …
+
 **Read next:** [workflows.md](./workflows.md) · [data-safety.md](./data-safety.md) · [AGENTS.md](agents.md)
 
 ---

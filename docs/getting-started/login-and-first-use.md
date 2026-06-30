@@ -34,12 +34,27 @@ Change the email if your seed user differs.
 
 **New user:** register at http://127.0.0.1:5173/register (creates user, default portfolio, settings).
 
-## 3. First-use checklist
+## 3. Display preferences (Settings)
+
+After login, open **Settings** → **Display** section.
+
+http://127.0.0.1:5173/settings#settings-display
+
+<div class="screenshot-placeholder" markdown="1">
+!!! warning "Screenshot pending — display preferences"
+    **Save as:** `docs/assets/images/settings-theme-selector.png`  
+    **Capture when:** Settings page with **Display** section (display currency, tax rate).  
+    **Notice:** Display currency also appears in the header after save.  
+    **Workflow:** [How to capture screenshots](../maintenance/docs-visual-backlog.md#how-to-capture-screenshots)  
+    **Troubleshooting:** [Login issues](../troubleshooting/login-issues.md)
+</div>
+
+## 4. First-use checklist
 
 | Step | Where | Why |
 |------|-------|-----|
 | Pick portfolio scope | Header **Portfolio view** | Scopes transactions, holdings, summary |
-| Pick display currency | Header currency selector | FX for non-base holdings |
+| Pick display currency | Header or Settings **Display** | FX for non-base holdings |
 | Add or import data | **Transactions** | Source of truth for holdings |
 | Warm the cache | Terminal: `make refresh` | Dashboard needs cached prices/NAVs |
 | Review dashboard | **Dashboard** | KPIs + performance chart |
@@ -60,3 +75,11 @@ Tutorial: [Refresh market data](../tutorials/refresh-market-data.md)
 - `401` on protected routes redirects to `/login`
 
 **Problems?** [Login issues](../troubleshooting/login-issues.md) · Full spec: [auth.md](../auth.md)
+
+## Next
+
+- [Read the dashboard](../tutorials/read-the-dashboard.md)
+
+## Related
+
+- [Frontend routes](../reference/frontend-routes.md)

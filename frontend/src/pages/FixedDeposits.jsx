@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   createFixedDeposit,
   createFixedDepositInterestPayment,
@@ -288,6 +289,7 @@ function emptySettlementForm(fd) {
 }
 
 export default function FixedDeposits() {
+  const navigate = useNavigate();
   const { apiQuery, settingsLoaded } = usePortfolio();
   const [items, setItems] = useState([]);
   const [portfolios, setPortfolios] = useState([]);
@@ -1158,7 +1160,19 @@ export default function FixedDeposits() {
                 const payoutFd = fdIsPayout(fd);
                 return (
                   <Fragment key={fd.id}>
-                    <tr className="fd-table__data-row">
+                    <tr
+                      className="fd-table__data-row fd-table__data-row--clickable"
+                      onClick={() => navigate(`/fixed-deposits/${fd.id}`)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          navigate(`/fixed-deposits/${fd.id}`);
+                        }
+                      }}
+                      tabIndex={0}
+                      role="link"
+                      aria-label={`View fixed deposit ${fd.institution_name} ${fd.deposit_account_number}`}
+                    >
                       <AppTableCell>{fd.portfolio_name}</AppTableCell>
                       <AppTableCell>{fd.institution_name}</AppTableCell>
                       <AppTableCell className="fd-table__account">{fd.deposit_account_number}</AppTableCell>
@@ -1226,7 +1240,10 @@ export default function FixedDeposits() {
                         <StatusBadge status={badge.status} label={badge.label} />
                       </AppTableCell>
                     </tr>
-                    <tr className="fd-table__actions-row">
+                    <tr
+                      className="fd-table__actions-row"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <td colSpan={13}>
                         <div className="fd-action-strip" data-testid={`fd-action-strip-${fd.id}`}>
                           <div className="fd-action-strip__group" aria-label="Common actions">

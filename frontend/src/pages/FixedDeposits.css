@@ -160,6 +160,19 @@
   border-bottom: none;
 }
 
+.fd-table__data-row--clickable {
+  cursor: pointer;
+}
+
+.fd-table__data-row--clickable:hover td {
+  background: var(--bg-surface-raised);
+}
+
+.fd-table__data-row--clickable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .fd-table__actions-row td {
   padding-top: 0;
   padding-bottom: var(--space-3);

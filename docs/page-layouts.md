@@ -197,9 +197,14 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 ## 9. Fixed Deposits (`/fixed-deposits`)
 
-**Files:** `pages/FixedDeposits.jsx` · `pages/FixedDeposits.css` · `utils/fdDisplay.js`
+**Files:** `pages/FixedDeposits.jsx` · `pages/FixedDeposits.css` · `pages/FixedDepositDetail.jsx` · `utils/fdDisplay.js`
 
-**Status:** **Redesigned (P7)** — Executive Portfolio OS layout; FD-HOLDINGS-UX-1 adds maturity display fallback + action strip (API dynamic estimate for legacy rows).
+**Status:** **Redesigned (P7)** — Executive Portfolio OS layout; FD-HOLDINGS-UX-1 adds maturity display fallback + action strip; **FD-DETAIL-CALC-1** adds `/fixed-deposits/:id` detail page.
+
+| Section | Layout |
+|---------|--------|
+| **Holdings table** | Clickable data row → detail page; action strip below (stopPropagation) |
+| **Detail page** | Breadcrumb, KPI strip, FD details card, FY filter, expected schedule table, detailed calculation, Record/Edit actual modal with 10% tax shortcut |
 
 | Section | Layout |
 |---------|--------|

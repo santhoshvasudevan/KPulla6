@@ -1,36 +1,84 @@
 # Read the dashboard
 
-Goal: interpret headline metrics and the performance chart.
+Interpret headline KPIs, the performance chart, and Metric Sheet preview.
 
-## Open the dashboard
+## Prerequisites
 
-http://127.0.0.1:5173/ (after `make dev` and login)
+```bash
+make dev
+make refresh
+```
 
-## Headline KPIs
+Sign in: [Login and first use](../getting-started/login-and-first-use.md)
 
-From `GET /api/v1/portfolio/summary?include_timeseries=false`:
+## Steps
 
-- **Total value**, **Invested**, **P/L**, **XIRR**
+### 1. Open the dashboard
 
-Values respect **portfolio scope** and **display currency** from the header.
+http://127.0.0.1:5173/
 
-## Performance chart
+<div class="screenshot-placeholder" markdown="1">
+!!! warning "Screenshot pending — dashboard overview"
+    **Save as:** `docs/assets/images/dashboard-overview.png`  
+    **Capture when:** logged in at `/` with KPI cards, allocation, and performance chart visible.  
+    **Notice:** Portfolio scope and display currency in the sticky header.  
+    **Workflow:** [How to capture screenshots](../maintenance/docs-visual-backlog.md#how-to-capture-screenshots)  
+    **Troubleshooting:** [Missing prices or NAVs](../troubleshooting/missing-prices-navs.md) if KPIs look empty.
+</div>
 
-From `GET /api/v1/portfolio/performance`:
+### 2. Set scope and currency
 
-- Metrics: **Value**, **Cumulative return**, **TWROR**
-- Range pills: 7D, 1M, 1Y, ALL, etc.
-- Optional benchmark overlay (cached index prices)
+Use the header **Portfolio view** and **Display currency** selectors.
 
-## Metric Sheet preview
+**Expected:** KPIs and chart update for the selected scope.
 
-Lower on the dashboard — portfolio Quantitative Statistics for the selected range. Full detail: [Metric Sheet](../concepts/metric-sheet.md).
+### 3. Read headline KPIs
 
-## Warnings
+Powered by `GET /api/v1/portfolio/summary?include_timeseries=false`:
 
-Watch for `price_status`, `fx_status`, and banner warnings when cache or FX is incomplete. Fix with `make refresh` or scope/currency adjustments.
+| KPI | Meaning (short) |
+|-----|-----------------|
+| Total value | Holdings + cash in display currency |
+| Invested | FIFO cost basis |
+| P/L | Realized + unrealized |
+| XIRR | Money-weighted return (when computable) |
+
+API detail: [Analytics API](../reference/api-analytics.md)
+
+### 4. Use the performance chart
+
+Powered by `GET /api/v1/portfolio/performance`:
+
+- **Metrics:** Value, Cumulative return, TWROR
+- **Range:** 7D, 1M, 1Y, ALL, etc.
+- **Benchmark:** optional overlay (cached index prices)
+
+### 5. Scroll to Metric Sheet
+
+Portfolio quantitative statistics for the selected range.
+
+!!! note "Screenshot pending — Metric Sheet"
+    **File:** `metric-sheet-preview.png` — out of scope for this pass. See [visual backlog](../maintenance/docs-visual-backlog.md).
+
+Concept: [Metric Sheet](../concepts/metric-sheet.md)
+
+## You are done when…
+
+- [ ] KPIs show numbers (not all zeros) after `make refresh`
+- [ ] Performance chart renders for at least one range
+- [ ] No blocking warning banner (or you know why it appears)
+
+## Troubleshooting
+
+| Issue | Page |
+|-------|------|
+| Missing/stale values | [Missing prices or NAVs](../troubleshooting/missing-prices-navs.md) |
+| Slow load | [Dashboard is slow](../troubleshooting/dashboard-slow.md) |
 
 ## Next
 
-- [Portfolio performance concepts](../concepts/portfolio-performance.md)
-- [Investigate dashboard performance](../how-to/investigate-dashboard-performance.md)
+- [Portfolio performance](../concepts/portfolio-performance.md)
+
+## Related
+
+- [Analytics API](../reference/api-analytics.md) · [Investigate dashboard performance](../how-to/investigate-dashboard-performance.md)

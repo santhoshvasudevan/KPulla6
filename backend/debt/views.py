@@ -11,7 +11,9 @@ from debt.serializers import (
     CashMovementSerializer,
     ReversalWriteSerializer,
     FixedDepositInterestPaymentSerializer,
+    FixedDepositInterestPaymentUpdateSerializer,
     FixedDepositInterestPaymentWriteSerializer,
+    FixedDepositDetailQuerySerializer,
     FixedDepositSerializer,
     FixedDepositSettlementSerializer,
     FixedDepositRenewalWriteSerializer,
@@ -61,12 +63,14 @@ from debt.services import (
     update_bank_account,
     update_fixed_deposit,
 )
+from debt.fd_detail_services import FdDetailValidationError, build_fixed_deposit_detail
 from debt.interest_payment_services import (
     InterestPaymentNotFoundError,
     InterestPaymentValidationError,
     create_fixed_deposit_interest_payment,
     get_fixed_deposit_interest_payment,
     list_fixed_deposit_interest_payments,
+    update_fixed_deposit_interest_payment,
 )
 from debt.reversal_services import (
     InterestPaymentReversalError,
@@ -240,6 +244,30 @@ class FixedDepositDetailView(APIView):
         return Response(FixedDepositSerializer(fd).data)
 
 
+class FixedDepositDetailCalcView(APIView):
+    def get(self, request, fd_id: int):
+        serializer = FixedDepositDetailQuerySerializer(data=request.query_params)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            fd = get_fixed_deposit(request.user, fd_id)
+            body = build_fixed_deposit_detail(
+                request.user,
+                fd_id,
+                financial_year=serializer.validated_data.get("financial_year"),
+                fy_start=serializer.validated_data.get("fy_start"),
+                fy_end=serializer.validated_data.get("fy_end"),
+            )
+        except FixedDepositNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except FdDetailValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        body["fixed_deposit"] = FixedDepositSerializer(fd).data
+        return Response(body)
+
+
 class FixedDepositInterestPaymentListCreateView(APIView):
     def get(self, request, fd_id: int):
         try:
@@ -277,15 +305,25 @@ class FixedDepositInterestPaymentDetailView(APIView):
         return Response(FixedDepositInterestPaymentSerializer(payment).data)
 
     def put(self, request, payment_id: int):
-        return Response(
-            {
-                "detail": (
-                    "Fixed deposit interest payments are immutable. "
-                    "Use ADJUSTMENT entries to correct."
-                )
-            },
-            status=status.HTTP_405_METHOD_NOT_ALLOWED,
-        )
+        serializer = FixedDepositInterestPaymentUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        if not serializer.validated_data:
+            return Response(
+                {"detail": "At least one field is required to update an interest payment."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            payment = update_fixed_deposit_interest_payment(
+                request.user,
+                payment_id,
+                **serializer.validated_data,
+            )
+        except InterestPaymentNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except InterestPaymentValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(FixedDepositInterestPaymentSerializer(payment).data)
 
     def patch(self, request, payment_id: int):
         return self.put(request, payment_id)

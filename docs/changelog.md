@@ -1,5 +1,20 @@
 # Changelog — KPulla6
 
+## 2026-06-30 — FD-PERF-2: Portfolio-attributed FD payout income for performance
+
+- **Product model:** Payout FD interest belongs to the FD’s portfolio (`FixedDeposit.portfolio`), not bank visibility. External/excluded bank does not block return recognition.
+- **Service:** `debt/fd_attributed_income.py` — attributed income events; cumulative merge into return PV series; XIRR positive flows when bank cash not in scope PV.
+- **Metrics:** `metric=value` / summary `current_value` unchanged (principal + included bank only). `twror`, `cumulative_return`, and XIRR include net attributed income when bank excluded; no double count when bank included.
+- **Tax:** Performance uses `net_interest`; gross/tax in FD detail/tax reports only. Gross-of-tax performance deferred.
+- **Tests:** `test_fd_attributed_income.py`.
+
+## 2026-06-30 — FD-DETAIL-CALC-1: Fixed Deposit detail page with interest schedule
+
+- **Route:** `/fixed-deposits/:id` — detail page with FD summary, KPIs, expected interest schedule, actual credit recording/editing, Indian FY filter, detailed calculation.
+- **API:** `GET /fixed-deposits/{id}/detail`; `PATCH /fixed-deposit-interest-payments/{id}` updates payment + linked bank cash movement.
+- **Schedule:** Read-only forecast from FD terms (Actual/365); payout FDs get per-period rows; compounded FDs get single maturity accrual row.
+- **Tests:** `test_fd_detail_api.py`, `test_finance_fd_interest_schedule.py`, `FixedDepositDetail.test.jsx`.
+
 ## 2026-06-30 — FD-INTEREST-MATURITY-LOGIC-1: Compounded vs payout FD estimates
 
 - **Compounded FD:** estimated maturity value = principal + compounded interest (Actual/365 fractional years).

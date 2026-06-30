@@ -122,6 +122,8 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 ### Fixed Deposits (`/fixed-deposits`)
 
 - Table lists backend FD fields only (no interest or portfolio value calculations in React)
+- **Row navigation (FD-DETAIL-CALC-1):** click holding row → `/fixed-deposits/:id` detail page; action strip clicks do not navigate
+- **Detail page (`/fixed-deposits/:id`):** FD summary, KPIs (principal, expected/actual interest, tax, net, maturity), Indian FY filter, expected interest schedule with Record/Edit actual, detailed calculation section (HDFC-calculator-style benchmark, app-owned math)
 - **Holdings maturity value (FD-HOLDINGS-UX-1, FD-INTEREST-MATURITY-LOGIC-1):** compounded FDs show expected maturity + **Auto estimate** / **User confirmed** badge; payout FDs show principal returned + est. total/periodic interest + **Principal returned** badge (not inflated maturity)
 - **Create/edit preview:** compounded → heading **Expected maturity value**; payout → **Expected interest payout** with principal-at-maturity copy; override checkbox differs (bank maturity value vs confirmed principal)
 - **Action strip:** full-width grouped buttons below each FD row (common / lifecycle / maintenance); Cancel FD uses `danger` variant; responsive wrap on narrow screens
