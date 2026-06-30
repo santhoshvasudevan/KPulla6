@@ -44,7 +44,7 @@ Key design choices documented there:
 - Ledger is source of truth for bank `current_balance`; FD principal stays portfolio value until settled
 - **New FDs (FD-ACC-3):** principal debited from **linked** bank account via `FD_OPENING` movement at create time (bank funding path — **only path implemented today**)
 - **FD funding (target — CASH-MODEL-REFINE-0):** one clear source per FD — **linked bank account** OR **broker cash** from selected portfolio; **no** partial bank+broker split; unlinked bank cannot fund until linked
-- **Backdated FDs:** seed opening balance and manual deposits must be dated on or before `investment_date`; seeding with today’s date does not fund an earlier investment date. **Current ledger balance** (today) may exceed **available as of investment date** — FD create validates the latter (FD-CASH-ASOF-1).
+- **Backdated FDs:** seed opening balance and manual deposits must be dated on or before `investment_date`; **FD-FUNDING-MODEL-1/1B:** inline “Seed missing balance” in FD create modal calls `POST /bank-accounts/{id}/seed-balance` (`MANUAL_DEPOSIT`) — default seed date is **investment date − 1 day**; explicit user action, does not auto-create FD; duplicate seed rejected. **Funding as-of balance** ignores reversed bank movements (e.g. cancelled FD openings). **Current ledger balance** (today) may exceed **available as of investment date** — FD create validates the latter (FD-CASH-ASOF-1).
 - **Cash tab vs bank ledger:** Portfolio Cash (`/cash`) shows broker and bank cash separately via overview API (CASH-UNIFY-3/4); FD opening debits use the linked **bank account** cash ledger (`CashMovement`). Unified product model: [cash-unification.md](./cash-unification.md). **Stabilized** CASH-UNIFY-4A (2026-06-26).
 - **Interest payments (FD-ACC-4):** periodic payouts via `FD_INTEREST`; immutable; COMPOUNDED soft warning
 - **Settlement (FD-ACC-5):** `POST /mark-matured` (no ledger); `POST /settle` credits bank for principal + net final interest; FD leaves portfolio value; bank cash still excluded
@@ -82,8 +82,8 @@ Approved decisions (FD-ACC-0.1): see accounting doc § Approved product decision
 | Field | Type | Notes |
 |-------|------|-------|
 | `user` | FK → `auth.User` | Explicit ownership (also validated via portfolio/bank) |
-| `portfolio` | FK → `Portfolio` | Required; must be active, same user. **CASH-UNIFY-2:** on create, derived from **linked** `bank_account.portfolio`; conflicting client `portfolio_id` rejected. Legacy rows may differ — see `portfolio_mismatch_warning`. |
-| `bank_account` | FK → `BankAccount` | Required for **bank-funded** FD create (today's only path); must be active, same user, **linked** (`portfolio` set). Broker-funded FD (future) may relax or repurpose — TBD. |
+| `portfolio` | FK → `Portfolio` | Required on create; explicit `portfolio_id`; must be active, same user. **CASH-MODEL-REFINE-1:** not derived from bank account link. Legacy rows may differ from bank cash visibility link — see `portfolio_mismatch_warning`. |
+| `bank_account` | FK → `BankAccount` | Required for **bank-funded** FD create (today's only path); must be active, same user; **portfolio link optional**. Broker-funded FD (future) may relax or repurpose — TBD. |
 | `institution_name` | string | e.g. SBI, HDFC, Post Office |
 | `deposit_account_number` | string | FD account / receipt number |
 | `principal_amount` | decimal | Must be > 0 |

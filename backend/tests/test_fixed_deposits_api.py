@@ -145,6 +145,7 @@ def test_reject_foreign_portfolio(api_client, seeded, test_user, other_user):
         user=other_user, name="Other PF", base_currency="EUR", is_active=True
     )
     bank = _bank(test_user, portfolio=portfolio)
+    fund_bank_account(test_user, bank, "150000")
     response = api_client.post(
         "/api/v1/fixed-deposits",
         _fd_payload(other_portfolio.id, bank.id),
@@ -152,9 +153,7 @@ def test_reject_foreign_portfolio(api_client, seeded, test_user, other_user):
     )
     assert response.status_code == 400
     body = response.json()
-    assert body["bank_account_id"] == bank.id
-    assert body["requested_portfolio_id"] == other_portfolio.id
-    assert body["bank_account_portfolio_id"] == portfolio.id
+    assert "Portfolio not found" in body["detail"]
 
 
 @pytest.mark.django_db
@@ -289,6 +288,76 @@ def test_deactivated_fd_excluded_from_active_list(api_client, seeded, test_user)
     response = api_client.get("/api/v1/fixed-deposits")
     assert response.status_code == 200
     assert response.json() == []
+
+
+@pytest.mark.django_db
+def test_create_fd_insufficient_balance_includes_seed_suggestions(
+    api_client, seeded, test_user,
+):
+    portfolio = ensure_default_portfolio(test_user)
+    bank = _bank(test_user)
+    response = api_client.post(
+        "/api/v1/fixed-deposits",
+        _fd_payload(
+            portfolio.id,
+            bank.id,
+            principal_amount=Decimal("100000"),
+            investment_date=date(2024, 1, 1),
+        ),
+        format="json",
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["bank_account_id"] == bank.id
+    assert body["suggested_seed_date"] == "2023-12-31"
+    assert body["suggested_seed_amount"] == 100000.0
+
+
+@pytest.mark.django_db
+def test_create_fd_after_cancelled_fd_same_investment_date(api_client, seeded, test_user):
+    from debt.cancellation_services import cancel_fixed_deposit
+
+    portfolio = ensure_default_portfolio(test_user)
+    bank = _bank(test_user)
+    fund_bank_account(
+        test_user,
+        bank,
+        "1109389",
+        movement_date=date(2023, 9, 24),
+    )
+    original = create_fixed_deposit(
+        test_user,
+        **_fd_payload(
+            portfolio.id,
+            bank.id,
+            principal_amount=Decimal("1109389"),
+            investment_date=date(2023, 9, 25),
+            maturity_date=date(2024, 9, 25),
+            deposit_account_number="FD-CANCEL-1",
+        ),
+    )
+    cancel_fixed_deposit(test_user, original.id, cancellation_date=date(2026, 6, 24))
+
+    from debt.bank_ledger_services import compute_bank_funding_balance
+
+    assert compute_bank_funding_balance(bank, as_of_date=date(2023, 9, 25)) == Decimal(
+        "1109389"
+    )
+
+    response = api_client.post(
+        "/api/v1/fixed-deposits",
+        _fd_payload(
+            portfolio.id,
+            bank.id,
+            principal_amount=Decimal("1109389"),
+            investment_date=date(2023, 9, 25),
+            maturity_date=date(2024, 9, 25),
+            deposit_account_number="FD-CANCEL-2",
+        ),
+        format="json",
+    )
+    assert response.status_code == 201, response.content.decode()
+    assert response.json()["portfolio_id"] == portfolio.id
 
 
 @pytest.mark.django_db
@@ -679,18 +748,22 @@ def test_portfolio_summary_includes_fd_after_opening_debit(api_client, seeded, t
 
 
 @pytest.mark.django_db
-def test_create_fd_derives_portfolio_from_bank_account(api_client, seeded, test_user):
+def test_create_fd_missing_portfolio_id_fails(api_client, seeded, test_user):
     portfolio = ensure_default_portfolio(test_user)
     bank = _bank(test_user, portfolio=portfolio)
     fund_bank_account(test_user, bank, "150000")
     payload = _fd_payload(None, bank.id)
     response = api_client.post("/api/v1/fixed-deposits", payload, format="json")
-    assert response.status_code == 201
-    assert response.json()["portfolio_id"] == portfolio.id
+    assert response.status_code == 400
+    body = response.json()
+    assert "portfolio_id" in body
+    assert "Select the portfolio that should own this Fixed Deposit." in str(
+        body["portfolio_id"]
+    )
 
 
 @pytest.mark.django_db
-def test_create_fd_matching_portfolio_id_succeeds(api_client, seeded, test_user):
+def test_create_fd_explicit_portfolio_id_succeeds(api_client, seeded, test_user):
     portfolio = ensure_default_portfolio(test_user)
     bank = _bank(test_user, portfolio=portfolio)
     fund_bank_account(test_user, bank, "150000")
@@ -704,7 +777,29 @@ def test_create_fd_matching_portfolio_id_succeeds(api_client, seeded, test_user)
 
 
 @pytest.mark.django_db
-def test_create_fd_conflicting_portfolio_id_fails(api_client, seeded, test_user):
+def test_create_fd_unlinked_bank_account_succeeds(api_client, seeded, test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    bank = create_bank_account(
+        test_user,
+        name="Unlinked",
+        institution_name="HDFC",
+        account_number="UNASSIGNED-1",
+        currency="INR",
+    )
+    fund_bank_account(test_user, bank, "150000")
+    response = api_client.post(
+        "/api/v1/fixed-deposits",
+        _fd_payload(portfolio.id, bank.id),
+        format="json",
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["portfolio_id"] == portfolio.id
+    assert body["bank_account_id"] == bank.id
+
+
+@pytest.mark.django_db
+def test_create_fd_linked_bank_different_explicit_portfolio(api_client, seeded, test_user):
     portfolio = ensure_default_portfolio(test_user)
     other = Portfolio.objects.create(
         user=test_user, name="IndianInvestments", base_currency="INR", is_active=True
@@ -713,42 +808,17 @@ def test_create_fd_conflicting_portfolio_id_fails(api_client, seeded, test_user)
     fund_bank_account(test_user, bank, "150000")
     response = api_client.post(
         "/api/v1/fixed-deposits",
-        _fd_payload(other.id, bank.id),
+        _fd_payload(other.id, bank.id, deposit_account_number="FD-CROSS"),
         format="json",
     )
-    assert response.status_code == 400
+    assert response.status_code == 201
     body = response.json()
+    assert body["portfolio_id"] == other.id
     assert body["bank_account_id"] == bank.id
-    assert body["bank_account_portfolio_id"] == portfolio.id
-    assert body["requested_portfolio_id"] == other.id
-    assert body["portfolio_assignment_status"] == "ASSIGNED"
-    assert "hint" in body
 
 
 @pytest.mark.django_db
-def test_create_fd_unassigned_bank_account_fails(api_client, seeded, test_user):
-    portfolio = ensure_default_portfolio(test_user)
-    bank = create_bank_account(
-        test_user,
-        name="Unassigned",
-        institution_name="HDFC",
-        account_number="UNASSIGNED-1",
-        currency="INR",
-    )
-    response = api_client.post(
-        "/api/v1/fixed-deposits",
-        _fd_payload(portfolio.id, bank.id),
-        format="json",
-    )
-    assert response.status_code == 400
-    body = response.json()
-    assert body["bank_account_id"] == bank.id
-    assert body["portfolio_assignment_status"] == "UNASSIGNED"
-    assert "Assign this bank account" in body["detail"]
-
-
-@pytest.mark.django_db
-def test_create_fd_ambiguous_bank_account_fails(api_client, seeded, test_user):
+def test_create_fd_ambiguous_bank_link_still_succeeds(api_client, seeded, test_user):
     portfolio = ensure_default_portfolio(test_user)
     p2 = Portfolio.objects.create(
         user=test_user, name="Second", base_currency="INR", is_active=True
@@ -782,9 +852,8 @@ def test_create_fd_ambiguous_bank_account_fails(api_client, seeded, test_user):
         _fd_payload(portfolio.id, bank.id, deposit_account_number="NEW-FD"),
         format="json",
     )
-    assert response.status_code == 400
-    body = response.json()
-    assert body["portfolio_assignment_status"] == "AMBIGUOUS"
+    assert response.status_code == 201
+    assert response.json()["portfolio_id"] == portfolio.id
 
 
 @pytest.mark.django_db
@@ -818,7 +887,7 @@ def test_legacy_fd_portfolio_mismatch_warning(api_client, seeded, test_user):
 
 
 @pytest.mark.django_db
-def test_update_legacy_fd_rejects_portfolio_bank_mismatch(api_client, seeded, test_user):
+def test_update_legacy_fd_allows_portfolio_change(api_client, seeded, test_user):
     p1 = ensure_default_portfolio(test_user)
     p2 = Portfolio.objects.create(
         user=test_user, name="IndianInvestments", base_currency="INR", is_active=True
@@ -845,13 +914,12 @@ def test_update_legacy_fd_rejects_portfolio_bank_mismatch(api_client, seeded, te
         {"portfolio_id": p2.id},
         format="json",
     )
-    assert response.status_code == 400
-    assert response.json()["bank_account_portfolio_id"] == p1.id
-    assert response.json()["requested_portfolio_id"] == p2.id
+    assert response.status_code == 200
+    assert response.json()["portfolio_id"] == p2.id
 
 
 @pytest.mark.django_db
-def test_relink_bank_derives_future_fd_portfolio(api_client, seeded, test_user):
+def test_relink_does_not_change_explicit_fd_portfolio_on_create(api_client, seeded, test_user):
     from debt.services import update_bank_account
 
     p1 = ensure_default_portfolio(test_user)

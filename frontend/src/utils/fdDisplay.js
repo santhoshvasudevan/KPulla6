@@ -37,6 +37,22 @@ export function fdPayoutLabel(frequency) {
   return PAYOUT_LABELS[frequency] || frequency.replace(/_/g, ' ').toLowerCase();
 }
 
+export function fdMaturityValueSourceLabel(source) {
+  if (source === 'USER_CONFIRMED') return 'User confirmed';
+  if (source === 'AUTO_ESTIMATE') return 'Auto estimate';
+  return '—';
+}
+
+export function fdMaturityValueSourceBadgeProps(source) {
+  if (source === 'USER_CONFIRMED') {
+    return { status: 'info', label: 'User confirmed' };
+  }
+  if (source === 'AUTO_ESTIMATE') {
+    return { status: 'neutral', label: 'Auto estimate' };
+  }
+  return { status: 'neutral', label: 'Not estimated' };
+}
+
 /** Display-only counts by backend status — no finance math. */
 export function fdStatusCounts(items = []) {
   const counts = { total: items.length, active: 0, matured: 0, settled: 0 };

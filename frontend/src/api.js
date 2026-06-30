@@ -313,6 +313,8 @@ export class FixedDepositApiError extends ApiError {
     this.bank_account_portfolio_name = extras.bank_account_portfolio_name;
     this.requested_portfolio_id = extras.requested_portfolio_id;
     this.portfolio_assignment_status = extras.portfolio_assignment_status;
+    this.suggested_seed_date = extras.suggested_seed_date;
+    this.suggested_seed_amount = extras.suggested_seed_amount;
   }
 }
 
@@ -339,6 +341,8 @@ function buildFixedDepositApiError(errorData, status) {
     bank_account_portfolio_name: data.bank_account_portfolio_name,
     requested_portfolio_id: data.requested_portfolio_id,
     portfolio_assignment_status: data.portfolio_assignment_status,
+    suggested_seed_date: data.suggested_seed_date,
+    suggested_seed_amount: data.suggested_seed_amount,
     data,
   });
 }
@@ -826,6 +830,14 @@ export async function fetchBankAccountBalance(id, { as_of } = {}) {
   return fetchWithHandling(qs ? `/bank-accounts/${id}/balance?${qs}` : `/bank-accounts/${id}/balance`);
 }
 
+/** POST /api/v1/bank-accounts/{id}/seed-balance — historical MANUAL_DEPOSIT for backdated FD funding */
+export async function seedBankAccountHistoricalBalance(id, payload) {
+  return fetchWithHandling(`/bank-accounts/${id}/seed-balance`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 /** POST /api/v1/bank-accounts/{id}/seed-opening-balance */
 export async function seedBankAccountOpeningBalance(id) {
   return fetchWithHandling(`/bank-accounts/${id}/seed-opening-balance`, {
@@ -875,6 +887,24 @@ function withFdScopeParams(params, scopeParams) {
 export async function fetchFixedDeposits(scopeParams = null) {
   const params = withFdScopeParams({}, scopeParams);
   return fetchWithHandling(`/fixed-deposits?${params.toString()}`);
+}
+
+/** GET /api/v1/fixed-deposits/maturity-estimate — read-only maturity estimate preview */
+export async function fetchFixedDepositMaturityEstimate({
+  principal_amount,
+  interest_rate_percent,
+  interest_payout_frequency,
+  investment_date,
+  maturity_date,
+}) {
+  const params = new URLSearchParams({
+    principal_amount: String(principal_amount),
+    interest_rate_percent: String(interest_rate_percent),
+    interest_payout_frequency,
+    investment_date,
+    maturity_date,
+  });
+  return fetchWithHandling(`/fixed-deposits/maturity-estimate?${params.toString()}`);
 }
 
 /** POST /api/v1/fixed-deposits */

@@ -9,11 +9,7 @@ from django.db import transaction as db_transaction
 from django.db.models import QuerySet
 
 from cash.constants import SUPPORTED_CASH_CURRENCIES
-from debt.bank_account_portfolio import (
-    FixedDepositBankPortfolioError,
-    resolve_fd_portfolio_from_bank_account,
-    resolve_portfolio_for_bank_account,
-)
+from debt.bank_account_portfolio import resolve_portfolio_for_bank_account
 from debt.models import BankAccount, FixedDeposit, FixedDepositStatus
 from portfolios.models import Portfolio
 from portfolios.services import PortfolioNotFoundError, get_portfolio, list_active_portfolios
@@ -246,27 +242,28 @@ def create_fixed_deposit(
     status: str = FixedDepositStatus.ACTIVE,
     renewal_of_id: int | None = None,
     skip_opening_debit: bool = False,
+    expected_maturity_value: Decimal | None = None,
+    maturity_value_note: str = "",
 ) -> FixedDeposit:
     from debt.bank_ledger_services import (
         InsufficientBankBalanceError,
         bank_account_has_ledger,
         compute_bank_account_balance,
+        compute_bank_funding_balance,
         create_fd_opening_cash_movement,
         latest_ledger_movement_date,
         opening_balance_is_seeded,
+        suggested_seed_date_for_fd,
         validate_no_overdraft,
     )
 
-    bank_account = _resolve_bank_account_for_fd(user, bank_account_id)
-    portfolio = resolve_fd_portfolio_from_bank_account(
-        bank_account, requested_portfolio_id=portfolio_id
-    )
-    if portfolio.user_id != user.id:
+    if portfolio_id is None:
         raise FixedDepositValidationError(
-            f"Portfolio not found: {portfolio.id}"
+            "Select the portfolio that should own this Fixed Deposit."
         )
-    if not portfolio.is_active:
-        raise FixedDepositValidationError(f"Portfolio is inactive: {portfolio.id}")
+
+    bank_account = _resolve_bank_account_for_fd(user, bank_account_id)
+    portfolio = _resolve_portfolio_for_fd(user, portfolio_id)
 
     renewal_of = None
     if renewal_of_id is not None:
@@ -285,9 +282,13 @@ def create_fixed_deposit(
                 bank_account,
                 additional_signed=-principal_amount,
                 as_of_date=investment_date,
+                for_funding=True,
             )
         except InsufficientBankBalanceError as exc:
             current_balance = compute_bank_account_balance(bank_account)
+            funding_available = compute_bank_funding_balance(
+                bank_account, as_of_date=investment_date
+            )
             latest_ledger_date = latest_ledger_movement_date(bank_account)
             has_ledger = bank_account_has_ledger(bank_account)
             unseeded_opening = (
@@ -304,7 +305,7 @@ def create_fixed_deposit(
                     "Reference opening balance is not ledger cash until seeded. "
                     "Seed opening balance dated on or before the FD investment date."
                 )
-            elif current_balance > exc.available:
+            elif current_balance > funding_available:
                 hint = (
                     "Current ledger balance is higher because cash movements exist after "
                     "the FD investment date. Record or seed bank cash on or before the "
@@ -326,6 +327,9 @@ def create_fixed_deposit(
                 available_as_of_date=exc.available,
                 investment_date=investment_date,
                 latest_ledger_balance_date=latest_ledger_date,
+                bank_account_id=bank_account.id,
+                suggested_seed_date=suggested_seed_date_for_fd(investment_date),
+                suggested_seed_amount=exc.shortfall,
             ) from exc
 
     fd = FixedDeposit(
@@ -345,6 +349,13 @@ def create_fixed_deposit(
         status=status,
         renewal_of=renewal_of,
         is_active=True,
+    )
+    from debt.fd_maturity_services import apply_maturity_values_on_create
+
+    apply_maturity_values_on_create(
+        fd,
+        expected_maturity_value=expected_maturity_value,
+        maturity_value_note=maturity_value_note,
     )
     with db_transaction.atomic():
         try:
@@ -397,17 +408,8 @@ def update_fixed_deposit(
 
     if "bank_account_id" in fields and fields["bank_account_id"] is not None:
         fd.bank_account = _resolve_bank_account_for_fd(user, fields["bank_account_id"])
-    if "bank_account_id" in fields or "portfolio_id" in fields:
-        requested_portfolio_id = (
-            fields["portfolio_id"] if "portfolio_id" in fields else None
-        )
-        fd.portfolio = resolve_fd_portfolio_from_bank_account(
-            fd.bank_account, requested_portfolio_id=requested_portfolio_id
-        )
-        if fd.portfolio.user_id != user.id:
-            raise FixedDepositValidationError(
-                f"Portfolio not found: {fd.portfolio.id}"
-            )
+    if "portfolio_id" in fields and fields["portfolio_id"] is not None:
+        fd.portfolio = _resolve_portfolio_for_fd(user, fields["portfolio_id"])
     if "institution_name" in fields and fields["institution_name"] is not None:
         fd.institution_name = (fields["institution_name"] or "").strip()
     if "deposit_account_number" in fields and fields["deposit_account_number"] is not None:
@@ -436,6 +438,34 @@ def update_fixed_deposit(
             fd.renewal_of = None
         else:
             fd.renewal_of = get_fixed_deposit(user, renewal_of_id)
+
+    maturity_fields = {
+        "expected_maturity_value",
+        "use_auto_maturity_estimate",
+        "maturity_value_note",
+    }
+    if maturity_fields.intersection(fields):
+        from debt.fd_maturity_services import apply_maturity_values_on_update
+
+        apply_maturity_values_on_update(
+            fd,
+            expected_maturity_value=fields.get("expected_maturity_value"),
+            use_auto_maturity_estimate=bool(fields.get("use_auto_maturity_estimate")),
+            maturity_value_note=fields.get("maturity_value_note"),
+        )
+    elif any(
+        key in fields
+        for key in (
+            "principal_amount",
+            "interest_rate_percent",
+            "interest_payout_frequency",
+            "investment_date",
+            "maturity_date",
+        )
+    ):
+        from debt.fd_maturity_services import apply_maturity_values_on_update
+
+        apply_maturity_values_on_update(fd)
 
     try:
         fd.save()

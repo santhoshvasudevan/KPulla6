@@ -218,6 +218,27 @@
   margin-top: 1rem;
 }
 
+.fd-form__seed-offer {
+  margin-bottom: var(--space-3);
+}
+
+.fd-form__seed-panel {
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted, rgba(0, 0, 0, 0.02));
+}
+
+.fd-form__seed-panel h3 {
+  margin: 0 0 var(--space-2);
+  font-size: 1rem;
+}
+
+.fd-form--seed {
+  margin-top: var(--space-2);
+}
+
 .bank-account-table-wrap {
   overflow-x: auto;
   margin-bottom: 1rem;
@@ -259,4 +280,40 @@
 
 .fd-interest-table {
   margin-bottom: var(--space-2);
+}
+
+.fd-form__maturity-estimate {
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md, 6px);
+  background: var(--bg-subtle, rgba(0, 0, 0, 0.02));
+}
+
+.fd-form__maturity-estimate h3 {
+  margin: 0 0 var(--space-2);
+  font-size: 1rem;
+}
+
+.fd-form__checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: var(--space-2) 0;
+  font-size: 0.9375rem;
+}
+
+.fd-table__maturity-value {
+  min-width: 10rem;
+}
+
+.fd-table__maturity-sub {
+  margin-top: 0.25rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted, #666);
+}
+
+.fd-table__maturity-method {
+  font-size: 0.8125rem;
+  color: var(--text-muted, #666);
 }

@@ -1,5 +1,38 @@
 # Changelog — KPulla6
 
+## 2026-06-29 — FD-MATURITY-VALUE-1: Estimated and user-confirmed maturity value
+
+- **Model:** `estimated_maturity_value`, `expected_maturity_value`, `maturity_value_source` (`AUTO_ESTIMATE` \| `USER_CONFIRMED`), `maturity_estimate_method`, `maturity_value_note` on `FixedDeposit`.
+- **Estimate:** `finance/fixed_deposits.py` — annual compounding Actual/365 for `COMPOUNDED`; simple interest Actual/365 for payout frequencies; supports non-whole terms.
+- **API:** `GET /fixed-deposits/maturity-estimate` preview; create/update accept optional `expected_maturity_value`, `use_auto_maturity_estimate`, `maturity_value_note`; list/detail include estimated/expected values and interest deltas.
+- **UI:** FD form live estimate from API; user override toggle; holdings table maturity value column with source badge.
+- **Not changed:** Settlement/closure accounting; estimated value is not auto-used as realized proceeds.
+
+## 2026-06-29 — FD-FUNDING-MODEL-1B: Historical FD seed-and-create flow fix
+
+- **Funding balance:** FD validation and `GET .../balance?as_of=` use funding-aware as-of balance that ignores reversed bank movements (e.g. cancelled FD openings) so backdated FD recreation works after cancellation.
+- **FD opening debit:** `FD_OPENING` creation uses the same funding balance check as FD create pre-validation.
+- **Seed defaults:** Suggested/historical seed date defaults to **investment date − 1 day** (UTC-safe) to avoid same-day ordering ambiguity; same-day deposits still count when dated on investment date.
+- **Seed API:** Returns funding `balance_as_of_date`; rejects duplicate seed (same bank/date/amount/reason) with `409` + existing movement id.
+- **Insufficient balance errors:** Include `bank_account_id`, `suggested_seed_date`, `suggested_seed_amount`.
+- **FD create UI:** Seed panel uses suggested date/amount; disables while seeding; success refreshes as-of balance and shows movement summary without auto-submitting FD.
+- **Diagnostic:** `python manage.py bank_balance_timeline --bank-account-id <id> --from YYYY-MM-DD --to YYYY-MM-DD`.
+
+## 2026-06-29 — FD-FUNDING-MODEL-1: FD funding decoupling + historical bank balance seed
+
+- **FD create:** Explicit `portfolio_id` + `bank_account_id`; bank portfolio link optional (extends CASH-MODEL-REFINE-1).
+- **Historical seed:** `POST /api/v1/bank-accounts/{id}/seed-balance` creates audited `MANUAL_DEPOSIT` for backdated FD funding; no FD or portfolio holdings created.
+- **FD create UI:** Insufficient as-of balance shows missing amount + inline “Seed missing balance” panel; seed then refresh balance; user submits FD separately.
+- **Deferred:** Broker-funded FD, partial mixed funding, broker-bank transfer.
+
+## 2026-06-29 — CASH-MODEL-REFINE-1: Decouple bank accounts from FD portfolio linking
+
+- **Product model:** Bank accounts are external funding sources; `BankAccount.portfolio` is **cash visibility only** and does not control FD creation.
+- **FD create API:** Requires explicit `portfolio_id` and `bank_account_id`; rejects missing portfolio with clear validation message; unlinked bank accounts may fund FDs; FD portfolio is the selected portfolio, not derived from bank link.
+- **FD create UI:** Explicit portfolio selector; funding-source copy; unlinked bank no longer blocks create.
+- **Legacy:** Existing FD rows unchanged; `portfolio_mismatch_warning` remains read-only when FD portfolio differs from bank cash visibility link.
+- **Deferred:** Broker-funded FD, partial mixed funding, bank account portfolio field removal.
+
 ## 2026-06-26 — MILESTONE-CLOSEOUT-1: Cash unification + FD tax reporting closeout
 
 - **Docs audit:** Aligned `current-state`, `project-summary`, `decisions`, `cash-unification`, `cash-ledger`, `fixed-deposits*`, `api-design`, `api-contracts`, `database`, `frontend-design`, `page-layouts`, and backlog index with implemented behavior.

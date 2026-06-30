@@ -6,7 +6,9 @@ import { PortfolioProvider } from '../portfolioContext';
 
 vi.mock('../api', () => ({
   fetchFixedDeposits: vi.fn(),
+  fetchFixedDepositMaturityEstimate: vi.fn(),
   fetchPortfolios: vi.fn(),
+  seedBankAccountHistoricalBalance: vi.fn(),
   fetchBankAccounts: vi.fn(),
   fetchBankAccountBalance: vi.fn(),
   createFixedDeposit: vi.fn(),
@@ -51,6 +53,12 @@ const sampleFd = {
   is_active: true,
   has_opening_cash_movement: true,
   opening_cash_movement_id: 99,
+  expected_maturity_value: 115000,
+  expected_interest: 15000,
+  estimated_maturity_value: 114500,
+  maturity_value_source: 'AUTO_ESTIMATE',
+  maturity_estimate_method: 'ANNUAL_COMPOUND_ACTUAL_365',
+  maturity_estimate_method_label: 'Annual compounding, Actual/365',
 };
 
 const seededBankAccount = {
@@ -135,6 +143,13 @@ describe('FixedDeposits page', () => {
       },
       warnings: [],
     });
+    api.fetchFixedDepositMaturityEstimate.mockResolvedValue({
+      estimated_maturity_value: 115000,
+      estimated_interest: 15000,
+      maturity_estimate_method: 'ANNUAL_COMPOUND_ACTUAL_365',
+      maturity_estimate_method_label: 'Annual compounding, Actual/365',
+      warning: null,
+    });
   });
 
   it('renders page header and primary action', async () => {
@@ -166,22 +181,29 @@ describe('FixedDeposits page', () => {
     });
   });
 
-  it('shows bank account warning when none exist', async () => {
-    api.fetchBankAccounts.mockResolvedValue([]);
-    api.fetchFixedDeposits.mockResolvedValue([]);
+  it('blocks add fixed deposit when no portfolio exists', async () => {
+    api.fetchPortfolios.mockResolvedValue([]);
     renderPage();
     await waitFor(() => {
-      expect(screen.getByText(/add at least one active bank account/i)).toBeInTheDocument();
+      expect(screen.getByText(/create a portfolio before adding an fd/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /add fixed deposit/i })).toBeDisabled();
     });
   });
 
-  it('create modal shows current and as-of ledger balance labels', async () => {
+  it('create modal shows portfolio selector and funding copy', async () => {
     renderPage();
     await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
     fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
     expect(
-      screen.getByText(/creating a fixed deposit will debit the principal from the linked bank account/i)
+      screen.getByText(
+        /choose the portfolio that will track this fd and the bank account that will fund it/i
+      )
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(/bank accounts are external funding sources/i)
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/portfolio to track this fd/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/funding bank account/i)).toBeInTheDocument();
     expect(screen.getByText(/current ledger balance:/i)).toBeInTheDocument();
     expect(
       screen.getByText(/fd creation validates the selected bank account ledger balance as of the investment date/i)
@@ -200,51 +222,40 @@ describe('FixedDeposits page', () => {
     ).toBeInTheDocument();
   });
 
-  it('shows derived portfolio when assigned bank account is selected', async () => {
+  it('shows bank account warning when none exist', async () => {
+    api.fetchBankAccounts.mockResolvedValue([]);
+    api.fetchFixedDeposits.mockResolvedValue([]);
     renderPage();
-    await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
-    fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
-
-    expect(screen.getByDisplayValue('Default Portfolio')).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        /fd portfolio is derived from the selected bank account's linked portfolio \(default portfolio\)/i
-      )
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByText(/add a bank account before creating a bank-funded fd/i)
+      ).toBeInTheDocument();
+    });
   });
 
-  it('blocks create when bank account portfolio is unassigned', async () => {
+  it('allows create when bank account portfolio is unassigned', async () => {
     api.fetchBankAccounts.mockResolvedValueOnce([unassignedBankAccount]);
     renderPage();
     await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
     fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
 
     expect(
-      screen.getByText(
+      screen.queryByText(
         /link this bank account to a portfolio in settings → bank accounts before creating an fd/i
       )
-    ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^create$/i })).toBeDisabled();
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^create$/i })).not.toBeDisabled();
   });
 
-  it('shows structured backend portfolio conflict details', async () => {
-    const err = new api.FixedDepositApiError(
-      'Fixed deposit portfolio must match the bank account portfolio (Default Portfolio).',
-      {
-        detail: 'Fixed deposit portfolio must match the bank account portfolio (Default Portfolio).',
-        bank_account_id: 10,
-        bank_account_portfolio_id: 1,
-        bank_account_portfolio_name: 'Default Portfolio',
-        requested_portfolio_id: 2,
-        portfolio_assignment_status: 'ASSIGNED',
-        hint: 'Select a bank account linked to the intended portfolio, or assign the bank account first.',
-      }
-    );
+  it('shows structured backend missing portfolio error', async () => {
+    const err = new api.FixedDepositApiError('Validation failed', {
+      portfolio_id: ['Select the portfolio that should own this Fixed Deposit.'],
+    });
     api.createFixedDeposit.mockRejectedValueOnce(err);
     renderPage();
     await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
     fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
-    fireEvent.change(screen.getByLabelText(/institution/i), { target: { value: 'HDFC' } });
+    fireEvent.change(screen.getByLabelText('Institution'), { target: { value: 'HDFC' } });
     fireEvent.change(screen.getByLabelText(/deposit account number/i), {
       target: { value: 'FD-NEW' },
     });
@@ -255,10 +266,7 @@ describe('FixedDeposits page', () => {
     fireEvent.click(screen.getByRole('button', { name: /^create$/i }));
 
     await waitFor(() => {
-      const panel = document.querySelector('.fd-form__error-panel');
-      expect(panel).toBeTruthy();
-      expect(panel).toHaveTextContent(/bank account portfolio: default portfolio/i);
-      expect(panel).toHaveTextContent(/portfolio assignment: assigned/i);
+      expect(screen.getByText(/validation failed|select the portfolio/i)).toBeInTheDocument();
     });
   });
 
@@ -278,7 +286,7 @@ describe('FixedDeposits page', () => {
     renderPage();
     await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
     fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
-    fireEvent.change(screen.getByLabelText(/institution/i), { target: { value: 'HDFC' } });
+    fireEvent.change(screen.getByLabelText('Institution'), { target: { value: 'HDFC' } });
     fireEvent.change(screen.getByLabelText(/deposit account number/i), {
       target: { value: 'FD-NEW' },
     });
@@ -312,6 +320,172 @@ describe('FixedDeposits page', () => {
     expect(screen.getByRole('button', { name: /^create$/i })).toBeDisabled();
   });
 
+  it('shows insufficient balance seed option with missing amount', async () => {
+    api.fetchBankAccountBalance.mockResolvedValue({
+      bank_account_id: 10,
+      currency: 'INR',
+      current_balance: 250000,
+      balance_as_of_date: 50000,
+      as_of_date: '2024-01-01',
+    });
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.change(screen.getByLabelText(/investment date/i), { target: { value: '2024-01-01' } });
+    fireEvent.change(screen.getByLabelText(/principal amount/i), { target: { value: '100000' } });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/insufficient balance on 2024-01-01/i)
+      ).toBeInTheDocument();
+      expect(screen.getByText(/missing amount:/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /seed missing balance/i })).toBeInTheDocument();
+    });
+  });
+
+  it('seed action sends correct payload and refreshes balance', async () => {
+    api.fetchBankAccountBalance
+      .mockResolvedValueOnce({
+        bank_account_id: 10,
+        currency: 'INR',
+        current_balance: 250000,
+        balance_as_of_date: 0,
+        as_of_date: '2024-01-01',
+      })
+      .mockResolvedValueOnce({
+        bank_account_id: 10,
+        currency: 'INR',
+        current_balance: 100000,
+        balance_as_of_date: 100000,
+        as_of_date: '2024-01-01',
+      });
+    api.seedBankAccountHistoricalBalance.mockResolvedValueOnce({
+      balance_as_of_date: 100000,
+      as_of_date: '2024-01-01',
+      currency: 'INR',
+      cash_movement: { id: 99, movement_date: '2023-12-31', amount: 100000 },
+    });
+    api.fetchBankAccounts.mockResolvedValue([seededBankAccount]);
+
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.change(screen.getByLabelText(/investment date/i), { target: { value: '2024-01-01' } });
+    fireEvent.change(screen.getByLabelText(/principal amount/i), { target: { value: '100000' } });
+
+    await waitFor(() => screen.getByRole('button', { name: /seed missing balance/i }));
+    fireEvent.click(screen.getByRole('button', { name: /seed missing balance/i }));
+
+    expect(screen.getByText(/creates a bank cash movement only/i)).toBeInTheDocument();
+    fireEvent.submit(document.querySelector('.fd-form--seed'));
+
+    await waitFor(() => {
+      expect(api.seedBankAccountHistoricalBalance).toHaveBeenCalledWith(10, {
+        date: '2023-12-31',
+        amount: '100000',
+        reason: 'Historical balance seed for FD creation',
+        note: '',
+      });
+      expect(api.fetchBankAccountBalance).toHaveBeenCalledTimes(2);
+      expect(screen.getByLabelText('Institution')).toHaveValue('');
+    });
+  });
+
+  it('disables seed button while seeding', async () => {
+    api.fetchBankAccountBalance.mockResolvedValue({
+      bank_account_id: 10,
+      currency: 'INR',
+      current_balance: 0,
+      balance_as_of_date: 0,
+      as_of_date: '2024-01-01',
+    });
+    let resolveSeed;
+    api.seedBankAccountHistoricalBalance.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSeed = resolve;
+        })
+    );
+
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.change(screen.getByLabelText(/investment date/i), { target: { value: '2024-01-01' } });
+    fireEvent.change(screen.getByLabelText(/principal amount/i), { target: { value: '100000' } });
+    await waitFor(() => screen.getByRole('button', { name: /seed missing balance/i }));
+    fireEvent.click(screen.getByRole('button', { name: /seed missing balance/i }));
+    const confirm = screen.getByRole('button', { name: /confirm seed/i });
+    fireEvent.submit(document.querySelector('.fd-form--seed'));
+    expect(confirm).toBeDisabled();
+    resolveSeed({
+      cash_movement: { id: 99, movement_date: '2023-12-31', amount: 100000 },
+      currency: 'INR',
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/historical balance seeded/i)).toBeInTheDocument();
+    });
+  });
+
+  it('seed failure shows inline error', async () => {
+    api.fetchBankAccountBalance.mockResolvedValue({
+      bank_account_id: 10,
+      currency: 'INR',
+      current_balance: 0,
+      balance_as_of_date: 0,
+      as_of_date: '2024-01-01',
+    });
+    api.seedBankAccountHistoricalBalance.mockRejectedValueOnce(new Error('Seed failed'));
+
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.change(screen.getByLabelText(/investment date/i), { target: { value: '2024-01-01' } });
+    fireEvent.change(screen.getByLabelText(/principal amount/i), { target: { value: '100000' } });
+    await waitFor(() => screen.getByRole('button', { name: /seed missing balance/i }));
+    fireEvent.click(screen.getByRole('button', { name: /seed missing balance/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm seed/i }));
+
+    expect(await screen.findByText(/seed failed/i)).toBeInTheDocument();
+  });
+
+  it('after sufficient balance FD submit works', async () => {
+    api.fetchBankAccountBalance.mockResolvedValue({
+      bank_account_id: 10,
+      currency: 'INR',
+      current_balance: 150000,
+      balance_as_of_date: 150000,
+      as_of_date: '2024-01-01',
+    });
+    api.createFixedDeposit.mockResolvedValueOnce({
+      ...sampleFd,
+      id: 2,
+      deposit_account_number: 'FD-AFTER-SEED',
+    });
+
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.change(screen.getByLabelText('Institution'), { target: { value: 'HDFC' } });
+    fireEvent.change(screen.getByLabelText(/deposit account number/i), {
+      target: { value: 'FD-AFTER-SEED' },
+    });
+    fireEvent.change(screen.getByLabelText(/principal amount/i), { target: { value: '100000' } });
+    fireEvent.change(screen.getByLabelText(/interest rate/i), { target: { value: '7' } });
+    fireEvent.change(screen.getByLabelText(/investment date/i), { target: { value: '2024-01-01' } });
+    fireEvent.change(screen.getByLabelText(/maturity date/i), { target: { value: '2026-01-01' } });
+    fireEvent.click(screen.getByRole('button', { name: /^create$/i }));
+
+    await waitFor(() => {
+      expect(api.createFixedDeposit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          portfolio_id: 1,
+          bank_account_id: 10,
+        })
+      );
+      expect(screen.getByText(/fixed deposit created/i)).toBeInTheDocument();
+    });
+  });
+
   it('shows as-of shortfall warning when principal exceeds investment-date balance', async () => {
     api.fetchBankAccountBalance.mockResolvedValue({
       bank_account_id: 10,
@@ -327,7 +501,8 @@ describe('FixedDeposits page', () => {
     fireEvent.change(screen.getByLabelText(/principal amount/i), { target: { value: '300000' } });
 
     await waitFor(() => {
-      expect(screen.getByText(/available as of 2024-01-01 is/i)).toBeInTheDocument();
+      expect(screen.getByText(/insufficient balance on 2024-01-01/i)).toBeInTheDocument();
+      expect(screen.getByText(/missing amount:/i)).toBeInTheDocument();
     });
     expect(screen.getByRole('button', { name: /^create$/i })).not.toBeDisabled();
   });
@@ -348,7 +523,7 @@ describe('FixedDeposits page', () => {
     renderPage();
     await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
     fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
-    fireEvent.change(screen.getByLabelText(/institution/i), { target: { value: 'HDFC' } });
+    fireEvent.change(screen.getByLabelText('Institution'), { target: { value: 'HDFC' } });
     fireEvent.change(screen.getByLabelText(/deposit account number/i), {
       target: { value: 'FD-NEW' },
     });
@@ -387,7 +562,7 @@ describe('FixedDeposits page', () => {
     renderPage();
     await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
     fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
-    fireEvent.change(screen.getByLabelText(/institution/i), { target: { value: 'HDFC' } });
+    fireEvent.change(screen.getByLabelText('Institution'), { target: { value: 'HDFC' } });
     fireEvent.change(screen.getByLabelText(/deposit account number/i), {
       target: { value: 'FD-NEW-2' },
     });
@@ -806,5 +981,61 @@ describe('FixedDeposits page', () => {
     await waitFor(() => {
       expect(screen.getByText(/report failed/i)).toBeInTheDocument();
     });
+  });
+
+  it('shows maturity estimate in create form when inputs are complete', async () => {
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.change(screen.getByLabelText(/principal amount/i), { target: { value: '100000' } });
+    fireEvent.change(screen.getByLabelText(/interest rate/i), { target: { value: '7' } });
+    fireEvent.change(screen.getByLabelText(/investment date/i), { target: { value: '2024-01-01' } });
+    fireEvent.change(screen.getByLabelText(/maturity date/i), { target: { value: '2026-10-01' } });
+    fireEvent.change(screen.getByLabelText(/payout frequency/i), { target: { value: 'COMPOUNDED' } });
+
+    await waitFor(() => {
+      expect(api.fetchFixedDepositMaturityEstimate).toHaveBeenCalled();
+    });
+    expect(screen.getByText(/estimated maturity value:/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/annual compounding, actual\/365/i).length).toBeGreaterThan(0);
+  });
+
+  it('sends override maturity value only when enabled', async () => {
+    api.createFixedDeposit.mockResolvedValueOnce({ ...sampleFd, id: 2 });
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.change(screen.getByLabelText('Institution'), { target: { value: 'HDFC' } });
+    fireEvent.change(screen.getByLabelText(/deposit account number/i), { target: { value: 'FD-NEW' } });
+    fireEvent.change(screen.getByLabelText(/principal amount/i), { target: { value: '100000' } });
+    fireEvent.change(screen.getByLabelText(/interest rate/i), { target: { value: '7' } });
+    fireEvent.change(screen.getByLabelText(/investment date/i), { target: { value: '2024-01-01' } });
+    fireEvent.change(screen.getByLabelText(/maturity date/i), { target: { value: '2026-01-01' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: /use bank\/institution maturity value/i }));
+    fireEvent.change(screen.getByLabelText(/confirmed maturity value/i), {
+      target: { value: '120000' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^create$/i }));
+
+    await waitFor(() => {
+      expect(api.createFixedDeposit).toHaveBeenCalledWith(
+        expect.objectContaining({ expected_maturity_value: '120000' })
+      );
+    });
+  });
+
+  it('displays maturity value and source badge in holdings table', async () => {
+    renderPage();
+    await waitFor(() => screen.getByText(/115,000/i));
+    expect(screen.getByText(/auto estimate/i)).toBeInTheDocument();
+    expect(screen.getByText(/annual compounding/i)).toBeInTheDocument();
+  });
+
+  it('displays user confirmed badge when source is user confirmed', async () => {
+    api.fetchFixedDeposits.mockResolvedValueOnce([
+      { ...sampleFd, maturity_value_source: 'USER_CONFIRMED' },
+    ]);
+    renderPage();
+    await waitFor(() => screen.getByText(/user confirmed/i));
   });
 });

@@ -84,6 +84,11 @@ class InterestPayoutFrequency(models.TextChoices):
     COMPOUNDED = "COMPOUNDED", "Compounded"
 
 
+class MaturityValueSource(models.TextChoices):
+    AUTO_ESTIMATE = "AUTO_ESTIMATE", "Auto estimate"
+    USER_CONFIRMED = "USER_CONFIRMED", "User confirmed"
+
+
 class FixedDepositStatus(models.TextChoices):
     ACTIVE = "ACTIVE", "Active"
     MATURED = "MATURED", "Matured"
@@ -219,6 +224,19 @@ class FixedDeposit(models.Model):
     )
     investment_date = models.DateField()
     maturity_date = models.DateField()
+    estimated_maturity_value = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True
+    )
+    expected_maturity_value = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True
+    )
+    maturity_value_source = models.CharField(
+        max_length=32,
+        choices=MaturityValueSource.choices,
+        default=MaturityValueSource.AUTO_ESTIMATE,
+    )
+    maturity_estimate_method = models.CharField(max_length=64, blank=True, default="")
+    maturity_value_note = models.TextField(blank=True, default="")
     nominee_name = models.CharField(max_length=255, blank=True, default="")
     comment = models.TextField(blank=True, default="")
     status = models.CharField(

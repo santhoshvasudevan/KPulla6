@@ -108,11 +108,11 @@ Use **Broker Cash** vs **Bank Cash** in user-facing copy where distinction matte
 
 A **bank account** is an independent real-world cash account (user-scoped). It is **not owned by** a portfolio.
 
-`BankAccount.portfolio` is the **current portfolio link** / **default investment portfolio**:
+`BankAccount.portfolio` is the **cash visibility portfolio** / **display-under-portfolio-cash link**:
 
 | State | Meaning | Cash page / overview behavior |
 |-------|---------|-------------------------------|
-| **Linked** (`portfolio` set) | Bank cash is attributed to that portfolio for investment tracking | Appears in portfolio-scoped **Bank Cash** when rules include it |
+| **Linked** (`portfolio` set) | Bank cash is attributed to that portfolio for **cash visibility** | Appears in portfolio-scoped **Bank Cash** when rules include it |
 | **Unlinked** (`portfolio` null) | External / unassigned bank cash | Not inside a single portfolio's Bank Cash; visible as unassigned via `include_unassigned` on overview |
 | **Ambiguous** (inference conflict) | Multiple portfolio signals on movements/FDs | Excluded from portfolio scope until user resolves link |
 
@@ -120,22 +120,24 @@ A **bank account** is an independent real-world cash account (user-scoped). It i
 
 - Linking or delinking changes **classification and portfolio inclusion only** — **no** `CashMovement` or `CashLedgerEntry` rows are created.
 - Bank ledger balance is unchanged; only which portfolio (if any) sees the cash as **Bank Cash** changes.
+- **Does not control FD creation** (CASH-MODEL-REFINE-1).
 
-### 4.1a FD funding source (refined — CASH-MODEL-REFINE-0)
+### 4.1a FD funding source (refined — CASH-MODEL-REFINE-1)
 
 FD creation requires **one clear funding source**. The user picks **one** path per FD — **not** a split across ledgers.
 
 | Funding source | Ledger | Requirements | Runtime |
 |----------------|--------|--------------|---------|
-| **Linked bank account** | `CashMovement` — `FD_OPENING` debit | `BankAccount.portfolio` must be set (linked); sufficient bank ledger balance as of `investment_date` | **Implemented** (FD-ACC-3) |
+| **Bank account** | `CashMovement` — `FD_OPENING` debit | Explicit `bank_account_id`; sufficient bank ledger balance as of `investment_date`; bank link optional | **Implemented** (FD-ACC-3) |
 | **Broker cash** | `CashLedgerEntry` — broker withdrawal/settlement leg on selected portfolio | Sufficient broker cash in FD currency for selected portfolio | **Not implemented** — target model only |
 
 **Rules:**
 
 - **Partial bank + broker funding is not supported** for a single FD principal.
-- **Unlinked bank account** cannot fund an FD until linked (or user selects broker-cash funding when available).
-- When bank-funded: `FixedDeposit.portfolio` derives from `bank_account.portfolio` (CASH-UNIFY-2).
-- When broker-funded (future): portfolio is the selected portfolio; bank account may still be required for maturity proceeds routing — product detail TBD in implementation phase.
+- **FD portfolio** is the explicitly selected `portfolio_id` at create time — **not** derived from `BankAccount.portfolio`.
+- **Unlinked bank accounts** may fund FDs when `portfolio_id` and balance checks pass.
+- **Historical seed (FD-FUNDING-MODEL-1):** When as-of bank balance is insufficient for `investment_date`, user may `POST /bank-accounts/{id}/seed-balance` to create an explicit `MANUAL_DEPOSIT` before FD create. Seed does not create FD or portfolio holdings.
+- When broker-funded (future): portfolio is the selected portfolio; bank account may still be required for maturity proceeds routing — product detail TBD.
 - Choosing funding source is **not** link/delink and **not** transfer — it records which ledger supplies principal at create time.
 
 ### 4.2 Three distinct operations (do not conflate)
@@ -238,8 +240,8 @@ When adding `BankAccount.portfolio` (nullable FK):
 
 ### 6.2 FD portfolio alignment (CASH-UNIFY-2 — implemented)
 
-- **New FDs:** `portfolio` derived from `bank_account.portfolio`; reject create if bank account unassigned/ambiguous or user-supplied portfolio differs.
-- **Existing FDs:** If FD.portfolio ≠ bank account portfolio, **do not auto-change**. Read-only `portfolio_mismatch_warning` in API; assign bank account in Settings → Bank Accounts.
+- **New FDs:** Require explicit `portfolio_id` and `bank_account_id`; portfolio is **not** derived from bank link (CASH-MODEL-REFINE-1).
+- **Existing FDs:** If FD.portfolio ≠ bank account cash visibility link, **do not auto-change**. Read-only `portfolio_mismatch_warning` in API.
 - **No automatic cash movements** during alignment — accounting history stays intact.
 
 ### 6.3 Safety checklist (all backfill phases)
@@ -275,7 +277,8 @@ These apply to **all** CASH-UNIFY implementation phases:
 |----|-------|--------------|------------|---------|
 | **CASH-UNIFY-0** | Unified cash model design | [001-cash-unify-0.md](./backlog/001-cash-unify-0.md) | — | **Docs only** ✓ |
 | **CASH-UNIFY-1** | Bank account portfolio link + unified read API | [002-cash-unify-1.md](./backlog/002-cash-unify-1.md) | 001 | **Done** ✓ |
-| **CASH-UNIFY-2** | FD portfolio derived from bank account | [003-cash-unify-2.md](./backlog/003-cash-unify-2.md) | 002 | **Done** ✓ |
+| **CASH-MODEL-REFINE-1** | FD create uses explicit portfolio; bank link optional for funding | — | 004 | **Done** ✓ |
+| **CASH-UNIFY-2** | ~~FD portfolio derived from bank account~~ superseded by CASH-MODEL-REFINE-1 | [003-cash-unify-2.md](./backlog/003-cash-unify-2.md) | 002 | **Superseded** |
 | **CASH-UNIFY-3** | Unified Cash page UI | [004-cash-unify-3.md](./backlog/004-cash-unify-3.md) | 002 (overview API); 003 recommended | **Done** ✓ |
 | **CASH-UNIFY-3A** | Cash page verification & attribution fix | [004a-cash-unify-3a.md](./backlog/004a-cash-unify-3a.md) | 004 | **Done** ✓ |
 | **CASH-UNIFY-4** | Bank account link/delink UX + inclusion stabilization | [005-cash-unify-4.md](./backlog/005-cash-unify-4.md) | 004, 004a | **Done** ✓ |

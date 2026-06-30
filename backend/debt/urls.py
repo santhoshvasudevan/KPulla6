@@ -4,6 +4,7 @@ from debt.views import (
     BankAccountBalanceView,
     BankAccountDetailView,
     BankAccountListCreateView,
+    BankAccountSeedBalanceView,
     BankAccountSeedOpeningBalanceView,
     CashMovementDetailView,
     CashMovementListCreateView,
@@ -13,6 +14,7 @@ from debt.views import (
     FixedDepositInterestPaymentListCreateView,
     FixedDepositInterestPaymentReverseView,
     FixedDepositListCreateView,
+    FixedDepositMaturityEstimateView,
     FixedDepositMarkMaturedView,
     FixedDepositSettleView,
     FixedDepositRenewView,
@@ -34,6 +36,11 @@ urlpatterns = [
         name="bank-account-seed-opening-balance",
     ),
     path(
+        "bank-accounts/<int:account_id>/seed-balance",
+        BankAccountSeedBalanceView.as_view(),
+        name="bank-account-seed-balance",
+    ),
+    path(
         "bank-accounts/<int:account_id>/balance",
         BankAccountBalanceView.as_view(),
         name="bank-account-balance",
@@ -50,6 +57,11 @@ urlpatterns = [
         name="cash-movement-reverse",
     ),
     path("fixed-deposits", FixedDepositListCreateView.as_view(), name="fixed-deposit-list"),
+    path(
+        "fixed-deposits/maturity-estimate",
+        FixedDepositMaturityEstimateView.as_view(),
+        name="fixed-deposit-maturity-estimate",
+    ),
     path(
         "fixed-deposits/<int:fd_id>",
         FixedDepositDetailView.as_view(),

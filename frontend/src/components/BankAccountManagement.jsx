@@ -13,7 +13,7 @@ import { Button, WarningBanner } from './ui';
 const CURRENCIES = ['EUR', 'USD', 'INR', 'GBP', 'CHF'];
 
 const PORTFOLIO_LINK_HELP =
-  'Linking controls where this bank cash appears in portfolio views. It does not create a cash movement or change the bank balance.';
+  'Linking controls where this bank cash appears in portfolio views (cash visibility only). It does not create a cash movement, change the bank balance, or control FD eligibility.';
 
 function emptyForm() {
   return {
@@ -422,7 +422,7 @@ export default function BankAccountManagement() {
           </select>
         </div>
         <div className="form-group">
-          <label htmlFor="ba-portfolio">Linked portfolio (optional)</label>
+          <label htmlFor="ba-portfolio">Cash visibility portfolio (optional)</label>
           <select
             id="ba-portfolio"
             value={createForm.portfolio_id}

@@ -62,7 +62,32 @@
 - **Deferred:** Multi-portfolio bank sub-balances; broker-cash FD create API/UI.
 - Design: [cash-unification.md](./cash-unification.md) §4–§5 · backlog: [004a-cash-unify-3a.md](./backlog/004a-cash-unify-3a.md), [005-cash-unify-4.md](./backlog/005-cash-unify-4.md).
 
-## 2026-06-24 — CASH-UNIFY-2: FD portfolio derived from bank account
+## 2026-06-29 — FD-MATURITY-VALUE-1: Expected maturity value (estimate vs user-confirmed)
+
+- **Decision:** Store `estimated_maturity_value` (app) and `expected_maturity_value` (display/planning). Source `AUTO_ESTIMATE` or `USER_CONFIRMED`. Settlement/closure proceeds remain separate realized amounts.
+- **Formula:** `COMPOUNDED` → annual compounding Actual/365; payout frequencies → simple interest Actual/365. Non-whole terms supported via fractional years = days/365.
+- **Deferred:** Using estimate as automatic settlement proceeds.
+
+## 2026-06-29 — FD-FUNDING-MODEL-1B: Funding-aware as-of balance for FD create + seed
+
+- **Decision:** FD funding validation and `balance?as_of=` use **funding balance** — movements with a reversal are excluded (reversal rows excluded too). Raw ledger as-of remains available via `current_balance` and full movement timeline.
+- **Same-date rule:** Default historical seed date = **investment date − 1 day**; deposits on investment date still count toward funding as-of (inclusive `<= as_of` filter).
+- **Duplicate seed:** Reject identical bank/date/amount/reason historical seed with **409**.
+- **Deferred:** Broker-funded FD; combined seed+create transaction.
+
+## 2026-06-29 — FD-FUNDING-MODEL-1: Historical bank balance seed for backdated FD
+
+- **Decision:** User-triggered `MANUAL_DEPOSIT` via `POST /bank-accounts/{id}/seed-balance` when as-of balance insufficient; seed and FD create are separate user actions.
+- **Deferred:** Broker-funded FD; combined seed+create transaction.
+
+## 2026-06-29 — CASH-MODEL-REFINE-1: FD portfolio explicit at create
+
+- **Decision:** Bank accounts are external funding sources; `BankAccount.portfolio` is cash visibility only.
+- **FD create:** Requires explicit `portfolio_id` and `bank_account_id`; debits selected bank; FD belongs to selected portfolio.
+- **Legacy:** `portfolio_mismatch_warning` when FD portfolio ≠ bank cash visibility link; no auto-rewrite.
+- **Deferred:** Broker-funded FD; partial mixed funding.
+
+## 2026-06-24 — CASH-UNIFY-2: FD portfolio derived from bank account (superseded)
 
 - **Decision:** New fixed deposits must belong to the same portfolio as their linked bank account. `POST /fixed-deposits` derives `portfolio_id` from `bank_account.portfolio`; client-supplied portfolio must match or be omitted.
 - **Unassigned/ambiguous bank accounts:** FD create blocked until user assigns portfolio in Bank Accounts settings.

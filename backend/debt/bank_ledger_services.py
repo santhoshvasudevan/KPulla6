@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.contrib.auth.models import AbstractBaseUser
@@ -22,7 +22,13 @@ from debt.models import (
     FixedDeposit,
     FixedDepositSettlementType,
 )
-from finance.bank_cash import BankCashMovementPoint, bank_cash_balance, signed_movement_amount
+from finance.bank_cash import (
+    BankCashMovementPoint,
+    BankFundingMovementPoint,
+    bank_cash_balance,
+    bank_funding_balance,
+    signed_movement_amount,
+)
 from portfolios.services import PortfolioNotFoundError, get_portfolio
 
 from debt.services import (
@@ -54,6 +60,9 @@ class InsufficientBankBalanceError(CashMovementValidationError):
         available_as_of_date: Decimal | None = None,
         investment_date: date | None = None,
         latest_ledger_balance_date: date | None = None,
+        bank_account_id: int | None = None,
+        suggested_seed_date: date | None = None,
+        suggested_seed_amount: Decimal | None = None,
     ) -> None:
         super().__init__(message)
         self.required = required
@@ -67,10 +76,19 @@ class InsufficientBankBalanceError(CashMovementValidationError):
         )
         self.investment_date = investment_date
         self.latest_ledger_balance_date = latest_ledger_balance_date
+        self.bank_account_id = bank_account_id
+        self.suggested_seed_date = suggested_seed_date
+        self.suggested_seed_amount = suggested_seed_amount
 
 
 class OpeningBalanceAlreadySeededError(CashMovementValidationError):
     pass
+
+
+class DuplicateHistoricalSeedError(CashMovementValidationError):
+    def __init__(self, message: str, *, existing_movement: CashMovement) -> None:
+        super().__init__(message)
+        self.existing_movement = existing_movement
 
 
 class FdOpeningAlreadyRecordedError(CashMovementValidationError):
@@ -116,6 +134,35 @@ def _movement_points_for_account(bank_account_id: int) -> list[BankCashMovementP
     ]
 
 
+def _funding_movement_points_for_account(bank_account_id: int) -> list[BankFundingMovementPoint]:
+    reversed_ids = set(
+        CashMovement.objects.filter(
+            bank_account_id=bank_account_id,
+            is_reversal=True,
+            reverses_id__isnull=False,
+        ).values_list("reverses_id", flat=True)
+    )
+    rows = CashMovement.objects.filter(bank_account_id=bank_account_id).only(
+        "id",
+        "movement_date",
+        "currency",
+        "amount",
+        "direction",
+        "is_reversal",
+    )
+    return [
+        BankFundingMovementPoint(
+            movement_date=row.movement_date,
+            currency=row.currency,
+            amount=row.amount,
+            direction=row.direction,
+            is_reversal=row.is_reversal,
+            is_reversed=row.id in reversed_ids,
+        )
+        for row in rows
+    ]
+
+
 def compute_bank_account_balance(
     bank_account: BankAccount | int,
     *,
@@ -123,6 +170,24 @@ def compute_bank_account_balance(
 ) -> Decimal:
     account_id = bank_account.id if isinstance(bank_account, BankAccount) else bank_account
     return bank_cash_balance(_movement_points_for_account(account_id), as_of_date=as_of_date)
+
+
+def compute_bank_funding_balance(
+    bank_account: BankAccount | int,
+    *,
+    as_of_date: date | None = None,
+) -> Decimal:
+    """As-of balance for FD funding validation and FD seed UI."""
+    account_id = bank_account.id if isinstance(bank_account, BankAccount) else bank_account
+    return bank_funding_balance(
+        _funding_movement_points_for_account(account_id),
+        as_of_date=as_of_date,
+    )
+
+
+def suggested_seed_date_for_fd(investment_date: date) -> date:
+    """Default historical seed date: day before investment date to avoid same-day ordering."""
+    return investment_date - timedelta(days=1)
 
 
 def latest_ledger_movement_date(bank_account: BankAccount | int) -> date | None:
@@ -213,8 +278,12 @@ def validate_no_overdraft(
     *,
     additional_signed: Decimal,
     as_of_date: date | None = None,
+    for_funding: bool = False,
 ) -> None:
-    available = compute_bank_account_balance(bank_account, as_of_date=as_of_date)
+    if for_funding:
+        available = compute_bank_funding_balance(bank_account, as_of_date=as_of_date)
+    else:
+        available = compute_bank_account_balance(bank_account, as_of_date=as_of_date)
     projected = available + additional_signed
     if projected >= Decimal("0"):
         return
@@ -440,7 +509,15 @@ def create_cash_movement(
             )
 
     signed = signed_movement_amount(amount, resolved_direction)
-    validate_no_overdraft(account, additional_signed=signed, as_of_date=movement_date)
+    use_funding_balance = (
+        movement_type == CashMovementType.FD_OPENING and not is_reversal
+    )
+    validate_no_overdraft(
+        account,
+        additional_signed=signed,
+        as_of_date=movement_date,
+        for_funding=use_funding_balance,
+    )
 
     movement = CashMovement(
         user=user,
@@ -665,6 +742,89 @@ def seed_opening_balance(
         direction=CashMovementDirection.CREDIT,
         description="Opening balance seed",
         source=CashMovementSource.MANUAL,
+    )
+
+
+HISTORICAL_FD_SEED_DEFAULT_REASON = "Historical balance seed for FD creation"
+
+
+def _find_duplicate_historical_seed(
+    bank_account_id: int,
+    *,
+    movement_date: date,
+    amount: Decimal,
+    reason: str,
+) -> CashMovement | None:
+    normalized_reason = (reason or HISTORICAL_FD_SEED_DEFAULT_REASON).strip()
+    return (
+        CashMovement.objects.filter(
+            bank_account_id=bank_account_id,
+            movement_type=CashMovementType.MANUAL_DEPOSIT,
+            movement_date=movement_date,
+            amount=amount,
+            direction=CashMovementDirection.CREDIT,
+            is_reversal=False,
+            description__startswith=normalized_reason,
+        )
+        .order_by("id")
+        .first()
+    )
+
+
+@dataclass(frozen=True)
+class HistoricalBankBalanceSeedResult:
+    movement: CashMovement
+    balance_as_of_date: Decimal
+    as_of_date: date
+    currency: str
+
+
+@db_transaction.atomic
+def seed_historical_bank_balance(
+    user: AbstractBaseUser,
+    bank_account_id: int,
+    *,
+    movement_date: date,
+    amount: Decimal,
+    reason: str = "",
+    note: str = "",
+) -> HistoricalBankBalanceSeedResult:
+    """Explicit MANUAL_DEPOSIT to fund a backdated FD; does not create portfolio holdings."""
+    account = get_bank_account(user, bank_account_id)
+    if not account.is_active:
+        raise CashMovementValidationError("Bank account must be active.")
+
+    description = (reason or HISTORICAL_FD_SEED_DEFAULT_REASON).strip()
+    if note.strip():
+        description = f"{description} — {note.strip()}"
+
+    duplicate = _find_duplicate_historical_seed(
+        account.id,
+        movement_date=movement_date,
+        amount=amount,
+        reason=reason or HISTORICAL_FD_SEED_DEFAULT_REASON,
+    )
+    if duplicate is not None:
+        raise DuplicateHistoricalSeedError(
+            "A similar historical seed already exists for this bank account, date, and amount.",
+            existing_movement=duplicate,
+        )
+
+    movement = create_cash_movement(
+        user,
+        bank_account_id=bank_account_id,
+        movement_type=CashMovementType.MANUAL_DEPOSIT,
+        amount=amount,
+        movement_date=movement_date,
+        description=description,
+        portfolio_id=None,
+    )
+    balance_as_of = compute_bank_funding_balance(account, as_of_date=movement_date)
+    return HistoricalBankBalanceSeedResult(
+        movement=movement,
+        balance_as_of_date=balance_as_of,
+        as_of_date=movement_date,
+        currency=account.currency,
     )
 
 

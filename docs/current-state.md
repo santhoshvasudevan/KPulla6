@@ -11,13 +11,13 @@
 
 | Area | Implemented behavior |
 |------|----------------------|
-| **Bank account model** | `BankAccount` is user-scoped and independent; `BankAccount.portfolio` is a **current portfolio link** (default investment context), not ownership |
+| **Bank account model** | `BankAccount` is user-scoped and independent; `BankAccount.portfolio` is **cash visibility** (display under portfolio cash), not FD ownership |
 | **Link/delink** | `PUT /bank-accounts/{id}` `portfolio_id` — inclusion/classification only; **no** `CashMovement` or balance change |
 | **Two ledgers** | Broker cash (`CashLedgerEntry`) and bank cash (`CashMovement`) remain separate; unified at read/UI layer only |
 | **Cash page** | `/cash` — **Cash / Liquid Holdings**; Broker Cash (writes) + Bank Cash (read-only); `GET /cash/overview` |
 | **Broker reversal** | `POST /cash/ledger/{id}/reverse` + `reverse_broker_cash_entry` command (CASH-CORR-1A) |
 | **Diagnostics** | `manage.py cash_overview_diagnostics` (read-only; CASH-UNIFY-4A) |
-| **FD funding** | Linked-bank path only (`FD_OPENING`); portfolio derived from bank link (CASH-UNIFY-2); broker-funded FD **deferred** |
+| **FD funding** | Bank-funded path only (`FD_OPENING`); explicit `portfolio_id` + `bank_account_id`; funding-aware as-of balance + historical seed; **expected maturity value** (auto estimate or user-confirmed) on FD rows; broker-funded FD **deferred** |
 | **FD interest/tax report** | `GET /reports/fixed-deposit-interest` + `GET .../export.csv` (FD-TAX-1/2); UI on Fixed Deposits — **not tax advice** |
 | **Display currency** | Portfolio switch → auto-select supported `base_currency`; All Portfolios preserves current; unsupported base unchanged (CASH-UNIFY-4B) |
 
@@ -269,9 +269,11 @@ Design doc: [cash-ledger.md](./cash-ledger.md).
 
 **Cash unification (CASH-UNIFY-3 — done 2026-06-24):** Cash page retitled **Cash / Liquid Holdings**; uses `GET /api/v1/cash/overview` for Total/Broker/Bank KPIs and separate read-only Bank Cash table; broker ledger writes unchanged; link to Settings → Bank Accounts; warnings for FX gaps and excluded unassigned/ambiguous banks.
 
-**Cash model refinement (CASH-MODEL-REFINE-0 — docs 2026-06-24):** `BankAccount` is independent; `BankAccount.portfolio` is **current portfolio link**. Link/delink = inclusion only. **FD funding:** one clear source — linked bank **or** broker cash (target); no partial split; unlinked bank cannot fund FD. **Runtime today:** bank path only (`FD_OPENING`). Transfer = CASH-UNIFY-5; correction = CASH-CORR-1.
+**Cash model refinement (CASH-MODEL-REFINE-1 + FD-FUNDING-MODEL-1/1B — done 2026-06-29):** FD create requires explicit `portfolio_id`; bank account is funding source only — link optional. Funding-aware as-of balance (`balance?as_of=`) ignores reversed movements. Historical balance seed via `POST /bank-accounts/{id}/seed-balance` (default seed date = investment date − 1 day); duplicate seed rejected with `409`. `BankAccount.portfolio` controls cash visibility only.
 
-**Cash unification (CASH-UNIFY-2 — done 2026-06-24):** FD create derives `FixedDeposit.portfolio` from `BankAccount.portfolio`; rejects unassigned/ambiguous banks and conflicting `portfolio_id` (**400** with structured error). FD API exposes `portfolio_mismatch_warning` for legacy rows (no auto-rewrite). FD create modal shows derived portfolio read-only.
+**Cash model refinement (CASH-MODEL-REFINE-0 — docs 2026-06-24):** `BankAccount` is independent; `BankAccount.portfolio` is **cash visibility link**. Link/delink = inclusion only. **Superseded for FD create by CASH-MODEL-REFINE-1.**
+
+**Cash unification (CASH-UNIFY-2 — done 2026-06-24, superseded):** FD create derived portfolio from bank link — replaced by CASH-MODEL-REFINE-1.
 
 **Cash unification (CASH-UNIFY-1 — done 2026-06-24):** Nullable `BankAccount.portfolio` FK; `infer_bank_account_portfolios` command (dry-run default); read-only `GET /api/v1/cash/overview` with `BROKER_CASH` and `BANK_CASH` rows; `fetchCashOverview` in `api.js`.
 

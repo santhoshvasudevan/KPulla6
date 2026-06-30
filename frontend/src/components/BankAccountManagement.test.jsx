@@ -271,7 +271,7 @@ describe('BankAccountManagement', () => {
       expect(screen.getByRole('columnheader', { name: 'Linked portfolio' })).toBeInTheDocument();
       expect(screen.getByRole('cell', { name: 'Default Portfolio' })).toBeInTheDocument();
       expect(
-        screen.getByText(/does not create a cash movement or change the bank balance/i)
+        screen.getByText(/does not create a cash movement.*change the bank balance/i)
       ).toBeInTheDocument();
     });
   });
@@ -383,7 +383,7 @@ describe('BankAccountManagement', () => {
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByLabelText(/^linked portfolio$/i)).toBeInTheDocument();
     expect(
-      within(dialog).getByText(/does not create a cash movement or change the bank balance/i)
+      within(dialog).getByText(/does not create a cash movement.*change the bank balance/i)
     ).toBeInTheDocument();
   });
 

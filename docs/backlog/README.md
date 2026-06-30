@@ -135,13 +135,17 @@ Execute in order within each epic unless the planner reprioritizes.
 
 Clarify and surface the **two-ledger cash model** (portfolio broker cash vs bank ledger) without merging storage. Portfolio `CashLedgerEntry` and bank `CashMovement` remain separate per `docs/decisions.md` and [cash-unification.md](../cash-unification.md).
 
-**Refined model (CASH-MODEL-REFINE-0):** `BankAccount` is independent; `BankAccount.portfolio` is a **current portfolio link** (not ownership). Link/delink = inclusion only; transfer = CASH-UNIFY-5; correction = CASH-CORR-1.
+**Refined model (CASH-MODEL-REFINE-1):** Bank accounts are external funding sources; FD portfolio is explicit at create. `BankAccount.portfolio` = cash visibility only.
 
 | Phase | Backlog | Scope |
 |-------|---------|--------|
 | **0** | 001 | Design doc + ADR (**done**) |
 | **1** | 002 | `BankAccount.portfolio` link FK + inference + `GET /cash/overview` (**done**) |
-| **2** | 003 | FD create derives portfolio from linked bank account (**done**) |
+| **2** | 003 | ~~FD create derives portfolio from linked bank account~~ (**superseded** by 006) |
+| **2b** | 006 | FD create explicit portfolio; bank link optional (**done**) |
+| **3** | 007 | Historical bank balance seed for backdated FD (**done**) |
+| **3b** | [007b](./007b-fd-funding-model-1b.md) | Funding-aware as-of balance + seed-and-create UX fix (**done**) |
+| **4** | [008](./008-fd-maturity-value-1.md) | FD expected maturity value estimate + user override (**done**) |
 | **3** | 004 | Unified Cash page UI (**done**) |
 | **3A** | 004a | Cash page verification: attribution, broker actions, diagnostics (**done**) |
 | **4** | 005 | Bank account link/delink UX + inclusion + display-currency stabilization (**done**) |

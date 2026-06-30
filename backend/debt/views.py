@@ -4,6 +4,7 @@ from rest_framework.views import APIView
 
 from debt.serializers import (
     BankAccountCreateSerializer,
+    BankAccountSeedBalanceSerializer,
     BankAccountSerializer,
     BankAccountUpdateSerializer,
     CashMovementCreateSerializer,
@@ -16,6 +17,7 @@ from debt.serializers import (
     FixedDepositRenewalWriteSerializer,
     FixedDepositSettlementWriteSerializer,
     FixedDepositCancelWriteSerializer,
+    FixedDepositMaturityEstimateQuerySerializer,
     FixedDepositUpdateSerializer,
     FixedDepositWriteSerializer,
 )
@@ -24,18 +26,21 @@ from datetime import date
 from debt.bank_ledger_services import (
     CashMovementNotFoundError,
     CashMovementValidationError,
+    DuplicateHistoricalSeedError,
     InsufficientBankBalanceError,
     OpeningBalanceAlreadySeededError,
     bank_account_has_ledger,
     compute_bank_account_balance,
+    compute_bank_funding_balance,
     create_manual_cash_movement,
     get_cash_movement,
     latest_ledger_movement_date,
     list_cash_movements,
     opening_balance_is_seeded,
+    seed_historical_bank_balance,
     seed_opening_balance,
 )
-from debt.bank_account_portfolio import FixedDepositBankPortfolioError
+
 from debt.cancellation_services import (
     FixedDepositCancellationError,
     cancel_fixed_deposit,
@@ -144,6 +149,18 @@ class BankAccountDetailView(APIView):
         return Response(BankAccountSerializer(account).data)
 
 
+class FixedDepositMaturityEstimateView(APIView):
+    def get(self, request):
+        serializer = FixedDepositMaturityEstimateQuerySerializer(
+            data=request.query_params
+        )
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        from debt.fd_maturity_services import preview_maturity_estimate
+
+        return Response(preview_maturity_estimate(**serializer.validated_data))
+
+
 class FixedDepositListCreateView(APIView):
     def get(self, request):
         try:
@@ -177,8 +194,6 @@ class FixedDepositListCreateView(APIView):
             fd = create_fixed_deposit(request.user, **serializer.validated_data)
         except InsufficientBankBalanceError as exc:
             return _insufficient_bank_balance_response(exc)
-        except FixedDepositBankPortfolioError as exc:
-            return _fixed_deposit_bank_portfolio_error_response(exc)
         except FixedDepositValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except (BankAccountNotFoundError, FixedDepositNotFoundError) as exc:
@@ -207,8 +222,6 @@ class FixedDepositDetailView(APIView):
             )
         except FixedDepositNotFoundError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
-        except FixedDepositBankPortfolioError as exc:
-            return _fixed_deposit_bank_portfolio_error_response(exc)
         except FixedDepositValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except (BankAccountNotFoundError,) as exc:
@@ -390,8 +403,6 @@ class FixedDepositRenewView(APIView):
             result = renew_fixed_deposit(request.user, fd_id, **serializer.validated_data)
         except FixedDepositNotFoundError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
-        except FixedDepositBankPortfolioError as exc:
-            return _fixed_deposit_bank_portfolio_error_response(exc)
         except RenewalValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
@@ -467,23 +478,14 @@ def _insufficient_bank_balance_response(exc: InsufficientBankBalanceError) -> Re
         body["investment_date"] = exc.investment_date.isoformat()
     if exc.latest_ledger_balance_date is not None:
         body["latest_ledger_balance_date"] = exc.latest_ledger_balance_date.isoformat()
+    if exc.bank_account_id is not None:
+        body["bank_account_id"] = exc.bank_account_id
+    if exc.suggested_seed_date is not None:
+        body["suggested_seed_date"] = exc.suggested_seed_date.isoformat()
+    if exc.suggested_seed_amount is not None:
+        body["suggested_seed_amount"] = float(exc.suggested_seed_amount)
     if exc.hint:
         body["hint"] = exc.hint
-    return Response(body, status=status.HTTP_400_BAD_REQUEST)
-
-
-def _fixed_deposit_bank_portfolio_error_response(
-    exc: FixedDepositBankPortfolioError,
-) -> Response:
-    body = {
-        "detail": exc.detail,
-        "bank_account_id": exc.bank_account_id,
-        "bank_account_portfolio_id": exc.bank_account_portfolio_id,
-        "bank_account_portfolio_name": exc.bank_account_portfolio_name,
-        "requested_portfolio_id": exc.requested_portfolio_id,
-        "portfolio_assignment_status": exc.portfolio_assignment_status,
-        "hint": exc.hint,
-    }
     return Response(body, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -534,7 +536,7 @@ class BankAccountBalanceView(APIView):
         if as_of_date is not None:
             body["as_of_date"] = as_of_date.isoformat()
             body["balance_as_of_date"] = float(
-                compute_bank_account_balance(account, as_of_date=as_of_date)
+                compute_bank_funding_balance(account, as_of_date=as_of_date)
             )
         return Response(body)
 
@@ -553,6 +555,48 @@ class BankAccountSeedOpeningBalanceView(APIView):
             {
                 "bank_account": BankAccountSerializer(account).data,
                 "cash_movement": CashMovementSerializer(movement).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class BankAccountSeedBalanceView(APIView):
+    def post(self, request, account_id: int):
+        serializer = BankAccountSeedBalanceSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            result = seed_historical_bank_balance(
+                request.user,
+                account_id,
+                movement_date=serializer.validated_data["date"],
+                amount=serializer.validated_data["amount"],
+                reason=serializer.validated_data.get("reason") or "",
+                note=serializer.validated_data.get("note") or "",
+            )
+        except BankAccountNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except DuplicateHistoricalSeedError as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                    "existing_cash_movement_id": exc.existing_movement.id,
+                    "existing_cash_movement_date": exc.existing_movement.movement_date.isoformat(),
+                    "existing_cash_movement_amount": float(exc.existing_movement.amount),
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        except Exception as exc:
+            response = _cash_movement_error_response(exc)
+            if response is not None:
+                return response
+            raise
+        return Response(
+            {
+                "cash_movement": CashMovementSerializer(result.movement).data,
+                "balance_as_of_date": float(result.balance_as_of_date),
+                "as_of_date": result.as_of_date.isoformat(),
+                "currency": result.currency,
             },
             status=status.HTTP_201_CREATED,
         )

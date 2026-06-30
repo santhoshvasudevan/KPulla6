@@ -59,3 +59,18 @@ def test_expected_maturity_simple_interest():
 def test_expected_maturity_zero_rate_returns_principal():
     value = expected_maturity_value(_fd(interest_rate_percent=Decimal("0")))
     assert value == Decimal("100000")
+
+
+def test_estimate_maturity_non_whole_term():
+    from finance.fixed_deposits import estimate_maturity_value
+
+    result = estimate_maturity_value(
+        _fd(
+            interest_payout_frequency="COMPOUNDED",
+            investment_date=date(2024, 1, 1),
+            maturity_date=date(2026, 10, 1),
+        )
+    )
+    assert result.value is not None
+    assert result.value > Decimal("100000")
+    assert result.method == "ANNUAL_COMPOUND_ACTUAL_365"

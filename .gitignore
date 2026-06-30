@@ -28,6 +28,17 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 
+# Local Python packaging (finance library extract — keep out of git until publish-ready)
+pyproject.toml
+pyproject.*.toml
+!pyproject.toml.example
+backend/packaging/pyproject.toml
+backend/packaging/dist/
+dist/
+build/
+*.egg-info/
+*.egg
+
 # Node / React / Vite
 frontend/node_modules/
 frontend/dist/

@@ -34,11 +34,13 @@ Quick reference for MVP endpoints. Detail sections below. Product rules: [produc
 | PUT | `/api/v1/bank-accounts/{id}` | Update bank account | `updateBankAccount` | `test_bank_accounts_api.py` |
 | DELETE | `/api/v1/bank-accounts/{id}` | Soft deactivate bank account | `deleteBankAccount` | `test_bank_accounts_api.py` |
 | POST | `/api/v1/bank-accounts/{id}/seed-opening-balance` | Seed `OPENING_BALANCE` from `opening_balance` | `seedBankAccountOpeningBalance` | `test_cash_movements_api.py` |
+| POST | `/api/v1/bank-accounts/{id}/seed-balance` | Historical `MANUAL_DEPOSIT` for backdated FD funding | `seedBankAccountHistoricalBalance` | `test_bank_account_seed_balance_api.py` |
 | GET | `/api/v1/cash-movements` | List bank cash movements (paginated) | `fetchCashMovements` | `test_cash_movements_api.py` |
 | POST | `/api/v1/cash-movements` | Create manual movement | `createCashMovement` | `test_cash_movements_api.py` |
 | POST | `/api/v1/cash-movements/{id}/reverse` | Reverse manual cash movement | `reverseCashMovement` | `test_cash_movement_reversals_api.py` |
 | GET | `/api/v1/fixed-deposits` | List active fixed deposits (portfolio scope) | `fetchFixedDeposits` | `test_fixed_deposits_api.py` |
-| POST | `/api/v1/fixed-deposits` | Create fixed deposit | `createFixedDeposit` | `test_fixed_deposits_api.py` |
+| POST | `/api/v1/fixed-deposits` | Create fixed deposit | `createFixedDeposit` | `test_fixed_deposits_api.py`, `test_fd_maturity_value_api.py` |
+| GET | `/api/v1/fixed-deposits/maturity-estimate` | Read-only maturity estimate preview | `fetchFixedDepositMaturityEstimate` | `test_fd_maturity_value_api.py` |
 | PUT | `/api/v1/fixed-deposits/{id}` | Update fixed deposit | `updateFixedDeposit` | `test_fixed_deposits_api.py` |
 | DELETE | `/api/v1/fixed-deposits/{id}` | Soft deactivate fixed deposit (legacy/no-ledger only) | `deleteFixedDeposit` | `test_fixed_deposits_api.py` |
 | POST | `/api/v1/fixed-deposits/{id}/cancel` | Cancel ledger-backed FD; reverse opening debit | `cancelFixedDeposit` | `test_fixed_deposit_cancellation_accounting.py` |
@@ -1213,11 +1215,12 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 | PUT/PATCH/DELETE | `/api/v1/cash-movements/{id}` | **405** — immutable ledger in FD-ACC-1; use reverse (FD-ACC-10B) |
 | POST | `/api/v1/cash-movements/{id}/reverse` | **Done** — `{ reversal_date?, reason }`; creates `REVERSAL` SYSTEM movement |
 | POST | `/api/v1/bank-accounts/{id}/seed-opening-balance` | **Done** — opt-in opening balance seed |
-| GET | `/api/v1/bank-accounts/{id}/balance` | **Done (FD-CASH-ASOF-1)** — `?as_of=YYYY-MM-DD` optional; returns `current_balance`, `balance_as_of_date`, `latest_ledger_balance_date` |
+| POST | `/api/v1/bank-accounts/{id}/seed-balance` | **Done (FD-FUNDING-MODEL-1/1B)** — explicit historical `MANUAL_DEPOSIT`; body: `date`, `amount`, optional `reason`/`note`; returns `cash_movement`, funding `balance_as_of_date`, `as_of_date`, `currency`; duplicate same bank/date/amount/reason → **409** with `existing_cash_movement_id`; no portfolio required; does not create FD |
+| GET | `/api/v1/bank-accounts/{id}/balance` | **Done (FD-CASH-ASOF-1 / 1B)** — `?as_of=YYYY-MM-DD` optional; `balance_as_of_date` uses **funding-aware** balance (ignores reversed movements); `current_balance` remains full ledger total |
 
 **Bank account response extensions:** `has_ledger_entries`, `opening_balance_seeded`, `balance_source` (`manual` \| `ledger`).
 
-**FD create insufficient balance (400):** `detail`, `required`, `available`, `available_as_of_date`, `current_balance`, `shortfall`, `currency`, `investment_date`, `latest_ledger_balance_date`, `hint`. Validation uses ledger balance **as of FD `investment_date`**, not current total.
+**FD create insufficient balance (400):** `detail`, `required`, `available`, `available_as_of_date`, `current_balance`, `shortfall`, `currency`, `investment_date`, `bank_account_id`, `suggested_seed_date` (investment date − 1 day), `suggested_seed_amount`, `latest_ledger_balance_date`, `hint`. Validation uses **funding-aware** ledger balance as of FD `investment_date` (reversed openings excluded), not current total.
 
 **PUT `/bank-accounts/{id}`:** rejects `current_balance` when ledger exists (**400**). **`portfolio_id`** (set or `null`) updates the **portfolio link** only — no cash movements (**CASH-UNIFY-4**). Response includes `portfolio_id`, `portfolio_name`, `portfolio_assignment_status`, `active_fixed_deposit_count`.
 
@@ -1286,7 +1289,8 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 
 | Method | Path | Notes |
 |--------|------|--------|
-| POST | `/api/v1/fixed-deposits` | **Done** — atomically creates `FD_OPENING` `CashMovement` (SYSTEM DEBIT); **400** on insufficient bank balance with `required`, `available`, `shortfall`, `currency`. **CASH-UNIFY-2:** `portfolio_id` optional; derived from `bank_account.portfolio`; **400** with structured portfolio fields on unassigned/ambiguous bank or portfolio conflict. |
+| POST | `/api/v1/fixed-deposits` | **Done** — atomically creates `FD_OPENING` `CashMovement` (SYSTEM DEBIT); **400** on insufficient bank balance with `required`, `available`, `shortfall`, `currency`. **CASH-MODEL-REFINE-1:** `portfolio_id` **required**; explicit FD portfolio; bank account link optional; **400** if omitted: “Select the portfolio that should own this Fixed Deposit.” **FD-MATURITY-VALUE-1:** optional `expected_maturity_value` + `maturity_value_note` for user-confirmed maturity; auto-computes `estimated_maturity_value` and sets `maturity_value_source`. |
+| GET | `/api/v1/fixed-deposits/maturity-estimate` | **Done (FD-MATURITY-VALUE-1)** — query: `principal_amount`, `interest_rate_percent`, `interest_payout_frequency`, `investment_date`, `maturity_date`; returns `estimated_maturity_value`, `estimated_interest`, `maturity_estimate_method`, `maturity_estimate_method_label` |
 
 **Create body:** `bank_account_id` required; `portfolio_id` optional (must match bank account when supplied). Bank account must be **ASSIGNED** before create.
 

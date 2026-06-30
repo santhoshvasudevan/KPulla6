@@ -501,7 +501,7 @@ KPulla6 has **two cash ledgers** that represent **cash holdings** within a portf
 - Do **not** auto-create cross-ledger entries on read, backfill, or **portfolio link/delink**.
 - **Link/delink** (`BankAccount.portfolio`) changes portfolio inclusion only — not balances (CASH-MODEL-REFINE-0).
 - **Transfer** (broker ↔ bank) and **correction** (mistaken entry reclassification) are separate workflows — CASH-UNIFY-5 and CASH-CORR-1.
-- **FD funding:** one source per FD — bank ledger (`FD_OPENING`) **today**; broker-cash path **deferred** (CASH-MODEL-REFINE-0).
+- **FD funding:** one source per FD — bank ledger (`FD_OPENING`) **today**; explicit `portfolio_id` at create; bank account link optional (CASH-MODEL-REFINE-1); broker-cash path **deferred**.
 - Summary/performance may **aggregate** both for headline value when bank cash is opt-in included (FD-ACC-7/8).
 - FD workflows debit **bank** ledger for bank-funded opens; stock/MF settlements use **broker** ledger.
 

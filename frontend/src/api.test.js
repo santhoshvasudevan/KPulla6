@@ -221,6 +221,32 @@ describe('API Service', () => {
     );
   });
 
+  it('seedBankAccountHistoricalBalance posts to seed-balance endpoint', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        cash_movement: { id: 1, movement_type: 'MANUAL_DEPOSIT' },
+        balance_as_of_date: 100000,
+        as_of_date: '2024-01-01',
+        currency: 'INR',
+      }),
+    });
+    const payload = {
+      date: '2024-01-01',
+      amount: '100000',
+      reason: 'Historical balance seed for FD creation',
+      note: '',
+    };
+    await api.seedBankAccountHistoricalBalance(7, payload);
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/bank-accounts/7/seed-balance',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+    );
+  });
+
   it('createCashMovement posts to cash-movements', async () => {
     const payload = {
       bank_account_id: 1,
