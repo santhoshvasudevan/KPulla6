@@ -19,7 +19,10 @@ from transactions.views import (
     TransactionFilterOptionsView,
     TransactionListCreateView,
 )
-from debt.report_views import FixedDepositInterestReportView
+from debt.report_views import (
+    FixedDepositInterestReportExportView,
+    FixedDepositInterestReportView,
+)
 
 urlpatterns = [
     path("auth/", include("accounts.urls")),
@@ -83,5 +86,10 @@ urlpatterns = [
         "reports/fixed-deposit-interest",
         FixedDepositInterestReportView.as_view(),
         name="fixed-deposit-interest-report",
+    ),
+    path(
+        "reports/fixed-deposit-interest/export.csv",
+        FixedDepositInterestReportExportView.as_view(),
+        name="fixed-deposit-interest-report-export",
     ),
 ]

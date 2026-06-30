@@ -1,6 +1,33 @@
 # Fixed Deposits — Accounting Phase 1
 
-**Status:** **FD-ACC-7 implemented** · **FD-ACC-8B implemented** (value history) · **FD-ACC-8C implemented** (return metrics) · **FD-ACC-9 audited** (2026-06-14) · **FD-ACC-10A implemented** (2026-06-24) · **FD-ACC-10B implemented** (2026-06-24) · **FD-TAX-1 implemented** (2026-06-24) · **FD-CASH-ASOF-1 implemented** (2026-06-24, create as-of balance UX).
+**Status:** **FD-ACC-7 implemented** · **FD-ACC-8B implemented** (value history) · **FD-ACC-8C implemented** (return metrics) · **FD-ACC-9 audited** (2026-06-14) · **FD-ACC-10A implemented** (2026-06-24) · **FD-ACC-10B implemented** (2026-06-24) · **FD-TAX-1/1A/2 implemented** (2026-06-26) · **FD-CASH-ASOF-1 implemented** (2026-06-24, create as-of balance UX).
+
+## FD-DETAIL-CALC-1 expected schedule vs actual credits (2026-06-30)
+
+| Topic | Rule |
+|-------|------|
+| **Expected schedule** | Read-only forecast from FD terms; does not create cash movements |
+| **Actual credits** | User-recorded `FixedDepositInterestPayment`; creates `FD_INTEREST` bank CREDIT for net amount |
+| **Matching** | Display-only link by period date or proximity; no DB schedule row |
+| **FY filter** | Indian FY April–March; actuals by credited date, expected by payout date |
+| **Edit** | `PATCH` updates payment + linked cash movement; reversed payments excluded from totals |
+
+## FD-INTEREST-MATURITY-LOGIC-1 maturity vs payout estimates (2026-06-30)
+
+| Topic | Rule |
+|-------|------|
+| **Compounded** | `estimated_maturity_value` = principal + compounded interest (Actual/365 fractional years); `maturity_value_source` = `AUTO_ESTIMATE` or `USER_CONFIRMED` |
+| **Payout (monthly/quarterly/half-yearly/annual)** | `estimated_maturity_value` = principal; interest estimated separately as `estimated_total_interest` + `estimated_periodic_interest`; `maturity_value_source` = `AUTO_PRINCIPAL` |
+| **Settlement** | Estimates are planning/display only — settlement proceeds remain user-entered; no auto interest payment recording |
+| **Legacy inflated payout rows** | API `resolve_maturity_display()` corrects stored inflated maturity to principal unless `USER_CONFIRMED`; optional `recalculate_fd_maturity_estimates --apply` persists |
+
+## FD-HOLDINGS-UX-1 maturity display (2026-06-30)
+
+| Topic | Rule |
+|-------|------|
+| **Purpose** | `estimated_maturity_value` / `expected_maturity_value` are planning/display fields only |
+| **Settlement** | Realized maturity/closure proceeds come from user-entered settlement amounts — not auto-filled from estimates |
+| **Legacy FDs** | API computes display estimates when DB fields are null; optional `recalculate_fd_maturity_estimates --apply` persists estimate columns only |
 
 ## FD-CASH-ASOF-1 implementation notes (2026-06-24)
 
@@ -22,7 +49,29 @@
 | **Exclusions** | Reversed payments; zero-interest settlement/renewal; `CANCELLED` FD rows |
 | **Semantics** | `gross_interest`, `tax_withheld`, `net_interest` as stored at source; optional `display_currency` conversion with date-aware FX + fill |
 | **Scope** | User-scoped; portfolio filter via existing scope params |
-| **Not in scope** | Tax advice; CSV/export (FD-TAX-2); no ledger/performance/summary changes |
+| **Not in scope** | Tax advice; no ledger/performance/summary changes |
+
+## FD-TAX-1A UI polish (2026-06-26)
+
+| Item | FD-TAX-1A outcome |
+|------|-------------------|
+| **Component** | `FixedDepositInterestReport.jsx` on Fixed Deposits page |
+| **Filters** | Default range = current calendar year; **Reset filters**; `group_by` includes **bank** |
+| **Notes** | Reversed payments excluded; zero-interest settlement/renewal excluded; not tax advice |
+| **Warnings** | FX partial and mixed-currency warnings shown near totals |
+| **Table** | Source, Bank/Institution, FD account, display currency columns; readable source labels |
+| **No changes** | Report service, ledger, performance, or accounting behavior |
+
+## FD-TAX-2 CSV export (2026-06-26)
+
+| Item | FD-TAX-2 outcome |
+|------|------------------|
+| **API** | `GET /api/v1/reports/fixed-deposit-interest/export.csv` |
+| **Filters** | Same as JSON report: `portfolio_scope` / `portfolio_id`, `start_date`, `end_date`, `display_currency`; `group_by` ignored (detail rows only) |
+| **Exclusions** | Same as FD-TAX-1: reversed payments; zero-interest settlement/renewal; `CANCELLED` FD rows |
+| **CSV** | UTF-8 `text/csv`; `Content-Disposition` attachment; 16-column header; rows-only (no footer totals); header-only when no rows |
+| **Frontend** | **Export CSV** on `FixedDepositInterestReport`; uses current filters; warnings shown in UI only |
+| **No changes** | Ledger, performance, summary, or report aggregation logic beyond shared read path |
 
 ---
 
@@ -104,6 +153,22 @@ All bank ledger and FD accounting corrections use **linked reversal rows** (`is_
 
 ---
 
+## FD-PERF-2 implementation notes (2026-06-30)
+
+| Item | FD-PERF-2 outcome |
+|------|-------------------|
+| **Attribution** | `FixedDeposit.portfolio_id` — bank is credit destination only |
+| **Amount** | `net_interest` for performance; gross/tax in reports only |
+| **Value metric** | Unchanged — principal + included bank cash (wealth still held in portfolio) |
+| **Return PV** | `merge_fd_attributed_income_into_return_timeseries` adds cumulative net income when bank not in scope PV |
+| **XIRR** | `build_fd_attributed_xirr_flows` — positive investor flows on payment dates when bank excluded |
+| **Anti-double-count** | `bank_represents_interest_in_performance_scope` skips attributed layer when included bank already in PV |
+| **Compounded FD** | No periodic attribution without actual payment; principal-only valuation unchanged |
+| **Deferred** | Compounded daily accrual; gross-of-tax performance mode |
+| **Tests** | `test_fd_attributed_income.py` |
+
+---
+
 ## FD-ACC-8C implementation notes (2026-06-14)
 
 | Item | FD-ACC-8C outcome |
@@ -112,8 +177,8 @@ All bank ledger and FD accounting corrections use **linked reversal rows** (`is_
 | **XIRR** | Terminal = stocks/MF + broker cash + FD principal + included bank cash |
 | **TWROR / cumulative** | Daily PV from FD-ACC-8B merge; external flows += bank manual/seed/adjustment only |
 | **Opening balance** | External contribution at seed date |
-| **Interest** | Income via PV increase (included bank cash); not external flow |
-| **Bank excluded** | FD step changes only; documented conservative behavior |
+| **Interest** | Income via PV increase (included bank cash) or portfolio-attributed return layer (excluded bank — **FD-PERF-2**); not external flow |
+| **Bank excluded** | FD principal in value; payout interest in return metrics via attributed income (**FD-PERF-2**) |
 | **Tests** | `test_fd_cash_flow_classification.py` |
 
 ---
@@ -273,9 +338,9 @@ User
 
 These ledgers must **not** be merged in storage. Cross-ledger transfers (e.g. bank withdrawal → portfolio deposit) are a future product decision (**CASH-UNIFY-5**, deferred) and are **not** auto-created in FD-ACC-1 or CASH-UNIFY phases 1–4.
 
-**Unified domain model (CASH-UNIFY-0):** Both ledgers represent **cash holdings** within a portfolio wealth pool at the product level. See [cash-unification.md](./cash-unification.md) for ownership rules, Cash tab design, and implementation roadmap.
+**Unified domain model (CASH-UNIFY-0 + CASH-MODEL-REFINE-0):** Both ledgers represent **cash holdings** at the product level. `BankAccount` is independent; `BankAccount.portfolio` is a **current portfolio link** (not ownership). Link/delink changes inclusion only — no movements. See [cash-unification.md](./cash-unification.md) §4.
 
-**FD portfolio alignment (CASH-UNIFY-2):** New FDs derive portfolio from the linked bank account; opening debit behavior unchanged. Legacy FD/bank portfolio mismatches are flagged read-only in API (`portfolio_mismatch_warning`); no automatic ledger or portfolio rewrites.
+**FD portfolio alignment (CASH-MODEL-REFINE-1):** New FDs require explicit `portfolio_id` and `bank_account_id`. Bank account portfolio link is optional and controls cash visibility only. Opening debit checks bank ledger balance as-of `investment_date`. Legacy mismatches flagged read-only (`portfolio_mismatch_warning`). Broker-funded FD **deferred**.
 
 ---
 
@@ -613,11 +678,17 @@ Extend response with `ledger_balance` (computed or cached), `ledger_as_of`, `has
 
 ### 2. FD opening
 
-1. User creates FD via `POST /fixed-deposits` (**FD-ACC-3**).
+**Funding source (CASH-MODEL-REFINE-0):** Each FD requires **one** funding path — linked **bank account** or **broker cash** from the portfolio. Partial bank+broker split is **not** supported. Unlinked bank cannot fund until linked.
+
+**Implemented today (bank path only):**
+
+1. User creates FD via `POST /fixed-deposits` with a **linked** bank account (**FD-ACC-3**).
 2. Backend atomically creates `FD_OPENING` movement (−principal) on linked bank account on `investment_date`.
-3. **Validation:** ledger balance **as of `investment_date`** must cover principal (**400** shortfall — `available`, `required`, `shortfall`, optional `hint`). Bank account API `current_balance` is the latest ledger total, not necessarily the as-of investment date.
-4. **Backdated FDs:** opening balance seed and manual deposits must use `movement_date` on or before the FD `investment_date`. Default seed uses today — insufficient for an earlier investment date unless movements are backdated via manual deposit/adjustment workflows.
+3. **Validation:** bank ledger balance **as of `investment_date`** must cover principal (**400** shortfall). Bank account must be linked (`portfolio` set) per CASH-UNIFY-2.
+4. **Backdated FDs:** opening balance seed and manual deposits must use `movement_date` on or before the FD `investment_date`.
 5. **Existing MVP FDs:** no movement; FD remains valid; no auto-backfill.
+
+**Deferred (broker-cash path):** Principal debited from portfolio `CashLedgerEntry` (broker ledger) instead of bank `FD_OPENING` — requires dedicated implementation phase; not interchangeable with link/delink or transfer.
 
 ### 3. Periodic interest payment
 

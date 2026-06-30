@@ -1,57 +1,67 @@
-# 005 — CASH-UNIFY-4: Terminology, display-currency totals, stabilization
+# 005 — CASH-UNIFY-4: Bank account link/delink UX + portfolio inclusion stabilization
 
 **ID:** CASH-UNIFY-4  
 **Branch:** `agent/005-cash-unify-4`  
-**Depends on:** 004
+**Depends on:** 004, 004a (recommended)  
+**Status:** **Done** (2026-06-26); **4B hotfix** (link modal + display currency auto-select) same date; **4A stabilization** same date.
 
 ## Goal
 
-**Stabilize and audit** the CASH-UNIFY epic: display-currency cash totals, allocation/summary terminology cleanup, regression tests, docs consistency, changelog/decisions closure.
+Productize **bank account portfolio link/delink** and stabilize how linked vs unlinked bank cash appears in portfolio Cash holdings, display-currency totals, and terminology.
 
-Design: [cash-unification.md](../cash-unification.md) §3.3, §8.2.
+**Model (CASH-MODEL-REFINE-0):** `BankAccount.portfolio` = **current portfolio link** / **default investment portfolio** — not ownership. Link/delink changes classification/inclusion only; **no cash movements**.
+
+Design: [cash-unification.md](../cash-unification.md) §4 · [decisions.md](../decisions.md) CASH-MODEL-REFINE-0.
 
 ## Scope
 
-### Display-currency totals
+### Bank account link/delink UX
 
-- Extend cash overview to return `display_currency`, `total_broker_cash_display`, `total_bank_cash_display`, `total_combined_display` using cached FX only (`fx/lookup.convert_amount_with_fill`)
-- Null/warning when FX unavailable — do not silently omit
-- Cash page KPI strip shows converted totals when display currency from app settings is set
-- Resolves MVP deferred item: “Display-currency cash totals on `/cash`”
+- Settings → Bank Accounts: clear **Link to portfolio** / **Delink** actions (or equivalent explicit control).
+- Copy explains: link = bank cash appears in portfolio **Bank Cash**; delink = external/unassigned bank cash.
+- Link/delink via `PUT /bank-accounts/{id}` `portfolio_id` (set or null) — **no** new ledger writes.
+- Confirm FD create still requires linked account; portfolio derives from link (CASH-UNIFY-2 unchanged).
 
-### Terminology cleanup
+### Portfolio inclusion behavior
 
-- Summary allocation / holdings labels: clarify **Broker Cash** vs **Cash / Bank Cash** bucket where user-facing copy is ambiguous
-- Docs audit: `cash-ledger.md`, `product-rules.md`, `api-contracts.md`, `fixed-deposits-accounting.md`, `cash-unification.md` — remove contradictions from 001–004
+- **Linked:** Bank cash balance appears in selected portfolio's Cash overview / summary inclusion when rules apply (`include_in_portfolio_value`, scope).
+- **Delinked:** Bank cash excluded from single-portfolio Bank Cash section; visible as unassigned/external via `include_unassigned` on overview.
+- Overview API and Cash page consistent after link change (refresh without balance change).
 
-### Stabilization
+### Display-currency & terminology
 
-- Regression tests: overview API + Cash page + `GET /cash/balances` consistency; scope rules for bank cash attribution; FX fill vs warning
-- Run `make test-critical` and fix failures **only if caused by CASH-UNIFY work**
-- `docs/changelog.md` — CASH-UNIFY epic summary entry
-- Optional: `make graphify` if module boundaries changed significantly
+- Stabilize display-currency KPI totals on Cash page and overview when FX partial (cached FX only).
+- Clarify **Broker Cash** vs **Bank Cash** vs unassigned/external in summary allocation and holdings copy where ambiguous.
+- Regression tests: overview scope after link/delink; `make test-critical` if cash paths touched.
+
+### Documentation
+
+- `docs/changelog.md`, `docs/cash-unification.md`, `docs/api-design.md`, `docs/frontend-design.md`
+- Close MVP deferred item: display-currency cash totals on `/cash` where FX available
 
 ## Do not implement
 
+- Actual broker ↔ bank **transfer** legs (CASH-UNIFY-5)
+- Mistaken-entry **reclassification** workflow (CASH-CORR-1)
+- Multi-portfolio bank sub-balances per account
+- Live FX on read path
 - Same-portfolio FX conversion legs (FX-1)
-- Live FX fetch on read path
-- Broker ↔ bank transfer workflow (CASH-UNIFY-5)
-- Changes to investment valuation formulas beyond display-layer totals
 
 ## Safety requirements
 
-- Read-path FX conversion only — no backup required unless migrations added
+- Link/delink = FK update only — no automatic `CashMovement` or `CashLedgerEntry` creation
+- `make backup-db` + `make db-safety-check` before any migration (unlikely)
 - Never run destructive DB commands
 
 ## Expected files / areas
 
 | Area | Files |
 |------|--------|
-| Overview service | `backend/cash/` overview service |
-| FX conversion | `backend/fx/lookup.py` (reuse) |
-| Tests | `backend/tests/test_cash_overview_api.py`, `frontend/src/pages/Cash.test.jsx` |
-| Frontend | `frontend/src/pages/Cash.jsx`, summary/allocation copy if needed |
-| Docs | `docs/current-state.md`, `docs/cash-ledger.md`, `docs/changelog.md`, `docs/decisions.md` |
+| Bank account UI | `frontend/src/components/BankAccountManagement.jsx` |
+| Overview / scope | `backend/cash/overview_service.py` (if inclusion rules need tightening) |
+| Cash page | `frontend/src/pages/Cash.jsx` (terminology/copy) |
+| Tests | `test_cash_overview_api.py`, `Cash.test.jsx`, `BankAccountManagement.test.jsx` |
+| Docs | `docs/current-state.md`, `docs/cash-unification.md`, `docs/changelog.md` |
 
 ## Tests / commands
 
@@ -68,5 +78,5 @@ git diff --stat
 3. Tests run (`make test-critical`, `make test` — pass/fail)
 4. `git diff --stat`
 5. Commit hash
-6. Deferred items (hand off to CASH-UNIFY-5, CASH-CORR-1, FX-1)
+6. Deferred items (CASH-UNIFY-5, CASH-CORR-1, FX-1)
 7. Safety notes

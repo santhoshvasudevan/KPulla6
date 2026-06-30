@@ -73,15 +73,14 @@ General safety: `AGENTS.md`, `docs/data-safety.md`, `docs/workflows.md`.
 - **`/cash`** = balance + ledger management; **`/transactions`** = asset table + unified add/edit (cash add only, not cash ledger edit).
 - Cash shortfall UX: show API `required` / `available` / `shortfall` / `currency`; guide user to add **same-currency** cash on `/cash` (no implicit FX).
 
-## Performance / analytics (phase gates)
+## Performance / analytics (Cash-6+ — implemented)
 
-- **Until Cash-6:** do **not** include cash in portfolio valuation, allocation, summary, or performance read APIs unless that phase is explicitly in scope.
-- **Cash-6+ (when implemented):**
-  - Portfolio value = investment assets + cash (display conversion at API layer).
-  - Portfolio TWROR external flows = deposits/withdrawals (not BUY/SELL when cash-aware).
-  - BUY/SELL = internal movements once cash-aware.
-  - Asset-level XIRR may still use asset BUY/SELL.
-  - Portfolio-level XIRR uses external cash flows + terminal total portfolio value (including cash).
+- Cash is included in portfolio valuation, allocation, summary, and performance read APIs (Cash-6A/B/C).
+- Portfolio value = investment assets + cash (display conversion at API layer).
+- Portfolio TWROR external flows = deposits/withdrawals (not BUY/SELL when cash-aware).
+- BUY/SELL = internal movements once cash-aware.
+- Asset-level XIRR may still use asset BUY/SELL.
+- Portfolio-level XIRR uses external cash flows + terminal total portfolio value (including cash).
 
 ## CSV import
 

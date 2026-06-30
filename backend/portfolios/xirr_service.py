@@ -9,6 +9,7 @@ from typing import Optional
 
 from cash.services import build_cash_display_summary
 from debt.cash_ledger_flows import build_bank_cash_xirr_external_flows
+from debt.fd_attributed_income import build_fd_attributed_xirr_flows
 from debt.portfolio_value import (
     calculate_bank_cash_for_scope,
     calculate_fd_holdings_for_scope,
@@ -237,6 +238,12 @@ def _portfolio_xirr_inputs(
         )
         flow_parts.append((bank_flows, bank_flows_fx_missing))
 
+    if user is not None:
+        attr_flows, attr_fx_missing = build_fd_attributed_xirr_flows(
+            user, child_scope, calculation_currency=calc_ccy
+        )
+        flow_parts.append((attr_flows, attr_fx_missing))
+
     flows_by_date, flows_fx_missing = _merge_xirr_flow_maps(flow_parts)
 
     combined_fx_missing = (
@@ -293,6 +300,8 @@ def compute_scope_xirr_detail(
     BUY/SELL settlements excluded; terminal = holdings + broker cash + FD + bank.
     Included bank cash: manual deposits/withdrawals/opening balance are external flows;
     FD system movements are internal (FD-ACC-8C).
+    Portfolio-attributed FD net payout interest adds positive XIRR flows when the
+    receiving bank is excluded from scope PV (FD-PERF-2); skipped when bank included.
 
     All Portfolios: per-portfolio rules above; flows converted to ``display_currency``
     and merged by date. Legacy and cash-aware portfolios may be mixed.

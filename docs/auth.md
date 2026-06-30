@@ -100,4 +100,4 @@ All `/api/v1/*` portfolio/settings/transaction routes require authentication exc
 
 - Session cookies + `credentials: 'include'` on API fetches
 - `401` on protected APIs redirects to `/login`
-- Logout from sidebar
+- Logout from app header

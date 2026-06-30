@@ -69,4 +69,4 @@ Detailed metric pages in chapters 04–08 follow this structure:
 - [API design](../api-design.md) — analytics endpoints and response shapes
 - [Frontend design](../frontend-design.md) — Metric Sheet UI
 - [Architecture](../architecture.md) — Quantitative Statistics / Metric Sheet architecture
-- [AGENTS.md](../../AGENTS.md) — finance code must stay in `backend/finance/`
+- [AGENTS.md](../agents.md) — finance code must stay in `backend/finance/`

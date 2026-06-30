@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   createFixedDeposit,
   createFixedDepositInterestPayment,
@@ -9,10 +10,12 @@ import {
   FixedDepositApiError,
   fetchFixedDepositInterestPayments,
   fetchFixedDeposits,
+  fetchFixedDepositMaturityEstimate,
   fetchPortfolios,
   markFixedDepositMatured,
   renewFixedDeposit,
   reverseFixedDepositInterestPayment,
+  seedBankAccountHistoricalBalance,
   settleFixedDeposit,
   updateFixedDeposit,
 } from '../api';
@@ -31,7 +34,7 @@ import {
   CurrencyValue,
   StatusBadge,
 } from '../components/ui';
-import { fdPayoutLabel, fdStatusBadgeProps, fdStatusCounts } from '../utils/fdDisplay';
+import { fdPayoutLabel, fdStatusBadgeProps, fdStatusCounts, fdMaturityValueSourceBadgeProps, fdDisplayMaturityValue, fdDisplayTotalInterest, fdDisplayPeriodicInterest, fdDisplayMaturitySource, fdIsCompounded, fdIsPayout, FD_ESTIMATE_TYPE_COMPOUNDED, FD_ESTIMATE_TYPE_PAYOUT } from '../utils/fdDisplay';
 import FixedDepositInterestReport from '../components/FixedDepositInterestReport';
 import './FixedDeposits.css';
 
@@ -70,6 +73,9 @@ function emptyForm() {
     nominee_name: '',
     comment: '',
     status: 'ACTIVE',
+    maturity_value_override: false,
+    expected_maturity_value: '',
+    maturity_value_note: '',
   };
 }
 
@@ -95,6 +101,26 @@ function hasMisleadingManualBalance(bank) {
   return bank && !bankHasLedger(bank) && Number(bank.current_balance) > 0;
 }
 
+const FD_MATURITY_COMPOUNDED_NOTE =
+  'This is an estimate. Banks may use different rounding, day-count, or compounding rules. Final realized proceeds come from settlement/closure.';
+
+const FD_MATURITY_PAYOUT_NOTE =
+  'This is an estimate. Actual payout dates, rounding, tax withholding, and bank day-count rules can differ. Final interest payments are recorded separately when credited.';
+
+function maturityInputsComplete(form) {
+  const principal = parseFloat(form.principal_amount);
+  const rate = parseFloat(form.interest_rate_percent);
+  return (
+    Number.isFinite(principal) &&
+    principal > 0 &&
+    Number.isFinite(rate) &&
+    rate >= 0 &&
+    form.investment_date &&
+    form.maturity_date &&
+    form.interest_payout_frequency &&
+    form.maturity_date > form.investment_date
+  );
+}
 const FD_BALANCE_AS_OF_NOTE =
   'FD creation validates the selected bank account ledger balance as of the investment date, not today’s current balance.';
 
@@ -103,6 +129,12 @@ const FD_CASH_LEDGER_NOTE =
 
 const FD_BACKDATED_LEDGER_NOTE =
   'If this FD is backdated, make sure the opening balance or cash deposit is recorded on or before the FD investment date.';
+
+const FD_INVESTMENT_DATE_EDIT_NOTE =
+  'Changing investment date also moves the linked FD opening bank debit to the same date. Maturity estimate recalculates on save.';
+
+const FD_LEDGER_LOCKED_FIELDS_NOTE =
+  'Principal, currency, funding bank account, and portfolio cannot change after the FD opening debit is recorded. Dates, rate, payout, and nominee can be corrected.';
 
 const FD_BACKDATED_HINT =
   'For backdated FDs, record or seed bank cash on or before the investment date.';
@@ -127,6 +159,8 @@ function formatFdInsufficientErrorDetails(err) {
     shortfall: err.shortfall,
     currency: err.currency,
     investmentDate: err.investment_date,
+    suggestedSeedDate: err.suggested_seed_date,
+    suggestedSeedAmount: err.suggested_seed_amount,
     hint: err.hint,
   };
 }
@@ -147,24 +181,34 @@ function formatFdPortfolioErrorDetails(err) {
   };
 }
 
-function bankBlocksFdCreate(bank) {
-  if (!bank) return false;
-  const status = bank.portfolio_assignment_status;
-  return status === 'UNASSIGNED' || status === 'AMBIGUOUS';
+const FD_FUNDING_INTRO =
+  'Choose the portfolio that will track this FD and the bank account that will fund it.';
+
+const FD_FUNDING_NOTE =
+  'Bank accounts are external funding sources. Creating the FD debits the selected bank account and adds the FD to the selected portfolio.';
+
+const FD_SEED_DEFAULT_REASON = 'Historical balance seed for FD creation';
+
+const FD_SEED_EXPLANATION =
+  'This creates a bank cash movement only. It does not create the FD or affect portfolio holdings until you submit the FD.';
+
+function dayBeforeIsoDate(isoDate) {
+  if (!isoDate || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return isoDate || '';
+  const [year, month, day] = isoDate.split('-').map(Number);
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  utc.setUTCDate(utc.getUTCDate() - 1);
+  return utc.toISOString().slice(0, 10);
 }
 
-function bankPortfolioAssignmentMessage(bank) {
-  if (!bank) return '';
-  if (bank.portfolio_assignment_status === 'UNASSIGNED') {
-    return 'Assign this bank account to a portfolio in Bank Accounts before creating an FD.';
-  }
-  if (bank.portfolio_assignment_status === 'AMBIGUOUS') {
-    return 'This bank account is linked to multiple portfolios. Assign one portfolio in Bank Accounts before creating an FD.';
-  }
-  if (bank.portfolio_id && bank.portfolio_name) {
-    return `FD portfolio: ${bank.portfolio_name}, derived from selected bank account.`;
-  }
-  return '';
+function emptySeedForm(investmentDate, missingAmount, suggestedSeedDate) {
+  const defaultDate =
+    suggestedSeedDate || dayBeforeIsoDate(investmentDate) || investmentDate || '';
+  return {
+    date: defaultDate,
+    amount: missingAmount != null && Number.isFinite(missingAmount) ? String(missingAmount) : '',
+    reason: FD_SEED_DEFAULT_REASON,
+    note: '',
+  };
 }
 
 function emptyInterestForm() {
@@ -245,6 +289,7 @@ function emptySettlementForm(fd) {
 }
 
 export default function FixedDeposits() {
+  const navigate = useNavigate();
   const { apiQuery, settingsLoaded } = usePortfolio();
   const [items, setItems] = useState([]);
   const [portfolios, setPortfolios] = useState([]);
@@ -260,6 +305,13 @@ export default function FixedDeposits() {
   const [formErrorDetails, setFormErrorDetails] = useState(null);
   const [asOfBalanceInfo, setAsOfBalanceInfo] = useState(null);
   const [asOfBalanceLoading, setAsOfBalanceLoading] = useState(false);
+  const [seedPanelOpen, setSeedPanelOpen] = useState(false);
+  const [seedForm, setSeedForm] = useState(emptySeedForm());
+  const [seedSubmitting, setSeedSubmitting] = useState(false);
+  const [seedError, setSeedError] = useState('');
+  const [seedSuccessMessage, setSeedSuccessMessage] = useState('');
+  const [maturityPreview, setMaturityPreview] = useState(null);
+  const [maturityPreviewLoading, setMaturityPreviewLoading] = useState(false);
   const formErrorRef = useRef(null);
   const [interestFd, setInterestFd] = useState(null);
   const [interestForm, setInterestForm] = useState(emptyInterestForm);
@@ -319,22 +371,27 @@ export default function FixedDeposits() {
   const openCreate = () => {
     setEditing(null);
     const defaultBank = bankAccounts[0];
-    const derivedPortfolioId =
-      defaultBank?.portfolio_id != null ? String(defaultBank.portfolio_id) : '';
+    const defaultPortfolioId = portfolios[0]?.id != null ? String(portfolios[0].id) : '';
     setForm({
       ...emptyForm(),
-      portfolio_id: derivedPortfolioId,
+      portfolio_id: defaultPortfolioId,
       bank_account_id: defaultBank ? String(defaultBank.id) : '',
       currency: defaultBank?.currency || 'INR',
     });
     setFormError('');
     setFormErrorDetails(null);
     setAsOfBalanceInfo(null);
+    setSeedPanelOpen(false);
+    setSeedForm(emptySeedForm());
+    setSeedError('');
+    setSeedSuccessMessage('');
+    setMaturityPreview(null);
     setModalOpen(true);
   };
 
   const openEdit = (fd) => {
     setEditing(fd);
+    const userConfirmed = fd.maturity_value_source === 'USER_CONFIRMED';
     setForm({
       portfolio_id: String(fd.portfolio_id),
       bank_account_id: String(fd.bank_account_id),
@@ -349,9 +406,16 @@ export default function FixedDeposits() {
       nominee_name: fd.nominee_name || '',
       comment: fd.comment || '',
       status: fd.status || 'ACTIVE',
+      maturity_value_override: userConfirmed,
+      expected_maturity_value:
+        userConfirmed && fd.expected_maturity_value != null
+          ? String(fd.expected_maturity_value)
+          : '',
+      maturity_value_note: fd.maturity_value_note || '',
     });
     setFormError('');
     setFormErrorDetails(null);
+    setMaturityPreview(null);
     setModalOpen(true);
   };
 
@@ -361,10 +425,6 @@ export default function FixedDeposits() {
       ...prev,
       bank_account_id: bankId,
       currency: bank?.currency || prev.currency,
-      portfolio_id:
-        bank?.portfolio_id != null
-          ? String(bank.portfolio_id)
-          : '',
     }));
   };
 
@@ -373,7 +433,7 @@ export default function FixedDeposits() {
   );
 
   useEffect(() => {
-    if (!modalOpen || editing || !selectedBank?.id || !form.investment_date) {
+    if (!modalOpen || !selectedBank?.id || !form.investment_date) {
       setAsOfBalanceInfo(null);
       return undefined;
     }
@@ -392,7 +452,46 @@ export default function FixedDeposits() {
     return () => {
       cancelled = true;
     };
-  }, [modalOpen, editing, selectedBank?.id, form.investment_date]);
+  }, [modalOpen, selectedBank?.id, form.investment_date]);
+
+  useEffect(() => {
+    if (!modalOpen) {
+      setMaturityPreview(null);
+      return undefined;
+    }
+    if (!maturityInputsComplete(form)) {
+      setMaturityPreview(null);
+      return undefined;
+    }
+    let cancelled = false;
+    setMaturityPreviewLoading(true);
+    fetchFixedDepositMaturityEstimate({
+      principal_amount: form.principal_amount,
+      interest_rate_percent: form.interest_rate_percent,
+      interest_payout_frequency: form.interest_payout_frequency,
+      investment_date: form.investment_date,
+      maturity_date: form.maturity_date,
+    })
+      .then((data) => {
+        if (!cancelled) setMaturityPreview(data);
+      })
+      .catch(() => {
+        if (!cancelled) setMaturityPreview(null);
+      })
+      .finally(() => {
+        if (!cancelled) setMaturityPreviewLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    modalOpen,
+    form.principal_amount,
+    form.interest_rate_percent,
+    form.interest_payout_frequency,
+    form.investment_date,
+    form.maturity_date,
+  ]);
 
   useEffect(() => {
     if (!formError && !formErrorDetails) return;
@@ -402,7 +501,7 @@ export default function FixedDeposits() {
     node.focus({ preventScroll: true });
   }, [formError, formErrorDetails]);
 
-  const openingFieldsLocked = Boolean(editing?.has_opening_cash_movement);
+  const ledgerBackedFieldsLocked = Boolean(editing?.has_opening_cash_movement);
   const ledgerBalance = ledgerBalanceForFd(selectedBank);
   const asOfLedgerBalance =
     asOfBalanceInfo?.balance_as_of_date != null
@@ -411,12 +510,11 @@ export default function FixedDeposits() {
   const principalAmount = parseFloat(form.principal_amount);
   const createBlockedByUnseeded =
     !editing && selectedBank && needsOpeningBalanceSeed(selectedBank);
-  const createBlockedByBankPortfolio =
-    !editing && selectedBank && bankBlocksFdCreate(selectedBank);
+  const createBlockedByMissingPortfolio = !editing && portfolios.length === 0;
   const createBlockMessage = createBlockedByUnseeded
     ? 'Opening balance is not yet seeded into the cash ledger. Seed opening balance in Settings → Bank Accounts before creating a fixed deposit.'
-    : createBlockedByBankPortfolio
-      ? bankPortfolioAssignmentMessage(selectedBank)
+    : createBlockedByMissingPortfolio
+      ? 'Create a portfolio before adding an FD.'
       : '';
   const showAsOfShortfallWarning =
     !editing &&
@@ -426,12 +524,91 @@ export default function FixedDeposits() {
     asOfLedgerBalance != null &&
     asOfLedgerBalance < principalAmount;
 
+  const missingAmount = useMemo(() => {
+    if (!showAsOfShortfallWarning) return null;
+    return Math.max(0, principalAmount - asOfLedgerBalance);
+  }, [showAsOfShortfallWarning, principalAmount, asOfLedgerBalance]);
+
+  const showSeedOption =
+    !editing &&
+    selectedBank &&
+    !createBlockedByUnseeded &&
+    form.investment_date &&
+    missingAmount != null &&
+    missingAmount > 0;
+
+  const balanceSufficientAfterSeed =
+    !editing &&
+    selectedBank &&
+    Number.isFinite(principalAmount) &&
+    principalAmount > 0 &&
+    asOfLedgerBalance != null &&
+    asOfLedgerBalance >= principalAmount;
+
+  const refreshAsOfBalance = useCallback(async () => {
+    if (!selectedBank?.id) return;
+    const asOf = form.investment_date || undefined;
+    try {
+      const data = await fetchBankAccountBalance(selectedBank.id, asOf ? { as_of: asOf } : {});
+      setAsOfBalanceInfo(data);
+      const bankData = await fetchBankAccounts();
+      setBankAccounts(Array.isArray(bankData) ? bankData : []);
+    } catch {
+      setAsOfBalanceInfo(null);
+    }
+  }, [selectedBank?.id, form.investment_date]);
+
+  const openSeedPanel = () => {
+    const suggestedDate =
+      formErrorDetails?.suggestedSeedDate || dayBeforeIsoDate(form.investment_date);
+    const suggestedAmount = formErrorDetails?.suggestedSeedAmount ?? missingAmount;
+    setSeedForm(emptySeedForm(form.investment_date, suggestedAmount, suggestedDate));
+    setSeedError('');
+    setSeedSuccessMessage('');
+    setSeedPanelOpen(true);
+  };
+
+  const handleSeedSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedBank?.id || seedSubmitting) return;
+    setSeedSubmitting(true);
+    setSeedError('');
+    setSeedSuccessMessage('');
+    try {
+      const result = await seedBankAccountHistoricalBalance(selectedBank.id, {
+        date: seedForm.date,
+        amount: seedForm.amount,
+        reason: seedForm.reason.trim() || FD_SEED_DEFAULT_REASON,
+        note: seedForm.note.trim(),
+      });
+      const movement = result?.cash_movement;
+      const movementLabel = movement
+        ? `movement #${movement.id} on ${movement.movement_date} for ${formatMoneyAmount(movement.amount, result.currency)}`
+        : 'bank cash movement';
+      setSeedSuccessMessage(
+        `Historical balance seeded (${movementLabel}). Review the FD form and submit when ready.`
+      );
+      setSeedPanelOpen(false);
+      setFormError('');
+      setFormErrorDetails(null);
+      await refreshAsOfBalance();
+    } catch (err) {
+      setSeedError(err.message || 'Failed to seed bank balance.');
+    } finally {
+      setSeedSubmitting(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setFormError('');
     setFormErrorDetails(null);
-    if (createBlockedByUnseeded || createBlockedByBankPortfolio) {
+    if (createBlockedByUnseeded || createBlockedByMissingPortfolio) {
       setFormError(createBlockMessage);
+      return;
+    }
+    if (!editing && !form.portfolio_id) {
+      setFormError('Select the portfolio that should own this Fixed Deposit.');
       return;
     }
     setSubmitting(true);
@@ -451,11 +628,16 @@ export default function FixedDeposits() {
     };
     if (editing) {
       payload.portfolio_id = Number(form.portfolio_id);
-    } else if (
-      selectedBank?.portfolio_id != null &&
-      Number(form.portfolio_id) === selectedBank.portfolio_id
-    ) {
-      payload.portfolio_id = selectedBank.portfolio_id;
+    } else {
+      payload.portfolio_id = Number(form.portfolio_id);
+    }
+    if (form.maturity_value_override && form.expected_maturity_value) {
+      payload.expected_maturity_value = form.expected_maturity_value;
+      if (form.maturity_value_note.trim()) {
+        payload.maturity_value_note = form.maturity_value_note.trim();
+      }
+    } else if (editing) {
+      payload.use_auto_maturity_estimate = true;
     }
     try {
       if (editing) {
@@ -874,7 +1056,11 @@ export default function FixedDeposits() {
         title="Fixed Deposits"
         subtitle="Debt investments — principal-only portfolio value until settlement; proceeds credit bank cash only."
         actions={
-          <Button variant="primary" onClick={openCreate} disabled={bankAccounts.length === 0}>
+          <Button
+            variant="primary"
+            onClick={openCreate}
+            disabled={bankAccounts.length === 0 || portfolios.length === 0}
+          >
             Add fixed deposit
           </Button>
         }
@@ -883,7 +1069,14 @@ export default function FixedDeposits() {
       {bankAccounts.length === 0 ? (
         <WarningBanner
           severity="warning"
-          message="Add at least one active bank account in Settings before creating a fixed deposit."
+          message="Add a bank account before creating a bank-funded FD."
+        />
+      ) : null}
+
+      {portfolios.length === 0 ? (
+        <WarningBanner
+          severity="warning"
+          message="Create a portfolio before adding an FD."
         />
       ) : null}
 
@@ -951,17 +1144,35 @@ export default function FixedDeposits() {
                 <AppTableHeaderCell>Payout</AppTableHeaderCell>
                 <AppTableHeaderCell>Investment</AppTableHeaderCell>
                 <AppTableHeaderCell>Maturity</AppTableHeaderCell>
+                <AppTableHeaderCell numeric>Maturity value</AppTableHeaderCell>
                 <AppTableHeaderCell>Nominee</AppTableHeaderCell>
                 <AppTableHeaderCell>Status</AppTableHeaderCell>
-                <AppTableHeaderCell className="fd-table__actions-col">Actions</AppTableHeaderCell>
               </tr>
             </thead>
             <tbody>
               {items.map((fd) => {
                 const badge = fdStatusBadgeProps(fd.status);
+                const displayMaturityValue = fdDisplayMaturityValue(fd);
+                const displayTotalInterest = fdDisplayTotalInterest(fd);
+                const displayPeriodicInterest = fdDisplayPeriodicInterest(fd);
+                const displayMaturitySource = fdDisplayMaturitySource(fd);
+                const compoundedFd = fdIsCompounded(fd);
+                const payoutFd = fdIsPayout(fd);
                 return (
                   <Fragment key={fd.id}>
-                    <tr>
+                    <tr
+                      className="fd-table__data-row fd-table__data-row--clickable"
+                      onClick={() => navigate(`/fixed-deposits/${fd.id}`)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          navigate(`/fixed-deposits/${fd.id}`);
+                        }
+                      }}
+                      tabIndex={0}
+                      role="link"
+                      aria-label={`View fixed deposit ${fd.institution_name} ${fd.deposit_account_number}`}
+                    >
                       <AppTableCell>{fd.portfolio_name}</AppTableCell>
                       <AppTableCell>{fd.institution_name}</AppTableCell>
                       <AppTableCell className="fd-table__account">{fd.deposit_account_number}</AppTableCell>
@@ -974,71 +1185,132 @@ export default function FixedDeposits() {
                       <AppTableCell>{fdPayoutLabel(fd.interest_payout_frequency)}</AppTableCell>
                       <AppTableCell>{fd.investment_date}</AppTableCell>
                       <AppTableCell className="fd-table__maturity">{fd.maturity_date}</AppTableCell>
+                      <AppTableCell numeric className="fd-table__maturity-value">
+                        {displayMaturityValue != null ? (
+                          <>
+                            <CurrencyValue
+                              value={displayMaturityValue}
+                              currency={fd.currency}
+                            />
+                            {payoutFd ? (
+                              <div className="fd-table__maturity-sub">Principal returned</div>
+                            ) : null}
+                            {displayTotalInterest != null && displayTotalInterest > 0 ? (
+                              <div className="fd-table__maturity-sub">
+                                {payoutFd ? 'Est. total interest: ' : '+'}
+                                {formatMoneyAmount(displayTotalInterest, fd.currency)}
+                                {payoutFd ? '' : ' interest'}
+                              </div>
+                            ) : null}
+                            {payoutFd && displayPeriodicInterest != null ? (
+                              <div className="fd-table__maturity-sub">
+                                Est. {fdPayoutLabel(fd.interest_payout_frequency).toLowerCase()} payout:{' '}
+                                {formatMoneyAmount(displayPeriodicInterest, fd.currency)}
+                              </div>
+                            ) : null}
+                            <div className="fd-table__maturity-sub">
+                              {compoundedFd ? (
+                                <StatusBadge
+                                  {...fdMaturityValueSourceBadgeProps(displayMaturitySource, fd)}
+                                />
+                              ) : payoutFd ? (
+                                <StatusBadge
+                                  {...fdMaturityValueSourceBadgeProps(displayMaturitySource, fd)}
+                                />
+                              ) : null}
+                              {fd.maturity_estimate_method_label ? (
+                                <span className="fd-table__maturity-method">
+                                  {compoundedFd || payoutFd ? ' · ' : ''}
+                                  {fd.maturity_estimate_method_label}
+                                </span>
+                              ) : null}
+                            </div>
+                          </>
+                        ) : (
+                          <span
+                            className="fd-table__maturity-missing"
+                            title="Insufficient FD data or unsupported payout mode for estimate"
+                          >
+                            Not estimated
+                          </span>
+                        )}
+                      </AppTableCell>
                       <AppTableCell>{fd.nominee_name || '—'}</AppTableCell>
                       <AppTableCell>
                         <StatusBadge status={badge.status} label={badge.label} />
                       </AppTableCell>
-                      <AppTableCell className="fd-table__actions-col">
-                        <div className="fd-table__actions">
-                          {!isSettledFd(fd) ? (
+                    </tr>
+                    <tr
+                      className="fd-table__actions-row"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <td colSpan={13}>
+                        <div className="fd-action-strip" data-testid={`fd-action-strip-${fd.id}`}>
+                          <div className="fd-action-strip__group" aria-label="Common actions">
+                            {!isSettledFd(fd) ? (
+                              <Button
+                                variant="primary"
+                                type="button"
+                                onClick={() => openInterestModal(fd)}
+                              >
+                                Record interest
+                              </Button>
+                            ) : null}
                             <Button
                               variant="secondary"
                               type="button"
-                              onClick={() => openInterestModal(fd)}
+                              onClick={() => toggleInterestPayments(fd)}
                             >
-                              Record interest
+                              {expandedFdId === fd.id ? 'Hide payments' : 'Interest payments'}
                             </Button>
-                          ) : null}
-                          {canMarkMatured(fd) ? (
-                            <Button
-                              variant="secondary"
-                              type="button"
-                              onClick={() => handleMarkMatured(fd)}
-                              disabled={markingMaturedId === fd.id}
-                            >
-                              {markingMaturedId === fd.id ? 'Marking…' : 'Mark matured'}
+                          </div>
+                          <div className="fd-action-strip__group" aria-label="Lifecycle actions">
+                            {canMarkMatured(fd) ? (
+                              <Button
+                                variant="secondary"
+                                type="button"
+                                onClick={() => handleMarkMatured(fd)}
+                                disabled={markingMaturedId === fd.id}
+                              >
+                                {markingMaturedId === fd.id ? 'Marking…' : 'Mark matured'}
+                              </Button>
+                            ) : null}
+                            {canSettle(fd) ? (
+                              <Button
+                                variant="secondary"
+                                type="button"
+                                onClick={() => openSettlementModal(fd)}
+                              >
+                                {fd.status === 'MATURED' ? 'Settle' : 'Settle / Close'}
+                              </Button>
+                            ) : null}
+                            {canRenew(fd) ? (
+                              <Button
+                                variant="secondary"
+                                type="button"
+                                onClick={() => openRenewalModal(fd)}
+                              >
+                                Renew
+                              </Button>
+                            ) : null}
+                          </div>
+                          <div className="fd-action-strip__group" aria-label="Maintenance actions">
+                            <Button variant="secondary" type="button" onClick={() => openEdit(fd)}>
+                              Edit
                             </Button>
-                          ) : null}
-                          {canSettle(fd) ? (
-                            <Button
-                              variant="secondary"
-                              type="button"
-                              onClick={() => openSettlementModal(fd)}
-                            >
-                              {fd.status === 'MATURED' ? 'Settle' : 'Settle / Close'}
-                            </Button>
-                          ) : null}
-                          {canRenew(fd) ? (
-                            <Button
-                              variant="secondary"
-                              type="button"
-                              onClick={() => openRenewalModal(fd)}
-                            >
-                              Renew
-                            </Button>
-                          ) : null}
-                          <Button variant="secondary" type="button" onClick={() => openEdit(fd)}>
-                            Edit
-                          </Button>
-                          {canCancel(fd) ? (
-                            <Button variant="secondary" type="button" onClick={() => handleCancel(fd)}>
-                              Cancel FD
-                            </Button>
-                          ) : null}
-                          {canDeactivate(fd) ? (
-                            <Button variant="secondary" type="button" onClick={() => handleDeactivate(fd)}>
-                              Deactivate
-                            </Button>
-                          ) : null}
-                          <Button
-                            variant="secondary"
-                            type="button"
-                            onClick={() => toggleInterestPayments(fd)}
-                          >
-                            {expandedFdId === fd.id ? 'Hide payments' : 'Interest payments'}
-                          </Button>
+                            {canCancel(fd) ? (
+                              <Button variant="danger" type="button" onClick={() => handleCancel(fd)}>
+                                Cancel FD
+                              </Button>
+                            ) : null}
+                            {canDeactivate(fd) ? (
+                              <Button variant="secondary" type="button" onClick={() => handleDeactivate(fd)}>
+                                Deactivate
+                              </Button>
+                            ) : null}
+                          </div>
                         </div>
-                      </AppTableCell>
+                      </td>
                     </tr>
                     {expandedFdId === fd.id ? (
                       <tr key={`${fd.id}-payments`} className="fd-interest-payments-row">
@@ -1123,9 +1395,10 @@ export default function FixedDeposits() {
           >
             <h2 id="fd-modal-title">{editing ? 'Edit fixed deposit' : 'Add fixed deposit'}</h2>
             {!editing ? (
-              <p className="settings-hint fd-form__note">
-                Creating a fixed deposit will debit the principal from the linked bank account.
-              </p>
+              <>
+                <p className="settings-hint fd-form__note">{FD_FUNDING_INTRO}</p>
+                <p className="settings-hint fd-form__note">{FD_FUNDING_NOTE}</p>
+              </>
             ) : null}
             {formErrorDetails ? (
               <div
@@ -1157,6 +1430,18 @@ export default function FixedDeposits() {
                   {formErrorDetails.investmentDate ? (
                     <li>Investment date: {formErrorDetails.investmentDate}</li>
                   ) : null}
+                  {formErrorDetails.suggestedSeedDate ? (
+                    <li>Suggested seed date: {formErrorDetails.suggestedSeedDate}</li>
+                  ) : null}
+                  {formErrorDetails.suggestedSeedAmount != null ? (
+                    <li>
+                      Suggested seed amount:{' '}
+                      {formatMoneyAmount(
+                        formErrorDetails.suggestedSeedAmount,
+                        formErrorDetails.currency
+                      )}
+                    </li>
+                  ) : null}
                   {formErrorDetails.bankAccountPortfolioName ? (
                     <li>Bank account portfolio: {formErrorDetails.bankAccountPortfolioName}</li>
                   ) : null}
@@ -1174,54 +1459,172 @@ export default function FixedDeposits() {
             {!editing && createBlockedByUnseeded ? (
               <WarningBanner severity="warning" message={createBlockMessage} />
             ) : null}
-            {!editing && createBlockedByBankPortfolio ? (
+            {!editing && createBlockedByMissingPortfolio ? (
               <WarningBanner severity="warning" message={createBlockMessage} />
             ) : null}
-            {!editing && showAsOfShortfallWarning ? (
+            {!editing && balanceSufficientAfterSeed && seedSuccessMessage ? (
+              <WarningBanner severity="info" message="Balance is now sufficient. You can create the FD." />
+            ) : null}
+            {!editing && seedSuccessMessage ? (
+              <WarningBanner severity="info" message={seedSuccessMessage} className="fd-banner" />
+            ) : null}
+            {!editing && showSeedOption ? (
+              <div className="fd-form__seed-offer" aria-live="polite">
+                <WarningBanner
+                  severity="warning"
+                  message={`This bank account has insufficient balance on ${form.investment_date}. You can seed a historical bank balance before creating this FD.`}
+                />
+                <ul className="fd-form__error-details settings-hint">
+                  <li>
+                    Available as of {form.investment_date}:{' '}
+                    {formatMoneyAmount(asOfLedgerBalance, selectedBank?.currency)}
+                  </li>
+                  <li>
+                    Required FD principal:{' '}
+                    {formatMoneyAmount(principalAmount, selectedBank?.currency)}
+                  </li>
+                  <li>
+                    Missing amount: {formatMoneyAmount(missingAmount, selectedBank?.currency)}
+                  </li>
+                  <li>
+                    Suggested seed date: {dayBeforeIsoDate(form.investment_date)}
+                  </li>
+                </ul>
+                {!seedPanelOpen ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={openSeedPanel}
+                    disabled={seedSubmitting}
+                  >
+                    Seed missing balance
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+            {!editing && showAsOfShortfallWarning && !showSeedOption ? (
               <WarningBanner
                 severity="warning"
                 message={`Available as of ${form.investment_date} is ${formatMoneyAmount(asOfLedgerBalance, selectedBank?.currency)} — less than the principal ${formatMoneyAmount(principalAmount, selectedBank?.currency)}. ${FD_BACKDATED_HINT}`}
               />
             ) : null}
-            <form onSubmit={handleSubmit} className="fd-form">
-              <div className="form-group">
-                <label htmlFor="fd-portfolio">Portfolio</label>
-                {!editing && selectedBank?.portfolio_id ? (
-                  <>
+            {!editing && seedPanelOpen ? (
+              <div className="fd-form__seed-panel">
+                <h3>Seed historical bank balance</h3>
+                <p className="settings-hint">{FD_SEED_EXPLANATION}</p>
+                {seedError ? (
+                  <WarningBanner severity="error" message={seedError} className="fd-banner" />
+                ) : null}
+                <form onSubmit={handleSeedSubmit} className="fd-form fd-form--seed">
+                  <div className="form-group">
+                    <label htmlFor="fd-seed-bank">Bank account</label>
                     <input
-                      id="fd-portfolio"
+                      id="fd-seed-bank"
                       type="text"
                       readOnly
-                      value={selectedBank.portfolio_name || form.portfolio_id}
                       disabled
+                      value={
+                        selectedBank
+                          ? `${selectedBank.name} (${selectedBank.institution_name})`
+                          : ''
+                      }
                     />
-                    <p className="settings-hint">{bankPortfolioAssignmentMessage(selectedBank)}</p>
-                  </>
-                ) : (
-                  <select
-                    id="fd-portfolio"
-                    value={form.portfolio_id}
-                    onChange={(e) => setForm((p) => ({ ...p, portfolio_id: e.target.value }))}
-                    required
-                    disabled={openingFieldsLocked || (!editing && Boolean(selectedBank))}
-                  >
-                    <option value="">Select portfolio</option>
-                    {portfolios.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="fd-seed-date">Seed date</label>
+                    <input
+                      id="fd-seed-date"
+                      type="date"
+                      value={seedForm.date}
+                      onChange={(e) => setSeedForm((p) => ({ ...p, date: e.target.value }))}
+                      required
+                      disabled={seedSubmitting}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="fd-seed-amount">Seed amount</label>
+                    <input
+                      id="fd-seed-amount"
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={seedForm.amount}
+                      onChange={(e) => setSeedForm((p) => ({ ...p, amount: e.target.value }))}
+                      required
+                      disabled={seedSubmitting}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="fd-seed-reason">Source / reason</label>
+                    <input
+                      id="fd-seed-reason"
+                      value={seedForm.reason}
+                      onChange={(e) => setSeedForm((p) => ({ ...p, reason: e.target.value }))}
+                      required
+                      disabled={seedSubmitting}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="fd-seed-note">Note (optional)</label>
+                    <input
+                      id="fd-seed-note"
+                      value={seedForm.note}
+                      onChange={(e) => setSeedForm((p) => ({ ...p, note: e.target.value }))}
+                      disabled={seedSubmitting}
+                    />
+                  </div>
+                  <div className="fd-form__actions">
+                    <Button type="submit" variant="primary" disabled={seedSubmitting}>
+                      {seedSubmitting ? 'Seeding…' : 'Confirm seed'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        setSeedPanelOpen(false);
+                        setSeedError('');
+                      }}
+                      disabled={seedSubmitting}
+                    >
+                      Cancel seed
+                    </Button>
+                  </div>
+                </form>
+              </div>
+            ) : null}
+            <form onSubmit={handleSubmit} className="fd-form">
+              {editing && ledgerBackedFieldsLocked ? (
+                <WarningBanner
+                  severity="info"
+                  message={FD_LEDGER_LOCKED_FIELDS_NOTE}
+                  className="fd-banner"
+                />
+              ) : null}
+              <div className="form-group">
+                <label htmlFor="fd-portfolio">Portfolio to track this FD</label>
+                <select
+                  id="fd-portfolio"
+                  value={form.portfolio_id}
+                  onChange={(e) => setForm((p) => ({ ...p, portfolio_id: e.target.value }))}
+                  required
+                  disabled={ledgerBackedFieldsLocked || (!editing && portfolios.length === 0)}
+                >
+                  <option value="">Select portfolio</option>
+                  {portfolios.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="form-group">
-                <label htmlFor="fd-bank">Bank account</label>
+                <label htmlFor="fd-bank">Funding bank account</label>
                 <select
                   id="fd-bank"
                   value={form.bank_account_id}
                   onChange={(e) => onBankChange(e.target.value)}
                   required
-                  disabled={openingFieldsLocked}
+                  disabled={ledgerBackedFieldsLocked}
                 >
                   <option value="">Select bank account</option>
                   {bankAccounts.map((b) => (
@@ -1235,12 +1638,14 @@ export default function FixedDeposits() {
                     <p className="settings-hint">
                       Current ledger balance: {formatMoneyAmount(ledgerBalance, selectedBank.currency)}
                     </p>
-                    {!editing && form.investment_date ? (
+                    {form.investment_date ? (
                       <p className="settings-hint">
                         {asOfBalanceLoading
                           ? 'Loading available as of investment date…'
                           : asOfLedgerBalance != null
-                            ? `Available as of FD investment date (${form.investment_date}): ${formatMoneyAmount(asOfLedgerBalance, selectedBank.currency)}`
+                            ? editing
+                              ? `Funding balance as of ${form.investment_date}: ${formatMoneyAmount(asOfLedgerBalance, selectedBank.currency)}`
+                              : `Available as of FD investment date (${form.investment_date}): ${formatMoneyAmount(asOfLedgerBalance, selectedBank.currency)}`
                             : FD_BALANCE_AS_OF_NOTE}
                       </p>
                     ) : (
@@ -1293,12 +1698,12 @@ export default function FixedDeposits() {
                   value={form.principal_amount}
                   onChange={(e) => setForm((p) => ({ ...p, principal_amount: e.target.value }))}
                   required
-                  disabled={openingFieldsLocked}
+                  disabled={ledgerBackedFieldsLocked}
                 />
               </div>
               <div className="form-group">
                 <label htmlFor="fd-currency">Currency</label>
-                <input id="fd-currency" value={form.currency} readOnly disabled={openingFieldsLocked} />
+                <input id="fd-currency" value={form.currency} readOnly disabled={ledgerBackedFieldsLocked} />
               </div>
               <div className="form-group">
                 <label htmlFor="fd-rate">Interest rate (%)</label>
@@ -1336,8 +1741,10 @@ export default function FixedDeposits() {
                   value={form.investment_date}
                   onChange={(e) => setForm((p) => ({ ...p, investment_date: e.target.value }))}
                   required
-                  disabled={openingFieldsLocked}
                 />
+                {editing && ledgerBackedFieldsLocked ? (
+                  <p className="settings-hint">{FD_INVESTMENT_DATE_EDIT_NOTE}</p>
+                ) : null}
               </div>
               <div className="form-group">
                 <label htmlFor="fd-maturity">Maturity date</label>
@@ -1348,6 +1755,161 @@ export default function FixedDeposits() {
                   onChange={(e) => setForm((p) => ({ ...p, maturity_date: e.target.value }))}
                   required
                 />
+              </div>
+              <div className="fd-form__maturity-estimate">
+                <h3>
+                  {form.interest_payout_frequency === 'COMPOUNDED'
+                    ? 'Expected maturity value'
+                    : form.interest_payout_frequency
+                      ? 'Expected interest payout'
+                      : 'Expected maturity value'}
+                </h3>
+                {form.maturity_date && form.investment_date && form.maturity_date <= form.investment_date ? (
+                  <WarningBanner
+                    severity="warning"
+                    message="Maturity date must be after investment date to estimate maturity value."
+                    className="fd-banner"
+                  />
+                ) : maturityPreviewLoading ? (
+                  <p className="settings-hint">Calculating estimate…</p>
+                ) : maturityPreview?.estimated_maturity_value != null ? (
+                  <ul className="fd-form__error-details settings-hint">
+                    {maturityPreview.estimate_type === FD_ESTIMATE_TYPE_COMPOUNDED ? (
+                      <>
+                        <li>
+                          Estimated maturity value:{' '}
+                          {formatMoneyAmount(maturityPreview.estimated_maturity_value, form.currency)}
+                        </li>
+                        <li>
+                          Estimated interest:{' '}
+                          {formatMoneyAmount(
+                            maturityPreview.estimated_total_interest ??
+                              maturityPreview.estimated_interest,
+                            form.currency
+                          )}
+                        </li>
+                      </>
+                    ) : (
+                      <>
+                        <li>
+                          Maturity value (principal returned):{' '}
+                          {formatMoneyAmount(maturityPreview.estimated_maturity_value, form.currency)}
+                        </li>
+                        {maturityPreview.estimated_periodic_interest != null ? (
+                          <li>
+                            Estimated periodic interest ({fdPayoutLabel(form.interest_payout_frequency)}):{' '}
+                            {formatMoneyAmount(maturityPreview.estimated_periodic_interest, form.currency)}
+                          </li>
+                        ) : null}
+                        <li>
+                          Estimated total interest:{' '}
+                          {formatMoneyAmount(
+                            maturityPreview.estimated_total_interest ??
+                              maturityPreview.estimated_interest,
+                            form.currency
+                          )}
+                        </li>
+                      </>
+                    )}
+                    {maturityPreview.maturity_estimate_method_label ? (
+                      <li>Method: {maturityPreview.maturity_estimate_method_label}</li>
+                    ) : null}
+                  </ul>
+                ) : (
+                  <p className="settings-hint">
+                    Enter principal, rate, dates, and payout frequency to see an estimate.
+                  </p>
+                )}
+                <p className="settings-hint">
+                  {form.interest_payout_frequency === 'COMPOUNDED'
+                    ? FD_MATURITY_COMPOUNDED_NOTE
+                    : form.interest_payout_frequency
+                      ? FD_MATURITY_PAYOUT_NOTE
+                      : FD_MATURITY_COMPOUNDED_NOTE}
+                </p>
+                {form.interest_payout_frequency === 'COMPOUNDED' ? (
+                  <label className="fd-form__checkbox">
+                    <input
+                      type="checkbox"
+                      checked={form.maturity_value_override}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          maturity_value_override: e.target.checked,
+                          expected_maturity_value:
+                            e.target.checked && maturityPreview?.estimated_maturity_value != null
+                              ? String(maturityPreview.estimated_maturity_value)
+                              : p.expected_maturity_value,
+                        }))
+                      }
+                    />
+                    Use bank/institution maturity value
+                  </label>
+                ) : form.interest_payout_frequency ? (
+                  <label className="fd-form__checkbox">
+                    <input
+                      type="checkbox"
+                      checked={form.maturity_value_override}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          maturity_value_override: e.target.checked,
+                          expected_maturity_value:
+                            e.target.checked && form.principal_amount
+                              ? String(form.principal_amount)
+                              : p.expected_maturity_value,
+                        }))
+                      }
+                    />
+                    Confirm maturity principal/value (usually equals principal)
+                  </label>
+                ) : null}
+                {form.maturity_value_override ? (
+                  <>
+                    <div className="form-group">
+                      <label htmlFor="fd-expected-maturity">
+                        {form.interest_payout_frequency === 'COMPOUNDED'
+                          ? 'Confirmed maturity value'
+                          : 'Confirmed maturity principal/value'}
+                      </label>
+                      <input
+                        id="fd-expected-maturity"
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        value={form.expected_maturity_value}
+                        onChange={(e) =>
+                          setForm((p) => ({ ...p, expected_maturity_value: e.target.value }))
+                        }
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="fd-maturity-note">Maturity value note (optional)</label>
+                      <input
+                        id="fd-maturity-note"
+                        value={form.maturity_value_note}
+                        onChange={(e) =>
+                          setForm((p) => ({ ...p, maturity_value_note: e.target.value }))
+                        }
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() =>
+                        setForm((p) => ({
+                          ...p,
+                          maturity_value_override: false,
+                          expected_maturity_value: '',
+                          maturity_value_note: '',
+                        }))
+                      }
+                    >
+                      Use app estimate
+                    </Button>
+                  </>
+                ) : null}
               </div>
               <div className="form-group">
                 <label htmlFor="fd-nominee">Nominee</label>
@@ -1384,7 +1946,7 @@ export default function FixedDeposits() {
                 <Button
                   type="submit"
                   variant="primary"
-                  disabled={submitting || createBlockedByUnseeded || createBlockedByBankPortfolio}
+                  disabled={submitting || createBlockedByUnseeded || createBlockedByMissingPortfolio}
                 >
                   {submitting ? 'Saving…' : editing ? 'Save changes' : 'Create'}
                 </Button>

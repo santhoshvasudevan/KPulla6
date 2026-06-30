@@ -1,7 +1,7 @@
 # Cash Unification — Domain Model & Roadmap (CASH-UNIFY-0)
 
-**Status:** Design only (CASH-UNIFY-0) — **no runtime changes**.  
-**Last updated:** 2026-06-24
+**Status:** **Stabilized & closed** (MILESTONE-CLOSEOUT-1, 2026-06-26) — phases 0–4B, 4A, CASH-CORR-1A implemented and audited. FD-TAX-1/1A/2 complete.  
+**Last updated:** 2026-06-26
 
 **Related:** [cash-ledger.md](./cash-ledger.md) (broker cash) · [fixed-deposits-accounting.md](./fixed-deposits-accounting.md) (bank ledger) · [fixed-deposits.md](./fixed-deposits.md) · [architecture.md](./architecture.md) · [decisions.md](./decisions.md) · [product-rules.md](./product-rules.md)
 
@@ -51,7 +51,7 @@ Portfolio
 | Account type | Ledger | Linked to portfolio | Available for |
 |--------------|--------|---------------------|---------------|
 | **Broker cash account** | `CashLedgerEntry` | Always (required FK) | Securities/MF BUY/SELL settlement, deposits, withdrawals, inter-portfolio transfers |
-| **Bank account** | `CashMovement` | **Future:** explicit FK when used for investment activity | FD funding, interest, maturity, manual bank deposits/withdrawals |
+| **Bank account** | `CashMovement` | **Portfolio link** (`BankAccount.portfolio`, nullable) when used for investment tracking | FD funding, interest, maturity, manual bank deposits/withdrawals |
 | **Physical cash** | TBD | Optional future account type | Deferred — not in scope |
 
 ### 2.3 Naming glossary
@@ -60,7 +60,7 @@ Portfolio
 |------|---------|----------------|
 | **Broker Cash** / **Portfolio Cash** | Ledger balance from `CashLedgerEntry` for a portfolio | `/cash/balances`, Cash tab |
 | **Bank Cash** / **Bank Ledger** | Ledger balance from `CashMovement` for a `BankAccount` | Settings → Bank accounts; `/bank-accounts/{id}/balance` |
-| **Cash / Liquid Holdings** | Unified product concept — broker + bank cash at portfolio scope | **Future** Cash tab (CASH-UNIFY-3) |
+| **Cash / Liquid Holdings** | Unified product concept — broker + bank cash at portfolio scope | Cash tab (`/cash`) — **CASH-UNIFY-3** |
 | **Cash / Bank Cash** (allocation bucket) | Opt-in included bank ledger balance in summary allocation | `allocation_buckets` label (FD-ACC-7) |
 | **Other** (allocation bucket) | Portfolio broker cash totals today | Summary allocation |
 
@@ -93,7 +93,7 @@ Use **Broker Cash** vs **Bank Cash** in user-facing copy where distinction matte
 
 | Surface | Broker cash | Bank cash |
 |---------|-------------|-----------|
-| Cash tab (`/cash`) | Balances + ledger + writes | Not shown |
+| Cash tab (`/cash`) | Balances + ledger + broker writes + bank cash overview (read-only) | Settings → Bank accounts for movements |
 | Settings → Bank accounts | — | Movements + seed opening balance |
 | Summary `current_value` | Always (cash-aware / allocation) | Opt-in `include_in_portfolio_value` |
 | Holdings | Allocation slices (`Cash EUR`, etc.) | `asset_type=BANK_CASH` when included |
@@ -102,42 +102,89 @@ Use **Broker Cash** vs **Bank Cash** in user-facing copy where distinction matte
 
 ---
 
-## 4. Portfolio ownership (future rules)
+## 4. Bank account portfolio link
 
-### 4.1 Design intent
+### 4.1 Product model (refined — CASH-MODEL-REFINE-0)
 
-Bank accounts used for **investment activity** (FD funding, included bank cash in portfolio value) should be linked to **exactly one portfolio**.
+A **bank account** is an independent real-world cash account (user-scoped). It is **not owned by** a portfolio.
 
-| Rule | Detail |
-|------|--------|
-| **BankAccount.portfolio** | **Future field** (nullable). Required when account is flagged for investment use or when creating FDs. |
-| **FD portfolio derivation** | **Future:** `FixedDeposit.portfolio` defaults from `bank_account.portfolio` on create; user cannot silently pick a different portfolio. |
-| **Consistency** | FD portfolio must equal bank account portfolio when both are set. |
-| **Ambiguous accounts** | Accounts whose movements/FDs span multiple portfolios remain **unassigned** or **blocked from inclusion** until user resolves or portfolio-specific sub-balances exist (FD-ACC-7 conservative rule continues until then). |
-| **Non-investment bank accounts** | Salary/generic savings with no portfolio link remain user-scoped; optional `portfolio_id` on manual movements for reporting only (current behavior). |
+`BankAccount.portfolio` is the **cash visibility portfolio** / **display-under-portfolio-cash link**:
 
-### 4.2 Current state (post CASH-UNIFY-2)
+| State | Meaning | Cash page / overview behavior |
+|-------|---------|-------------------------------|
+| **Linked** (`portfolio` set) | Bank cash is attributed to that portfolio for **cash visibility** | Appears in portfolio-scoped **Bank Cash** when rules include it |
+| **Unlinked** (`portfolio` null) | External / unassigned bank cash | Not inside a single portfolio's Bank Cash; visible as unassigned via `include_unassigned` on overview |
+| **Ambiguous** (inference conflict) | Multiple portfolio signals on movements/FDs | Excluded from portfolio scope until user resolves link |
+
+**Link/delink rules:**
+
+- Linking or delinking changes **classification and portfolio inclusion only** — **no** `CashMovement` or `CashLedgerEntry` rows are created.
+- Bank ledger balance is unchanged; only which portfolio (if any) sees the cash as **Bank Cash** changes.
+- **Does not control FD creation** (CASH-MODEL-REFINE-1).
+
+### 4.1a FD funding source (refined — CASH-MODEL-REFINE-1)
+
+FD creation requires **one clear funding source**. The user picks **one** path per FD — **not** a split across ledgers.
+
+| Funding source | Ledger | Requirements | Runtime |
+|----------------|--------|--------------|---------|
+| **Bank account** | `CashMovement` — `FD_OPENING` debit | Explicit `bank_account_id`; sufficient bank ledger balance as of `investment_date`; bank link optional | **Implemented** (FD-ACC-3) |
+| **Broker cash** | `CashLedgerEntry` — broker withdrawal/settlement leg on selected portfolio | Sufficient broker cash in FD currency for selected portfolio | **Not implemented** — target model only |
+
+**Rules:**
+
+- **Partial bank + broker funding is not supported** for a single FD principal.
+- **FD portfolio** is the explicitly selected `portfolio_id` at create time — **not** derived from `BankAccount.portfolio`.
+- **Unlinked bank accounts** may fund FDs when `portfolio_id` and balance checks pass.
+- **Historical seed (FD-FUNDING-MODEL-1):** When as-of bank balance is insufficient for `investment_date`, user may `POST /bank-accounts/{id}/seed-balance` to create an explicit `MANUAL_DEPOSIT` before FD create. Seed does not create FD or portfolio holdings.
+- When broker-funded (future): portfolio is the selected portfolio; bank account may still be required for maturity proceeds routing — product detail TBD.
+- Choosing funding source is **not** link/delink and **not** transfer — it records which ledger supplies principal at create time.
+
+### 4.2 Three distinct operations (do not conflate)
+
+| Operation | What changes | Ledger writes | Phase |
+|-----------|--------------|---------------|-------|
+| **Link / delink** | `BankAccount.portfolio` FK; portfolio inclusion | **None** | CASH-UNIFY-4 |
+| **Transfer** | Actual cash moves between broker and bank ledgers | Paired legs (future) | CASH-UNIFY-5 (deferred) |
+| **Correction / reclassification** | Fix mistaken historical entry type/ledger | Audited reversal + correct entry; preserves trail | CASH-CORR-1 |
+
+| Concept | Changes balances? | Changes portfolio inclusion? | Example |
+|---------|-------------------|------------------------------|---------|
+| **Link / delink** | No | Yes | Assign bank account to IndianInvestments portfolio |
+| **Transfer** | Yes (both ledgers) | No by itself | Move ₹50k from bank to broker |
+| **Correction** | Yes (audited fix) | May indirectly | Broker deposit should have been bank deposit |
+
+Example: A manual broker deposit that should have been a bank deposit is **not** fixed by delinking the bank account — it needs **CASH-CORR-1** reclassification with audit trail.
+
+### 4.3 Current implementation (post CASH-UNIFY-2)
 
 - `BankAccount.portfolio` nullable FK exists; create/update API accepts `portfolio_id`.
 - `portfolio_assignment_status` on bank account reads: `ASSIGNED` / `UNASSIGNED` / `AMBIGUOUS` (from FK + FD/movement signals).
-- **FD create derives `FixedDeposit.portfolio` from `bank_account.portfolio`**; unassigned/ambiguous banks and conflicting `portfolio_id` are rejected (**400**).
+- **FD create (bank path only today):** Linked bank account + `FD_OPENING` on bank ledger; portfolio from bank link (CASH-UNIFY-2). Broker-cash FD funding **not implemented**.
 - Legacy FD rows with portfolio ≠ bank account portfolio remain readable; API exposes `portfolio_mismatch_warning` (no auto-rewrite).
 - FD-ACC-7 bank cash inclusion still uses movement/FD association inference when `portfolio` unset.
+- **Link/delink UX** — **Done (CASH-UNIFY-4):** Settings → Bank Accounts; `PUT` `portfolio_id` (set or null); no ledger writes; Cash overview inclusion follows link.
 
-### 4.3 Enforcement timeline
+### 4.4 Enforcement timeline
 
 | Phase | Behavior |
 |-------|----------|
-| **Today** | Independent FD/bank portfolio pick allowed; inclusion uses inference |
-| **CASH-UNIFY-1** | Add `BankAccount.portfolio` (nullable); read APIs expose ownership; inference backfill |
-| **CASH-UNIFY-2** | **Done** — FD create derives portfolio from bank account; validate match on write |
-| **CASH-UNIFY-3+** | UI reflects ownership; ambiguous accounts prompt assignment |
+| **CASH-UNIFY-1** | **Done** — `BankAccount.portfolio` FK; read APIs expose link status |
+| **CASH-UNIFY-2** | **Done** — FD create derives portfolio from linked bank account |
+| **CASH-UNIFY-3** | **Done** — Cash page shows Broker + Bank Cash separately |
+| **CASH-UNIFY-3A** | Cash page verification: correct row attribution, broker actions visible, source diagnostics |
+| **CASH-UNIFY-4** | **Done** — Link/delink UX; inclusion stabilization; terminology |
+| **CASH-UNIFY-4A** | **Done** — Final audit/stabilization; diagnostics command; docs/tests |
+| **CASH-CORR-1A** | **Done** — Safe broker cash reversal (opposite entry; bank unaffected) |
+| **CASH-CORR-1** | Broader reclassification for mistaken broker ↔ bank entries |
+| **CASH-UNIFY-5** | Actual broker ↔ bank transfer workflow (deferred) |
+| **FD-FUND-BROKER** | *Deferred* | Broker-cash-funded FD create (single-source; no partial split) |
 
 ---
 
-## 5. Future Cash tab — “Cash / Liquid Holdings”
+## 5. Cash tab — “Cash / Liquid Holdings” (**CASH-UNIFY-3 implemented**)
 
-**Target phase:** CASH-UNIFY-3 (backlog `004-cash-unify-3.md`). **Design only here** — no UI changes in CASH-UNIFY-0.
+**Implemented 2026-06-24.** Cash page consumes `GET /api/v1/cash/overview`; broker and bank ledgers remain separate.
 
 ### 5.1 Layout (proposed)
 
@@ -168,7 +215,7 @@ Bank accounts used for **investment activity** (FD funding, included bank cash i
 |-------------|-----------|
 | Funds available for **securities/MF** purchases (cash-aware mode) | Funds available for **FD** and bank-product workflows |
 | Managed on this page (deposits, withdrawals, ledger edit) | Movements managed in Settings (or deep-link) |
-| Per-portfolio | Per bank account; **future:** filtered by portfolio ownership |
+| Per-portfolio | Per bank account; filtered by **portfolio link** when set; unlinked = external/unassigned |
 
 ### 5.3 Out of scope for Cash tab redesign
 
@@ -193,8 +240,8 @@ When adding `BankAccount.portfolio` (nullable FK):
 
 ### 6.2 FD portfolio alignment (CASH-UNIFY-2 — implemented)
 
-- **New FDs:** `portfolio` derived from `bank_account.portfolio`; reject create if bank account unassigned/ambiguous or user-supplied portfolio differs.
-- **Existing FDs:** If FD.portfolio ≠ bank account portfolio, **do not auto-change**. Read-only `portfolio_mismatch_warning` in API; assign bank account in Settings → Bank Accounts.
+- **New FDs:** Require explicit `portfolio_id` and `bank_account_id`; portfolio is **not** derived from bank link (CASH-MODEL-REFINE-1).
+- **Existing FDs:** If FD.portfolio ≠ bank account cash visibility link, **do not auto-change**. Read-only `portfolio_mismatch_warning` in API.
 - **No automatic cash movements** during alignment — accounting history stays intact.
 
 ### 6.3 Safety checklist (all backfill phases)
@@ -229,10 +276,16 @@ These apply to **all** CASH-UNIFY implementation phases:
 | ID | Title | Backlog file | Depends on | Runtime |
 |----|-------|--------------|------------|---------|
 | **CASH-UNIFY-0** | Unified cash model design | [001-cash-unify-0.md](./backlog/001-cash-unify-0.md) | — | **Docs only** ✓ |
-| **CASH-UNIFY-1** | Bank account portfolio ownership + unified read API | [002-cash-unify-1.md](./backlog/002-cash-unify-1.md) | 001 | **Done** ✓ |
-| **CASH-UNIFY-2** | FD portfolio derived from bank account | [003-cash-unify-2.md](./backlog/003-cash-unify-2.md) | 002 | Write validation + backfill flags |
-| **CASH-UNIFY-3** | Unified Cash page UI | [004-cash-unify-3.md](./backlog/004-cash-unify-3.md) | 002 (overview API); 003 recommended | Frontend |
-| **CASH-UNIFY-4** | Terminology, display-currency totals, stabilization | [005-cash-unify-4.md](./backlog/005-cash-unify-4.md) | 003 | Read API + docs + tests |
+| **CASH-UNIFY-1** | Bank account portfolio link + unified read API | [002-cash-unify-1.md](./backlog/002-cash-unify-1.md) | 001 | **Done** ✓ |
+| **CASH-MODEL-REFINE-1** | FD create uses explicit portfolio; bank link optional for funding | — | 004 | **Done** ✓ |
+| **CASH-UNIFY-2** | ~~FD portfolio derived from bank account~~ superseded by CASH-MODEL-REFINE-1 | [003-cash-unify-2.md](./backlog/003-cash-unify-2.md) | 002 | **Superseded** |
+| **CASH-UNIFY-3** | Unified Cash page UI | [004-cash-unify-3.md](./backlog/004-cash-unify-3.md) | 002 (overview API); 003 recommended | **Done** ✓ |
+| **CASH-UNIFY-3A** | Cash page verification & attribution fix | [004a-cash-unify-3a.md](./backlog/004a-cash-unify-3a.md) | 004 | **Done** ✓ |
+| **CASH-UNIFY-4** | Bank account link/delink UX + inclusion stabilization | [005-cash-unify-4.md](./backlog/005-cash-unify-4.md) | 004, 004a | **Done** ✓ |
+| **CASH-UNIFY-4B** | Bank link modal + display currency auto-select | *(in-repo hotfix)* | 005 | **Done** ✓ |
+| **CASH-UNIFY-4A** | Final audit + `cash_overview_diagnostics` | *(in-repo)* | 005 | **Done** ✓ |
+| **CASH-CORR-1A** | Safe broker cash reversal | *(in-repo)* | 004a | **Done** ✓ |
+| **CASH-CORR-1** | Cross-ledger reclassification + reconciliation API | [012-cash-corr-1.md](./backlog/012-cash-corr-1.md) | 004, 005 (recommended) | **Partial** — 1A done; broader reclassification open |
 | **CASH-UNIFY-5** | Broker ↔ bank transfer workflow | *Deferred* | 004 | Optional future epic |
 | **CASH-UNIFY-6** | Physical / offline cash account | *Deferred* | — | Optional future account type |
 
@@ -246,32 +299,60 @@ These apply to **all** CASH-UNIFY implementation phases:
 - Bank account APIs expose `portfolio_id`, assignment status.
 - Document in `api-design.md`; `fetchCashOverview` in `api.js` (no page UI required).
 
-**CASH-UNIFY-2 — FD portfolio derived from bank account**
+**CASH-UNIFY-2 — FD portfolio derived from bank account (implemented 2026-06-24)**
 
 - FD create: set `portfolio` from `bank_account.portfolio`; reject mismatch/unassigned bank account.
-- FD create UI: portfolio field read-only or hidden when bank account selected.
+- FD create UI: portfolio field read-only when bank account selected.
 - Existing FD mismatch → warning, no silent rewrite.
-- Tests for create validation and inference edge cases.
+- **Runtime:** linked-bank funding only (`FD_OPENING`); broker-funded FD deferred (FD-FUND-BROKER).
 
-**CASH-UNIFY-3 — Unified Cash page UI**
+**CASH-UNIFY-3 — Unified Cash page UI (implemented 2026-06-24)**
 
 - Cash page sections: Broker Cash, Bank Cash, Total Cash (§5).
-- Consume overview API; preserve existing broker write flows.
+- Consumes overview API; preserves existing broker write flows.
 - Links to Settings for bank movement management.
 - Vitest updates; `page-layouts.md` / `frontend-design.md`.
+- **Follow-up:** CASH-UNIFY-3A for manual verification issues (swapped values, broker actions visibility).
 
-**CASH-UNIFY-4 — Terminology, display-currency, stabilization**
+**CASH-UNIFY-3A — Cash page verification & attribution fix (implemented 2026-06-25)**
 
-- Display-currency converted totals on overview + Cash page (cached FX; warnings when unavailable).
-- Allocation/summary copy: clarify Broker vs Bank Cash buckets.
-- Regression tests (`make test-critical`); docs audit; epic changelog closure.
-- Resolve MVP deferred item: “Display-currency cash totals on `/cash`”.
+- Fixed Broker/Bank row attribution: UI filters overview rows on `ledger_type`; KPIs use `totals.broker_cash*` / `totals.bank_cash*` only (no `/cash/balances` fallback).
+- Per-row **source** diagnostics: `cash_ledger_entries` (broker) vs `cash_movements` (bank).
+- **Broker Cash actions** visible in page header (deposit, withdrawal, bulk, transfer).
+- Bank Cash read-only; always-on **Show unassigned / ambiguous bank accounts** toggle.
+- IndianInvestments regression covered in tests (broker 0, bank ~1.1M INR).
+- Correction/reclassification deferred to CASH-CORR-1; broker-funded FD deferred.
+
+**CASH-UNIFY-4 — Bank account link/delink + stabilization (implemented 2026-06-26)**
+
+- Clear **link/delink** UX in Settings → Bank Accounts (`BankAccount.portfolio` as current link).
+- Link/delink changes inclusion only — no ledger movements.
+- Linked bank cash in portfolio Cash holdings; delinked as external/unassigned.
+- Display-currency totals and terminology cleanup (cached FX only).
+
+**CASH-UNIFY-4B — Bank link modal + display currency (implemented 2026-06-26)**
+
+- Link/change-link opens dedicated modal; portfolio switch auto-selects supported `base_currency`; All Portfolios preserves current display currency.
+
+**CASH-UNIFY-4A — Audit + diagnostics (implemented 2026-06-26)**
+
+- Read-only `cash_overview_diagnostics` command; final stream stabilization (MILESTONE-CLOSEOUT-1).
+
+**CASH-CORR-1A — Safe broker cash reversal (implemented 2026-06-26)**
+
+- `POST /api/v1/cash/ledger/{id}/reverse` + management command `reverse_broker_cash_entry` (dry-run default).
+- Opposite broker entry with audit link; original preserved; bank ledger untouched.
+- Example: IndianInvestments broker deposit #103 (+1,109,389 INR) duplicated bank `CashMovement` #2 — reverse broker row only; link HDFC to portfolio deferred to CASH-UNIFY-4.
+
+**CASH-CORR-1 — Safe cash reclassification**
+
+- Audited correction for mistaken entries (e.g. broker deposit → should be bank deposit).
+- Preserves audit trail; no silent rewrite.
 
 **CASH-UNIFY-5 — Broker ↔ bank transfer (deferred)**
 
-- Product decision: user-initiated paired legs (bank withdrawal + broker deposit) or manual double-entry guidance only.
-- Likely overlaps [CASH-CORR-1](./backlog/012-cash-corr-1.md) reconciliation UX.
-- **Not scheduled** in current backlog index.
+- User-initiated **actual** cash movement between ledgers (paired legs or guided double-entry).
+- Distinct from link/delink (classification only).
 
 **CASH-UNIFY-6 — Physical cash account (deferred)**
 
@@ -287,6 +368,7 @@ These apply to **all** CASH-UNIFY implementation phases:
 | Bank account portfolio inference | `backend/debt/bank_account_portfolio.py` |
 | Inference command | `backend/debt/management/commands/infer_bank_account_portfolios.py` |
 | Cash overview service | `backend/cash/overview_service.py` |
+| Cash overview diagnostics | `backend/cash/management/commands/cash_overview_diagnostics.py` |
 | Broker ledger model | `backend/cash/models.py` — `CashLedgerEntry` |
 | Bank ledger model | `backend/debt/models.py` — `CashMovement`, `BankAccount` |
 | FD create + opening debit | `backend/debt/services.py`, `backend/debt/bank_ledger_services.py` |
@@ -299,15 +381,17 @@ These apply to **all** CASH-UNIFY implementation phases:
 
 ---
 
-## 10. Open questions (deferred to implementation phases)
+## 10. Open questions (resolved or deferred)
 
-| Question | Deferred to |
-|----------|-------------|
-| Required vs optional `BankAccount.portfolio` for non-FD accounts | CASH-UNIFY-1 product review |
-| Block FD create vs warn when bank account unassigned | CASH-UNIFY-2 |
-| Display-currency total when partial FX unavailable | CASH-UNIFY-4 |
-| Paired broker-bank transfer API shape | CASH-UNIFY-5 |
-| Portfolio-specific bank sub-balances for multi-portfolio accounts | Post CASH-UNIFY-4 / CASH-CORR-1 |
+| Question | Resolution |
+|----------|------------|
+| Required vs optional `BankAccount.portfolio` for non-FD accounts | **Resolved (CASH-UNIFY-1/4):** nullable link; user assigns via Settings |
+| Block FD create vs warn when bank account unassigned | **Resolved (CASH-UNIFY-2):** create blocked (**400**) until linked |
+| Display-currency total when partial FX unavailable | **Resolved (CASH-UNIFY-4):** partial totals + warnings; cached FX only |
+| Paired broker-bank transfer API shape | **Deferred:** CASH-UNIFY-5 |
+| Portfolio-specific bank sub-balances for multi-portfolio accounts | **Deferred:** post CASH-CORR-1 |
+| Broker-cash-funded FD create | **Deferred:** FD-FUND-BROKER |
+| FD interest/tax CSV export | **Resolved (FD-TAX-2):** `GET .../export.csv` |
 
 ---
 

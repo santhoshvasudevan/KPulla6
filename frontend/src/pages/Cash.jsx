@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
-  fetchCashBalances,
+  fetchCashOverview,
   fetchCashLedger,
   createCashDeposit,
   createCashWithdrawal,
   createCashTransfer,
   updateCashLedgerEntry,
   deleteCashLedgerEntry,
+  reverseCashLedgerEntry,
   CashApiError,
 } from '../api';
 import { usePortfolio } from '../portfolioContext';
@@ -16,9 +18,10 @@ import {
   cashEntryBadgeStatus,
   cashEntryTypeLabel,
   isManualEditableCashEntry,
+  isReversibleManualCashEntry,
   LEDGER_ENTRY_TYPE_OPTIONS,
 } from '../utils/cashDisplay';
-import { Edit2, Trash2 } from 'lucide-react';
+import { Edit2, Trash2, Undo2 } from 'lucide-react';
 import {
   PageHeader,
   AppCard,
@@ -43,6 +46,44 @@ import '../components/TransactionModal.css';
 import './Cash.css';
 
 const LEDGER_PAGE_SIZE = 20;
+
+const SOURCE_LABELS = {
+  cash_ledger_entries: 'Broker cash ledger (CashLedgerEntry)',
+  cash_movements: 'Bank account ledger (CashMovement)',
+};
+
+function assignmentStatusBadgeProps(status) {
+  switch (status) {
+    case 'ASSIGNED':
+      return { status: 'ok', label: 'Assigned' };
+    case 'UNASSIGNED':
+      return { status: 'warning', label: 'Unassigned' };
+    case 'AMBIGUOUS':
+      return { status: 'warning', label: 'Ambiguous' };
+    default:
+      return { status: 'neutral', label: status || '—' };
+  }
+}
+
+function ledgerTypeLabel(ledgerType) {
+  if (ledgerType === 'BROKER_CASH') return 'Broker Cash';
+  if (ledgerType === 'BANK_CASH') return 'Bank Cash';
+  return ledgerType || '—';
+}
+
+function sourceLabel(source) {
+  return SOURCE_LABELS[source] || source || '—';
+}
+
+function displayBalanceCell(row, displayCurrency) {
+  if (!displayCurrency) return null;
+  if (row.balance_display == null) {
+    return <span className="cash-page__display-unavailable">—</span>;
+  }
+  return (
+    <CurrencyValue value={row.balance_display} currency={displayCurrency} />
+  );
+}
 
 function emptyEntryForm(defaultPortfolioId = '') {
   return {
@@ -703,6 +744,106 @@ function CashEntryModal({
   );
 }
 
+function CashReverseModal({ open, onClose, entry, onSuccess }) {
+  const [reversalDate, setReversalDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [reason, setReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    setReversalDate(new Date().toISOString().split('T')[0]);
+    setReason('');
+    setError('');
+    setSubmitting(false);
+  }, [open, entry]);
+
+  if (!open || !entry) return null;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!reason.trim()) {
+      setError('Enter a reason for the reversal.');
+      return;
+    }
+    const confirmed = window.confirm(
+      'Create an opposite broker cash entry to reverse this row? The original entry will be kept for audit. Bank cash is not affected.'
+    );
+    if (!confirmed) return;
+
+    setSubmitting(true);
+    try {
+      await reverseCashLedgerEntry(entry.id, {
+        reversal_date: reversalDate,
+        reason: reason.trim(),
+      });
+      onSuccess('Broker cash entry reversed.');
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Could not reverse cash entry.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" role="presentation" onClick={onClose}>
+      <div
+        className="modal-content cash-entry-modal cash-reverse-modal"
+        role="dialog"
+        aria-labelledby="cash-reverse-modal-title"
+        onClick={(ev) => ev.stopPropagation()}
+      >
+        <h3 id="cash-reverse-modal-title">Reverse broker cash entry</h3>
+        <p className="cash-reverse-modal__intro">
+          This creates an opposite broker cash entry. It does not affect bank cash.
+          The original entry is preserved for audit.
+        </p>
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label>Entry</label>
+            <p>
+              {cashEntryTypeLabel(entry.entry_type)} ·{' '}
+              <CurrencyValue value={entry.amount} currency={entry.currency} /> · {entry.date}
+            </p>
+          </div>
+          <div className="form-group">
+            <label htmlFor="cash-reverse-date">Reversal date</label>
+            <input
+              id="cash-reverse-date"
+              type="date"
+              value={reversalDate}
+              onChange={(e) => setReversalDate(e.target.value)}
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="cash-reverse-reason">Reason</label>
+            <textarea
+              id="cash-reverse-reason"
+              rows={3}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Required for audit"
+              required
+            />
+          </div>
+          {error ? <p className="cash-entry-modal__error">{error}</p> : null}
+          <div className="cash-entry-modal__actions">
+            <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" disabled={submitting}>
+              {submitting ? 'Reversing…' : 'Reverse entry'}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function Cash() {
   const {
     apiQuery,
@@ -718,20 +859,22 @@ export default function Cash() {
     [portfolios]
   );
 
-  const [balancesData, setBalancesData] = useState(null);
+  const [overviewData, setOverviewData] = useState(null);
   const [ledgerData, setLedgerData] = useState(null);
-  const [balancesLoading, setBalancesLoading] = useState(true);
+  const [overviewLoading, setOverviewLoading] = useState(true);
   const [ledgerLoading, setLedgerLoading] = useState(true);
-  const [balancesError, setBalancesError] = useState('');
+  const [overviewError, setOverviewError] = useState('');
   const [ledgerError, setLedgerError] = useState('');
   const [ledgerFutureImpact, setLedgerFutureImpact] = useState(null);
   const [statusMessage, setStatusMessage] = useState('');
+  const [includeUnassigned, setIncludeUnassigned] = useState(false);
 
   const [depositOpen, setDepositOpen] = useState(false);
   const [withdrawalOpen, setWithdrawalOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState(null);
+  const [reversingEntry, setReversingEntry] = useState(null);
 
   const [filterCurrency, setFilterCurrency] = useState('');
   const [filterEntryType, setFilterEntryType] = useState('');
@@ -750,6 +893,14 @@ export default function Cash() {
     return apiQuery;
   }, [apiQuery]);
 
+  const overviewQueryParams = useMemo(() => {
+    if (!cashQueryParams) return null;
+    return {
+      ...cashQueryParams,
+      include_unassigned: includeUnassigned || undefined,
+    };
+  }, [cashQueryParams, includeUnassigned]);
+
   const ledgerFilters = useMemo(
     () => ({
       currency: filterCurrency || undefined,
@@ -763,22 +914,22 @@ export default function Cash() {
   const dateRangeInvalid =
     filterDateFrom && filterDateTo && filterDateFrom > filterDateTo;
 
-  const loadBalances = useCallback(() => {
-    if (!cashQueryParams) return Promise.resolve(null);
-    setBalancesLoading(true);
-    setBalancesError('');
-    return fetchCashBalances(cashQueryParams)
+  const loadOverview = useCallback(() => {
+    if (!overviewQueryParams) return Promise.resolve(null);
+    setOverviewLoading(true);
+    setOverviewError('');
+    return fetchCashOverview(overviewQueryParams)
       .then((data) => {
-        setBalancesData(data);
-        setBalancesLoading(false);
+        setOverviewData(data);
+        setOverviewLoading(false);
         return data;
       })
       .catch((err) => {
-        setBalancesError(err.message);
-        setBalancesLoading(false);
+        setOverviewError(err.message);
+        setOverviewLoading(false);
         throw err;
       });
-  }, [cashQueryParams]);
+  }, [overviewQueryParams]);
 
   const loadLedger = useCallback(
     (page = ledgerPage) => {
@@ -806,29 +957,29 @@ export default function Cash() {
   );
 
   const refreshAll = useCallback(() => {
-    return Promise.all([loadBalances(), loadLedger(ledgerPage)]);
-  }, [loadBalances, loadLedger, ledgerPage]);
+    return Promise.all([loadOverview(), loadLedger(ledgerPage)]);
+  }, [loadOverview, loadLedger, ledgerPage]);
 
   useEffect(() => {
-    if (!settingsLoaded || !cashQueryParams) return undefined;
+    if (!settingsLoaded || !overviewQueryParams) return undefined;
     let cancelled = false;
-    setBalancesLoading(true);
-    fetchCashBalances(cashQueryParams)
+    setOverviewLoading(true);
+    fetchCashOverview(overviewQueryParams)
       .then((data) => {
         if (cancelled) return;
-        setBalancesData(data);
-        setBalancesLoading(false);
-        setBalancesError('');
+        setOverviewData(data);
+        setOverviewLoading(false);
+        setOverviewError('');
       })
       .catch((err) => {
         if (cancelled) return;
-        setBalancesError(err.message);
-        setBalancesLoading(false);
+        setOverviewError(err.message);
+        setOverviewLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [cashQueryParams, settingsLoaded]);
+  }, [overviewQueryParams, settingsLoaded]);
 
   useEffect(() => {
     if (!settingsLoaded || !cashQueryParams || dateRangeInvalid) {
@@ -911,60 +1062,210 @@ export default function Cash() {
     setEditingEntry(null);
   };
 
-  const balanceRows = balancesData?.balances ?? [];
-  const totalsByCurrency = balancesData?.totals_by_currency ?? [];
-  const showPortfolioColumn = isAllScope || balancesData?.portfolio_scope === 'all';
+  const brokerRows = useMemo(
+    () => (overviewData?.rows ?? []).filter((row) => row.ledger_type === 'BROKER_CASH'),
+    [overviewData]
+  );
+  const bankRows = useMemo(
+    () => (overviewData?.rows ?? []).filter((row) => row.ledger_type === 'BANK_CASH'),
+    [overviewData]
+  );
+  const overviewTotals = overviewData?.totals ?? {};
+  const overviewWarnings = overviewData?.warnings ?? [];
+  const displayCurrency =
+    overviewData?.display_currency || overviewTotals.display_currency || null;
+  const fxStatus = overviewTotals.fx_status;
+  const excludedUnassigned = overviewData?.excluded_unassigned_bank_account_count ?? 0;
+  const excludedAmbiguous = overviewData?.excluded_ambiguous_bank_account_count ?? 0;
+  const showPortfolioColumn = isAllScope || overviewData?.portfolio_scope === 'all';
   const ledgerItems = ledgerData?.items ?? [];
   const ledgerPages = ledgerData?.pages ?? 1;
+  const hasAnyCashRows = brokerRows.length > 0 || bankRows.length > 0;
 
-  const balanceOverviewCards = useMemo(() => {
-    if (totalsByCurrency.length > 0) {
-      return totalsByCurrency.map((row) => ({
-        key: row.currency,
-        label: isAllScope ? `Total ${row.currency}` : `${row.currency} balance`,
-        value: <CurrencyValue value={row.balance} currency={row.currency} />,
-        helperText: isAllScope ? 'Across active portfolios' : selectedPortfolioName || 'Selected portfolio',
-      }));
+  const overviewKpiCards = useMemo(() => {
+    if (!overviewData) return [];
+    const helperSuffix = displayCurrency ? ` (${displayCurrency})` : '';
+    const fxHelper =
+      fxStatus && fxStatus !== 'ok'
+        ? 'Display total may be incomplete — missing FX'
+        : displayCurrency
+          ? `Converted using cached FX as of ${overviewTotals.as_of_date || overviewData.as_of_date || 'today'}`
+          : 'Native balances — not converted';
+
+    if (displayCurrency && overviewTotals.total_cash_display != null) {
+      return [
+        {
+          key: 'total',
+          label: `Total Cash${helperSuffix}`,
+          value: (
+            <CurrencyValue
+              value={overviewTotals.total_cash_display}
+              currency={displayCurrency}
+            />
+          ),
+          helperText: fxHelper,
+        },
+        {
+          key: 'broker',
+          label: `Broker Cash${helperSuffix}`,
+          value:
+            overviewTotals.broker_cash_display != null ? (
+              <CurrencyValue
+                value={overviewTotals.broker_cash_display}
+                currency={displayCurrency}
+              />
+            ) : (
+              '—'
+            ),
+          helperText: 'Portfolio broker ledger',
+        },
+        {
+          key: 'bank',
+          label: `Bank Cash${helperSuffix}`,
+          value:
+            overviewTotals.bank_cash_display != null ? (
+              <CurrencyValue
+                value={overviewTotals.bank_cash_display}
+                currency={displayCurrency}
+              />
+            ) : (
+              '—'
+            ),
+          helperText: 'Linked bank accounts',
+        },
+      ];
     }
-    if (balanceRows.length > 0 && !isAllScope) {
-      return balanceRows.map((row) => ({
-        key: row.currency,
-        label: `${row.currency} balance`,
-        value: <CurrencyValue value={row.balance} currency={row.currency} />,
-        helperText: selectedPortfolioName || 'Selected portfolio',
-      }));
+
+    const byCurrency = overviewTotals.by_currency ?? [];
+    if (byCurrency.length === 1) {
+      const row = byCurrency[0];
+      return [
+        {
+          key: 'total',
+          label: `Total Cash (${row.currency})`,
+          value: <CurrencyValue value={row.total_cash} currency={row.currency} />,
+          helperText: 'Native balance',
+        },
+        {
+          key: 'broker',
+          label: `Broker Cash (${row.currency})`,
+          value: <CurrencyValue value={row.broker_cash} currency={row.currency} />,
+          helperText: 'Portfolio broker ledger',
+        },
+        {
+          key: 'bank',
+          label: `Bank Cash (${row.currency})`,
+          value: <CurrencyValue value={row.bank_cash} currency={row.currency} />,
+          helperText: 'Linked bank accounts',
+        },
+      ];
     }
-    return [];
-  }, [totalsByCurrency, balanceRows, isAllScope, selectedPortfolioName]);
+
+    return byCurrency.map((row) => ({
+      key: row.currency,
+      label: `Total Cash (${row.currency})`,
+      value: <CurrencyValue value={row.total_cash} currency={row.currency} />,
+      helperText: `Broker ${row.broker_cash.toLocaleString()} · Bank ${row.bank_cash.toLocaleString()}`,
+    }));
+  }, [overviewData, overviewTotals, displayCurrency, fxStatus]);
 
   if (!settingsLoaded) {
     return <LoadingState message="Loading cash…" />;
   }
 
-  const renderBalancesTable = () => (
+  const renderBrokerCashTable = () => (
     <AppTable compact className="cash-balances-table">
       <thead>
         <tr>
           {showPortfolioColumn ? <AppTableHeaderCell>Portfolio</AppTableHeaderCell> : null}
+          <AppTableHeaderCell>Ledger type</AppTableHeaderCell>
+          <AppTableHeaderCell>Account / Label</AppTableHeaderCell>
           <AppTableHeaderCell>Currency</AppTableHeaderCell>
           <AppTableHeaderCell numeric>Balance</AppTableHeaderCell>
+          {displayCurrency ? (
+            <AppTableHeaderCell numeric>Display balance ({displayCurrency})</AppTableHeaderCell>
+          ) : null}
+          <AppTableHeaderCell>Available for</AppTableHeaderCell>
+          <AppTableHeaderCell>Source</AppTableHeaderCell>
         </tr>
       </thead>
       <tbody>
-        {balanceRows.map((row) => {
+        {brokerRows.map((row) => {
           const key = showPortfolioColumn
             ? `${row.portfolio_id}-${row.currency}`
             : row.currency;
           const portfolioLabel =
             row.portfolio_name ||
-            (row.portfolio_id != null ? `#${row.portfolio_id}` : '');
+            (row.portfolio_id != null ? `#${row.portfolio_id}` : '—');
           return (
             <tr key={key}>
               {showPortfolioColumn ? <AppTableCell>{portfolioLabel}</AppTableCell> : null}
+              <AppTableCell>{ledgerTypeLabel(row.ledger_type)}</AppTableCell>
+              <AppTableCell>{row.account_label || 'Broker Cash'}</AppTableCell>
               <AppTableCell>{row.currency}</AppTableCell>
               <AppTableCell numeric>
                 <CurrencyValue value={row.balance} currency={row.currency} />
               </AppTableCell>
+              {displayCurrency ? (
+                <AppTableCell numeric>{displayBalanceCell(row, displayCurrency)}</AppTableCell>
+              ) : null}
+              <AppTableCell>{row.available_for || '—'}</AppTableCell>
+              <AppTableCell className="cash-page__source-cell">{sourceLabel(row.source)}</AppTableCell>
+            </tr>
+          );
+        })}
+      </tbody>
+    </AppTable>
+  );
+
+  const renderBankCashTable = () => (
+    <AppTable compact className="cash-bank-table">
+      <thead>
+        <tr>
+          {showPortfolioColumn ? <AppTableHeaderCell>Portfolio</AppTableHeaderCell> : null}
+          <AppTableHeaderCell>Ledger type</AppTableHeaderCell>
+          <AppTableHeaderCell>Bank / Institution</AppTableHeaderCell>
+          <AppTableHeaderCell>Account</AppTableHeaderCell>
+          <AppTableHeaderCell>Currency</AppTableHeaderCell>
+          <AppTableHeaderCell numeric>Balance</AppTableHeaderCell>
+          {displayCurrency ? (
+            <AppTableHeaderCell numeric>Display balance ({displayCurrency})</AppTableHeaderCell>
+          ) : null}
+          <AppTableHeaderCell>Include in portfolio value</AppTableHeaderCell>
+          <AppTableHeaderCell>Assignment status</AppTableHeaderCell>
+          <AppTableHeaderCell>Available for</AppTableHeaderCell>
+          <AppTableHeaderCell>Source</AppTableHeaderCell>
+        </tr>
+      </thead>
+      <tbody>
+        {bankRows.map((row) => {
+          const assignment = assignmentStatusBadgeProps(row.portfolio_assignment_status);
+          const portfolioLabel =
+            row.portfolio_name ||
+            (row.portfolio_id != null ? `#${row.portfolio_id}` : '—');
+          const accountLabel =
+            row.bank_account_name ||
+            row.account_number ||
+            (row.bank_account_id != null ? `#${row.bank_account_id}` : '—');
+          return (
+            <tr key={row.bank_account_id ?? `${row.institution_name}-${row.account_number}`}>
+              {showPortfolioColumn ? <AppTableCell>{portfolioLabel}</AppTableCell> : null}
+              <AppTableCell>{ledgerTypeLabel(row.ledger_type)}</AppTableCell>
+              <AppTableCell>{row.institution_name || '—'}</AppTableCell>
+              <AppTableCell>{accountLabel}</AppTableCell>
+              <AppTableCell>{row.currency}</AppTableCell>
+              <AppTableCell numeric>
+                <CurrencyValue value={row.balance} currency={row.currency} />
+              </AppTableCell>
+              {displayCurrency ? (
+                <AppTableCell numeric>{displayBalanceCell(row, displayCurrency)}</AppTableCell>
+              ) : null}
+              <AppTableCell>{row.include_in_portfolio_value ? 'Yes' : 'No'}</AppTableCell>
+              <AppTableCell>
+                <StatusBadge status={assignment.status} label={assignment.label} />
+              </AppTableCell>
+              <AppTableCell>{row.available_for || '—'}</AppTableCell>
+              <AppTableCell className="cash-page__source-cell">{sourceLabel(row.source)}</AppTableCell>
             </tr>
           );
         })}
@@ -1022,6 +1323,7 @@ export default function Cash() {
             <tbody>
               {ledgerItems.map((entry) => {
                 const editable = isManualEditableCashEntry(entry);
+                const reversible = isReversibleManualCashEntry(entry);
                 return (
                   <tr key={entry.id}>
                     <AppTableCell>{entry.date}</AppTableCell>
@@ -1049,24 +1351,38 @@ export default function Cash() {
                       {entry.details || entry.note || entry.source_of_funds || '—'}
                     </AppTableCell>
                     <AppTableCell className="cash-ledger-table__actions-col">
-                      {editable ? (
+                      {editable || reversible ? (
                         <div className="cash-ledger-actions">
-                          <Button
-                            variant="ghost"
-                            className="cash-ledger-actions__btn"
-                            aria-label={`Edit ${cashEntryTypeLabel(entry.entry_type)}`}
-                            onClick={() => openEditModal(entry)}
-                          >
-                            <Edit2 size={16} aria-hidden />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            className="cash-ledger-actions__btn"
-                            aria-label={`Delete ${cashEntryTypeLabel(entry.entry_type)}`}
-                            onClick={() => handleDeleteEntry(entry)}
-                          >
-                            <Trash2 size={16} aria-hidden />
-                          </Button>
+                          {editable ? (
+                            <>
+                              <Button
+                                variant="ghost"
+                                className="cash-ledger-actions__btn"
+                                aria-label={`Edit ${cashEntryTypeLabel(entry.entry_type)}`}
+                                onClick={() => openEditModal(entry)}
+                              >
+                                <Edit2 size={16} aria-hidden />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                className="cash-ledger-actions__btn"
+                                aria-label={`Delete ${cashEntryTypeLabel(entry.entry_type)}`}
+                                onClick={() => handleDeleteEntry(entry)}
+                              >
+                                <Trash2 size={16} aria-hidden />
+                              </Button>
+                            </>
+                          ) : null}
+                          {reversible ? (
+                            <Button
+                              variant="ghost"
+                              className="cash-ledger-actions__btn"
+                              aria-label={`Reverse ${cashEntryTypeLabel(entry.entry_type)}`}
+                              onClick={() => setReversingEntry(entry)}
+                            >
+                              <Undo2 size={16} aria-hidden />
+                            </Button>
+                          ) : null}
                         </div>
                       ) : (
                         <span
@@ -1113,34 +1429,37 @@ export default function Cash() {
   return (
     <div className="cash-page">
       <PageHeader
-        title="Cash"
-        subtitle="Native cash balances by portfolio and currency. Amounts are stored in each currency — not converted for display on this page."
+        title="Cash / Liquid Holdings"
+        subtitle="Broker Cash and Bank Cash are shown separately. They remain separate ledgers — broker cash funds securities; bank cash funds FDs and bank products."
         actions={
           <div className="cash-page__header-actions">
-            <Button
-              variant="primary"
-              onClick={() => {
-                setEditingEntry(null);
-                setDepositOpen(true);
-              }}
-            >
-              Add Deposit
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setEditingEntry(null);
-                setWithdrawalOpen(true);
-              }}
-            >
-              Add Withdrawal
-            </Button>
-            <Button variant="secondary" onClick={() => setBulkOpen(true)}>
-              Add Bulk Cash Entries
-            </Button>
-            <Button variant="secondary" onClick={() => setTransferOpen(true)}>
-              Transfer Cash
-            </Button>
+            <p className="cash-page__header-actions-label">Broker Cash actions</p>
+            <div className="cash-page__header-actions-buttons">
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setEditingEntry(null);
+                  setDepositOpen(true);
+                }}
+              >
+                Add Deposit
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setEditingEntry(null);
+                  setWithdrawalOpen(true);
+                }}
+              >
+                Add Withdrawal
+              </Button>
+              <Button variant="secondary" onClick={() => setBulkOpen(true)}>
+                Add Bulk Cash Entries
+              </Button>
+              <Button variant="secondary" onClick={() => setTransferOpen(true)}>
+                Transfer Cash
+              </Button>
+            </div>
           </div>
         }
       />
@@ -1169,9 +1488,13 @@ export default function Cash() {
         />
       ) : null}
 
-      {balanceOverviewCards.length > 0 ? (
-        <div className="cash-page__overview" aria-label="Cash balance overview">
-          {balanceOverviewCards.map((card) => (
+      {overviewError && !overviewData ? (
+        <ErrorState title="Could not load cash overview" message={overviewError} />
+      ) : null}
+
+      {overviewKpiCards.length > 0 ? (
+        <div className="cash-page__overview" aria-label="Cash holdings overview">
+          {overviewKpiCards.map((card) => (
             <KpiCard
               key={card.key}
               label={card.label}
@@ -1183,28 +1506,108 @@ export default function Cash() {
         </div>
       ) : null}
 
+      {fxStatus && fxStatus !== 'ok' ? (
+        <WarningBanner
+          severity="warning"
+          message="Display-currency totals may be incomplete because FX rates are missing for some balances. Native balances are shown below."
+          className="cash-page__banner"
+        />
+      ) : null}
+
+      {overviewWarnings.map((warning) => (
+        <WarningBanner
+          key={warning}
+          severity="warning"
+          message={warning}
+          className="cash-page__banner"
+        />
+      ))}
+
+      {(excludedUnassigned > 0 || excludedAmbiguous > 0) && !includeUnassigned ? (
+        <WarningBanner
+          severity="warning"
+          message={`${excludedUnassigned + excludedAmbiguous} bank account(s) excluded from this view (${excludedUnassigned} unlinked, ${excludedAmbiguous} ambiguous). Link them in Settings → Bank Accounts before using for FD creation.`}
+          className="cash-page__banner"
+        />
+      ) : null}
+
+      {!overviewLoading && !overviewError && !hasAnyCashRows ? (
+        <EmptyState
+          title="No cash holdings"
+          description="Broker cash and assigned bank cash for this portfolio view will appear here."
+        />
+      ) : null}
+
       <DataTableShell
-        className="cash-page__section cash-page__balances"
-        title="Cash balances"
-        subtitle={
-          isAllScope
-            ? 'All active portfolios'
-            : selectedPortfolioName || 'Selected portfolio'
-        }
-        loading={balancesLoading && !balancesData}
-        loadingMessage="Loading balances…"
-        error={balancesError && !balancesData ? balancesError : undefined}
-        errorTitle="Could not load balances"
-        empty={!balancesLoading && !balancesError && balanceRows.length === 0}
-        emptyTitle="No cash balances"
-        emptyDescription="Record a deposit to add cash in a portfolio currency."
+        className="cash-page__section cash-page__broker-cash"
+        title="Broker Cash"
+        subtitle="Broker Cash comes from the portfolio broker cash ledger. Available for securities and broker transactions."
+        loading={overviewLoading && !overviewData}
+        loadingMessage="Loading broker cash…"
+        error={overviewError && overviewData ? overviewError : undefined}
+        errorTitle="Could not load broker cash"
+        empty={!overviewLoading && !overviewError && brokerRows.length === 0}
+        emptyTitle="No broker cash"
+        emptyDescription="Record a broker deposit to add cash in a portfolio currency."
         dense
       >
-        {!balancesLoading && !balancesError && balanceRows.length > 0 ? renderBalancesTable() : null}
+        {!overviewLoading && !overviewError && brokerRows.length > 0
+          ? renderBrokerCashTable()
+          : null}
       </DataTableShell>
 
-      <AppCard className="cash-page__section cash-page__ledger" title="Cash ledger" compact>
-        <p className="cash-page__ledger-subtitle">Deposits, withdrawals, and settlements</p>
+      <DataTableShell
+        className="cash-page__section cash-page__bank-cash"
+        title="Bank Cash"
+        subtitle="Bank Cash comes from linked bank account ledgers. Bank Cash is read-only here. Manage bank movements under Settings → Bank Accounts."
+        actions={
+          <Link className="cash-page__settings-link" to="/settings#settings-bank-accounts">
+            Manage bank accounts
+          </Link>
+        }
+        loading={overviewLoading && !overviewData}
+        loadingMessage="Loading bank cash…"
+        error={overviewError && overviewData ? overviewError : undefined}
+        errorTitle="Could not load bank cash"
+        empty={!overviewLoading && !overviewError && bankRows.length === 0}
+        emptyTitle="No bank cash"
+        emptyDescription="Assign bank accounts to this portfolio in Settings to see balances here."
+        dense
+      >
+        {!overviewLoading && !overviewError && bankRows.length > 0 ? renderBankCashTable() : null}
+      </DataTableShell>
+
+      <AppCard className="cash-page__section cash-page__visibility" title="Bank account visibility" compact>
+        <p className="cash-page__exclusions-copy">
+          Unassigned or ambiguous bank accounts are excluded from portfolio Bank Cash totals by
+          default. Use the toggle to include them for review. Assign a portfolio in Settings →
+          Bank Accounts before creating fixed deposits. If a balance appears under the wrong
+          section, check the Source column — broker amounts come from CashLedgerEntry; bank
+          amounts from CashMovement. To correct a mistaken broker cash entry, use{' '}
+          <strong>Reverse broker cash entry</strong> on the ledger below — do not add duplicate
+          bank cash; the bank ledger may already hold the correct balance. Broader
+          reclassification workflows are deferred to CASH-CORR-1.
+        </p>
+        {(excludedUnassigned > 0 || excludedAmbiguous > 0) && !includeUnassigned ? (
+          <p className="cash-page__exclusions-count">
+            {excludedUnassigned + excludedAmbiguous} bank account(s) currently excluded (
+            {excludedUnassigned} unassigned, {excludedAmbiguous} ambiguous).
+          </p>
+        ) : null}
+        <label className="cash-page__include-unassigned">
+          <input
+            type="checkbox"
+            checked={includeUnassigned}
+            onChange={(e) => setIncludeUnassigned(e.target.checked)}
+          />
+          Show unassigned / ambiguous bank accounts
+        </label>
+      </AppCard>
+
+      <AppCard className="cash-page__section cash-page__ledger" title="Broker Cash ledger" compact>
+        <p className="cash-page__ledger-subtitle">
+          Deposits, withdrawals, transfers, and settlements on the broker ledger
+        </p>
         <div className="cash-ledger-filters">
           <div className="form-group">
             <label htmlFor="cash-filter-currency">Currency</label>
@@ -1297,6 +1700,12 @@ export default function Cash() {
         activePortfolios={activePortfolios}
         requireSourcePortfolioPick={isAllScope}
         defaultSourcePortfolioId={defaultPortfolioId}
+        onSuccess={handleEntrySuccess}
+      />
+      <CashReverseModal
+        open={Boolean(reversingEntry)}
+        entry={reversingEntry}
+        onClose={() => setReversingEntry(null)}
         onSuccess={handleEntrySuccess}
       />
     </div>

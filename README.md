@@ -23,7 +23,7 @@ The app is API-driven: the backend owns portfolio math, ledger rules, valuation,
 - **Frontend:** React 19, Vite, Vitest, reusable UI components, dashboard/asset/transaction/settings workflows.
 - **Finance layer:** pure Python helpers under `backend/finance/` for calculations that should stay framework-independent.
 - **Domain apps:** `transactions`, `cash`, `debt`, `portfolios`, `analytics`, `market_data`, `fx`, and auth/settings APIs.
-- **Docs:** implementation notes and product rules live in `docs/`; start with `docs/README.md` and `docs/current-state.md`.
+- **Docs:** MkDocs Material portal (Diátaxis navigation). Run `make dev`, open http://127.0.0.1:8002 — or http://docs.kpulla6.com:8002 after adding local `/etc/hosts`. Source files live in `docs/`.
 
 ## Key Screens
 
@@ -39,8 +39,8 @@ The app is API-driven: the backend owns portfolio math, ledger rules, valuation,
 ```bash
 cp .env.example .env
 make bootstrap   # db + migrate + seed
-make dev         # Postgres + Django :8000 + Vite :5173
-make stop-dev    # stop Django + Vite (keeps Postgres running)
+make dev         # Postgres + Django :8000 + Vite :5173 + Docs :8002
+make stop-dev    # stop Django + Vite + docs (keeps Postgres running)
 make stop-all    # stop Django + Vite + Postgres container (preserves DB volume)
 make ports       # show processes on dev ports
 ```
@@ -49,6 +49,7 @@ Do not use `docker compose down -v` unless you intend to delete local database d
 
 - API health check: http://127.0.0.1:8000/api/v1/health
 - App: http://127.0.0.1:5173
+- Docs: http://127.0.0.1:8002 (or http://docs.kpulla6.com:8002 with `/etc/hosts` — see `docs/how-to/local-docs-domain.md`)
 
 ### iPad / Home LAN
 
@@ -68,6 +69,23 @@ cd frontend && npm run build
 ```
 
 Backend tests use SQLite with `DJANGO_TEST_USE_SQLITE=1` in the project test workflow.
+
+## Documentation
+
+Browse project documentation with MkDocs Material:
+
+1. Run `make dev` (or `make docs-serve` for docs only)
+2. Open http://127.0.0.1:8002
+3. Or, after adding `127.0.0.1 docs.kpulla6.com` to `/etc/hosts`, open http://docs.kpulla6.com:8002
+
+**Update policy:** every change must decide if docs need updates. See [Documentation update policy](docs/maintenance/documentation-update-policy.md). After doc edits: `make docs-build` and `make docs-check`.
+
+```bash
+make docs-build    # static output in site/
+make docs-check    # strict build + link/API/stale-phrase checks
+```
+
+Source files remain in `docs/`; `mkdocs.yml` at the repo root defines navigation. Install deps via `make setup-docs` (uses backend venv + `requirements-docs.txt`). Local domain details: `docs/how-to/local-docs-domain.md`.
 
 ## Market Data Sync
 

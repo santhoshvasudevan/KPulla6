@@ -2,7 +2,7 @@
 
 **Status:** Cash-1 through Cash-7D **done**; **Cash-8A** same-currency and **Cash-8B** user-entered cross-currency portfolio transfers **done**. Transfer fees and same-portfolio FX conversion remain deferred.
 
-**Related:** [architecture.md](./architecture.md) · [database.md](./database.md) · [api-design.md](./api-design.md) · [frontend-design.md](./frontend-design.md) · [data-safety.md](./data-safety.md) · [cash-unification.md](./cash-unification.md) · Cursor rule [`.cursor/rules/320-cash-ledger.mdc`](../.cursor/rules/320-cash-ledger.mdc)
+**Related:** [architecture.md](./architecture.md) · [database.md](./database.md) · [api-design.md](./api-design.md) · [frontend-design.md](./frontend-design.md) · [data-safety.md](./data-safety.md) · [cash-unification.md](./cash-unification.md) · Cursor rule [320-cash-ledger](cursor-rules/320-cash-ledger.md)
 
 ---
 
@@ -498,11 +498,33 @@ KPulla6 has **two cash ledgers** that represent **cash holdings** within a portf
 **Rules:**
 
 - Do **not** merge `cash_ledger_entries` and `cash_movements` in storage.
-- Do **not** auto-create cross-ledger entries on read or backfill.
+- Do **not** auto-create cross-ledger entries on read, backfill, or **portfolio link/delink**.
+- **Link/delink** (`BankAccount.portfolio`) changes portfolio inclusion only — not balances (CASH-MODEL-REFINE-0).
+- **Transfer** (broker ↔ bank) and **correction** (mistaken entry reclassification) are separate workflows — CASH-UNIFY-5 and CASH-CORR-1.
+- **FD funding:** one source per FD — bank ledger (`FD_OPENING`) **today**; explicit `portfolio_id` at create; bank account link optional (CASH-MODEL-REFINE-1); broker-cash path **deferred**.
 - Summary/performance may **aggregate** both for headline value when bank cash is opt-in included (FD-ACC-7/8).
-- FD workflows debit **bank** ledger only; stock/MF settlements use **broker** ledger.
+- FD workflows debit **bank** ledger for bank-funded opens; stock/MF settlements use **broker** ledger.
 
-**Roadmap:** [cash-unification.md](./cash-unification.md) — ownership, unified Cash page UI, terminology. Bank ledger detail: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md) § A.
+**Roadmap:** [cash-unification.md](./cash-unification.md) — **stream complete** (MILESTONE-CLOSEOUT-1). Bank ledger detail: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md) § A.
+
+### Display currency on portfolio switch (CASH-UNIFY-4B)
+
+- Selecting a **specific portfolio** auto-selects display currency from that portfolio's `base_currency` when supported.
+- **All Portfolios** preserves the current display currency (no forced switch).
+- Unsupported `base_currency` leaves display currency unchanged.
+- Implemented in `portfolioContext.jsx`; tested in `portfolioContext.test.jsx`.
+
+### Cash page — unified overview (CASH-UNIFY-3 / 3A)
+
+| Surface | Source | Mutations on `/cash` |
+|---------|--------|----------------------|
+| **Broker Cash** | `CashLedgerEntry` via overview `BROKER_CASH` rows | Deposit, withdrawal, bulk, transfer; **Reverse** on eligible manual rows (CASH-CORR-1A) |
+| **Bank Cash** | `CashMovement` via overview `BANK_CASH` rows | No — read-only; Settings → Bank Accounts |
+
+- Overview API: `GET /api/v1/cash/overview` with optional `include_unassigned`.
+- **Broker reversal (CASH-CORR-1A):** `POST /api/v1/cash/ledger/{id}/reverse` or `manage.py reverse_broker_cash_entry` creates opposite broker entry; original preserved; **bank `CashMovement` unchanged**.
+- **Diagnosis:** If a balance appears under the wrong section, check the row **Source** column. Amount in `cash_ledger_entries` only → broker data (reverse if mistaken — **do not** add duplicate bank cash). Amount only in `cash_movements` → bank data. Unlinked bank → link in Settings → Bank Accounts (CASH-UNIFY-4) or toggle unassigned view.
+- **Read-only diagnostics (CASH-UNIFY-4A):** `manage.py cash_overview_diagnostics [--portfolio-id ID] [--username USER] [--json]` — broker/bank summaries, unlinked accounts, heuristic same-date/same-amount duplicate hints; no mutations.
 
 ---
 

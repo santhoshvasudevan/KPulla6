@@ -35,10 +35,10 @@ BROKER_AVAILABLE_FOR = "securities / broker transactions"
 BANK_AVAILABLE_FOR = "fixed deposits / bank products"
 
 UNASSIGNED_BANK_ACCOUNTS_WARNING = (
-    "{count} bank account(s) excluded because portfolio ownership is not assigned."
+    "{count} bank account(s) excluded because no portfolio link is set."
 )
 AMBIGUOUS_BANK_ACCOUNTS_WARNING = (
-    "{count} bank account(s) excluded because portfolio ownership is ambiguous."
+    "{count} bank account(s) excluded because the portfolio link is ambiguous."
 )
 
 

@@ -151,10 +151,23 @@ def _decimal_to_float(value: Decimal | None) -> float | None:
     return float(value)
 
 
+class CashLedgerReversalWriteSerializer(serializers.Serializer):
+    reversal_date = serializers.DateField(required=False, allow_null=True)
+    reason = serializers.CharField()
+
+    def validate_reason(self, value: str) -> str:
+        if not (value or "").strip():
+            raise serializers.ValidationError("reason is required for audit.")
+        return value.strip()
+
+
 class CashLedgerEntrySerializer(serializers.ModelSerializer):
     portfolio_id = serializers.IntegerField(source="portfolio.id", read_only=True)
     portfolio_name = serializers.CharField(source="portfolio.name", read_only=True)
     details = serializers.SerializerMethodField()
+    is_reversed = serializers.SerializerMethodField()
+    reversed_by_id = serializers.SerializerMethodField()
+    is_reversible = serializers.SerializerMethodField()
 
     class Meta:
         model = CashLedgerEntry
@@ -171,12 +184,34 @@ class CashLedgerEntrySerializer(serializers.ModelSerializer):
             "transfer_group_id",
             "note",
             "details",
+            "is_reversal",
+            "reverses_id",
+            "reversal_reason",
+            "is_reversed",
+            "reversed_by_id",
+            "is_reversible",
             "created_at",
             "updated_at",
         )
 
     def get_details(self, obj: CashLedgerEntry) -> str:
         return build_ledger_entry_details(obj)
+
+    def get_is_reversed(self, obj: CashLedgerEntry) -> bool:
+        from cash.services import ledger_entry_has_been_reversed
+
+        return ledger_entry_has_been_reversed(obj)
+
+    def get_reversed_by_id(self, obj: CashLedgerEntry):
+        if obj.is_reversal:
+            return None
+        row = obj.reversal_rows.filter(is_reversal=True).order_by("id").first()
+        return row.id if row else None
+
+    def get_is_reversible(self, obj: CashLedgerEntry) -> bool:
+        from cash.reversal_services import is_reversible_manual_entry
+
+        return is_reversible_manual_entry(obj)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -188,4 +223,6 @@ class CashLedgerEntrySerializer(serializers.ModelSerializer):
             data["source_of_funds"] = None
         if not data.get("note"):
             data["note"] = None
+        if not data.get("reversal_reason"):
+            data["reversal_reason"] = None
         return data

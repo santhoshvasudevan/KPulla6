@@ -15,9 +15,74 @@
 
 .cash-page__header-actions {
   display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.cash-page__header-actions-label {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.cash-page__header-actions-buttons {
+  display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
   justify-content: flex-end;
+}
+
+.cash-page__settings-link {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.cash-page__settings-link:hover {
+  text-decoration: underline;
+}
+
+.cash-page__display-unavailable {
+  color: var(--text-muted);
+}
+
+.cash-page__source-cell {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.cash-page__exclusions-copy {
+  margin: 0 0 var(--space-3);
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.cash-page__exclusions-count {
+  margin: 0 0 var(--space-2);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--warning, var(--text-primary));
+}
+
+.cash-page__include-unassigned {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.cash-balances-table,
+.cash-bank-table,
+.cash-ledger-table {
+  width: 100%;
 }
 
 .cash-page__overview {
@@ -111,6 +176,13 @@
   line-height: 1.45;
 }
 
+.cash-reverse-modal__intro {
+  margin: 0 0 var(--space-4);
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
 .cash-transfer-modal__amounts {
   display: grid;
   gap: 0;
@@ -192,7 +264,7 @@
 }
 
 .cash-ledger-table__actions-col {
-  width: 6rem;
+  width: 7.5rem;
   white-space: nowrap;
   text-align: right;
 }

@@ -112,6 +112,8 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 ### Settings
 
 - `AppCard` sections with sticky section nav: Display & tax; **Portfolios** (CRUD); **Bank accounts** (`BankAccountManagement` + nested `CashMovementManagement`); Data & sync (explainer)
+- **Bank accounts (CASH-UNIFY-4 / 4B):** **Linked portfolio** column; **Link to portfolio** / **Change linked portfolio** open a **modal** with portfolio selector; **Delink from portfolio** inline; helper text that link/delink does not create cash movements or change balance; FD warning in modal when relinking account with active FDs.
+- **Portfolio view (CASH-UNIFY-4B):** Selecting a portfolio auto-sets **Display Currency** to portfolio `base_currency` when supported; **All Portfolios** preserves current display currency; unsupported base currency leaves display currency unchanged.
 - Portfolio table: name, base currency, default flag; create form; edit modal; deactivate for non-default only
 - Bank accounts: list active accounts; create/edit; ledger-derived `current_balance`; seed opening balance; per-account cash movements
 - Display currency must stay in sync with **header** display-currency selector
@@ -120,7 +122,12 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 ### Fixed Deposits (`/fixed-deposits`)
 
 - Table lists backend FD fields only (no interest or portfolio value calculations in React)
-- Add/Edit modal: bank account dropdown (active records only); **create:** portfolio read-only, derived from selected bank account (`FD portfolio: {name}, derived from selected bank account.`); blocks create when bank `portfolio_assignment_status` is `UNASSIGNED` or `AMBIGUOUS` with link to Settings → Bank Accounts; currency read-only from selected bank account
+- **Row navigation (FD-DETAIL-CALC-1):** click holding row → `/fixed-deposits/:id` detail page; action strip clicks do not navigate
+- **Detail page (`/fixed-deposits/:id`):** FD summary, KPIs (principal, expected/actual interest, tax, net, maturity), Indian FY filter, expected interest schedule with Record/Edit actual, detailed calculation section (HDFC-calculator-style benchmark, app-owned math)
+- **Holdings maturity value (FD-HOLDINGS-UX-1, FD-INTEREST-MATURITY-LOGIC-1):** compounded FDs show expected maturity + **Auto estimate** / **User confirmed** badge; payout FDs show principal returned + est. total/periodic interest + **Principal returned** badge (not inflated maturity)
+- **Create/edit preview:** compounded → heading **Expected maturity value**; payout → **Expected interest payout** with principal-at-maturity copy; override checkbox differs (bank maturity value vs confirmed principal)
+- **Action strip:** full-width grouped buttons below each FD row (common / lifecycle / maintenance); Cancel FD uses `danger` variant; responsive wrap on narrow screens
+- Add/Edit modal: **Portfolio to track this FD** dropdown (required on create); **Funding bank account** dropdown; unlinked bank does not block create; insufficient as-of balance → inline historical seed panel; currency read-only from selected bank account
 - **Create:** explainer that principal debits linked bank account; shows **current ledger balance** and **available as of investment date** (from balance API); backend rejects when as-of balance insufficient; structured error panel with auto-scroll/focus
 - **Edit:** when `has_opening_cash_movement`, principal/bank/currency/investment date/portfolio fields disabled; backend enforces immutability
 - Principal, rate, dates, status displayed from API
@@ -133,7 +140,7 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 - **Cash movements (FD-ACC-10B):** Reverse action on eligible manual rows; status labels (Reversed / Reversal / reverses #id); reversal reason shown when present
 - **Mark matured / Settle (FD-ACC-5):** mark matured for `ACTIVE` FDs; Settle/Close modal with principal, final interest, TDS; settled/closed rows hide settlement actions
 - **Renew (FD-ACC-6):** Renew action for `ACTIVE`/`MATURED` (hidden when settled or `has_renewal`); modal with new FD terms, gross/tax/cash payout, direct rollover and bank-cash warnings; no `FD_OPENING` implied for renewal
-- **Interest & Tax report (FD-TAX-1):** section `#fd-interest-report` on Fixed Deposits page; date range + group-by filters; KPI cards and tables from `fetchFixedDepositInterestReport`; disclaimer that report is not tax advice; read-only (no accounting changes)
+- **Interest & Tax report (FD-TAX-1 / FD-TAX-1A / FD-TAX-2):** section `#fd-interest-report` on Fixed Deposits page; default date range = current calendar year; date range + group-by filters (including **Bank account**); **Reset filters**; KPI cards (gross/tax/net/row count); grouped totals; exclusion/disclaimer notes; FX/mixed-currency warnings near totals; **Export CSV** (current filters; helper text; inline error on failure); `fetchFixedDepositInterestReport` + `exportFixedDepositInterestReportCsv`; read-only (no accounting changes)
 - Interest/settlement credits bank ledger; when bank cash is included in portfolio value, headline total stays stable for principal (cash ↔ FD reclassification)
 - Dashboard allocation pie chart renders `summary.allocation_buckets` from backend only
 
@@ -366,7 +373,7 @@ Component: `CashEntryFormFields.jsx` (shared cash form fields); `TransactionModa
 
 ## Cash-aware portfolio status (Cash-4A.2) — **Implemented**
 
-`CashAwarePortfolioStatus.jsx` — shown on **Cash** and **Transactions** when a single portfolio is selected in the sidebar:
+`CashAwarePortfolioStatus.jsx` — shown on **Cash** and **Transactions** when a single portfolio is selected in the header:
 
 | State | Copy | Actions |
 |-------|------|---------|
@@ -378,38 +385,29 @@ Component: `CashEntryFormFields.jsx` (shared cash form fields); `TransactionModa
 
 Existing portfolios stay legacy until enabled; new portfolios default on (Cash-4A.1). No disable button in UI.
 
-## Cash page (`/cash`) — **Implemented** (Cash-3B)
+## Cash page (`/cash`) — **Implemented** (Cash-3B + CASH-UNIFY-3)
 
-Route: `pages/Cash.jsx` · `pages/Cash.css` · sidebar nav **Cash** (after Transactions).
+Route: `pages/Cash.jsx` · `pages/Cash.css` · top nav **Cash** (after Transactions). Page title: **Cash / Liquid Holdings**.
 
-Backend supplies balances and ledger rows. React **displays only** — no cash balance math or display-currency totals on this page. `CurrencyValue` formats native amounts.
+Overview and tables use `GET /api/v1/cash/overview` (`fetchCashOverview`) with `portfolioContext.apiQuery` (scope + `display_currency`). Broker ledger writes still use `/cash/*`. React **displays only** — no client-side cash aggregation.
 
 | Section | Behavior |
 |---------|----------|
-| **Balances** | `GET /cash/balances` with `portfolioContext.apiQuery`; table + `totals_by_currency` for all scope |
-| **Ledger** | `GET /cash/ledger` with filters and backend pagination |
+| **KPI strip** | Total Cash, Broker Cash, Bank Cash (display currency when FX available; native balances always in tables) |
+| **Broker Cash** | Overview `BROKER_CASH` rows; deposit/withdrawal/transfer/bulk actions labeled **Broker Cash actions** |
+| **Bank Cash** | Overview `BANK_CASH` rows — read-only; assignment status; include-in-portfolio-value; link → Settings → Bank Accounts |
+| **Exclusions** | Warnings/counts for unassigned/ambiguous banks; optional **Show unassigned bank accounts** (`include_unassigned`) |
+| **Broker ledger** | `GET /cash/ledger` with filters and backend pagination |
 | **Cash-aware status** | `CashAwarePortfolioStatus` below header (Cash-4A.2) |
 | **Deposit / withdrawal** | Modals → `POST /cash/deposits`, `POST /cash/withdrawals`; insufficient withdrawal shows API shortfall fields |
-| **Edit / delete** | Manual rows only → `PUT`/`DELETE /cash/ledger/{id}`; edit reuses modal; delete confirm; **Cash-4D** future-impact panel (`CashFutureImpactDisplay`) with `affected_entries` — no cascade delete |
+| **Edit / delete** | Manual broker rows only → `PUT`/`DELETE /cash/ledger/{id}`; **Cash-4D** future-impact panel |
+| **Bulk cash entries (Cash-7D)** | `CashBulkEntriesWizard` on broker ledger |
 
-| **Bulk cash entries (Cash-7D)** | **Add Bulk Cash Entries** → `CashBulkEntriesWizard`: deposit/withdrawal, currency, amount, date range, once/monthly → `previewCashBulkEntries` → review → `applyCashBulkEntries`; refresh after apply |
+**Removed:** Cash shortfall backfill (Cash-7A/7B/7C). Display-currency headline edge cases → CASH-UNIFY-4. Link/delink UX → CASH-UNIFY-4.
 
-**Removed:** Cash shortfall backfill (Cash-7A/7B/7C) — no UI or API. Historical funding via manual entries or **Add Bulk Cash Entries**.
+**Cash page (CASH-UNIFY-3 / 3A / 4 / 4A / CASH-CORR-1A):** `/cash` title **Cash / Liquid Holdings**. Overview from `fetchCashOverview`; Broker and Bank sections filter `ledger_type`. Per-row source labels distinguish `CashLedgerEntry` vs `CashMovement`. **Broker Cash actions** in header only. Bank Cash read-only with link to Settings. Toggle **Show unassigned / ambiguous bank accounts** always visible. **Reverse** on eligible manual broker ledger rows (reason + date required; bank cash unaffected; do not add duplicate bank cash). Display currency auto-syncs on portfolio change (4B).
 
-Page layout: [page-layouts.md](./page-layouts.md) §8. Design: [cash-ledger.md](./cash-ledger.md) · unified model: [cash-unification.md](./cash-unification.md).
-
-## Future — Unified Cash / Liquid Holdings page (CASH-UNIFY-3)
-
-**Design only (CASH-UNIFY-0).** Target layout when overview API (CASH-UNIFY-1) ships:
-
-| Section | Content | Actions |
-|---------|---------|---------|
-| **Header KPIs** | Total Cash; Broker Cash subtotal; Bank Cash subtotal (native currency; display FX in CASH-UNIFY-4) | Scope from `portfolioContext` |
-| **Broker Cash** | Existing balances table + ledger + deposit/withdrawal/transfer/bulk | Unchanged write paths on `/cash/*` |
-| **Bank Cash** | Per bank account balances from overview API; filtered by portfolio when ownership set | Link → Settings → Bank account movements |
-| **Helper copy** | Broker cash funds **securities/MF**; bank cash funds **FD/bank products** | Static explainer |
-
-React displays overview API only — no client-side aggregation across ledgers. Bank movement CRUD remains in Settings unless a later phase adds deep-links only.
+Page layout: [page-layouts.md](./page-layouts.md) §8. Design: [cash-ledger.md](./cash-ledger.md) · [cash-unification.md](./cash-unification.md).
 
 ## Future — Cash Ledger UI (remaining phases)
 

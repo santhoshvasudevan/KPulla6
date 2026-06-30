@@ -313,6 +313,8 @@ export class FixedDepositApiError extends ApiError {
     this.bank_account_portfolio_name = extras.bank_account_portfolio_name;
     this.requested_portfolio_id = extras.requested_portfolio_id;
     this.portfolio_assignment_status = extras.portfolio_assignment_status;
+    this.suggested_seed_date = extras.suggested_seed_date;
+    this.suggested_seed_amount = extras.suggested_seed_amount;
   }
 }
 
@@ -339,6 +341,8 @@ function buildFixedDepositApiError(errorData, status) {
     bank_account_portfolio_name: data.bank_account_portfolio_name,
     requested_portfolio_id: data.requested_portfolio_id,
     portfolio_assignment_status: data.portfolio_assignment_status,
+    suggested_seed_date: data.suggested_seed_date,
+    suggested_seed_amount: data.suggested_seed_amount,
     data,
   });
 }
@@ -756,6 +760,14 @@ export async function deleteCashLedgerEntry(id) {
   return cashRequestWithHandling(`/cash/ledger/${id}`, { method: 'DELETE' });
 }
 
+/** POST /api/v1/cash/ledger/{id}/reverse — audited broker cash reversal (CASH-CORR-1A). */
+export async function reverseCashLedgerEntry(id, payload) {
+  return cashRequestWithHandling(`/cash/ledger/${id}/reverse`, {
+    method: 'POST',
+    body: payload,
+  });
+}
+
 function buildCashBulkEntriesBody(payload = {}) {
   const body = {
     portfolio_id: payload.portfolio_id,
@@ -818,6 +830,14 @@ export async function fetchBankAccountBalance(id, { as_of } = {}) {
   return fetchWithHandling(qs ? `/bank-accounts/${id}/balance?${qs}` : `/bank-accounts/${id}/balance`);
 }
 
+/** POST /api/v1/bank-accounts/{id}/seed-balance — historical MANUAL_DEPOSIT for backdated FD funding */
+export async function seedBankAccountHistoricalBalance(id, payload) {
+  return fetchWithHandling(`/bank-accounts/${id}/seed-balance`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 /** POST /api/v1/bank-accounts/{id}/seed-opening-balance */
 export async function seedBankAccountOpeningBalance(id) {
   return fetchWithHandling(`/bank-accounts/${id}/seed-opening-balance`, {
@@ -869,6 +889,40 @@ export async function fetchFixedDeposits(scopeParams = null) {
   return fetchWithHandling(`/fixed-deposits?${params.toString()}`);
 }
 
+/** GET /api/v1/fixed-deposits/{id}/detail — FD detail with schedule, actuals, FY summary */
+export async function fetchFixedDepositDetail(fdId, query = {}) {
+  const params = new URLSearchParams();
+  if (query.financial_year) {
+    params.set('financial_year', query.financial_year);
+  }
+  if (query.fy_start) {
+    params.set('fy_start', query.fy_start);
+  }
+  if (query.fy_end) {
+    params.set('fy_end', query.fy_end);
+  }
+  const qs = params.toString();
+  return fetchWithHandling(`/fixed-deposits/${fdId}/detail${qs ? `?${qs}` : ''}`);
+}
+
+/** GET /api/v1/fixed-deposits/maturity-estimate — read-only maturity estimate preview */
+export async function fetchFixedDepositMaturityEstimate({
+  principal_amount,
+  interest_rate_percent,
+  interest_payout_frequency,
+  investment_date,
+  maturity_date,
+}) {
+  const params = new URLSearchParams({
+    principal_amount: String(principal_amount),
+    interest_rate_percent: String(interest_rate_percent),
+    interest_payout_frequency,
+    investment_date,
+    maturity_date,
+  });
+  return fetchWithHandling(`/fixed-deposits/maturity-estimate?${params.toString()}`);
+}
+
 /** POST /api/v1/fixed-deposits */
 export async function createFixedDeposit(payload) {
   const res = await fixedDepositRequestWithHandling('/fixed-deposits', {
@@ -901,6 +955,14 @@ export async function fetchFixedDepositInterestPayments(fdId) {
 export async function createFixedDepositInterestPayment(fdId, payload) {
   return fetchWithHandling(`/fixed-deposits/${fdId}/interest-payments`, {
     method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** PATCH /api/v1/fixed-deposit-interest-payments/{payment_id} */
+export async function updateFixedDepositInterestPayment(paymentId, payload) {
+  return fetchWithHandling(`/fixed-deposit-interest-payments/${paymentId}`, {
+    method: 'PATCH',
     body: JSON.stringify(payload),
   });
 }
@@ -952,8 +1014,8 @@ export async function fetchFixedDepositSettlements(fdId) {
   return fetchWithHandling(`/fixed-deposits/${fdId}/settlements`);
 }
 
-/** GET /api/v1/reports/fixed-deposit-interest */
-export async function fetchFixedDepositInterestReport(query = {}) {
+/** Build query params for FD interest report JSON/CSV endpoints. */
+export function buildFixedDepositInterestReportParams(query = {}) {
   const params = new URLSearchParams();
   if (query.portfolio_id != null) {
     params.set('portfolio_id', String(query.portfolio_id));
@@ -966,7 +1028,55 @@ export async function fetchFixedDepositInterestReport(query = {}) {
   if (query.start_date) params.set('start_date', query.start_date);
   if (query.end_date) params.set('end_date', query.end_date);
   if (query.group_by) params.set('group_by', query.group_by);
+  return params;
+}
+
+function parseContentDispositionFilename(header) {
+  if (!header) return null;
+  const match = /filename="([^"]+)"/i.exec(header);
+  return match ? match[1] : null;
+}
+
+/** GET /api/v1/reports/fixed-deposit-interest */
+export async function fetchFixedDepositInterestReport(query = {}) {
+  const params = buildFixedDepositInterestReportParams(query);
   return fetchWithHandling(`/reports/fixed-deposit-interest?${params.toString()}`);
+}
+
+/** GET /api/v1/reports/fixed-deposit-interest/export.csv — detail rows only. */
+export async function exportFixedDepositInterestReportCsv(query = {}) {
+  const params = buildFixedDepositInterestReportParams(query);
+  params.delete('group_by');
+  const response = await fetch(
+    buildUrl(`/reports/fixed-deposit-interest/export.csv?${params.toString()}`),
+    defaultFetchOptions()
+  );
+  if (response.status === 401 && _onUnauthorized) {
+    _onUnauthorized();
+  }
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const detail = errorData.detail;
+    const message =
+      typeof detail === 'string'
+        ? detail
+        : errorData.message || `Export failed (${response.status})`;
+    throw new Error(message);
+  }
+  const blob = await response.blob();
+  const filename =
+    parseContentDispositionFilename(response.headers.get('Content-Disposition')) ||
+    'fd-interest-tax.csv';
+  return { blob, filename };
+}
+
+export function downloadBlobFile(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 /** GET /api/v1/fixed-deposit-settlements/{settlement_id} */

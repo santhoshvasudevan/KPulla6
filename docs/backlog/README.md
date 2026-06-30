@@ -102,48 +102,77 @@ Execute in order within each epic unless the planner reprioritizes.
 
 | # | File | ID | Status | Depends on |
 |---|------|-----|--------|------------|
-| 1 | [001-cash-unify-0.md](./001-cash-unify-0.md) | CASH-UNIFY-0 | Open | — |
-| 2 | [002-cash-unify-1.md](./002-cash-unify-1.md) | CASH-UNIFY-1 | Open | 001 |
-| 3 | [003-cash-unify-2.md](./003-cash-unify-2.md) | CASH-UNIFY-2 | Open | 002 |
-| 4 | [004-cash-unify-3.md](./004-cash-unify-3.md) | CASH-UNIFY-3 | Open | 003 |
-| 5 | [005-cash-unify-4.md](./005-cash-unify-4.md) | CASH-UNIFY-4 | Open | 004 |
+| 1 | [001-cash-unify-0.md](./001-cash-unify-0.md) | CASH-UNIFY-0 | **Done** | — |
+| 2 | [002-cash-unify-1.md](./002-cash-unify-1.md) | CASH-UNIFY-1 | **Done** | 001 |
+| 3 | [003-cash-unify-2.md](./003-cash-unify-2.md) | CASH-UNIFY-2 | **Done** | 002 |
+| 4 | [004-cash-unify-3.md](./004-cash-unify-3.md) | CASH-UNIFY-3 | **Done** | 003 |
+| 4a | [004a-cash-unify-3a.md](./004a-cash-unify-3a.md) | CASH-UNIFY-3A | **Done** | 004 |
+| 5 | [005-cash-unify-4.md](./005-cash-unify-4.md) | CASH-UNIFY-4 | **Done** | 004, 004a |
+| 5a | *(in-repo — CASH-UNIFY-4A)* | CASH-UNIFY-4A | **Done** | 005 |
+| 5b | *(in-repo — CASH-UNIFY-4B)* | CASH-UNIFY-4B | **Done** | 005 |
+| 5c | *(in-repo — CASH-CORR-1A)* | CASH-CORR-1A | **Done** | 004a |
 | 6 | [006-fx-1.md](./006-fx-1.md) | FX-1 | Open | 005 (recommended) |
 | 7 | [007-fx-2.md](./007-fx-2.md) | FX-2 | Open | 006 |
-| 8 | [008-fd-tax-1a.md](./008-fd-tax-1a.md) | FD-TAX-1a | Open | — |
-| 9 | [009-fd-tax-2.md](./009-fd-tax-2.md) | FD-TAX-2 | Open | 008 |
+| 8 | [008-fd-tax-1a.md](./008-fd-tax-1a.md) | FD-TAX-1a | **Done** | — |
+| 9 | [009-fd-tax-2.md](./009-fd-tax-2.md) | FD-TAX-2 | **Done** | 008 |
 | 10 | [010-fd-acc-10c.md](./010-fd-acc-10c.md) | FD-ACC-10C | Open | — |
 | 11 | [011-fd-acc-10d.md](./011-fd-acc-10d.md) | FD-ACC-10D | Open | 010 |
-| 12 | [012-cash-corr-1.md](./012-cash-corr-1.md) | CASH-CORR-1 | Open | 005, 010 (recommended) |
+| 12 | [012-cash-corr-1.md](./012-cash-corr-1.md) | CASH-CORR-1 | Open | 005, 004a |
 | 13 | [013-fd-analytics-1.md](./013-fd-analytics-1.md) | FD-ANALYTICS-1 | Open | 005 |
 | 14 | [014-fd-analytics-2.md](./014-fd-analytics-2.md) | FD-ANALYTICS-2 | Open | 013 |
+| 15 | [015-fd-perf-2.md](./015-fd-perf-2.md) | FD-PERF-2 | **Done** | FD-PERF-1-DIAG |
 
-**Legend:** Open = not started by Background Agent. Planner updates status after review/merge.
+**Legend:** Open = not started by Background Agent. **Done** = implemented and documented. Planner updates status after review/merge.
+
+### Milestone closeout (2026-06-26)
+
+**MILESTONE-CLOSEOUT-1** — Cash unification (CASH-UNIFY-0..4B, 4A, CASH-CORR-1A) and FD tax reporting (FD-TAX-1/1A/2) streams are **complete**. See [current-state.md](../current-state.md) § Milestone.
 
 ---
 
 ## Epic summaries
 
-### CASH-UNIFY (001–005)
+### CASH-UNIFY (001–005, 004a, 4A, 4B, CORR-1A, 012)
 
 Clarify and surface the **two-ledger cash model** (portfolio broker cash vs bank ledger) without merging storage. Portfolio `CashLedgerEntry` and bank `CashMovement` remain separate per `docs/decisions.md` and [cash-unification.md](../cash-unification.md).
 
+**Refined model (CASH-MODEL-REFINE-1):** Bank accounts are external funding sources; FD portfolio is explicit at create. `BankAccount.portfolio` = cash visibility only.
+
 | Phase | Backlog | Scope |
 |-------|---------|--------|
-| **0** | 001 | Design doc + ADR (done) |
-| **1** | 002 | `BankAccount.portfolio` + inference backfill + `GET /cash/overview` read API |
-| **2** | 003 | FD create derives portfolio from bank account |
-| **3** | 004 | Unified Cash page UI (Broker + Bank + Total sections) |
-| **4** | 005 | Display-currency totals, terminology, stabilization |
+| **0** | 001 | Design doc + ADR (**done**) |
+| **1** | 002 | `BankAccount.portfolio` link FK + inference + `GET /cash/overview` (**done**) |
+| **2** | 003 | ~~FD create derives portfolio from linked bank account~~ (**superseded** by 006) |
+| **2b** | 006 | FD create explicit portfolio; bank link optional (**done**) |
+| **3** | 007 | Historical bank balance seed for backdated FD (**done**) |
+| **3b** | [007b](./007b-fd-funding-model-1b.md) | Funding-aware as-of balance + seed-and-create UX fix (**done**) |
+| **4** | [008](./008-fd-maturity-value-1.md) | FD expected maturity value estimate + user override (**done**) |
+| **4b** | [008b](./008b-fd-holdings-ux-1.md) | Holdings maturity display + action strip UX (**done**) |
+| **5** | [010](./010-fd-interest-maturity-logic-1.md) | Compounded vs payout FD maturity/interest estimates (**done**) |
+| **6** | [011](./011-fd-detail-calc-1.md) | FD detail page with expected schedule, actuals, FY filter (**done**) |
+| **3** | 004 | Unified Cash page UI (**done**) |
+| **3A** | 004a | Cash page verification: attribution, broker actions, diagnostics (**done**) |
+| **4** | 005 | Bank account link/delink UX + inclusion + display-currency stabilization (**done**) |
+| **4B** | — | Bank link modal fix + display currency auto-select on portfolio switch (**done**) |
+| **4A** | — | Final audit/stabilization; `cash_overview_diagnostics`; docs/tests (**done**) |
+| **CORR-1A** | — | Safe broker cash reversal API + command (**done**) |
+| **CORR** | 012 | Reconciliation diagnostics + cross-ledger reclassification (**partial** — 1A done) |
 
-**Deferred (not in backlog index):** CASH-UNIFY-5 broker ↔ bank transfer workflow; CASH-UNIFY-6 physical/offline cash account.
+**Deferred (not in backlog index):** CASH-UNIFY-5 broker ↔ bank **transfer** workflow (actual movements); CASH-UNIFY-6 physical/offline cash account; **FD-FUND-BROKER** broker-cash FD create.
 
 ### FX (006–007)
 
 Deferred cash FX features: same-portfolio FX conversion legs (Cash-8C) and display-currency normalization on cash surfaces.
 
-### FD-TAX (008–009)
+### FD-TAX (008–009) — **complete**
 
-FD-TAX-1 report polish (1a), then CSV/export (2).
+| Phase | Scope | Status |
+|-------|--------|--------|
+| FD-TAX-1 | Read-only interest/tax report API + UI | **Done** (pre-backlog) |
+| **1A** | 008 | Report polish — filters, notes, warnings, grouped totals |
+| **2** | 009 | CSV export (`GET .../export.csv`) |
+
+Not tax advice. No accounting changes.
 
 ### FD-ACC reversal completion (010–011)
 
@@ -151,7 +180,7 @@ FD-ACC-10C: settlement/renewal/cancel-FD reversals. FD-ACC-10D: audit, classifie
 
 ### CASH-CORR (012)
 
-Read-only reconciliation diagnostics and guided correction UX across broker and bank ledgers.
+Reconciliation diagnostics and **safe reclassification** for mistaken broker ↔ bank cash entries (audited; no silent rewrite). Distinct from link/delink (CASH-UNIFY-4) and transfer (CASH-UNIFY-5).
 
 ### FD-ANALYTICS (013–014)
 
@@ -161,7 +190,7 @@ Standalone FD performance metrics and dashboard/analytics surfacing (principal-o
 
 ## References
 
-- [AGENTS.md](../../AGENTS.md) — agent rules + Background Agent Operating Rules
+- [AGENTS.md](../agents.md) — agent rules + Background Agent Operating Rules
 - [docs/data-safety.md](../data-safety.md) — incident notes, backup/restore
 - [docs/workflows.md](../workflows.md) — make targets, TDD workflow
 - [docs/cash-ledger.md](../cash-ledger.md) — broker cash ledger

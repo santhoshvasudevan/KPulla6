@@ -114,11 +114,11 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 **Files:** `pages/AssetDetail.jsx` · `pages/AssetDetail.css`
 
-**Layout status:** **Implemented (P6)** — premium asset tear-sheet using Executive Portfolio OS primitives.
+**Layout status:** **Implemented (P6)** — premium asset Metric Sheet layout using Executive Portfolio OS primitives.
 
 | Section | Layout |
 |---------|--------|
-| **Header** | Tear-sheet `PageHeader` with `AssetClassPill` eyebrow, symbol title, breadcrumb to Assets, scope/currency subtitle. |
+| **Header** | Metric Sheet `PageHeader` with `AssetClassPill` eyebrow, symbol title, breadcrumb to Assets, scope/currency subtitle. |
 | **Warnings** | FX and API `warnings[]` banners. |
 | **Hero KPIs** | `KpiCard` grid: Current Value (hero), Quantity, Unrealized P/L, XIRR — backend values only. |
 | **Section nav** | Sticky in-page anchors: Overview, Metrics, Details, Transactions. |
@@ -170,25 +170,26 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 **Files:** `pages/Cash.jsx` · `pages/Cash.css` · `components/CashBulkEntriesWizard.jsx`
 
-**Layout status:** **Implemented (P5)** — broker cash ledger page. **Planned (CASH-UNIFY-3):** Bank Cash section + Total Cash KPIs — [cash-unification.md](./cash-unification.md) §5.
+**Layout status:** **Implemented (P5 + CASH-UNIFY-3..4A)** — unified Cash / Liquid Holdings page; stream complete (MILESTONE-CLOSEOUT-1). [cash-unification.md](./cash-unification.md) §5.
 
 | Section | Layout |
 |---------|--------|
-| **Header** | `PageHeader` — title “Cash” (future: **Cash / Liquid Holdings**); subtitle explains native per-currency **broker** balances; primary actions: Add Deposit, Add Withdrawal, Add Bulk Cash Entries, Transfer Cash. |
-| **Overview** | `KpiCard` strip from backend `totals_by_currency` (all scope) or per-currency balance rows (single portfolio) — display only. **Future:** add Bank Cash + Total Cash KPIs from overview API. |
+| **Header** | `PageHeader` — title **Cash / Liquid Holdings**; subtitle explains separate broker vs bank ledgers; **Broker Cash actions**: Add Deposit, Add Withdrawal, Add Bulk Cash Entries, Transfer Cash. |
+| **Overview** | `KpiCard` strip from `GET /cash/overview` totals: **Total Cash**, **Broker Cash**, **Bank Cash** (display currency when FX available). |
 | **Cash-aware** | `CashAwarePortfolioStatus`; enable for selected legacy portfolio; all-scope explanatory note. |
-| **Balances** | `DataTableShell` + `AppTable`: balance table by portfolio/currency from `GET /cash/balances`. |
-| **Ledger** | `AppCard` with filter bar (currency, entry type, date from/to) + nested `DataTableShell` + `AppTable`; `StatusBadge` for entry types; backend pagination; Details column from API. |
-| **Manual edit/delete** | Manual deposit/withdrawal rows only; edit modal reuses cash fields; delete confirm; future-impact 409 panel; linked/system/transfer rows are protected. |
-| **Bulk cash entries** | Configure → `previewCashBulkEntries`; Review schedule/warnings/totals → `applyCashBulkEntries`; Result summary; refresh balances + ledger. |
-| **Transfer Cash** | Same- or cross-currency transfer; user-entered target amount; implied rate informational only; no market FX. |
-| **Bank Cash (future)** | Read-only section: per bank account balance rows scoped to portfolio; link to Settings → Bank account movements; helper: funds **FD/bank products**, not securities. |
+| **Broker Cash** | `DataTableShell` + `AppTable` from overview `BROKER_CASH` rows (portfolio, account label, currency, native + display balance, available for, source). |
+| **Bank Cash** | `DataTableShell` + `AppTable` from overview `BANK_CASH` rows — read-only; assignment status; include-in-portfolio-value; link → Settings → Bank Accounts. |
+| **Exclusions** | Warnings/counts for unlinked/ambiguous banks; always-visible toggle **Show unassigned / ambiguous bank accounts** (`include_unassigned`); copy warns not to add duplicate bank cash when reversing mistaken broker entries |
+| **Broker ledger** | `AppCard` with filter bar + nested `DataTableShell` + `AppTable`; manual edit/delete/**reverse** on eligible broker rows only. |
+| **Bulk / transfer** | Unchanged broker write flows (`CashBulkEntriesWizard`, transfer modal). |
 
-**States:** balance loading/error/empty, ledger loading/error/empty, write success/error, withdrawal shortfall, future-impact panel, transfer shortfall/future-impact, bulk preview warnings/result.
+**States:** overview loading/error/empty, per-section empty (no broker / no bank / no cash), ledger loading/error/empty, write success/error, withdrawal shortfall, future-impact panel, FX partial warning, excluded bank account warning.
 
-**APIs:** `fetchCashBalances`, `fetchCashLedger`, … (today). **Planned:** `fetchCashOverview` (CASH-UNIFY-1) for bank cash section.
+**APIs:** `fetchCashOverview` (overview KPIs + tables), `fetchCashLedger`, broker write endpoints. `fetchCashBalances` remains in `api.js` but Cash page no longer calls it.
 
-**Preserve in redesign:** React displays backend cash balances, ledger rows, details, shortfalls, and future-impact payloads only. Do not compute running balances, join cash and asset transactions client-side, silently create deposits, or add implicit FX conversion. Bank cash rows are **read-only** on this page until CASH-UNIFY-5 (cross-ledger transfers) if ever implemented.
+**Preserve:** React displays backend overview/ledger only. Bank cash rows are **read-only** on this page. No bank movement CRUD here.
+
+**Known verification (CASH-UNIFY-3A):** Resolved 2026-06-25 — overview `ledger_type` filtering, source diagnostics, broker actions in header, always-on unassigned toggle. See [004a-cash-unify-3a.md](./backlog/004a-cash-unify-3a.md).
 
 **Tests:** `Cash.test.jsx`, `CashAwarePortfolioStatus.test.jsx`, `api.test.js`.
 
@@ -196,25 +197,32 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 ## 9. Fixed Deposits (`/fixed-deposits`)
 
-**Files:** `pages/FixedDeposits.jsx` · `pages/FixedDeposits.css` · `utils/fdDisplay.js`
+**Files:** `pages/FixedDeposits.jsx` · `pages/FixedDeposits.css` · `pages/FixedDepositDetail.jsx` · `utils/fdDisplay.js`
 
-**Status:** **Redesigned (P7)** — Executive Portfolio OS layout; no backend/API behavior changes.
+**Status:** **Redesigned (P7)** — Executive Portfolio OS layout; FD-HOLDINGS-UX-1 adds maturity display fallback + action strip; **FD-DETAIL-CALC-1** adds `/fixed-deposits/:id` detail page.
+
+| Section | Layout |
+|---------|--------|
+| **Holdings table** | Clickable data row → detail page; action strip below (stopPropagation) |
+| **Detail page** | Breadcrumb, KPI strip, FD details card, FY filter, expected schedule table, detailed calculation, Record/Edit actual modal with 10% tax shortcut |
 
 | Section | Layout |
 |---------|--------|
 | **Header** | `PageHeader` with FD/debt workflow subtitle and Add Fixed Deposit primary action. |
 | **Overview** | `KpiCard` strip: total deposits, active, matured, settled/closed counts from backend status fields only (no finance math). |
 | **Section nav** | Sticky Overview \| Deposits \| Interest & Tax anchor links (`#fd-overview`, `#fd-deposits`, `#fd-interest-report`). |
-| **Table** | `DataTableShell` + `AppTable`: institution, deposit account, principal (right-aligned), rate, investment/maturity dates, payout frequency (`fdPayoutLabel`), `StatusBadge` lifecycle status, action buttons. |
+| **Table** | `DataTableShell` + `AppTable`: institution, deposit account, principal (right-aligned), rate, investment/maturity dates, payout frequency (`fdPayoutLabel`), **maturity value** (compounded uplift or payout principal) + source badge + interest sublines (`fdDisplay` helpers), `StatusBadge` lifecycle status. |
+| **Create/edit preview (FD-INTEREST-MATURITY-LOGIC-1)** | Compounded: **Expected maturity value** card. Payout: **Expected interest payout** — principal returned at maturity, periodic + total interest estimates, simple payout method note. |
+| **Action strip (FD-HOLDINGS-UX-1)** | Full-width row below each FD: grouped buttons (Record interest, Interest payments \| Mark matured, Settle/Close, Renew \| Edit, Cancel FD, Deactivate); responsive wrap; Cancel uses danger styling. |
 | **Interest history** | Expandable nested `AppTable` per FD row; backend payment fields only. |
 | **Bank account dependency** | Fetches active bank accounts and portfolios. Create is blocked/guided when no active bank account exists. |
-| **Create modal** | Bank account dropdown; **portfolio read-only** derived from selected bank account (CASH-UNIFY-2); warning when bank unassigned/ambiguous; currency read-only from selected bank account; principal/rate/dates/status; shows **current** and **as-of investment date** ledger balances (balance API); Cash tab vs Bank Ledger note; structured insufficient-balance and portfolio-conflict error panels with auto-scroll/focus. |
+| **Create modal** | Portfolio dropdown (required); bank account dropdown as funding source; copy explains funding vs tracking; currency read-only from selected bank account; principal/rate/dates/status; shows **current** and **as-of investment date** ledger balances (balance API); insufficient as-of balance shows missing amount + inline **Seed missing balance** panel (`seed-balance` API); Cash tab vs Bank Ledger note; structured insufficient-balance error panel with auto-scroll/focus. |
 | **Edit modal** | Existing FD fields; principal/bank/currency/investment date/portfolio disabled when `has_opening_cash_movement`; backend errors remain visible. |
 | **Cancel / Deactivate** | **Cancel FD** (`POST /fixed-deposits/{id}/cancel`) — mistaken ledger-backed `ACTIVE`/`MATURED` only; reverses `FD_OPENING`; confirmation explains bank debit reversal. **Deactivate** (`DELETE`) — legacy FDs without opening movement only (**409** when ledger-backed). **Not** settle/renew — those record real institution events. |
 | **Interest payments** | Expand/list per-FD payments; Record Interest modal with payment date, gross interest, tax withheld, display-only net; backend warnings (e.g. compounded FD) shown. |
 | **Maturity/settlement** | Mark Matured for active FDs; Settle/Close modal with principal returned, gross final interest, tax withheld, display-only net/total; settled/closed rows hide settlement actions. |
 | **Renewal** | Renew action for eligible ACTIVE/MATURED FDs; modal with new terms, direct rollover, cash payout, tax fields, bank cash warnings; hidden when settled or already renewed. |
-| **Interest & Tax report (FD-TAX-1)** | Date range + group-by filters; KPI cards (gross/tax/net); grouped totals table; detail rows table; disclaimer (“not tax advice”). Read-only — no accounting changes. |
+| **Interest & Tax report (FD-TAX-1 / FD-TAX-1A / FD-TAX-2)** | Default range = current calendar year; date + group-by filters (incl. **Bank account**); **Reset filters**; KPI cards (gross/tax/net/row count); grouped totals with readable labels; exclusion/disclaimer notes; FX/mixed-currency warnings near totals; improved empty state; **Export CSV** (header actions; uses current filters). Read-only — no accounting changes. |
 
 **States:** waits for `settingsLoaded && apiQuery`, loading, API error, empty list, no-bank-account warning, unseeded opening balance warning, insufficient ledger warning/error, lifecycle success/error banners, report empty/error states.
 
@@ -269,14 +277,15 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 | **Section nav** | Sticky Display \| Portfolios \| Bank Accounts \| Data Sync anchor links. |
 | **Display & tax** | `AppCard` with responsive form grid: tax rate, display currency, Save button, success/error banners. |
 | **Portfolios** | `AppCard` wrapping `PortfolioManagement` — CRUD, max active enforcement, cash-aware toggle. |
-| **Bank accounts** | `AppCard` with `BankAccountManagement` and nested `CashMovementManagement`. |
+| **Bank accounts** | `AppCard` with `BankAccountManagement` (linked portfolio column; link/change-link **modal**; delink action; helper text) and nested `CashMovementManagement`. |
+| **Portfolio / currency** | Header **Portfolio View** selector; **Display Currency** auto-syncs to portfolio `base_currency` on portfolio switch when supported (4B); **All Portfolios** preserves current display currency; unsupported base unchanged. |
 | **Data & sync** | `AppCard` with cached-data and backend refresh guidance (no live sync UI). |
 
 **States:** initial loading/error, settings save success/error, portfolio validation errors, bank-account ledger/unseeded warnings, cash movement errors.
 
 **APIs:** `getSettings`, `updateSettings`, `createPortfolio`, `updatePortfolio`, `deletePortfolio`, `fetchBankAccounts`, `createBankAccount`, `updateBankAccount`, `deleteBankAccount`, `seedBankAccountOpeningBalance`, `fetchCashMovements`, `createCashMovement`, `reverseCashMovement`, `reloadPortfolios()`.
 
-**Preserve in redesign:** display currency must stay synchronized with sidebar context; All Portfolios remains virtual and cannot be created/assigned; default portfolio cannot be deactivated; bank ledger/current balance rules are backend-owned.
+**Preserve in redesign:** display currency must stay synchronized with header portfolio/currency context; All Portfolios remains virtual and cannot be created/assigned; default portfolio cannot be deactivated; bank ledger/current balance rules are backend-owned.
 
 **Tests:** `Settings.test.jsx`, `BankAccountManagement.test.jsx`, `CashMovementManagement.test.jsx`, `Layout.test.jsx`.
 
@@ -385,7 +394,7 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 | 2026-06-22 | P4.4 navigation architecture: single top nav, no duplicate left sidebar, Dashboard in-page anchors only | Implemented |
 | 2026-06-22 | P4R: Dashboard anchor scroll offset; Settings left-heavy layout deferred to P9 | Implemented |
 | 2026-06-23 | P5: Transactions and Cash redesigned as premium ledger/overview pages; no API/backend changes | Implemented |
-| 2026-06-23 | P6: Assets and Asset Detail redesigned as holdings hub and asset tear-sheet; no API/backend changes | Implemented |
+| 2026-06-23 | P6: Assets and Asset Detail redesigned as holdings hub and asset Metric Sheet; no API/backend changes | Implemented |
 | 2026-06-23 | P7: Fixed Deposits redesigned with KPI overview, lifecycle badges, premium table; no API/backend changes | Implemented |
 | 2026-06-23 | P8: Compare redesigned as analytics workstation with setup panel, ChartFrame, KPI strip; no API/backend changes | Implemented |
 | 2026-06-23 | P9: Settings redesigned as centered workspace with section nav and AppCard sections; no API/backend changes | Implemented |

@@ -44,6 +44,7 @@ from portfolios.summary_service import (
     transactions_by_mf_holding,
     transactions_by_symbol,
 )
+from debt.fd_attributed_income import merge_fd_attributed_income_into_return_timeseries
 from debt.portfolio_value import (
     merge_fd_bank_into_value_timeseries,
     value_timeseries_inception_date,
@@ -177,6 +178,38 @@ def _apply_fd_bank_to_return_timeseries(
     )
 
 
+def _apply_fd_attributed_income_to_return_timeseries(
+    timeseries: list[dict],
+    warnings: list[str],
+    *,
+    user,
+    scope: ResolvedPortfolioScope,
+    disp_ccy: str,
+    emit_start: date | None,
+    today: date,
+) -> tuple[list[dict], list[str]]:
+    """FD-PERF-2: cumulative attributed payout income for return metrics only."""
+    if user is None:
+        return timeseries, warnings
+    if timeseries:
+        loop_start = date.fromisoformat(timeseries[0]["date"])
+        loop_end = date.fromisoformat(timeseries[-1]["date"])
+        if emit_start is not None:
+            loop_start = min(loop_start, emit_start)
+    else:
+        loop_start = emit_start or today
+        loop_end = today
+    merged, attr_warnings = merge_fd_attributed_income_into_return_timeseries(
+        timeseries,
+        user=user,
+        scope=scope,
+        display_currency=disp_ccy,
+        start_date=loop_start,
+        end_date=loop_end,
+    )
+    return merged, warnings + attr_warnings
+
+
 def build_return_value_timeseries(
     *,
     scope: ResolvedPortfolioScope,
@@ -302,7 +335,16 @@ def build_return_value_timeseries(
             include_fd=False,
             include_bank=True,
         )
-        return merged, agg_warnings + bank_warnings
+        merged, warnings = _apply_fd_attributed_income_to_return_timeseries(
+            merged,
+            agg_warnings + bank_warnings,
+            user=user,
+            scope=scope,
+            disp_ccy=disp_ccy,
+            emit_start=emit_start,
+            today=today,
+        )
+        return merged, warnings
 
     portfolio = Portfolio.objects.filter(pk=scope.portfolio_ids[0]).first()
     if portfolio is None:
@@ -334,6 +376,15 @@ def build_return_value_timeseries(
             emit_start=emit_start,
         )
         warnings.extend(fb_warnings)
+        merged, warnings = _apply_fd_attributed_income_to_return_timeseries(
+            merged,
+            warnings,
+            user=user,
+            scope=scope,
+            disp_ccy=disp_ccy,
+            emit_start=emit_start,
+            today=today,
+        )
         return merged, warnings
 
     if not all_txns:
@@ -345,7 +396,16 @@ def build_return_value_timeseries(
             today=today,
             emit_start=emit_start,
         )
-        return merged, warnings + fb_warnings
+        merged, warnings = _apply_fd_attributed_income_to_return_timeseries(
+            merged,
+            warnings + fb_warnings,
+            user=user,
+            scope=scope,
+            disp_ccy=disp_ccy,
+            emit_start=emit_start,
+            today=today,
+        )
+        return merged, warnings
 
     raw_ts = build_portfolio_value_timeseries(
         all_txns, by_symbol, by_mf, emit_start_date=emit_start
@@ -365,7 +425,16 @@ def build_return_value_timeseries(
         today=today,
         emit_start=emit_start,
     )
-    return merged, warnings + fb_warnings
+    merged, warnings = _apply_fd_attributed_income_to_return_timeseries(
+        merged,
+        warnings + fb_warnings,
+        user=user,
+        scope=scope,
+        disp_ccy=disp_ccy,
+        emit_start=emit_start,
+        today=today,
+    )
+    return merged, warnings
 
 
 def _to_response_point(pt: PerformancePoint, *, label: str | None = None) -> dict:

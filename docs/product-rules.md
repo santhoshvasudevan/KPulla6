@@ -4,7 +4,7 @@
 
 **Canonical deep docs:** [cash-ledger.md](./cash-ledger.md) · [cash-unification.md](./cash-unification.md) · [architecture.md](./architecture.md) · [api-design.md](./api-design.md) · [api-contracts.md](./api-contracts.md) · [frontend-design.md](./frontend-design.md) · [decisions.md](./decisions.md) · [mvp-release-checklist.md](./mvp-release-checklist.md)
 
-**Agent rules:** [AGENTS.md](../AGENTS.md) · [.cursor/rules/320-cash-ledger.mdc](../.cursor/rules/320-cash-ledger.mdc)
+**Agent rules:** [AGENTS.md](agents.md) · [Cash Ledger Cursor rule](cursor-rules/320-cash-ledger.md)
 
 ---
 
@@ -117,12 +117,18 @@ Full protocol: [data-safety.md](./data-safety.md) · [workflows.md](./workflows.
 
 ---
 
-## I. Bank cash & cash unification (design — CASH-UNIFY-0)
+## I. Bank cash & cash unification (CASH-MODEL-REFINE-0)
 
 | Rule | Summary |
 |------|---------|
-| Bank ledger separate | Bank cash truth is `CashMovement` on `BankAccount` — not `CashLedgerEntry`. FD opening debits bank ledger only. |
-| Broker vs bank in UI | **Broker Cash** = securities buying power; **Bank Cash** = FD/bank products. Future Cash tab shows both ([cash-unification.md §5](./cash-unification.md)). |
-| Portfolio ownership (future) | Investment-linked bank accounts → one portfolio (CASH-UNIFY-1); FD portfolio derived from bank account (CASH-UNIFY-2). |
+| Bank account independence | `BankAccount` is a real-world account; `BankAccount.portfolio` is a **current portfolio link**, not ownership. |
+| Bank ledger separate | Bank cash truth is `CashMovement` on `BankAccount` — not `CashLedgerEntry`. |
+| Broker vs bank in UI | **Broker Cash** = securities buying power; **Bank Cash** = linked bank balances. Cash tab shows both ([cash-unification.md §5](./cash-unification.md)). |
+| Linked vs unlinked | Linked → bank cash in portfolio **Bank Cash**; unlinked → external/unassigned (overview `include_unassigned`). |
+| Link/delink | Classification/inclusion only — **no** ledger movements. |
+| Transfer vs correction | **Transfer** = actual movement between ledgers (CASH-UNIFY-5). **Correction** = audited fix for mistaken entry (CASH-CORR-1). |
+| FD funding — one source | Each FD uses **one** funding path: **linked bank account** OR **broker cash** from portfolio. **No** partial bank+broker split. |
+| FD funding — today | **Bank path only** (`FD_OPENING` on bank ledger). Unlinked bank cannot fund FD. Broker-cash path **not implemented**. |
+| FD portfolio (bank path) | Explicit `portfolio_id` at create; bank account is funding source only (CASH-MODEL-REFINE-1). |
 | Inclusion (today) | `include_in_portfolio_value` opt-in; conservative single-portfolio inference (FD-ACC-7). |
-| No cross-ledger auto-writes | Backfill and migration set FKs/flags only — no automatic transfer legs (CASH-UNIFY-5 deferred). |
+| No cross-ledger auto-writes | Backfill and link/delink set FKs/flags only — no automatic transfer legs (CASH-UNIFY-5 deferred). |

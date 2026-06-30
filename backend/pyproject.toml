@@ -1,0 +1,9 @@
+# Backend tooling configuration (pytest).
+# Runtime dependencies remain in requirements.txt — not managed here.
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+pythonpath = ["."]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra"

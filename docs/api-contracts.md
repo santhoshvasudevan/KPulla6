@@ -64,10 +64,39 @@ Detail: [api-design.md § analytics](./api-design.md), [architecture.md § Metri
 | POST | `/cash/transfers` | Same- or cross-currency transfer | `createCashTransfer` | `transfer_group_id`, `source_*`, `target_*`, `implied_rate`, `entries[]` | **400 shortfall**; **409** future impact on source | `test_cash_api.py` | `Cash.test.jsx`, `api.test.js` |
 | POST | `/cash/bulk-entries/preview` | Schedule preview | `previewCashBulkEntries` | `entries[]`, `total_by_currency`, `warnings[]` | 400 schedule invalid | `test_cash_bulk_entries_api.py` | `Cash.test.jsx` |
 | POST | `/cash/bulk-entries/apply` | Confirmed bulk write | `applyCashBulkEntries` | `created_count`, `skipped_existing_count`, `created_entries[]` | 400 negative balance preview | `test_cash_bulk_entries_api.py` | `Cash.test.jsx` |
+| POST | `/cash/ledger/{id}/reverse` | Reverse manual broker entry (CASH-CORR-1A) | `reverseCashLedgerEntry` | Reversal entry + audit link | 400/409 ineligible | `test_cash_ledger_reversals_api.py` | `Cash.test.jsx` |
 
 **Removed:** `POST /cash/backfill-preview`, `POST /cash/backfill-apply`.
 
+**Diagnostics (management command):** `cash_overview_diagnostics` — read-only broker/bank summary (CASH-UNIFY-4A). Not a REST endpoint.
+
 Detail: [api-design.md § Cash API](./api-design.md).
+
+---
+
+## Bank accounts (debt / bank ledger)
+
+| Method | Endpoint | Purpose | Frontend | Key blocks | Errors | Backend tests | Frontend tests |
+|--------|----------|---------|----------|------------|--------|---------------|----------------|
+| GET/PUT | `/bank-accounts` | List / update incl. `portfolio_id` link | `fetchBankAccounts`, `updateBankAccount` | `portfolio_id`, `portfolio_assignment_status`, balances | 400 portfolio conflict | `test_bank_accounts_api.py` | `BankAccountManagement.test.jsx` |
+| GET | `/bank-accounts/{id}/balance` | Ledger balance (optional `as_of`) | `fetchBankAccountBalance` | `current_balance`, `as_of_date` | 404 | `test_bank_accounts_api.py` | `FixedDeposits.test.jsx` |
+
+**Link/delink:** `PUT` `portfolio_id` set or `null` — inclusion only; no `CashMovement` created (CASH-UNIFY-4).
+
+Detail: [api-design.md § Bank accounts](./api-design.md), [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
+
+---
+
+## Reports (FD tax)
+
+| Method | Endpoint | Purpose | Frontend | Key blocks | Errors | Backend tests | Frontend tests |
+|--------|----------|---------|----------|------------|--------|---------------|----------------|
+| GET | `/reports/fixed-deposit-interest` | FD interest/tax JSON report | `fetchFixedDepositInterestReport` | `rows`, `totals`, `grouped_totals`, `warnings` | 400 bad `group_by` | `test_fixed_deposit_interest_report_api.py` | `FixedDepositInterestReport.test.jsx` |
+| GET | `/reports/fixed-deposit-interest/export.csv` | CSV export (detail rows) | `exportFixedDepositInterestReportCsv` | `text/csv` attachment | same filters as JSON | same | same |
+
+Read-only. Not tax advice. No accounting side effects.
+
+Detail: [api-design.md § FD interest report](./api-design.md), [fixed-deposits.md](./fixed-deposits.md).
 
 ---
 
@@ -111,3 +140,7 @@ Detail: [api-design.md § Settings & Portfolios](./api-design.md).
 | Metric Sheet query params | Analytics — common query parameters |
 | Transfer request/response (8A/8B) | Cash — `POST /cash/transfers` |
 | Future impact 409 (cash ledger) | Cash-4D — `PUT`/`DELETE /cash/ledger/{id}` |
+| Broker ledger reversal (CORR-1A) | Cash — `POST /cash/ledger/{id}/reverse` |
+| Cash overview (unified read) | Cash — `GET /cash/overview` |
+| FD interest/tax report + CSV | Reports — `/reports/fixed-deposit-interest` |
+| Bank account portfolio link | Bank accounts — `PUT /bank-accounts/{id}` `portfolio_id` |

@@ -11,6 +11,7 @@ vi.mock('../api', async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,
+    fetchCashOverview: vi.fn(),
     fetchCashBalances: vi.fn(),
     fetchCashLedger: vi.fn(),
     createCashDeposit: vi.fn(),
@@ -18,6 +19,7 @@ vi.mock('../api', async (importOriginal) => {
     createCashTransfer: vi.fn(),
     updateCashLedgerEntry: vi.fn(),
     deleteCashLedgerEntry: vi.fn(),
+    reverseCashLedgerEntry: vi.fn(),
     previewCashBulkEntries: vi.fn(),
     applyCashBulkEntries: vi.fn(),
     fetchPortfolios: vi.fn(),
@@ -78,6 +80,90 @@ const allBalancesFixture = {
     { currency: 'EUR', balance: 12500 },
     { currency: 'INR', balance: 50000 },
   ],
+};
+
+const overviewFixture = {
+  portfolio_scope: 'all',
+  as_of_date: '2026-06-04',
+  display_currency: 'EUR',
+  rows: [
+    {
+      ledger_type: 'BROKER_CASH',
+      portfolio_id: 1,
+      portfolio_name: 'Scalablefolio',
+      currency: 'EUR',
+      balance: 12500,
+      account_label: 'Broker Cash',
+      available_for: 'securities / broker transactions',
+      source: 'cash_ledger_entries',
+      balance_display: 12500,
+      display_currency: 'EUR',
+    },
+    {
+      ledger_type: 'BROKER_CASH',
+      portfolio_id: 2,
+      portfolio_name: 'IndianMF',
+      currency: 'INR',
+      balance: 50000,
+      account_label: 'Broker Cash',
+      available_for: 'securities / broker transactions',
+      source: 'cash_ledger_entries',
+      balance_display: 550,
+      display_currency: 'EUR',
+    },
+    {
+      ledger_type: 'BANK_CASH',
+      bank_account_id: 1,
+      bank_account_name: 'Savings',
+      institution_name: 'HDFC',
+      account_number: 'ACC-1',
+      portfolio_id: 1,
+      portfolio_name: 'Scalablefolio',
+      portfolio_assignment_status: 'ASSIGNED',
+      currency: 'INR',
+      balance: 100000,
+      include_in_portfolio_value: true,
+      account_label: 'Bank Cash',
+      available_for: 'fixed deposits / bank products',
+      source: 'cash_movements',
+      balance_display: 1100,
+      display_currency: 'EUR',
+    },
+  ],
+  totals: {
+    as_of_date: '2026-06-04',
+    display_currency: 'EUR',
+    fx_status: 'ok',
+    broker_cash_display: 13050,
+    bank_cash_display: 1100,
+    total_cash_display: 14150,
+    by_currency: [
+      { currency: 'EUR', broker_cash: 12500, bank_cash: 0, total_cash: 12500 },
+      { currency: 'INR', broker_cash: 50000, bank_cash: 100000, total_cash: 150000 },
+    ],
+  },
+  warnings: [],
+  excluded_unassigned_bank_account_count: 1,
+  excluded_ambiguous_bank_account_count: 0,
+};
+
+const emptyOverviewFixture = {
+  portfolio_scope: 'all',
+  as_of_date: '2026-06-04',
+  display_currency: 'EUR',
+  rows: [],
+  totals: {
+    as_of_date: '2026-06-04',
+    display_currency: 'EUR',
+    fx_status: 'ok',
+    broker_cash_display: 0,
+    bank_cash_display: 0,
+    total_cash_display: 0,
+    by_currency: [],
+  },
+  warnings: [],
+  excluded_unassigned_bank_account_count: 0,
+  excluded_ambiguous_bank_account_count: 0,
 };
 
 const emptyBalancesFixture = {
@@ -174,20 +260,27 @@ const bulkApplyFixture = {
 function renderCash(options = {}) {
   const { initialSelection, initialPortfolios = activePortfolios } = options;
   return render(
-    <PortfolioProvider
-      disableFetch
-      initialPortfolios={initialPortfolios}
-      initialSelection={initialSelection}
-      initialDisplayCurrency="EUR"
-    >
-      <Cash />
-    </PortfolioProvider>
+    <MemoryRouter>
+      <PortfolioProvider
+        disableFetch
+        initialPortfolios={initialPortfolios}
+        initialSelection={initialSelection}
+        initialDisplayCurrency="EUR"
+      >
+        <Cash />
+      </PortfolioProvider>
+    </MemoryRouter>
   );
+}
+
+async function waitForCashPageReady() {
+  await screen.findByText('Broker Cash');
 }
 
 describe('Cash page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    api.fetchCashOverview.mockResolvedValue(overviewFixture);
     api.fetchCashBalances.mockResolvedValue(allBalancesFixture);
     api.fetchCashLedger.mockResolvedValue(ledgerFixture);
     api.createCashDeposit.mockResolvedValue({ id: 99 });
@@ -198,6 +291,11 @@ describe('Cash page', () => {
     });
     api.updateCashLedgerEntry.mockResolvedValue({ id: 10 });
     api.deleteCashLedgerEntry.mockResolvedValue(null);
+    api.reverseCashLedgerEntry.mockResolvedValue({
+      original: { id: 10, is_reversed: true },
+      reversal: { id: 301, entry_type: 'CASH_WITHDRAWAL', amount: -100 },
+      message: 'Broker cash entry reversed.',
+    });
     api.previewCashBulkEntries.mockReset();
     api.previewCashBulkEntries.mockResolvedValue(bulkPreviewFixture);
     api.applyCashBulkEntries.mockReset();
@@ -205,11 +303,13 @@ describe('Cash page', () => {
     window.confirm = vi.fn(() => true);
   });
 
-  it('shows page header with title and subtitle', async () => {
+  it('shows page header with unified cash title and subtitle', async () => {
     renderCash();
-    expect(await screen.findByRole('heading', { name: /^cash$/i })).toBeInTheDocument();
     expect(
-      screen.getByText(/native cash balances by portfolio and currency/i)
+      await screen.findByRole('heading', { name: /cash \/ liquid holdings/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/broker cash and bank cash are shown separately/i)
     ).toBeInTheDocument();
   });
 
@@ -239,10 +339,10 @@ describe('Cash page', () => {
     });
   });
 
-  it('calls fetchCashBalances and fetchCashLedger with all-portfolios scope', async () => {
+  it('calls fetchCashOverview and fetchCashLedger with all-portfolios scope', async () => {
     renderCash({ initialSelection: { mode: 'all', id: null, name: 'All Portfolios' } });
     await waitFor(() => {
-      expect(api.fetchCashBalances).toHaveBeenCalledWith({
+      expect(api.fetchCashOverview).toHaveBeenCalledWith({
         portfolio_scope: 'all',
         display_currency: 'EUR',
       });
@@ -257,28 +357,243 @@ describe('Cash page', () => {
     });
   });
 
-  it('renders empty balances state', async () => {
-    api.fetchCashBalances.mockResolvedValueOnce(emptyBalancesFixture);
+  it('renders empty cash holdings state', async () => {
+    api.fetchCashOverview.mockResolvedValueOnce(emptyOverviewFixture);
     api.fetchCashLedger.mockResolvedValueOnce({ items: [], total: 0, page: 1, page_size: 20, pages: 0 });
     renderCash();
-    expect(await screen.findByText('No cash balances')).toBeInTheDocument();
+    expect(await screen.findByText('No cash holdings')).toBeInTheDocument();
+    expect(screen.getByText('No broker cash')).toBeInTheDocument();
+    expect(screen.getByText('No bank cash')).toBeInTheDocument();
   });
 
-  it('renders balances from backend fixture without client-side calculation', async () => {
+  it('shows Total Cash, Broker Cash, and Bank Cash KPI cards', async () => {
     renderCash();
-    expect((await screen.findAllByText('Scalablefolio')).length).toBeGreaterThan(0);
+    expect(await screen.findByLabelText('Cash holdings overview')).toBeInTheDocument();
+    expect(screen.getByText('Total Cash (EUR)')).toBeInTheDocument();
+    expect(screen.getByText('Broker Cash (EUR)')).toBeInTheDocument();
+    expect(screen.getByText('Bank Cash (EUR)')).toBeInTheDocument();
+    expect(screen.getByText('€14,150.00')).toBeInTheDocument();
+  });
+
+  it('renders broker and bank cash rows from overview API', async () => {
+    renderCash();
+    expect(await screen.findByRole('heading', { name: /cash \/ liquid holdings/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { name: 'Broker Cash' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('heading', { name: 'Bank Cash' }).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Scalablefolio').length).toBeGreaterThan(0);
     expect(screen.getAllByText('IndianMF').length).toBeGreaterThan(0);
     expect(screen.getAllByText('€12,500.00').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('₹50,000.00').length).toBeGreaterThan(0);
-    expect(screen.getByLabelText('Cash balance overview')).toBeInTheDocument();
-    expect(screen.getByText('Total EUR')).toBeInTheDocument();
-    expect(screen.getByText('Total INR')).toBeInTheDocument();
+    expect(screen.getByText('HDFC')).toBeInTheDocument();
+    expect(screen.getByText('Savings')).toBeInTheDocument();
+    expect(screen.getAllByText('securities / broker transactions').length).toBeGreaterThan(0);
+    expect(screen.getByText('fixed deposits / bank products')).toBeInTheDocument();
     expect(screen.queryByText('62,500')).not.toBeInTheDocument();
+  });
+
+  it('shows Broker Cash actions label and all broker action buttons', async () => {
+    renderCash();
+    expect(await screen.findByText('Broker Cash actions')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /add deposit/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /add withdrawal/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /add bulk cash entries/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /transfer cash/i })).toBeInTheDocument();
+  });
+
+  it('renders source diagnostics for broker and bank rows', async () => {
+    const { container } = renderCash();
+    await screen.findByRole('heading', { name: 'Broker Cash' });
+    const brokerSection = container.querySelector('.cash-page__broker-cash');
+    const bankSection = container.querySelector('.cash-page__bank-cash');
+    await waitFor(() => {
+      expect(
+        within(brokerSection).getAllByText('Broker cash ledger (CashLedgerEntry)').length
+      ).toBeGreaterThan(0);
+    });
+    expect(
+      within(bankSection).getByText('Bank account ledger (CashMovement)')
+    ).toBeInTheDocument();
+  });
+
+  it('keeps BROKER_CASH rows in broker section and BANK_CASH rows in bank section', async () => {
+    const { container } = renderCash();
+    await screen.findByText('Broker Cash');
+    const brokerSection = container.querySelector('.cash-page__broker-cash');
+    const bankSection = container.querySelector('.cash-page__bank-cash');
+    expect(brokerSection).toBeTruthy();
+    expect(bankSection).toBeTruthy();
+    expect(within(brokerSection).getByText('IndianMF')).toBeInTheDocument();
+    expect(within(brokerSection).queryByText('HDFC')).not.toBeInTheDocument();
+    expect(within(bankSection).getByText('HDFC')).toBeInTheDocument();
+    expect(within(bankSection).queryByText('IndianMF')).not.toBeInTheDocument();
+  });
+
+  it('uses broker and bank KPI totals from overview without swapping', async () => {
+    renderCash();
+    const overview = await screen.findByLabelText('Cash holdings overview');
+    expect(within(overview).getByText('Broker Cash (EUR)')).toBeInTheDocument();
+    expect(within(overview).getByText('Bank Cash (EUR)')).toBeInTheDocument();
+    expect(within(overview).getByText('€13,050.00')).toBeInTheDocument();
+    expect(within(overview).getByText('€1,100.00')).toBeInTheDocument();
+    expect(within(overview).queryByText('€110,000.00')).not.toBeInTheDocument();
+  });
+
+  it('renders IndianInvestments-like fixture with broker 0 INR and bank 1,109,389 INR', async () => {
+    const indianInvestmentsOverview = {
+      portfolio_scope: 'single',
+      portfolio_id: 42,
+      as_of_date: '2026-06-04',
+      rows: [
+        {
+          ledger_type: 'BROKER_CASH',
+          portfolio_id: 42,
+          portfolio_name: 'IndianInvestments',
+          currency: 'INR',
+          balance: 0,
+          account_label: 'Broker Cash',
+          available_for: 'securities / broker transactions',
+          source: 'cash_ledger_entries',
+        },
+        {
+          ledger_type: 'BANK_CASH',
+          bank_account_id: 7,
+          bank_account_name: 'Savings',
+          institution_name: 'HDFC',
+          account_number: 'XXXX1234',
+          portfolio_id: 42,
+          portfolio_name: 'IndianInvestments',
+          portfolio_assignment_status: 'ASSIGNED',
+          currency: 'INR',
+          balance: 1109389,
+          include_in_portfolio_value: true,
+          account_label: 'Bank Cash',
+          available_for: 'fixed deposits / bank products',
+          source: 'cash_movements',
+        },
+      ],
+      totals: {
+        as_of_date: '2026-06-04',
+        by_currency: [
+          { currency: 'INR', broker_cash: 0, bank_cash: 1109389, total_cash: 1109389 },
+        ],
+        broker_cash: 0,
+        bank_cash: 1109389,
+        total_cash: 1109389,
+      },
+      warnings: [],
+      excluded_unassigned_bank_account_count: 0,
+      excluded_ambiguous_bank_account_count: 0,
+    };
+    api.fetchCashOverview.mockResolvedValue(indianInvestmentsOverview);
+    renderCash({
+      initialSelection: { mode: 'portfolio', id: 42, name: 'IndianInvestments' },
+      initialPortfolios: [
+        { id: 42, name: 'IndianInvestments', is_active: true, base_currency: 'INR' },
+      ],
+    });
+    const brokerSection = await waitFor(() => {
+      const section = document.querySelector('.cash-page__broker-cash');
+      if (!section) throw new Error('broker section not ready');
+      return section;
+    });
+    const bankSection = document.querySelector('.cash-page__bank-cash');
+    expect(within(brokerSection).getByText('₹0.00')).toBeInTheDocument();
+    expect(within(bankSection).getByText('₹1,109,389.00')).toBeInTheDocument();
+    const overview = screen.getByLabelText('Cash holdings overview');
+    expect(within(overview).getByText('Total Cash (INR)')).toBeInTheDocument();
+    expect(within(overview).getByText('Broker Cash (INR)')).toBeInTheDocument();
+    expect(within(overview).getByText('Bank Cash (INR)')).toBeInTheDocument();
+    expect(within(overview).getAllByText('₹1,109,389.00').length).toBeGreaterThanOrEqual(1);
+    expect(within(overview).getByText('₹0.00')).toBeInTheDocument();
+  });
+
+  it('does not render bank cash mutation forms on Cash page', async () => {
+    renderCash();
+    await screen.findByText('Bank Cash');
+    expect(screen.queryByRole('button', { name: /add bank/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/bank movement/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /manage bank accounts/i })).toBeInTheDocument();
+  });
+
+  it('always shows unassigned toggle even when no exclusions', async () => {
+    api.fetchCashOverview.mockResolvedValueOnce({
+      ...overviewFixture,
+      excluded_unassigned_bank_account_count: 0,
+      excluded_ambiguous_bank_account_count: 0,
+      warnings: [],
+    });
+    renderCash();
+    expect(
+      await screen.findByLabelText(/show unassigned \/ ambiguous bank accounts/i)
+    ).toBeInTheDocument();
+  });
+
+  it('shows bank assignment status and include-in-portfolio-value indicator', async () => {
+    renderCash();
+    expect(await screen.findByText('Assigned')).toBeInTheDocument();
+    expect(screen.getByText('Include in portfolio value')).toBeInTheDocument();
+    expect(screen.getByText('Yes')).toBeInTheDocument();
+  });
+
+  it('shows excluded unassigned bank account warning and toggle', async () => {
+    renderCash();
+    expect(
+      await screen.findByText(/1 bank account\(s\) excluded from this view/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/show unassigned \/ ambiguous bank accounts/i)
+    ).toBeInTheDocument();
+  });
+
+  it('passes include_unassigned when toggle is enabled', async () => {
+    renderCash();
+    await screen.findByLabelText(/show unassigned \/ ambiguous bank accounts/i);
+    fireEvent.click(screen.getByLabelText(/show unassigned \/ ambiguous bank accounts/i));
+    await waitFor(() => {
+      expect(api.fetchCashOverview).toHaveBeenCalledWith(
+        expect.objectContaining({ include_unassigned: true })
+      );
+    });
+  });
+
+  it('warns not to add duplicate bank cash when reversing mistaken broker entries', async () => {
+    renderCash();
+    expect(
+      await screen.findByText(/do not add duplicate bank cash/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText(/reverse broker cash entry/i)).toBeInTheDocument();
+  });
+
+  it('shows FX warning when overview reports partial FX', async () => {
+    api.fetchCashOverview.mockResolvedValueOnce({
+      ...overviewFixture,
+      totals: { ...overviewFixture.totals, fx_status: 'partial', total_cash_display: null },
+      warnings: ['Display-currency total may be incomplete due to missing FX rates.'],
+    });
+    renderCash();
+    expect(
+      await screen.findByText(/display-currency totals may be incomplete/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/display-currency total may be incomplete due to missing fx rates/i)
+    ).toBeInTheDocument();
+  });
+
+  it('shows overview API error state', async () => {
+    api.fetchCashOverview.mockRejectedValueOnce(new Error('Overview unavailable'));
+    renderCash();
+    expect(await screen.findByText('Could not load cash overview')).toBeInTheDocument();
+    expect(screen.getByText('Overview unavailable')).toBeInTheDocument();
+  });
+
+  it('links to Settings bank accounts from bank cash section', async () => {
+    renderCash();
+    const link = await screen.findByRole('link', { name: /manage bank accounts/i });
+    expect(link).toHaveAttribute('href', '/settings#settings-bank-accounts');
   });
 
   it('renders paginated ledger entries with readable types', async () => {
     renderCash();
-    await screen.findByText('Cash ledger');
+    await screen.findByText('Broker Cash ledger');
     const tables = screen.getAllByRole('table');
     const ledger = tables[tables.length - 1];
     expect(within(ledger).getByText('Deposit')).toBeInTheDocument();
@@ -289,11 +604,12 @@ describe('Cash page', () => {
     expect(screen.getByText('Page 1 of 1 · 2 entries')).toBeInTheDocument();
   });
 
-  it('uses premium ledger sections for balances and ledger', async () => {
+  it('uses premium sections for broker cash, bank cash, and ledger', async () => {
     const { container } = renderCash();
-    await screen.findByText('Cash balances');
-    expect(container.querySelectorAll('.cash-page__section')).toHaveLength(2);
-    expect(container.querySelector('.cash-page__balances.ui-data-table-shell')).toBeTruthy();
+    await screen.findByText('Broker Cash');
+    expect(container.querySelectorAll('.cash-page__section').length).toBeGreaterThanOrEqual(3);
+    expect(container.querySelector('.cash-page__broker-cash.ui-data-table-shell')).toBeTruthy();
+    expect(container.querySelector('.cash-page__bank-cash.ui-data-table-shell')).toBeTruthy();
     expect(container.querySelector('.cash-page__ledger.ui-app-card')).toBeTruthy();
   });
 
@@ -319,7 +635,7 @@ describe('Cash page', () => {
       pages: 1,
     });
     renderCash();
-    await screen.findByText('Cash ledger');
+    await screen.findByText('Broker Cash ledger');
     const details =
       'Tax withheld / broker adjustment for SELL AAPL · Calculated 998 EUR · Actual received 930 EUR · Withheld 68 EUR';
     expect(screen.getByText(details)).toBeInTheDocument();
@@ -348,11 +664,11 @@ describe('Cash page', () => {
       pages: 1,
     });
     renderCash();
-    await screen.findByText('Cash ledger');
+    await screen.findByText('Broker Cash ledger');
     expect(
       screen.getByText('Buy AAPL · Qty 10 · Price 100 EUR · Fees 5 EUR')
     ).toBeInTheDocument();
-    expect(screen.queryByText('Source')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('columnheader', { name: /^source$/i }).length).toBeGreaterThan(0);
   });
 
   it('deposit modal shows readable backend validation error', async () => {
@@ -363,7 +679,7 @@ describe('Cash page', () => {
       })
     );
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
-    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
+    await waitForCashPageReady();
 
     fireEvent.click(screen.getByRole('button', { name: /add deposit/i }));
     const dialog = await screen.findByRole('dialog');
@@ -378,7 +694,7 @@ describe('Cash page', () => {
 
   it('deposit modal submits and refreshes data', async () => {
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
-    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
+    await waitForCashPageReady();
 
     fireEvent.click(screen.getByRole('button', { name: /add deposit/i }));
     const dialog = await screen.findByRole('dialog');
@@ -395,7 +711,7 @@ describe('Cash page', () => {
       );
     });
     await waitFor(() => {
-      expect(api.fetchCashBalances.mock.calls.length).toBeGreaterThan(1);
+      expect(api.fetchCashOverview.mock.calls.length).toBeGreaterThan(1);
       expect(api.fetchCashLedger.mock.calls.length).toBeGreaterThan(1);
     });
     expect(screen.getByText('Deposit recorded.')).toBeInTheDocument();
@@ -403,7 +719,7 @@ describe('Cash page', () => {
 
   it('withdrawal modal submits and refreshes data', async () => {
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
-    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
+    await waitForCashPageReady();
 
     fireEvent.click(screen.getByRole('button', { name: /add withdrawal/i }));
     const dialog = await screen.findByRole('dialog');
@@ -428,7 +744,7 @@ describe('Cash page', () => {
       })
     );
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
-    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
+    await waitForCashPageReady();
 
     fireEvent.click(screen.getByRole('button', { name: /add withdrawal/i }));
     const dialog = await screen.findByRole('dialog');
@@ -449,7 +765,7 @@ describe('Cash page', () => {
 
   it('all-portfolios scope requires portfolio selection in deposit modal', async () => {
     renderCash({ initialSelection: { mode: 'all', id: null, name: 'All Portfolios' } });
-    await waitFor(() => expect(screen.getByText('Cash balances')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Broker Cash')).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole('button', { name: /add deposit/i }));
     const dialog = await screen.findByRole('dialog');
@@ -476,6 +792,80 @@ describe('Cash page', () => {
         expect.objectContaining({ portfolio_id: 2 })
       );
     });
+  });
+
+  it('shows reverse action for reversible manual deposit and refreshes overview', async () => {
+    api.fetchCashLedger.mockResolvedValueOnce({
+      items: [
+        {
+          id: 10,
+          portfolio_id: 1,
+          portfolio_name: 'Scalablefolio',
+          date: '2023-09-24',
+          currency: 'INR',
+          entry_type: 'CASH_DEPOSIT',
+          amount: 1109389,
+          source_of_funds: 'salary',
+          note: null,
+          linked_transaction_id: null,
+          transfer_group_id: null,
+          is_reversal: false,
+          is_reversed: false,
+          is_reversible: true,
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    });
+    renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
+    await waitFor(() => expect(screen.getByLabelText('Reverse Deposit')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByLabelText('Reverse Deposit'));
+    const dialog = await screen.findByRole('dialog', { name: /reverse broker cash entry/i });
+    expect(
+      within(dialog).getByText(/does not affect bank cash/i)
+    ).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText(/reason/i), {
+      target: { value: 'Recorded in broker ledger by mistake' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: /reverse entry/i }));
+
+    await waitFor(() => {
+      expect(api.reverseCashLedgerEntry).toHaveBeenCalledWith(
+        10,
+        expect.objectContaining({ reason: 'Recorded in broker ledger by mistake' })
+      );
+      expect(api.fetchCashOverview.mock.calls.length).toBeGreaterThan(1);
+    });
+    expect(screen.getByText('Broker cash entry reversed.')).toBeInTheDocument();
+  });
+
+  it('hides reverse action for protected ledger rows', async () => {
+    api.fetchCashLedger.mockResolvedValueOnce({
+      items: [
+        {
+          id: 20,
+          portfolio_id: 1,
+          portfolio_name: 'Scalablefolio',
+          date: '2026-06-02',
+          currency: 'EUR',
+          entry_type: 'BUY_SETTLEMENT',
+          amount: -1005,
+          linked_transaction_id: 42,
+          transfer_group_id: null,
+          is_reversible: false,
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    });
+    renderCash();
+    await screen.findByText('Broker Cash ledger');
+    expect(screen.queryByLabelText(/reverse/i)).not.toBeInTheDocument();
   });
 
   it('shows edit and delete for manual entries only', async () => {
@@ -610,7 +1000,7 @@ describe('Cash page', () => {
   it('uses single-portfolio scope for API reads', async () => {
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
     await waitFor(() => {
-      expect(api.fetchCashBalances).toHaveBeenCalledWith({
+      expect(api.fetchCashOverview).toHaveBeenCalledWith({
         portfolio_id: 1,
         display_currency: 'EUR',
       });
@@ -619,7 +1009,7 @@ describe('Cash page', () => {
 
   it('does not show Backfill Cash button', async () => {
     renderCash();
-    await waitFor(() => expect(screen.getByText('Cash balances')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Broker Cash')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: /backfill cash/i })).not.toBeInTheDocument();
   });
 
@@ -632,7 +1022,7 @@ describe('Cash page', () => {
 
   it('bulk wizard opens modal when button clicked', async () => {
     renderCash();
-    await waitFor(() => expect(screen.getByText('Cash balances')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Broker Cash')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /add bulk cash entries/i }));
     expect(
       await screen.findByRole('dialog', { name: /add bulk cash entries/i })
@@ -646,14 +1036,14 @@ describe('Cash page', () => {
 
   it('Transfer Cash button opens modal', async () => {
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
-    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
+    await waitForCashPageReady();
     fireEvent.click(screen.getByRole('button', { name: /transfer cash/i }));
     expect(await screen.findByRole('dialog', { name: /transfer cash/i })).toBeInTheDocument();
   });
 
   it('transfer modal single portfolio preselects source', async () => {
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
-    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
+    await waitForCashPageReady();
     fireEvent.click(screen.getByRole('button', { name: /transfer cash/i }));
     const dialog = await screen.findByRole('dialog', { name: /transfer cash/i });
     expect(within(dialog).getByText('Scalablefolio')).toBeInTheDocument();
@@ -662,7 +1052,7 @@ describe('Cash page', () => {
 
   it('transfer modal all-portfolios requires source portfolio', async () => {
     renderCash({ initialSelection: { mode: 'all', id: null, name: 'All Portfolios' } });
-    await waitFor(() => expect(screen.getByText('Cash balances')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Broker Cash')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /transfer cash/i }));
     const dialog = await screen.findByRole('dialog', { name: /transfer cash/i });
     expect(within(dialog).getByLabelText(/source portfolio/i)).toBeInTheDocument();
@@ -678,7 +1068,7 @@ describe('Cash page', () => {
 
   it('transfer modal target excludes source portfolio', async () => {
     renderCash({ initialSelection: { mode: 'all', id: null, name: 'All Portfolios' } });
-    await waitFor(() => expect(screen.getByText('Cash balances')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Broker Cash')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /transfer cash/i }));
     const dialog = await screen.findByRole('dialog', { name: /transfer cash/i });
     fireEvent.change(within(dialog).getByLabelText(/source portfolio/i), {
@@ -694,7 +1084,7 @@ describe('Cash page', () => {
 
   it('transfer modal submit calls createCashTransfer and refreshes', async () => {
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
-    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
+    await waitForCashPageReady();
     fireEvent.click(screen.getByRole('button', { name: /transfer cash/i }));
     const dialog = await screen.findByRole('dialog', { name: /transfer cash/i });
     fireEvent.change(within(dialog).getByLabelText(/target portfolio/i), {
@@ -716,7 +1106,7 @@ describe('Cash page', () => {
       );
     });
     await waitFor(() => {
-      expect(api.fetchCashBalances.mock.calls.length).toBeGreaterThan(1);
+      expect(api.fetchCashOverview.mock.calls.length).toBeGreaterThan(1);
       expect(api.fetchCashLedger.mock.calls.length).toBeGreaterThan(1);
     });
     expect(screen.getByText('Transfer recorded.')).toBeInTheDocument();
@@ -724,7 +1114,7 @@ describe('Cash page', () => {
 
   it('transfer modal shows expected field labels', async () => {
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
-    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
+    await waitForCashPageReady();
     fireEvent.click(screen.getByRole('button', { name: /transfer cash/i }));
     const dialog = await screen.findByRole('dialog', { name: /transfer cash/i });
     expect(within(dialog).getByText('Source portfolio')).toBeInTheDocument();
@@ -741,7 +1131,7 @@ describe('Cash page', () => {
 
   it('transfer modal submits cross-currency payload', async () => {
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
-    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
+    await waitForCashPageReady();
     fireEvent.click(screen.getByRole('button', { name: /transfer cash/i }));
     const dialog = await screen.findByRole('dialog', { name: /transfer cash/i });
     fireEvent.change(within(dialog).getByLabelText(/source currency/i), {
@@ -782,7 +1172,7 @@ describe('Cash page', () => {
       })
     );
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
-    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
+    await waitForCashPageReady();
     fireEvent.click(screen.getByRole('button', { name: /transfer cash/i }));
     const dialog = await screen.findByRole('dialog', { name: /transfer cash/i });
     fireEvent.change(within(dialog).getByLabelText(/target portfolio/i), {
@@ -809,7 +1199,7 @@ describe('Cash page', () => {
       })
     );
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
-    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
+    await waitForCashPageReady();
     fireEvent.click(screen.getByRole('button', { name: /transfer cash/i }));
     const dialog = await screen.findByRole('dialog', { name: /transfer cash/i });
     fireEvent.change(within(dialog).getByLabelText(/target portfolio/i), {
@@ -855,7 +1245,7 @@ describe('Cash page', () => {
 
   it('bulk wizard all-portfolios requires portfolio selection', async () => {
     renderCash({ initialSelection: { mode: 'all', id: null, name: 'All Portfolios' } });
-    await waitFor(() => expect(screen.getByText('Cash balances')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Broker Cash')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /add bulk cash entries/i }));
     const dialog = await screen.findByRole('dialog', { name: /add bulk cash entries/i });
     fireEvent.change(within(dialog).getByLabelText(/amount/i), { target: { value: '900' } });
@@ -869,7 +1259,7 @@ describe('Cash page', () => {
 
   it('bulk wizard single portfolio preselects and previews', async () => {
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
-    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
+    await waitForCashPageReady();
     fireEvent.click(screen.getByRole('button', { name: /add bulk cash entries/i }));
     const dialog = await screen.findByRole('dialog', { name: /add bulk cash entries/i });
     fireEvent.change(within(dialog).getByLabelText(/amount/i), { target: { value: '900' } });
@@ -910,8 +1300,8 @@ describe('Cash page', () => {
 
   it('bulk apply sends confirmed via applyCashBulkEntries and refreshes', async () => {
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
-    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
-    const balanceCallsBefore = api.fetchCashBalances.mock.calls.length;
+    await waitForCashPageReady();
+    const overviewCallsBefore = api.fetchCashOverview.mock.calls.length;
     const ledgerCallsBefore = api.fetchCashLedger.mock.calls.length;
 
     fireEvent.click(screen.getByRole('button', { name: /add bulk cash entries/i }));
@@ -931,7 +1321,7 @@ describe('Cash page', () => {
       expect(api.applyCashBulkEntries).toHaveBeenCalledWith(
         expect.objectContaining({ portfolio_id: 1, frequency: 'monthly' })
       );
-      expect(api.fetchCashBalances.mock.calls.length).toBeGreaterThan(balanceCallsBefore);
+      expect(api.fetchCashOverview.mock.calls.length).toBeGreaterThan(overviewCallsBefore);
       expect(api.fetchCashLedger.mock.calls.length).toBeGreaterThan(ledgerCallsBefore);
     });
     dialog = await screen.findByRole('dialog', { name: /add bulk cash entries/i });
@@ -943,7 +1333,7 @@ describe('Cash page', () => {
       new CashApiError('start_date must be on or before end_date', { status: 400 })
     );
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
-    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
+    await waitForCashPageReady();
     fireEvent.click(screen.getByRole('button', { name: /add bulk cash entries/i }));
     const dialog = await screen.findByRole('dialog', { name: /add bulk cash entries/i });
     fireEvent.change(within(dialog).getByLabelText(/amount/i), { target: { value: '900' } });
@@ -968,7 +1358,7 @@ describe('Cash page', () => {
         })
     );
     renderCash({ initialSelection: { mode: 'portfolio', id: 1, name: 'Scalablefolio' } });
-    await waitFor(() => expect(screen.getByText('Scalablefolio')).toBeInTheDocument());
+    await waitForCashPageReady();
     fireEvent.click(screen.getByRole('button', { name: /add bulk cash entries/i }));
     const dialog = await screen.findByRole('dialog', { name: /add bulk cash entries/i });
     fireEvent.change(within(dialog).getByLabelText(/amount/i), { target: { value: '900' } });
@@ -995,7 +1385,7 @@ describe('Cash routing', () => {
     vi.clearAllMocks();
     api.fetchPortfolios.mockResolvedValue(activePortfolios);
     api.getSettings.mockResolvedValue({ display_currency: 'EUR', tax_rate_percentage: 26.375 });
-    api.fetchCashBalances.mockResolvedValue(emptyBalancesFixture);
+    api.fetchCashOverview.mockResolvedValue(emptyOverviewFixture);
     api.fetchCashLedger.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20, pages: 0 });
   });
 
@@ -1005,9 +1395,11 @@ describe('Cash routing', () => {
         <App />
       </MemoryRouter>
     );
-    expect(await screen.findByRole('heading', { name: /^cash$/i })).toBeInTheDocument();
     expect(
-      screen.getByText(/native cash balances by portfolio and currency/i)
+      await screen.findByRole('heading', { name: /cash \/ liquid holdings/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/broker cash and bank cash are shown separately/i)
     ).toBeInTheDocument();
   });
 });

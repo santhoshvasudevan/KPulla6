@@ -42,6 +42,30 @@ Add tests **first where practical**; at minimum in the **same phase** as product
 
 Optional navigation aid — code, tests, migrations, and docs are source of truth. Regenerate only after significant architecture/module/API/routing changes: `graphify update .` or `make graphify`. Policy: `docs/workflows.md` § Graphify Usage.
 
+## Documentation site
+
+Browse project docs locally with MkDocs Material: `make docs-serve` or `make dev` (http://127.0.0.1:8002 · http://docs.kpulla6.com:8002 with local hosts). After doc or API contract edits, run `make docs-check`.
+
+## Documentation update policy
+
+Docs are part of the definition of done. Every task must explicitly decide whether docs need updates.
+
+**Full policy:** [docs/maintenance/documentation-update-policy.md](./docs/maintenance/documentation-update-policy.md)
+
+Before finishing, state either **Docs updated:** (files/sections) or **Docs not needed because:** (reason).
+
+| Change (examples) | Primary doc targets |
+|-------------------|---------------------|
+| API endpoint / response shape | `docs/reference/api-*.md`, `docs/api-design.md`, `docs/changelog.md` |
+| Model / migration / cache | `docs/database.md`, `docs/concepts/*`, `docs/changelog.md` |
+| Frontend page / major UI | `docs/tutorials/*` or `docs/how-to/*`, `docs/reference/frontend-routes.md`, `docs/changelog.md` |
+| Makefile / workflow | `docs/reference/make-commands.md`, `README.md` if quickstart changes |
+| Bug fix | `docs/changelog.md` if user-visible; troubleshooting if recurrent |
+
+**Validation:** `make docs-build` and `make docs-check` for any docs or nav change; add code tests when code changed.
+
+**Final response must include:** code changed · tests run · docs updated / not needed · data safety · follow-up recommendations.
+
 ## Data safety (mandatory)
 
 Local Postgres (`portfolio_insight_kpulla6`) holds real dev portfolio data. Treat it as production-like.
@@ -96,6 +120,9 @@ Every Background Agent completion must report:
 
 - **Files changed** (created / updated / deleted)
 - **Tests run** (commands + pass/fail, or “skipped — docs-only”)
+- **Docs updated** (files/sections) **or** **Docs not needed because** (reason)
+- **Data safety** confirmation (no unapproved destructive DB ops)
+- **Follow-up recommendations** (deferred scope, manual steps)
 - **`git diff --stat`** summary against the branch base
 - **Commit hash** if committed (or state not committed)
 - **Deferred items** intentionally left out of scope

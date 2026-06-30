@@ -7,6 +7,7 @@ from debt.models import (
     CashMovement,
     CashMovementType,
     FixedDeposit,
+    FixedDepositStatus,
     FixedDepositInterestPayment,
     FixedDepositSettlement,
     FixedDepositSettlementType,
@@ -24,6 +25,7 @@ from debt.bank_ledger_services import (
     get_fd_opening_cash_movement_id,
     movement_has_been_reversed,
 )
+from finance.fixed_deposits import COMPOUNDED_MATURITY
 
 
 class BankAccountSerializer(serializers.ModelSerializer):
@@ -34,6 +36,7 @@ class BankAccountSerializer(serializers.ModelSerializer):
         source="portfolio.name", read_only=True, allow_null=True
     )
     portfolio_assignment_status = serializers.SerializerMethodField()
+    active_fixed_deposit_count = serializers.SerializerMethodField()
 
     class Meta:
         model = BankAccount
@@ -49,6 +52,7 @@ class BankAccountSerializer(serializers.ModelSerializer):
             "portfolio_id",
             "portfolio_name",
             "portfolio_assignment_status",
+            "active_fixed_deposit_count",
             "is_active",
             "comment",
             "created_at",
@@ -58,6 +62,15 @@ class BankAccountSerializer(serializers.ModelSerializer):
 
     def get_portfolio_assignment_status(self, obj: BankAccount) -> str:
         return bank_account_portfolio_assignment_status(obj)
+
+    def get_active_fixed_deposit_count(self, obj: BankAccount) -> int:
+        if hasattr(obj, "_active_fixed_deposit_count"):
+            return int(obj._active_fixed_deposit_count)
+        return FixedDeposit.objects.filter(
+            bank_account_id=obj.id,
+            is_active=True,
+            status=FixedDepositStatus.ACTIVE,
+        ).count()
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -105,6 +118,18 @@ class BankAccountUpdateSerializer(serializers.Serializer):
     comment = serializers.CharField(required=False, allow_blank=True)
 
 
+class BankAccountSeedBalanceSerializer(serializers.Serializer):
+    date = serializers.DateField()
+    amount = serializers.DecimalField(max_digits=18, decimal_places=4)
+    reason = serializers.CharField(required=False, allow_blank=True, default="")
+    note = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate_amount(self, value: Decimal) -> Decimal:
+        if value <= 0:
+            raise serializers.ValidationError("amount must be greater than zero.")
+        return value
+
+
 class FixedDepositSerializer(serializers.ModelSerializer):
     portfolio_id = serializers.IntegerField(source="portfolio.id", read_only=True)
     portfolio_name = serializers.CharField(source="portfolio.name", read_only=True)
@@ -117,6 +142,14 @@ class FixedDepositSerializer(serializers.ModelSerializer):
     opening_cash_movement_id = serializers.SerializerMethodField()
     has_renewal = serializers.SerializerMethodField()
     portfolio_mismatch_warning = serializers.SerializerMethodField()
+    estimated_interest = serializers.SerializerMethodField()
+    expected_interest = serializers.SerializerMethodField()
+    maturity_estimate_method_label = serializers.SerializerMethodField()
+    maturity_value_warning = serializers.SerializerMethodField()
+    estimate_type = serializers.SerializerMethodField()
+    estimated_total_interest = serializers.SerializerMethodField()
+    estimated_periodic_interest = serializers.SerializerMethodField()
+    estimate_message = serializers.SerializerMethodField()
 
     class Meta:
         model = FixedDeposit
@@ -134,6 +167,19 @@ class FixedDepositSerializer(serializers.ModelSerializer):
             "interest_payout_frequency",
             "investment_date",
             "maturity_date",
+            "estimated_maturity_value",
+            "expected_maturity_value",
+            "maturity_value_source",
+            "maturity_estimate_method",
+            "maturity_estimate_method_label",
+            "estimate_type",
+            "estimated_total_interest",
+            "estimated_periodic_interest",
+            "estimate_message",
+            "maturity_value_note",
+            "estimated_interest",
+            "expected_interest",
+            "maturity_value_warning",
             "nominee_name",
             "comment",
             "status",
@@ -162,12 +208,86 @@ class FixedDepositSerializer(serializers.ModelSerializer):
     def get_portfolio_mismatch_warning(self, obj: FixedDeposit) -> str | None:
         return fixed_deposit_portfolio_mismatch_warning(obj)
 
+    def _maturity_display(self, obj: FixedDeposit) -> dict:
+        cache = getattr(self, "_maturity_display_cache", None)
+        if cache is None:
+            cache = {}
+            self._maturity_display_cache = cache
+        key = obj.pk
+        if key not in cache:
+            from debt.fd_maturity_services import resolve_maturity_display
+
+            cache[key] = resolve_maturity_display(obj)
+        return cache[key]
+
+    def get_estimated_interest(self, obj: FixedDeposit):
+        interest = self._maturity_display(obj)["estimated_interest"]
+        return float(interest) if interest is not None else None
+
+    def get_expected_interest(self, obj: FixedDeposit):
+        interest = self._maturity_display(obj)["expected_interest"]
+        return float(interest) if interest is not None else None
+
+    def get_maturity_estimate_method_label(self, obj: FixedDeposit) -> str | None:
+        return self._maturity_display(obj)["maturity_estimate_method_label"]
+
+    def get_estimate_type(self, obj: FixedDeposit) -> str | None:
+        return self._maturity_display(obj)["estimate_type"]
+
+    def get_estimated_total_interest(self, obj: FixedDeposit):
+        interest = self._maturity_display(obj)["estimated_total_interest"]
+        return float(interest) if interest is not None else None
+
+    def get_estimated_periodic_interest(self, obj: FixedDeposit):
+        interest = self._maturity_display(obj)["estimated_periodic_interest"]
+        return float(interest) if interest is not None else None
+
+    def get_estimate_message(self, obj: FixedDeposit) -> str | None:
+        return self._maturity_display(obj)["estimate_message"]
+
+    def get_maturity_value_warning(self, obj: FixedDeposit) -> str | None:
+        display = self._maturity_display(obj)
+        if display["estimate_type"] != COMPOUNDED_MATURITY:
+            return None
+        display = self._maturity_display(obj)
+        expected = display["expected_maturity_value"]
+        if expected is not None and expected < obj.principal_amount:
+            return (
+                "Expected maturity value is below principal. This may reflect "
+                "premature closure or penalty assumptions."
+            )
+        return None
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data["principal_amount"] = float(instance.principal_amount)
         data["interest_rate_percent"] = float(instance.interest_rate_percent)
         data["investment_date"] = instance.investment_date.isoformat()
         data["maturity_date"] = instance.maturity_date.isoformat()
+        display = self._maturity_display(instance)
+        if display["estimated_maturity_value"] is not None:
+            data["estimated_maturity_value"] = float(display["estimated_maturity_value"])
+        else:
+            data["estimated_maturity_value"] = None
+        if display["expected_maturity_value"] is not None:
+            data["expected_maturity_value"] = float(display["expected_maturity_value"])
+        else:
+            data["expected_maturity_value"] = None
+        data["maturity_value_source"] = display["maturity_value_source"]
+        data["maturity_estimate_method"] = display["maturity_estimate_method"] or None
+        data["maturity_estimate_method_label"] = display["maturity_estimate_method_label"]
+        data["estimate_type"] = display["estimate_type"]
+        if display["estimated_total_interest"] is not None:
+            data["estimated_total_interest"] = float(display["estimated_total_interest"])
+        else:
+            data["estimated_total_interest"] = None
+        if display["estimated_periodic_interest"] is not None:
+            data["estimated_periodic_interest"] = float(display["estimated_periodic_interest"])
+        else:
+            data["estimated_periodic_interest"] = None
+        data["estimate_message"] = display["estimate_message"]
+        if not data.get("maturity_value_note"):
+            data["maturity_value_note"] = None
         data["created_at"] = instance.created_at.isoformat()
         data["updated_at"] = instance.updated_at.isoformat()
         if not data.get("nominee_name"):
@@ -280,6 +400,26 @@ class CashMovementCreateSerializer(serializers.Serializer):
         return value
 
 
+class FixedDepositMaturityEstimateQuerySerializer(serializers.Serializer):
+    principal_amount = serializers.DecimalField(max_digits=18, decimal_places=4)
+    interest_rate_percent = serializers.DecimalField(max_digits=8, decimal_places=4)
+    interest_payout_frequency = serializers.ChoiceField(
+        choices=InterestPayoutFrequency.choices
+    )
+    investment_date = serializers.DateField()
+    maturity_date = serializers.DateField()
+
+    def validate_principal_amount(self, value: Decimal) -> Decimal:
+        if value <= 0:
+            raise serializers.ValidationError("principal_amount must be greater than zero")
+        return value
+
+    def validate_interest_rate_percent(self, value: Decimal) -> Decimal:
+        if value < 0:
+            raise serializers.ValidationError("interest_rate_percent must be zero or positive")
+        return value
+
+
 class FixedDepositWriteSerializer(serializers.Serializer):
     portfolio_id = serializers.IntegerField(required=False, allow_null=True)
     bank_account_id = serializers.IntegerField()
@@ -303,6 +443,12 @@ class FixedDepositWriteSerializer(serializers.Serializer):
         default=FixedDepositStatus.ACTIVE,
     )
     renewal_of_id = serializers.IntegerField(required=False, allow_null=True)
+    expected_maturity_value = serializers.DecimalField(
+        max_digits=18, decimal_places=4, required=False, allow_null=True
+    )
+    maturity_value_note = serializers.CharField(
+        required=False, allow_blank=True, default=""
+    )
 
     def validate_principal_amount(self, value: Decimal) -> Decimal:
         if value <= 0:
@@ -315,11 +461,24 @@ class FixedDepositWriteSerializer(serializers.Serializer):
         return value
 
     def validate(self, attrs):
+        if attrs.get("portfolio_id") is None:
+            raise serializers.ValidationError(
+                {
+                    "portfolio_id": (
+                        "Select the portfolio that should own this Fixed Deposit."
+                    )
+                }
+            )
         inv = attrs.get("investment_date")
         mat = attrs.get("maturity_date")
         if inv and mat and mat <= inv:
             raise serializers.ValidationError(
                 {"maturity_date": "Maturity date must be after investment date."}
+            )
+        expected = attrs.get("expected_maturity_value")
+        if expected is not None and expected <= 0:
+            raise serializers.ValidationError(
+                {"expected_maturity_value": "expected_maturity_value must be positive."}
             )
         return attrs
 
@@ -347,6 +506,11 @@ class FixedDepositUpdateSerializer(serializers.Serializer):
         choices=FixedDepositStatus.choices, required=False
     )
     renewal_of_id = serializers.IntegerField(required=False, allow_null=True)
+    expected_maturity_value = serializers.DecimalField(
+        max_digits=18, decimal_places=4, required=False, allow_null=True
+    )
+    use_auto_maturity_estimate = serializers.BooleanField(required=False, default=False)
+    maturity_value_note = serializers.CharField(required=False, allow_blank=True)
 
     def validate_principal_amount(self, value: Decimal) -> Decimal:
         if value <= 0:
@@ -427,6 +591,58 @@ class FixedDepositInterestPaymentWriteSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"tax_withheld": "tax_withheld cannot exceed gross_interest."}
             )
+        return attrs
+
+
+class FixedDepositInterestPaymentUpdateSerializer(serializers.Serializer):
+    payment_date = serializers.DateField(required=False)
+    gross_interest = serializers.DecimalField(
+        max_digits=18, decimal_places=4, required=False
+    )
+    tax_withheld = serializers.DecimalField(
+        max_digits=18, decimal_places=4, required=False
+    )
+    comment = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_gross_interest(self, value: Decimal) -> Decimal:
+        if value <= 0:
+            raise serializers.ValidationError("gross_interest must be greater than zero.")
+        return value
+
+    def validate_tax_withheld(self, value: Decimal) -> Decimal:
+        if value < 0:
+            raise serializers.ValidationError("tax_withheld must be zero or positive.")
+        return value
+
+    def validate(self, attrs):
+        gross = attrs.get("gross_interest")
+        tax = attrs.get("tax_withheld")
+        if gross is not None and tax is not None and tax > gross:
+            raise serializers.ValidationError(
+                {"tax_withheld": "tax_withheld cannot exceed gross_interest."}
+            )
+        return attrs
+
+
+class FixedDepositDetailQuerySerializer(serializers.Serializer):
+    financial_year = serializers.CharField(required=False, allow_blank=True)
+    fy_start = serializers.DateField(required=False)
+    fy_end = serializers.DateField(required=False)
+
+    def validate(self, attrs):
+        fy = (attrs.get("financial_year") or "").strip()
+        fy_start = attrs.get("fy_start")
+        fy_end = attrs.get("fy_end")
+        if fy and (fy_start or fy_end):
+            raise serializers.ValidationError(
+                "Use either financial_year or fy_start/fy_end, not both."
+            )
+        if (fy_start and not fy_end) or (fy_end and not fy_start):
+            raise serializers.ValidationError(
+                "fy_start and fy_end must be supplied together."
+            )
+        if fy:
+            attrs["financial_year"] = fy
         return attrs
 
 

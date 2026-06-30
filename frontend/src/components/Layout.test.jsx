@@ -309,4 +309,123 @@ describe('Layout component', () => {
     const cashLink = screen.getByRole('link', { name: /^cash$/i });
     expect(cashLink).toHaveClass('app-sidebar__nav-link--active');
   });
+
+  it('auto-selects INR display currency when selecting INR portfolio', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([
+      { id: 1, name: 'Default Portfolio', is_active: true, base_currency: 'EUR' },
+      { id: 2, name: 'IndianInvestments', is_active: true, base_currency: 'INR' },
+    ]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });
+    api.updateSettings.mockResolvedValue({ display_currency: 'INR' });
+
+    renderLayout(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<div data-testid="child">Child</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    );
+
+    const portfolioSelect = await screen.findByLabelText('portfolio-view');
+    const currencySelect = await screen.findByLabelText('display-currency');
+
+    fireEvent.change(portfolioSelect, { target: { value: 'portfolio:2' } });
+
+    await waitFor(() => {
+      expect(api.updateSettings).toHaveBeenCalledWith({ display_currency: 'INR' });
+      expect(currencySelect).toHaveValue('INR');
+    });
+  });
+
+  it('auto-selects EUR display currency when selecting EUR portfolio', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([
+      { id: 1, name: 'Scalablefolio', is_active: true, base_currency: 'EUR' },
+      { id: 2, name: 'IndianInvestments', is_active: true, base_currency: 'INR' },
+    ]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'INR' });
+    api.updateSettings.mockResolvedValue({ display_currency: 'EUR' });
+
+    renderLayout(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<div data-testid="child">Child</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    );
+
+    const portfolioSelect = await screen.findByLabelText('portfolio-view');
+    const currencySelect = await screen.findByLabelText('display-currency');
+
+    fireEvent.change(portfolioSelect, { target: { value: 'portfolio:1' } });
+
+    await waitFor(() => {
+      expect(api.updateSettings).toHaveBeenCalledWith({ display_currency: 'EUR' });
+      expect(currencySelect).toHaveValue('EUR');
+    });
+  });
+
+  it('preserves display currency when switching to All Portfolios', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([
+      { id: 1, name: 'Default Portfolio', is_active: true, base_currency: 'EUR' },
+      { id: 2, name: 'IndianInvestments', is_active: true, base_currency: 'INR' },
+    ]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'USD' });
+
+    renderLayout(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<div data-testid="child">Child</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    );
+
+    const portfolioSelect = await screen.findByLabelText('portfolio-view');
+    const currencySelect = await screen.findByLabelText('display-currency');
+
+    fireEvent.change(portfolioSelect, { target: { value: 'portfolio:2' } });
+    await waitFor(() => {
+      expect(api.updateSettings).toHaveBeenCalledWith({ display_currency: 'INR' });
+    });
+
+    api.updateSettings.mockClear();
+    fireEvent.change(portfolioSelect, { target: { value: 'all' } });
+
+    await waitFor(() => {
+      expect(api.updateSettings).not.toHaveBeenCalled();
+      expect(currencySelect).toHaveValue('INR');
+    });
+  });
+
+  it('keeps display currency when portfolio default is unsupported', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([
+      { id: 1, name: 'Japan PF', is_active: true, base_currency: 'JPY' },
+    ]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'USD' });
+
+    renderLayout(
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<div data-testid="child">Child</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    );
+
+    const portfolioSelect = await screen.findByLabelText('portfolio-view');
+    const currencySelect = await screen.findByLabelText('display-currency');
+
+    fireEvent.change(portfolioSelect, { target: { value: 'portfolio:1' } });
+
+    await waitFor(() => {
+      expect(api.updateSettings).not.toHaveBeenCalled();
+      expect(currencySelect).toHaveValue('USD');
+    });
+  });
 });

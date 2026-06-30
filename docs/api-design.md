@@ -24,6 +24,7 @@ Quick reference for MVP endpoints. Detail sections below. Product rules: [produc
 | POST | `/api/v1/cash/withdrawals` | Manual `CASH_WITHDRAWAL` | `createCashWithdrawal` | `test_cash_api.py` |
 | PUT | `/api/v1/cash/ledger/{id}` | Edit manual deposit/withdrawal | `updateCashLedgerEntry` | `test_cash_api.py` |
 | DELETE | `/api/v1/cash/ledger/{id}` | Delete manual deposit/withdrawal | `deleteCashLedgerEntry` | `test_cash_api.py` |
+| POST | `/api/v1/cash/ledger/{id}/reverse` | Reverse manual broker deposit/withdrawal (CASH-CORR-1A) | `reverseCashLedgerEntry` | `test_cash_ledger_reversals_api.py` |
 | POST | `/api/v1/cash/transfers` | Same- or cross-currency portfolio transfer | `createCashTransfer` | `test_cash_api.py` |
 | POST | `/api/v1/cash/bulk-entries/preview` | Bulk schedule preview | `previewCashBulkEntries` | `test_cash_bulk_entries_api.py` |
 | POST | `/api/v1/cash/bulk-entries/apply` | Confirmed bulk manual entries | `applyCashBulkEntries` | `test_cash_bulk_entries_api.py` |
@@ -33,11 +34,13 @@ Quick reference for MVP endpoints. Detail sections below. Product rules: [produc
 | PUT | `/api/v1/bank-accounts/{id}` | Update bank account | `updateBankAccount` | `test_bank_accounts_api.py` |
 | DELETE | `/api/v1/bank-accounts/{id}` | Soft deactivate bank account | `deleteBankAccount` | `test_bank_accounts_api.py` |
 | POST | `/api/v1/bank-accounts/{id}/seed-opening-balance` | Seed `OPENING_BALANCE` from `opening_balance` | `seedBankAccountOpeningBalance` | `test_cash_movements_api.py` |
+| POST | `/api/v1/bank-accounts/{id}/seed-balance` | Historical `MANUAL_DEPOSIT` for backdated FD funding | `seedBankAccountHistoricalBalance` | `test_bank_account_seed_balance_api.py` |
 | GET | `/api/v1/cash-movements` | List bank cash movements (paginated) | `fetchCashMovements` | `test_cash_movements_api.py` |
 | POST | `/api/v1/cash-movements` | Create manual movement | `createCashMovement` | `test_cash_movements_api.py` |
 | POST | `/api/v1/cash-movements/{id}/reverse` | Reverse manual cash movement | `reverseCashMovement` | `test_cash_movement_reversals_api.py` |
 | GET | `/api/v1/fixed-deposits` | List active fixed deposits (portfolio scope) | `fetchFixedDeposits` | `test_fixed_deposits_api.py` |
-| POST | `/api/v1/fixed-deposits` | Create fixed deposit | `createFixedDeposit` | `test_fixed_deposits_api.py` |
+| POST | `/api/v1/fixed-deposits` | Create fixed deposit | `createFixedDeposit` | `test_fixed_deposits_api.py`, `test_fd_maturity_value_api.py` |
+| GET | `/api/v1/fixed-deposits/maturity-estimate` | Read-only maturity estimate preview | `fetchFixedDepositMaturityEstimate` | `test_fd_maturity_value_api.py` |
 | PUT | `/api/v1/fixed-deposits/{id}` | Update fixed deposit | `updateFixedDeposit` | `test_fixed_deposits_api.py` |
 | DELETE | `/api/v1/fixed-deposits/{id}` | Soft deactivate fixed deposit (legacy/no-ledger only) | `deleteFixedDeposit` | `test_fixed_deposits_api.py` |
 | POST | `/api/v1/fixed-deposits/{id}/cancel` | Cancel ledger-backed FD; reverse opening debit | `cancelFixedDeposit` | `test_fixed_deposit_cancellation_accounting.py` |
@@ -50,21 +53,24 @@ Quick reference for MVP endpoints. Detail sections below. Product rules: [produc
 
 **Removed (not active):** `POST /api/v1/cash/backfill-preview`, `POST /api/v1/cash/backfill-apply` — use deposits/withdrawals or bulk entries instead.
 
-### Planned — Cash unification (CASH-UNIFY-1..4)
+### Implemented — Cash unification (CASH-UNIFY-1..4)
 
 Design: [cash-unification.md](./cash-unification.md).
 
 | Method | Path | Purpose | Phase |
 |--------|------|---------|-------|
 | GET | `/api/v1/cash/overview` | **Implemented (CASH-UNIFY-1)** — read-only broker + bank cash rows; optional `display_currency`, `include_unassigned` | CASH-UNIFY-1 |
-| — | `BankAccount.portfolio` | **Implemented (CASH-UNIFY-1)** — nullable FK; inference via `infer_bank_account_portfolios` | CASH-UNIFY-1 |
+| — | `BankAccount.portfolio` | **Implemented (CASH-UNIFY-1/4)** — nullable FK = **current portfolio link** / default investment portfolio; inference via `infer_bank_account_portfolios`. Link/delink via Settings (no movements). | CASH-UNIFY-1, 4 |
+| — | `cash_overview_diagnostics` | **Implemented (CASH-UNIFY-4A)** — read-only management command; broker/bank summaries, unlinked accounts | CASH-UNIFY-4A |
 | — | FD create portfolio rule | Derive `portfolio` from `bank_account.portfolio`; reject mismatch | CASH-UNIFY-2 |
 
 **`GET /api/v1/cash/overview` query:** `portfolio_scope=all` or `portfolio_id`; optional `as_of_date`, `display_currency`, `include_unassigned` (default false).
 
 **Response:** `rows[]` (`ledger_type`: `BROKER_CASH` | `BANK_CASH`), `totals`, `warnings`, exclusion counts for unassigned/ambiguous bank accounts.
 
-**Invariants:** No cross-ledger writes; no table merge; does not change `/cash/balances` or summary/performance valuation.
+**Invariants:** No cross-ledger writes on link/delink or overview read; no table merge; does not change `/cash/balances` or summary/performance valuation.
+
+**Portfolio link semantics (CASH-MODEL-REFINE-0):** `portfolio_id` on bank account create/update sets the **current portfolio link**. Unlinked accounts (`portfolio_id` null) are external/unassigned bank cash in overview (excluded from single-portfolio scope unless `include_unassigned=true`). Changing the link does not post cash movements.
 
 ## Implemented in KPulla6
 
@@ -600,7 +606,7 @@ Validation: invalid `metric` / `range` / `display_currency` → **400**; `portfo
 
 **Metrics:**
 - `value` — daily portfolio value in `display_currency` (investment + cash, Cash-6B).
-- `twror` / `cumulative_return` — cash-inclusive daily values and cash-aware external flows when `cash_aware_enabled=true` (Cash-6C.2); legacy mode unchanged. Optional `warnings` (e.g. missing FX on external flows) may wrap `points` in `{"points", "warnings"}` like `metric=value`.
+- `twror` / `cumulative_return` — cash-inclusive daily values and cash-aware external flows when `cash_aware_enabled=true` (Cash-6C.2); legacy mode unchanged. Return PV may include cumulative portfolio-attributed FD **net** payout interest when the receiving bank is excluded from scope value (**FD-PERF-2**). Optional `warnings` (e.g. missing FX on external flows) may wrap `points` in `{"points", "warnings"}` like `metric=value`.
 - `cumulative_return` — `((value + withdrawals - contributions) / contributions - 1) * 100`; `null` when contributions ≤ 0 or flows/FX unknown.
 - `twror` — chain-linked period returns from Phase 6 `compute_twror_series`; `null` on first day or zero prior value. For `range != ALL`, TWROR is recomputed on the sliced window only (not rebased from full history).
 
@@ -804,7 +810,7 @@ When `common_point_count < 2`, subject metrics are null, `periodic_returns` / `d
 
 ## Cash Ledger
 
-Full design: [cash-ledger.md](./cash-ledger.md) · agent rules: [.cursor/rules/320-cash-ledger.mdc](../.cursor/rules/320-cash-ledger.mdc). **Auth:** authenticated session; data limited to the current user’s active portfolios. Scope rules match holdings/summary (`portfolio_scope=all` default; cannot combine with `portfolio_id` → **422**; unknown/inactive/not-owned `portfolio_id` → **404**).
+Full design: [cash-ledger.md](./cash-ledger.md) · agent rules: [320-cash-ledger](cursor-rules/320-cash-ledger.md). **Auth:** authenticated session; data limited to the current user’s active portfolios. Scope rules match holdings/summary (`portfolio_scope=all` default; cannot combine with `portfolio_id` → **422**; unknown/inactive/not-owned `portfolio_id` → **404**).
 
 ### Cash API surface (implemented vs planned)
 
@@ -1048,6 +1054,31 @@ Same manual-entry rules as `PUT`. Blocked when any later ledger date would have 
 
 **Errors:** `404` not found; `409` protected entry or future negative balance.
 
+#### `POST /api/v1/cash/ledger/{id}/reverse` — **201 Created** (CASH-CORR-1A)
+
+Audited reversal of a **manual** broker `CASH_DEPOSIT` or `CASH_WITHDRAWAL`. Creates opposite-direction entry with `is_reversal=true`, `reverses_id`, `reversal_reason`. **Original row is not deleted.**
+
+**Body:**
+
+```json
+{
+  "reversal_date": "2026-06-26",
+  "reason": "Recorded in broker ledger by mistake"
+}
+```
+
+`reason` required. `reversal_date` optional (defaults to today).
+
+**Response:** `{ original, reversal, reversal_entry_id, reversed_by, broker_cash_balance, message }` — ledger item shapes include `is_reversed`, `is_reversible`, `reverses_id`.
+
+**Eligibility:** manual deposit/withdrawal only; not linked, transfer, system, already reversed, or reversal rows.
+
+**Errors:** `400` validation / insufficient cash; `404` not found; `409` future negative balance.
+
+**Unchanged:** bank `CashMovement` rows; FD accounting.
+
+**CLI:** `manage.py reverse_broker_cash_entry --entry-id … --reason …` (dry-run default; `--apply` to write).
+
 #### Future impact error (Cash-4D) — **409 Conflict**
 
 When edit/delete would make a later running balance negative:
@@ -1184,13 +1215,14 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 | PUT/PATCH/DELETE | `/api/v1/cash-movements/{id}` | **405** — immutable ledger in FD-ACC-1; use reverse (FD-ACC-10B) |
 | POST | `/api/v1/cash-movements/{id}/reverse` | **Done** — `{ reversal_date?, reason }`; creates `REVERSAL` SYSTEM movement |
 | POST | `/api/v1/bank-accounts/{id}/seed-opening-balance` | **Done** — opt-in opening balance seed |
-| GET | `/api/v1/bank-accounts/{id}/balance` | **Done (FD-CASH-ASOF-1)** — `?as_of=YYYY-MM-DD` optional; returns `current_balance`, `balance_as_of_date`, `latest_ledger_balance_date` |
+| POST | `/api/v1/bank-accounts/{id}/seed-balance` | **Done (FD-FUNDING-MODEL-1/1B)** — explicit historical `MANUAL_DEPOSIT`; body: `date`, `amount`, optional `reason`/`note`; returns `cash_movement`, funding `balance_as_of_date`, `as_of_date`, `currency`; duplicate same bank/date/amount/reason → **409** with `existing_cash_movement_id`; no portfolio required; does not create FD |
+| GET | `/api/v1/bank-accounts/{id}/balance` | **Done (FD-CASH-ASOF-1 / 1B)** — `?as_of=YYYY-MM-DD` optional; `balance_as_of_date` uses **funding-aware** balance (ignores reversed movements); `current_balance` remains full ledger total |
 
 **Bank account response extensions:** `has_ledger_entries`, `opening_balance_seeded`, `balance_source` (`manual` \| `ledger`).
 
-**FD create insufficient balance (400):** `detail`, `required`, `available`, `available_as_of_date`, `current_balance`, `shortfall`, `currency`, `investment_date`, `latest_ledger_balance_date`, `hint`. Validation uses ledger balance **as of FD `investment_date`**, not current total.
+**FD create insufficient balance (400):** `detail`, `required`, `available`, `available_as_of_date`, `current_balance`, `shortfall`, `currency`, `investment_date`, `bank_account_id`, `suggested_seed_date` (investment date − 1 day), `suggested_seed_amount`, `latest_ledger_balance_date`, `hint`. Validation uses **funding-aware** ledger balance as of FD `investment_date` (reversed openings excluded), not current total.
 
-**PUT `/bank-accounts/{id}`:** rejects `current_balance` when ledger exists (**400**).
+**PUT `/bank-accounts/{id}`:** rejects `current_balance` when ledger exists (**400**). **`portfolio_id`** (set or `null`) updates the **portfolio link** only — no cash movements (**CASH-UNIFY-4**). Response includes `portfolio_id`, `portfolio_name`, `portfolio_assignment_status`, `active_fixed_deposit_count`.
 
 **Deferred (FD-ACC-9+):** reversal endpoint, `TRANSFER_IN`/`OUT` manual API, via-bank renewal path. **FD-ACC-7/8 done:** opt-in bank cash in portfolio summary/holdings/allocation/performance/returns.
 
@@ -1239,22 +1271,29 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 | Method | Path | Notes |
 |--------|------|--------|
 | GET | `/api/v1/reports/fixed-deposit-interest` | **Done** — read-only gross/tax/net report; no accounting side effects |
+| GET | `/api/v1/reports/fixed-deposit-interest/export.csv` | **Done** — read-only CSV export; same filters/exclusions; detail rows only |
 
-**Query:** `portfolio_scope=all` or `portfolio_id`, optional `start_date`, `end_date`, `display_currency`, `group_by` (`year`, `portfolio`, `bank`, `fd`, `source`, `none`).
+**Query:** `portfolio_scope=all` or `portfolio_id`, optional `start_date`, `end_date`, `display_currency`, `group_by` (`year`, `portfolio`, `bank`, `fd`, `source`, `none`) — JSON only; CSV export ignores `group_by`.
 
 **Sources:** non-reversed interest payments; settlement final interest (excludes renewal-linked settlements to avoid double count); renewal group interest. Excludes zero-interest rows and `CANCELLED` FD rows.
 
 **Response:** `rows`, `totals` (gross/tax/net, `row_count`, `fx_status`), optional `grouped_totals`, `warnings` (FX partial / mixed currency).
 
-**Frontend:** `fetchFixedDepositInterestReport` · `test_fixed_deposit_interest_report_api.py` · Fixed Deposits → Interest & Tax report section.
+**CSV export (FD-TAX-2):** `Content-Type: text/csv`; `Content-Disposition: attachment; filename="fd-interest-tax-{start}-to-{end}.csv"` (variants when dates partial). Columns: Date, Source Type, Source Label, Portfolio, Bank / Institution, Bank Account, FD Account, Currency, Gross Interest, Tax Withheld, Net Interest, Display Currency, Gross/Tax/Net Interest Display, Comment. Rows-only (no footer totals or warnings in file); header row when empty.
 
-**Deferred:** CSV/export (FD-TAX-2). Not tax advice.
+**Frontend (FD-TAX-1A / FD-TAX-2):** `FixedDepositInterestReport.jsx` — filters, reset, notes, warnings, grouped totals, table polish, **Export CSV** (`exportFixedDepositInterestReportCsv`, `downloadBlobFile`). `FixedDepositInterestReport.test.jsx` · `FixedDeposits.test.jsx` · `api.test.js`.
+
+**Not tax advice.** No accounting changes.
 
 ### FD create — mandatory opening debit (FD-ACC-3)
 
 | Method | Path | Notes |
 |--------|------|--------|
-| POST | `/api/v1/fixed-deposits` | **Done** — atomically creates `FD_OPENING` `CashMovement` (SYSTEM DEBIT); **400** on insufficient bank balance with `required`, `available`, `shortfall`, `currency`. **CASH-UNIFY-2:** `portfolio_id` optional; derived from `bank_account.portfolio`; **400** with structured portfolio fields on unassigned/ambiguous bank or portfolio conflict. |
+| POST | `/api/v1/fixed-deposits` | **Done** — atomically creates `FD_OPENING` `CashMovement` (SYSTEM DEBIT); **400** on insufficient bank balance with `required`, `available`, `shortfall`, `currency`. **CASH-MODEL-REFINE-1:** `portfolio_id` **required**; explicit FD portfolio; bank account link optional; **400** if omitted: “Select the portfolio that should own this Fixed Deposit.” **FD-MATURITY-VALUE-1 / FD-INTEREST-MATURITY-LOGIC-1:** optional `expected_maturity_value` + `maturity_value_note` for user-confirmed value; auto-computes estimates — compounded maturity uplift vs payout principal + interest fields; sets `maturity_value_source` (`AUTO_ESTIMATE`, `AUTO_PRINCIPAL`, `USER_CONFIRMED`). |
+| GET | `/api/v1/fixed-deposits` | **Done** — list includes maturity fields; **FD-HOLDINGS-UX-1:** `resolve_maturity_display()` fills estimates dynamically when stored values are null (legacy rows). **FD-INTEREST-MATURITY-LOGIC-1:** payout FDs return principal as maturity; `estimate_type`, `estimated_total_interest`, `estimated_periodic_interest`. |
+| GET | `/api/v1/fixed-deposits/maturity-estimate` | **Done** — query: `principal_amount`, `interest_rate_percent`, `interest_payout_frequency`, `investment_date`, `maturity_date`; returns estimate fields for create/edit preview |
+| GET | `/api/v1/fixed-deposits/{id}/detail` | **Done (FD-DETAIL-CALC-1)** — composite detail: estimate summary, `expected_interest_schedule`, actual payments, `financial_year_summary`, `term_totals`, `detailed_calculation`; query `financial_year` or `fy_start`/`fy_end` |
+| PATCH | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | **Done (FD-DETAIL-CALC-1)** — update actual credited date/gross/tax/note; updates linked `FD_INTEREST` cash movement and bank balance |
 
 **Create body:** `bank_account_id` required; `portfolio_id` optional (must match bank account when supplied). Bank account must be **ASSIGNED** before create.
 

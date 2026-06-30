@@ -221,6 +221,32 @@ describe('API Service', () => {
     );
   });
 
+  it('seedBankAccountHistoricalBalance posts to seed-balance endpoint', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        cash_movement: { id: 1, movement_type: 'MANUAL_DEPOSIT' },
+        balance_as_of_date: 100000,
+        as_of_date: '2024-01-01',
+        currency: 'INR',
+      }),
+    });
+    const payload = {
+      date: '2024-01-01',
+      amount: '100000',
+      reason: 'Historical balance seed for FD creation',
+      note: '',
+    };
+    await api.seedBankAccountHistoricalBalance(7, payload);
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/bank-accounts/7/seed-balance',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+    );
+  });
+
   it('createCashMovement posts to cash-movements', async () => {
     const payload = {
       bank_account_id: 1,
@@ -258,6 +284,27 @@ describe('API Service', () => {
     );
   });
 
+  it('fetchFixedDepositDetail calls detail endpoint with financial year', async () => {
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+    await api.fetchFixedDepositDetail(3, { financial_year: '2024-25' });
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/fixed-deposits/3/detail?financial_year=2024-25',
+      expect.objectContaining(defaultFetchOptions)
+    );
+  });
+
+  it('updateFixedDepositInterestPayment patches payment', async () => {
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 1 }) });
+    await api.updateFixedDepositInterestPayment(12, { gross_interest: '1000' });
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/fixed-deposit-interest-payments/12',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ gross_interest: '1000' }),
+      })
+    );
+  });
+
   it('fetchFixedDepositInterestReport calls report endpoint with filters', async () => {
     global.fetch.mockResolvedValueOnce({
       ok: true,
@@ -274,6 +321,33 @@ describe('API Service', () => {
       '/api/v1/reports/fixed-deposit-interest?portfolio_scope=all&display_currency=INR&start_date=2024-01-01&end_date=2024-12-31&group_by=year',
       expect.objectContaining(defaultFetchOptions)
     );
+  });
+
+  it('exportFixedDepositInterestReportCsv fetches CSV blob without group_by', async () => {
+    const blob = new Blob(['date,source'], { type: 'text/csv' });
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      blob: async () => blob,
+      headers: {
+        get: (name) =>
+          name.toLowerCase() === 'content-disposition'
+            ? 'attachment; filename="fd-interest-tax-2024-01-01-to-2024-12-31.csv"'
+            : null,
+      },
+    });
+    const result = await api.exportFixedDepositInterestReportCsv({
+      portfolio_scope: 'all',
+      display_currency: 'INR',
+      start_date: '2024-01-01',
+      end_date: '2024-12-31',
+      group_by: 'year',
+    });
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/reports/fixed-deposit-interest/export.csv?portfolio_scope=all&display_currency=INR&start_date=2024-01-01&end_date=2024-12-31',
+      expect.objectContaining(defaultFetchOptions)
+    );
+    expect(result.filename).toBe('fd-interest-tax-2024-01-01-to-2024-12-31.csv');
+    expect(result.blob).toBe(blob);
   });
 
   it('createFixedDepositInterestPayment posts to nested FD endpoint', async () => {
@@ -854,6 +928,29 @@ describe('API Service', () => {
       earliest_negative_date: '2026-06-10',
     });
     expect(jsonCalls).toBe(1);
+  });
+
+  it('reverseCashLedgerEntry posts reversal payload', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      json: async () => ({
+        original: { id: 103, is_reversed: true },
+        reversal: { id: 201, entry_type: 'CASH_WITHDRAWAL', amount: -1109389 },
+        message: 'Broker cash entry reversed.',
+      }),
+    });
+    await api.reverseCashLedgerEntry(103, {
+      reversal_date: '2026-06-26',
+      reason: 'Recorded in broker ledger by mistake',
+    });
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(url).toContain('/api/v1/cash/ledger/103/reverse');
+    expect(options.method).toBe('POST');
+    expect(JSON.parse(options.body)).toEqual({
+      reversal_date: '2026-06-26',
+      reason: 'Recorded in broker ledger by mistake',
+    });
   });
 
   it('withCashScopeParams never sends display_currency', () => {

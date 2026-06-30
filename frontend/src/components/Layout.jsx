@@ -19,6 +19,7 @@ function Layout() {
   const { logout, user } = useAuth();
   const navigate = useNavigate();
   const {
+    portfolios,
     selectorOptions,
     selectedPortfolioMode,
     selectedPortfolioId,
@@ -26,9 +27,7 @@ function Layout() {
     selectedDisplayCurrency,
     settingsLoaded,
     setDisplayCurrency,
-    setSelectedPortfolioMode,
-    setSelectedPortfolioId,
-    setSelectedPortfolioName,
+    applyPortfolioViewSelection,
     portfoliosError,
   } = usePortfolio();
 
@@ -37,20 +36,22 @@ function Layout() {
       ? `portfolio:${selectedPortfolioId}`
       : 'all';
 
-  const onChange = (e) => {
+  const onChange = async (e) => {
     const v = e.target.value;
     if (v === 'all') {
-      setSelectedPortfolioMode('all');
-      setSelectedPortfolioId(null);
-      setSelectedPortfolioName('All Portfolios');
+      await applyPortfolioViewSelection({ mode: 'all' });
       return;
     }
     if (v.startsWith('portfolio:')) {
       const id = Number(v.split(':')[1]);
       const opt = selectorOptions.find((o) => o.mode === 'portfolio' && Number(o.id) === id);
-      setSelectedPortfolioMode('portfolio');
-      setSelectedPortfolioId(id);
-      setSelectedPortfolioName(opt?.name || selectedPortfolioName);
+      const portfolio = portfolios.find((p) => p.id === id);
+      await applyPortfolioViewSelection({
+        mode: 'portfolio',
+        id,
+        name: opt?.name || selectedPortfolioName,
+        portfolio,
+      });
     }
   };
 

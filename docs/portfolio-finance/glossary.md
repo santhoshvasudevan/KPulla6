@@ -71,5 +71,5 @@ Short definitions for Portfolio Insight analytics. Fractions in API are decimal 
 
 ## See also
 
-- [README](./README.md) — document index
+- [Portfolio Finance index](./README.md) — document index
 - Chapters [04](./04-return-metrics.md)–[08](./08-benchmark-and-relative-performance.md) — full metric templates

@@ -308,7 +308,7 @@ def test_interest_payment_detail_get(api_client, seeded, test_user):
 
 
 @pytest.mark.django_db
-def test_interest_payment_immutable_endpoints(api_client, seeded, test_user):
+def test_interest_payment_delete_still_blocked(api_client, seeded, test_user):
     portfolio = ensure_default_portfolio(test_user)
     bank = _bank(test_user)
     fd = _create_fd(test_user, portfolio.id, bank)
@@ -320,13 +320,32 @@ def test_interest_payment_immutable_endpoints(api_client, seeded, test_user):
         tax_withheld=Decimal("0"),
     ).payment
 
-    for method, path in [
-        ("put", f"/api/v1/fixed-deposit-interest-payments/{payment.id}"),
-        ("patch", f"/api/v1/fixed-deposit-interest-payments/{payment.id}"),
-        ("delete", f"/api/v1/fixed-deposit-interest-payments/{payment.id}"),
-    ]:
-        response = getattr(api_client, method)(path, {}, format="json")
-        assert response.status_code == 405
+    response = api_client.delete(
+        f"/api/v1/fixed-deposit-interest-payments/{payment.id}"
+    )
+    assert response.status_code == 405
+
+
+@pytest.mark.django_db
+def test_interest_payment_patch_updates_values(api_client, seeded, test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    bank = _bank(test_user)
+    fd = _create_fd(test_user, portfolio.id, bank)
+    payment = create_fixed_deposit_interest_payment(
+        test_user,
+        fd.id,
+        payment_date=date(2024, 4, 1),
+        gross_interest=Decimal("1000"),
+        tax_withheld=Decimal("100"),
+    ).payment
+
+    response = api_client.patch(
+        f"/api/v1/fixed-deposit-interest-payments/{payment.id}",
+        {"gross_interest": "1100", "tax_withheld": "110"},
+        format="json",
+    )
+    assert response.status_code == 200
+    assert response.json()["net_interest"] == 990.0
 
 
 @pytest.mark.django_db

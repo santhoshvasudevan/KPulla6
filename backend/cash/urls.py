@@ -6,6 +6,7 @@ from cash.views import (
     CashBulkEntriesPreviewView,
     CashDepositView,
     CashLedgerEntryDetailView,
+    CashLedgerEntryReverseView,
     CashLedgerView,
     CashOverviewView,
     CashTransferView,
@@ -16,6 +17,11 @@ urlpatterns = [
     path("balances", CashBalancesView.as_view(), name="cash-balances"),
     path("overview", CashOverviewView.as_view(), name="cash-overview"),
     path("ledger", CashLedgerView.as_view(), name="cash-ledger"),
+    path(
+        "ledger/<int:entry_id>/reverse",
+        CashLedgerEntryReverseView.as_view(),
+        name="cash-ledger-reverse",
+    ),
     path(
         "ledger/<int:entry_id>",
         CashLedgerEntryDetailView.as_view(),

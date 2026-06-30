@@ -128,7 +128,7 @@ def test_overview_excludes_unassigned_bank_by_default(api_client, seeded, test_u
     assert response.status_code == 200
     body = response.json()
     assert body["excluded_unassigned_bank_account_count"] == 1
-    assert any("not assigned" in w for w in body["warnings"])
+    assert any("portfolio link" in w.lower() for w in body["warnings"])
     assert all(r["ledger_type"] != "BANK_CASH" for r in body["rows"])
 
 
@@ -213,6 +213,38 @@ def test_overview_missing_fx_warning(api_client, seeded, test_user):
 
 
 @pytest.mark.django_db
+def test_overview_totals_not_swapped_broker_zero_bank_positive(api_client, seeded, test_user):
+    """Regression: broker and bank native totals must not be swapped (CASH-UNIFY-3A)."""
+    portfolio = Portfolio.objects.create(
+        user=test_user,
+        name="IndianInvestments",
+        base_currency="INR",
+        is_active=True,
+    )
+    bank = _create_bank(test_user, portfolio_id=portfolio.id, account_number="IN-1")
+    fund_bank_account(test_user, bank, "1109389")
+
+    response = api_client.get(
+        "/api/v1/cash/overview", {"portfolio_id": portfolio.id}
+    )
+    assert response.status_code == 200
+    body = response.json()
+
+    broker_rows = [r for r in body["rows"] if r["ledger_type"] == "BROKER_CASH"]
+    bank_rows = [r for r in body["rows"] if r["ledger_type"] == "BANK_CASH"]
+    assert broker_rows == []
+    assert len(bank_rows) == 1
+    assert bank_rows[0]["balance"] == pytest.approx(1109389.0)
+    assert bank_rows[0]["source"] == "cash_movements"
+    assert all(r["ledger_type"] != "BROKER_CASH" or r["balance"] == 0 for r in body["rows"])
+
+    inr_totals = next(t for t in body["totals"]["by_currency"] if t["currency"] == "INR")
+    assert inr_totals["broker_cash"] == 0.0
+    assert inr_totals["bank_cash"] == pytest.approx(1109389.0)
+    assert inr_totals["total_cash"] == pytest.approx(1109389.0)
+
+
+@pytest.mark.django_db
 def test_overview_user_scoped(api_client, seeded, test_user, other_user):
     portfolio = ensure_default_portfolio(test_user)
     _deposit(portfolio, amount="100")
@@ -244,3 +276,106 @@ def test_overview_get_does_not_mutate_ledger(api_client, seeded, test_user):
     assert CashLedgerEntry.objects.count() == before_entries
     bank.refresh_from_db()
     assert bank.current_balance == before_bank
+
+
+@pytest.mark.django_db
+def test_overview_relink_moves_bank_between_portfolios(api_client, seeded, test_user):
+    from debt.models import CashMovement
+    from portfolios.models import Portfolio
+    from portfolios.seed import ensure_default_portfolio
+
+    default_pf = ensure_default_portfolio(test_user)
+    indian_pf = Portfolio.objects.create(
+        user=test_user,
+        name="IndianInvestments",
+        base_currency="INR",
+        is_active=True,
+    )
+    bank = _create_bank(test_user, portfolio_id=default_pf.id, account_number="HDFC-NRE")
+    fund_bank_account(test_user, bank, "1359389")
+    movement_count_before = CashMovement.objects.filter(bank_account=bank).count()
+
+    default_view = api_client.get(
+        "/api/v1/cash/overview", {"portfolio_id": default_pf.id}
+    ).json()
+    assert len([r for r in default_view["rows"] if r.get("bank_account_id") == bank.id]) == 1
+    indian_view = api_client.get(
+        "/api/v1/cash/overview", {"portfolio_id": indian_pf.id}
+    ).json()
+    assert all(r.get("bank_account_id") != bank.id for r in indian_view["rows"])
+
+    api_client.put(
+        f"/api/v1/bank-accounts/{bank.id}",
+        {"portfolio_id": indian_pf.id},
+        format="json",
+    )
+
+    default_after = api_client.get(
+        "/api/v1/cash/overview", {"portfolio_id": default_pf.id}
+    ).json()
+    assert all(r.get("bank_account_id") != bank.id for r in default_after["rows"])
+    indian_after = api_client.get(
+        "/api/v1/cash/overview", {"portfolio_id": indian_pf.id}
+    ).json()
+    bank_rows = [r for r in indian_after["rows"] if r.get("bank_account_id") == bank.id]
+    assert len(bank_rows) == 1
+    assert bank_rows[0]["balance"] == pytest.approx(1359389.0)
+
+    assert CashMovement.objects.filter(bank_account=bank).count() == movement_count_before
+    bank.refresh_from_db()
+    assert bank.current_balance == pytest.approx(Decimal("1359389"))
+
+
+@pytest.mark.django_db
+def test_overview_all_scope_no_double_count_after_relink(api_client, seeded, test_user):
+    from portfolios.models import Portfolio
+    from portfolios.seed import ensure_default_portfolio
+
+    default_pf = ensure_default_portfolio(test_user)
+    indian_pf = Portfolio.objects.create(
+        user=test_user,
+        name="IndianInvestments",
+        base_currency="INR",
+        is_active=True,
+    )
+    bank = _create_bank(test_user, portfolio_id=default_pf.id, account_number="HDFC-NRE")
+    fund_bank_account(test_user, bank, "100000")
+
+    api_client.put(
+        f"/api/v1/bank-accounts/{bank.id}",
+        {"portfolio_id": indian_pf.id},
+        format="json",
+    )
+
+    body = api_client.get("/api/v1/cash/overview").json()
+    bank_rows = [r for r in body["rows"] if r.get("bank_account_id") == bank.id]
+    assert len(bank_rows) == 1
+    assert bank_rows[0]["portfolio_id"] == indian_pf.id
+
+
+@pytest.mark.django_db
+def test_overview_delinked_bank_hidden_until_include_unassigned(api_client, seeded, test_user):
+    from portfolios.seed import ensure_default_portfolio
+
+    portfolio = ensure_default_portfolio(test_user)
+    bank = _create_bank(test_user, portfolio_id=portfolio.id)
+    fund_bank_account(test_user, bank, "50000")
+
+    api_client.put(
+        f"/api/v1/bank-accounts/{bank.id}",
+        {"portfolio_id": None},
+        format="json",
+    )
+
+    scoped = api_client.get(
+        "/api/v1/cash/overview", {"portfolio_id": portfolio.id}
+    ).json()
+    assert all(r.get("bank_account_id") != bank.id for r in scoped["rows"])
+    assert scoped["excluded_unassigned_bank_account_count"] >= 1
+
+    with_flag = api_client.get(
+        "/api/v1/cash/overview", {"include_unassigned": "true"}
+    ).json()
+    bank_rows = [r for r in with_flag["rows"] if r.get("bank_account_id") == bank.id]
+    assert len(bank_rows) == 1
+    assert bank_rows[0]["portfolio_assignment_status"] == "UNASSIGNED"
