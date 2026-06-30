@@ -98,6 +98,22 @@ Approved decisions (FD-ACC-0.1): see accounting doc § Approved product decision
 | `renewal_of` | FK → self | Nullable; future renewal chain |
 | `is_active` | bool | Soft delete sets false |
 
+### Maturity value (display / planning — FD-MATURITY-VALUE-1, FD-HOLDINGS-UX-1, FD-INTEREST-MATURITY-LOGIC-1)
+
+| Field | Notes |
+|-------|-------|
+| `estimated_maturity_value` | **Compounded:** principal + compounded interest. **Payout:** principal only |
+| `expected_maturity_value` | Display value — auto estimate/principal or user-confirmed |
+| `maturity_value_source` | `AUTO_ESTIMATE` (compounded), `AUTO_PRINCIPAL` (payout), or `USER_CONFIRMED` |
+| `estimate_type` (API) | `COMPOUNDED_MATURITY` or `PAYOUT_INTEREST` |
+| `estimated_total_interest` | Total interest over term (compounded uplift or payout total) |
+| `estimated_periodic_interest` | Payout FDs only — indicative per-frequency payout |
+| `maturity_estimate_method` | `ANNUAL_COMPOUND_ACTUAL_365` or `SIMPLE_PAYOUT_ACTUAL_365` |
+
+**Holdings display:** List/detail API returns computed estimates when stored fields are null (legacy FDs). `manage.py recalculate_fd_maturity_estimates` (`--dry-run` default, `--apply` to persist) backfills stored estimate fields only — no settlement changes.
+
+**Settlement:** Realized maturity/closure proceeds remain separate from estimated maturity value.
+
 ### Portfolio value rules (MVP; extended by accounting design)
 
 | Condition | Contributes principal? |
@@ -134,7 +150,7 @@ Base: `/api/v1` · Session auth required.
 | GET | `/fixed-deposits` | List active FDs; `portfolio_scope=all` or `portfolio_id` |
 | POST | `/fixed-deposits` | Create with validation |
 | GET | `/fixed-deposits/{id}` | Detail |
-| PUT | `/fixed-deposits/{id}` | Update active FD |
+| PUT | `/fixed-deposits/{id}` | Update active FD. After `FD_OPENING`: **locked** — principal, bank account, currency, portfolio; **editable** — investment date (syncs opening debit date), maturity date, rate, payout, nominee, metadata; maturity estimate recalculates |
 | DELETE | `/fixed-deposits/{id}` | Soft deactivate (`is_active=false`) — **409** when unreversed `FD_OPENING` exists |
 | POST | `/fixed-deposits/{id}/cancel` | Cancel mistaken ledger-backed FD; reverses `FD_OPENING`; `status=CANCELLED`; row retained for audit (not deleted) |
 

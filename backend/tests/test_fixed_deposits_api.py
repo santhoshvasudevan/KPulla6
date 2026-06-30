@@ -670,6 +670,75 @@ def test_update_fd_does_not_create_second_opening(api_client, seeded, test_user)
 
 
 @pytest.mark.django_db
+def test_update_investment_date_syncs_opening_and_recalculates_maturity(
+    api_client, seeded, test_user
+):
+    portfolio = ensure_default_portfolio(test_user)
+    bank = _bank(test_user)
+    fund_bank_account(test_user, bank, "2000000", movement_date=date(2023, 9, 24))
+    fd = create_fixed_deposit(
+        test_user,
+        **_fd_payload(
+            portfolio.id,
+            bank.id,
+            deposit_account_number="DATE-EDIT-1",
+            principal_amount=Decimal("1109389"),
+            interest_rate_percent=Decimal("7.25"),
+            interest_payout_frequency="COMPOUNDED",
+            investment_date=date(2023, 9, 25),
+            maturity_date=date(2026, 9, 25),
+        ),
+    )
+    movement = CashMovement.objects.get(linked_fixed_deposit=fd)
+    assert movement.movement_date == date(2023, 9, 25)
+    old_expected = fd.expected_maturity_value
+
+    response = api_client.put(
+        f"/api/v1/fixed-deposits/{fd.id}",
+        {"investment_date": "2025-09-25"},
+        format="json",
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["investment_date"] == "2025-09-25"
+    assert body["expected_maturity_value"] is not None
+    assert body["estimated_maturity_value"] is not None
+    assert body["expected_maturity_value"] != float(old_expected)
+    movement.refresh_from_db()
+    assert movement.movement_date == date(2025, 9, 25)
+
+
+@pytest.mark.django_db
+def test_update_investment_date_rejects_insufficient_funding_at_new_date(
+    api_client, seeded, test_user
+):
+    portfolio = ensure_default_portfolio(test_user)
+    bank = _bank(test_user)
+    fund_bank_account(test_user, bank, "2000000", movement_date=date(2023, 9, 24))
+    fd = create_fixed_deposit(
+        test_user,
+        **_fd_payload(
+            portfolio.id,
+            bank.id,
+            deposit_account_number="DATE-EDIT-2",
+            principal_amount=Decimal("1109389"),
+            investment_date=date(2023, 9, 25),
+            maturity_date=date(2026, 9, 25),
+        ),
+    )
+
+    response = api_client.put(
+        f"/api/v1/fixed-deposits/{fd.id}",
+        {"investment_date": "2020-01-01"},
+        format="json",
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert "insufficient" in body["detail"].lower()
+    assert body["shortfall"] > 0
+
+
+@pytest.mark.django_db
 def test_update_rejects_principal_after_opening(api_client, seeded, test_user):
     portfolio = ensure_default_portfolio(test_user)
     bank = _bank(test_user)

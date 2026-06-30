@@ -146,6 +146,8 @@ Clarify and surface the **two-ledger cash model** (portfolio broker cash vs bank
 | **3** | 007 | Historical bank balance seed for backdated FD (**done**) |
 | **3b** | [007b](./007b-fd-funding-model-1b.md) | Funding-aware as-of balance + seed-and-create UX fix (**done**) |
 | **4** | [008](./008-fd-maturity-value-1.md) | FD expected maturity value estimate + user override (**done**) |
+| **4b** | [008b](./008b-fd-holdings-ux-1.md) | Holdings maturity display + action strip UX (**done**) |
+| **5** | [010](./010-fd-interest-maturity-logic-1.md) | Compounded vs payout FD maturity/interest estimates (**done**) |
 | **3** | 004 | Unified Cash page UI (**done**) |
 | **3A** | 004a | Cash page verification: attribution, broker actions, diagnostics (**done**) |
 | **4** | 005 | Bank account link/delink UX + inclusion + display-currency stabilization (**done**) |
@@ -186,7 +188,7 @@ Standalone FD performance metrics and dashboard/analytics surfacing (principal-o
 
 ## References
 
-- [AGENTS.md](../../AGENTS.md) — agent rules + Background Agent Operating Rules
+- [AGENTS.md](../agents.md) — agent rules + Background Agent Operating Rules
 - [docs/data-safety.md](../data-safety.md) — incident notes, backup/restore
 - [docs/workflows.md](../workflows.md) — make targets, TDD workflow
 - [docs/cash-ledger.md](../cash-ledger.md) — broker cash ledger

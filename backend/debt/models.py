@@ -86,6 +86,7 @@ class InterestPayoutFrequency(models.TextChoices):
 
 class MaturityValueSource(models.TextChoices):
     AUTO_ESTIMATE = "AUTO_ESTIMATE", "Auto estimate"
+    AUTO_PRINCIPAL = "AUTO_PRINCIPAL", "Auto principal"
     USER_CONFIRMED = "USER_CONFIRMED", "User confirmed"
 
 

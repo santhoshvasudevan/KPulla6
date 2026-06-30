@@ -220,6 +220,8 @@ class FixedDepositDetailView(APIView):
             fd = update_fixed_deposit(
                 request.user, fd_id, **serializer.validated_data
             )
+        except InsufficientBankBalanceError as exc:
+            return _insufficient_bank_balance_response(exc)
         except FixedDepositNotFoundError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
         except FixedDepositValidationError as exc:

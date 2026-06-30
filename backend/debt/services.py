@@ -375,14 +375,18 @@ def update_fixed_deposit(
     **fields,
 ) -> FixedDeposit:
     from debt.bank_ledger_services import (
+        CashMovementValidationError,
         IMMUTABLE_FD_FIELDS_AFTER_OPENING,
+        InsufficientBankBalanceError,
         fixed_deposit_has_opening_cash_movement,
+        sync_fd_opening_movement_investment_date,
     )
 
     fd = get_fixed_deposit(user, fd_id)
     if not fd.is_active:
         raise FixedDepositNotFoundError(f"Fixed deposit not found: {fd_id}")
 
+    original_investment_date = fd.investment_date
     has_opening = fixed_deposit_has_opening_cash_movement(fd.id)
     if has_opening:
         blocked = {
@@ -398,8 +402,6 @@ def update_fixed_deposit(
             blocked.discard("principal_amount")
         if "currency" in blocked and fields["currency"] == fd.currency:
             blocked.discard("currency")
-        if "investment_date" in blocked and fields["investment_date"] == fd.investment_date:
-            blocked.discard("investment_date")
         if blocked:
             label = ", ".join(sorted(blocked))
             raise FixedDepositValidationError(
@@ -422,8 +424,10 @@ def update_fixed_deposit(
         fd.interest_rate_percent = fields["interest_rate_percent"]
     if "interest_payout_frequency" in fields and fields["interest_payout_frequency"] is not None:
         fd.interest_payout_frequency = fields["interest_payout_frequency"]
+    new_investment_date = None
     if "investment_date" in fields and fields["investment_date"] is not None:
-        fd.investment_date = fields["investment_date"]
+        new_investment_date = fields["investment_date"]
+        fd.investment_date = new_investment_date
     if "maturity_date" in fields and fields["maturity_date"] is not None:
         fd.maturity_date = fields["maturity_date"]
     if "nominee_name" in fields and fields["nominee_name"] is not None:
@@ -467,8 +471,40 @@ def update_fixed_deposit(
 
         apply_maturity_values_on_update(fd)
 
+    investment_date_changed = (
+        new_investment_date is not None and new_investment_date != original_investment_date
+    )
+
     try:
-        fd.save()
+        with db_transaction.atomic():
+            if investment_date_changed and has_opening:
+                try:
+                    sync_fd_opening_movement_investment_date(
+                        fd,
+                        new_investment_date,
+                        previous_investment_date=original_investment_date,
+                    )
+                except InsufficientBankBalanceError as exc:
+                    from debt.bank_ledger_services import compute_bank_account_balance
+
+                    current_balance = compute_bank_account_balance(fd.bank_account)
+                    raise InsufficientBankBalanceError(
+                        str(exc),
+                        required=exc.required,
+                        available=exc.available,
+                        shortfall=exc.shortfall,
+                        currency=exc.currency,
+                        hint=exc.hint,
+                        current_balance=current_balance,
+                        available_as_of_date=exc.available,
+                        investment_date=new_investment_date,
+                        bank_account_id=fd.bank_account_id,
+                        suggested_seed_date=exc.suggested_seed_date,
+                        suggested_seed_amount=exc.suggested_seed_amount,
+                    ) from exc
+                except CashMovementValidationError as exc:
+                    raise FixedDepositValidationError(str(exc)) from exc
+            fd.save()
     except DjangoValidationError as exc:
         raise FixedDepositValidationError(exc.messages[0] if exc.messages else str(exc)) from exc
     return fd

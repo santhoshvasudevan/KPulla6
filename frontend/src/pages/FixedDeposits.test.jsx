@@ -45,7 +45,7 @@ const sampleFd = {
   principal_amount: 100000,
   currency: 'INR',
   interest_rate_percent: 7,
-  interest_payout_frequency: 'QUARTERLY',
+  interest_payout_frequency: 'COMPOUNDED',
   investment_date: '2024-01-01',
   maturity_date: '2026-01-01',
   nominee_name: null,
@@ -56,9 +56,27 @@ const sampleFd = {
   expected_maturity_value: 115000,
   expected_interest: 15000,
   estimated_maturity_value: 114500,
+  estimated_total_interest: 14500,
   maturity_value_source: 'AUTO_ESTIMATE',
+  estimate_type: 'COMPOUNDED_MATURITY',
   maturity_estimate_method: 'ANNUAL_COMPOUND_ACTUAL_365',
-  maturity_estimate_method_label: 'Annual compounding, Actual/365',
+  maturity_estimate_method_label: 'Compounded interest, Actual/365',
+};
+
+const payoutFd = {
+  ...sampleFd,
+  id: 2,
+  deposit_account_number: 'FD-PAYOUT',
+  interest_payout_frequency: 'QUARTERLY',
+  expected_maturity_value: 100000,
+  estimated_maturity_value: 100000,
+  expected_interest: 14000,
+  estimated_total_interest: 14000,
+  estimated_periodic_interest: 1750,
+  maturity_value_source: 'AUTO_PRINCIPAL',
+  estimate_type: 'PAYOUT_INTEREST',
+  maturity_estimate_method: 'SIMPLE_PAYOUT_ACTUAL_365',
+  maturity_estimate_method_label: 'Simple interest payout, Actual/365',
 };
 
 const seededBankAccount = {
@@ -144,10 +162,12 @@ describe('FixedDeposits page', () => {
       warnings: [],
     });
     api.fetchFixedDepositMaturityEstimate.mockResolvedValue({
+      estimate_type: 'COMPOUNDED_MATURITY',
       estimated_maturity_value: 115000,
       estimated_interest: 15000,
+      estimated_total_interest: 15000,
       maturity_estimate_method: 'ANNUAL_COMPOUND_ACTUAL_365',
-      maturity_estimate_method_label: 'Annual compounding, Actual/365',
+      maturity_estimate_method_label: 'Compounded interest, Actual/365',
       warning: null,
     });
   });
@@ -176,7 +196,7 @@ describe('FixedDeposits page', () => {
     await waitFor(() => {
       expect(screen.getByText('HDFC')).toBeInTheDocument();
       expect(screen.getByText('FD-001')).toBeInTheDocument();
-      expect(screen.getByText('Quarterly')).toBeInTheDocument();
+      expect(screen.getByText('Compounded')).toBeInTheDocument();
       expect(screen.getByRole('status', { name: 'Active' })).toBeInTheDocument();
     });
   });
@@ -578,12 +598,38 @@ describe('FixedDeposits page', () => {
     });
   });
 
-  it('disables immutable fields when opening movement exists', async () => {
+  it('keeps investment date editable when opening movement exists', async () => {
     renderPage();
     await waitFor(() => screen.getByRole('button', { name: /^edit$/i }));
     fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
     expect(screen.getByLabelText(/principal amount/i)).toBeDisabled();
-    expect(screen.getByLabelText(/investment date/i)).toBeDisabled();
+    expect(screen.getByLabelText(/investment date/i)).not.toBeDisabled();
+    expect(screen.getByText(/changing investment date also moves the linked fd opening/i)).toBeInTheDocument();
+  });
+
+  it('submits investment date correction for ledger-backed FD', async () => {
+    api.updateFixedDeposit.mockResolvedValueOnce({
+      ...sampleFd,
+      investment_date: '2025-09-25',
+      expected_maturity_value: 1150000,
+    });
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /^edit$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+    fireEvent.change(screen.getByLabelText(/investment date/i), {
+      target: { value: '2025-09-25' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(api.updateFixedDeposit).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({
+          investment_date: '2025-09-25',
+          use_auto_maturity_estimate: true,
+        })
+      );
+    });
   });
 
   it('shows backend error when editing immutable fields', async () => {
@@ -983,7 +1029,7 @@ describe('FixedDeposits page', () => {
     });
   });
 
-  it('shows maturity estimate in create form when inputs are complete', async () => {
+  it('shows compounded maturity estimate in create form when inputs are complete', async () => {
     renderPage();
     await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
     fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
@@ -996,8 +1042,34 @@ describe('FixedDeposits page', () => {
     await waitFor(() => {
       expect(api.fetchFixedDepositMaturityEstimate).toHaveBeenCalled();
     });
+    expect(screen.getByRole('heading', { name: /expected maturity value/i })).toBeInTheDocument();
     expect(screen.getByText(/estimated maturity value:/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/annual compounding, actual\/365/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/compounded interest, actual\/365/i).length).toBeGreaterThan(0);
+  });
+
+  it('shows payout interest estimate preview for quarterly FD', async () => {
+    api.fetchFixedDepositMaturityEstimate.mockResolvedValueOnce({
+      estimate_type: 'PAYOUT_INTEREST',
+      estimated_maturity_value: 100000,
+      estimated_total_interest: 14000,
+      estimated_periodic_interest: 1750,
+      maturity_estimate_method_label: 'Simple interest payout, Actual/365',
+    });
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.click(screen.getByRole('button', { name: /add fixed deposit/i }));
+    fireEvent.change(screen.getByLabelText(/principal amount/i), { target: { value: '100000' } });
+    fireEvent.change(screen.getByLabelText(/interest rate/i), { target: { value: '7' } });
+    fireEvent.change(screen.getByLabelText(/investment date/i), { target: { value: '2024-01-01' } });
+    fireEvent.change(screen.getByLabelText(/maturity date/i), { target: { value: '2026-01-01' } });
+    fireEvent.change(screen.getByLabelText(/payout frequency/i), { target: { value: 'QUARTERLY' } });
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /expected interest payout/i })).toBeInTheDocument();
+    });
+    expect(screen.getByText(/maturity value \(principal returned\):/i)).toBeInTheDocument();
+    expect(screen.getByText(/estimated periodic interest/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^estimated maturity value:/i)).not.toBeInTheDocument();
   });
 
   it('sends override maturity value only when enabled', async () => {
@@ -1011,6 +1083,7 @@ describe('FixedDeposits page', () => {
     fireEvent.change(screen.getByLabelText(/interest rate/i), { target: { value: '7' } });
     fireEvent.change(screen.getByLabelText(/investment date/i), { target: { value: '2024-01-01' } });
     fireEvent.change(screen.getByLabelText(/maturity date/i), { target: { value: '2026-01-01' } });
+    fireEvent.change(screen.getByLabelText(/payout frequency/i), { target: { value: 'COMPOUNDED' } });
     fireEvent.click(screen.getByRole('checkbox', { name: /use bank\/institution maturity value/i }));
     fireEvent.change(screen.getByLabelText(/confirmed maturity value/i), {
       target: { value: '120000' },
@@ -1024,11 +1097,22 @@ describe('FixedDeposits page', () => {
     });
   });
 
-  it('displays maturity value and source badge in holdings table', async () => {
+  it('displays maturity value and source badge in holdings table for compounded FD', async () => {
     renderPage();
     await waitFor(() => screen.getByText(/115,000/i));
     expect(screen.getByText(/auto estimate/i)).toBeInTheDocument();
-    expect(screen.getByText(/annual compounding/i)).toBeInTheDocument();
+    expect(screen.getByText(/compounded interest/i)).toBeInTheDocument();
+  });
+
+  it('displays principal returned and interest estimate for payout FD in holdings', async () => {
+    api.fetchFixedDeposits.mockResolvedValueOnce([payoutFd]);
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getAllByText(/principal returned/i).length).toBeGreaterThan(0);
+    });
+    expect(screen.getByText(/est\. total interest:/i)).toBeInTheDocument();
+    expect(screen.getByText(/est\. quarterly payout:/i)).toBeInTheDocument();
+    expect(screen.queryByText(/auto estimate/i)).not.toBeInTheDocument();
   });
 
   it('displays user confirmed badge when source is user confirmed', async () => {
@@ -1037,5 +1121,74 @@ describe('FixedDeposits page', () => {
     ]);
     renderPage();
     await waitFor(() => screen.getByText(/user confirmed/i));
+  });
+
+  it('shows maturity value for legacy compounded FD when API returns dynamic estimate', async () => {
+    api.fetchFixedDeposits.mockResolvedValueOnce([
+      {
+        ...sampleFd,
+        portfolio_name: 'IndianInvestments',
+        institution_name: 'HDFC',
+        principal_amount: 1109389,
+        interest_rate_percent: 7.25,
+        interest_payout_frequency: 'COMPOUNDED',
+        investment_date: '2023-09-25',
+        maturity_date: '2026-09-25',
+        expected_maturity_value: 1375421.12,
+        estimated_maturity_value: 1375421.12,
+        expected_interest: 266032.12,
+        maturity_value_source: 'AUTO_ESTIMATE',
+        maturity_estimate_method_label: 'Compounded interest, Actual/365',
+      },
+    ]);
+    renderPage();
+    await waitFor(() => screen.getByText(/1,375,421/i));
+    expect(screen.getByText(/auto estimate/i)).toBeInTheDocument();
+    expect(screen.getByText(/compounded interest/i)).toBeInTheDocument();
+  });
+
+  it('shows not estimated fallback when maturity value unavailable', async () => {
+    api.fetchFixedDeposits.mockResolvedValueOnce([
+      {
+        ...sampleFd,
+        expected_maturity_value: null,
+        estimated_maturity_value: null,
+        expected_interest: null,
+        maturity_value_source: 'AUTO_ESTIMATE',
+        maturity_estimate_method_label: null,
+      },
+    ]);
+    renderPage();
+    await waitFor(() => screen.getByText(/not estimated/i));
+  });
+
+  it('renders FD actions in full-width action strip below row', async () => {
+    renderPage();
+    await waitFor(() => screen.getByTestId('fd-action-strip-1'));
+    const strip = screen.getByTestId('fd-action-strip-1');
+    expect(within(strip).getByRole('button', { name: /record interest/i })).toBeInTheDocument();
+    expect(within(strip).getByRole('button', { name: /interest payments/i })).toBeInTheDocument();
+    expect(within(strip).getByRole('button', { name: /edit/i })).toBeInTheDocument();
+    expect(within(strip).getByRole('button', { name: /cancel fd/i })).toBeInTheDocument();
+    expect(strip).toHaveClass('fd-action-strip');
+  });
+
+  it('action strip buttons open the same flows', async () => {
+    renderPage();
+    await waitFor(() => screen.getByTestId('fd-action-strip-1'));
+    fireEvent.click(screen.getByRole('button', { name: /record interest/i }));
+    const interestDialog = screen.getByRole('dialog');
+    expect(interestDialog).toBeInTheDocument();
+    fireEvent.click(within(interestDialog).getByRole('button', { name: /^cancel$/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+    const editDialog = screen.getByRole('dialog');
+    expect(editDialog).toHaveAccessibleName(/edit fixed deposit/i);
+    fireEvent.click(within(editDialog).getByRole('button', { name: /^cancel$/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /interest payments/i }));
+    await waitFor(() => {
+      expect(api.fetchFixedDepositInterestPayments).toHaveBeenCalledWith(1);
+    });
   });
 });

@@ -15,7 +15,9 @@ FD create/edit shows app-calculated maturity estimate; user can override with ba
 - FD form estimate section + override UX
 - Holdings table maturity value column
 
-## Deferred
+## Superseded / refined by
+
+- [010 — FD-INTEREST-MATURITY-LOGIC-1](./010-fd-interest-maturity-logic-1.md) — payout FDs return principal at maturity; interest estimated separately (not added to maturity value).
 
 - Broker-funded FD
 - Tax calculation changes

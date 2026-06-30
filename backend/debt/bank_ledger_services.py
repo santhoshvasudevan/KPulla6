@@ -104,7 +104,6 @@ IMMUTABLE_FD_FIELDS_AFTER_OPENING = frozenset(
         "principal_amount",
         "bank_account_id",
         "currency",
-        "investment_date",
         "portfolio_id",
     }
 )
@@ -176,13 +175,40 @@ def compute_bank_funding_balance(
     bank_account: BankAccount | int,
     *,
     as_of_date: date | None = None,
+    exclude_movement_ids: frozenset[int] | None = None,
 ) -> Decimal:
     """As-of balance for FD funding validation and FD seed UI."""
     account_id = bank_account.id if isinstance(bank_account, BankAccount) else bank_account
-    return bank_funding_balance(
-        _funding_movement_points_for_account(account_id),
-        as_of_date=as_of_date,
+    reversed_ids = set(
+        CashMovement.objects.filter(
+            bank_account_id=account_id,
+            is_reversal=True,
+            reverses_id__isnull=False,
+        ).values_list("reverses_id", flat=True)
     )
+    rows_qs = CashMovement.objects.filter(bank_account_id=account_id)
+    if exclude_movement_ids:
+        rows_qs = rows_qs.exclude(id__in=exclude_movement_ids)
+    rows = rows_qs.only(
+        "id",
+        "movement_date",
+        "currency",
+        "amount",
+        "direction",
+        "is_reversal",
+    )
+    points = [
+        BankFundingMovementPoint(
+            movement_date=row.movement_date,
+            currency=row.currency,
+            amount=row.amount,
+            direction=row.direction,
+            is_reversal=row.is_reversal,
+            is_reversed=row.id in reversed_ids,
+        )
+        for row in rows
+    ]
+    return bank_funding_balance(points, as_of_date=as_of_date)
 
 
 def suggested_seed_date_for_fd(investment_date: date) -> date:
@@ -247,6 +273,87 @@ def get_unreversed_fd_opening_cash_movement(fixed_deposit_id: int) -> CashMoveme
 def get_fd_opening_cash_movement_id(fixed_deposit_id: int) -> int | None:
     opening = get_unreversed_fd_opening_cash_movement(fixed_deposit_id)
     return opening.id if opening else None
+
+
+def validate_fd_investment_date_correction(
+    fd: FixedDeposit,
+    new_investment_date: date,
+    *,
+    opening_movement: CashMovement,
+    previous_investment_date: date | None = None,
+) -> None:
+    """Ensure bank funding and interest history allow moving FD investment date."""
+    prior_date = (
+        previous_investment_date
+        if previous_investment_date is not None
+        else fd.investment_date
+    )
+    if new_investment_date == prior_date:
+        return
+    from debt.models import FixedDepositInterestPayment
+
+    if FixedDepositInterestPayment.objects.filter(
+        fixed_deposit_id=fd.id,
+        is_reversed=False,
+        payment_date__lt=new_investment_date,
+    ).exists():
+        raise CashMovementValidationError(
+            "Cannot move investment date after existing interest payments. "
+            "Reverse interest payments dated before the new investment date first."
+        )
+
+    available = compute_bank_funding_balance(
+        fd.bank_account_id,
+        as_of_date=new_investment_date,
+        exclude_movement_ids=frozenset({opening_movement.id}),
+    )
+    if available >= fd.principal_amount:
+        return
+
+    shortfall = fd.principal_amount - available
+    raise InsufficientBankBalanceError(
+        "Insufficient bank account balance on the new investment date.",
+        required=fd.principal_amount,
+        available=available,
+        shortfall=shortfall,
+        currency=fd.currency,
+        investment_date=new_investment_date,
+        bank_account_id=fd.bank_account_id,
+        suggested_seed_date=suggested_seed_date_for_fd(new_investment_date),
+        suggested_seed_amount=shortfall,
+        hint=(
+            "Record or seed bank cash on or before the new investment date, "
+            "then update the FD again."
+        ),
+    )
+
+
+def sync_fd_opening_movement_investment_date(
+    fd: FixedDeposit,
+    new_investment_date: date,
+    *,
+    previous_investment_date: date | None = None,
+) -> CashMovement | None:
+    """Move unreversed FD_OPENING debit to match corrected investment date."""
+    opening = get_unreversed_fd_opening_cash_movement(fd.id)
+    if opening is None:
+        return None
+    prior_date = (
+        previous_investment_date
+        if previous_investment_date is not None
+        else opening.movement_date
+    )
+    if opening.movement_date == new_investment_date and new_investment_date == prior_date:
+        return opening
+    validate_fd_investment_date_correction(
+        fd,
+        new_investment_date,
+        opening_movement=opening,
+        previous_investment_date=prior_date,
+    )
+    opening.movement_date = new_investment_date
+    opening.save(update_fields=["movement_date", "updated_at"])
+    return opening
 
 
 def movement_has_been_reversed(movement: CashMovement | int) -> bool:

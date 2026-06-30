@@ -62,6 +62,18 @@
 - **Deferred:** Multi-portfolio bank sub-balances; broker-cash FD create API/UI.
 - Design: [cash-unification.md](./cash-unification.md) §4–§5 · backlog: [004a-cash-unify-3a.md](./backlog/004a-cash-unify-3a.md), [005-cash-unify-4.md](./backlog/005-cash-unify-4.md).
 
+## 2026-06-30 — FD-INTEREST-MATURITY-LOGIC-1: Compounded vs payout maturity estimates
+
+- **Decision:** Maturity value above principal applies only to **COMPOUNDED** FDs. Payout frequencies return principal at maturity; interest is estimated as total + periodic payout amounts.
+- **Formula:** Compounded → `principal × (1 + rate/100) ^ (days/365)`. Payout total interest → `principal × rate/100 × days/365`; periodic → `(principal × rate/100) / periods_per_year`.
+- **Source:** `AUTO_PRINCIPAL` for auto payout FD maturity display.
+
+## 2026-06-30 — FD-HOLDINGS-UX-1: Holdings maturity display + action strip
+
+- **Decision:** FD list/detail API uses `resolve_maturity_display()` so legacy rows without stored maturity fields still show estimates when inputs suffice. DB user-confirmed values are never overwritten by display logic.
+- **Backfill:** Optional `recalculate_fd_maturity_estimates` command persists estimate fields only (`--apply`).
+- **UI:** Full-width action strip below each FD holdings row; Cancel FD uses danger variant. Estimates remain separate from settlement proceeds.
+
 ## 2026-06-29 — FD-MATURITY-VALUE-1: Expected maturity value (estimate vs user-confirmed)
 
 - **Decision:** Store `estimated_maturity_value` (app) and `expected_maturity_value` (display/planning). Source `AUTO_ESTIMATE` or `USER_CONFIRMED`. Settlement/closure proceeds remain separate realized amounts.
@@ -375,7 +387,7 @@
 
 ## Cash Ledger — guardrails (agent summary, 2026-06-04)
 
-Consolidated rules for ongoing Cash phases (detail in [cash-ledger.md](./cash-ledger.md), [.cursor/rules/320-cash-ledger.mdc](../.cursor/rules/320-cash-ledger.mdc)):
+Consolidated rules for ongoing Cash phases (detail in [cash-ledger.md](./cash-ledger.md), [320-cash-ledger](cursor-rules/320-cash-ledger.md)):
 
 | Topic | Decision |
 |-------|----------|

@@ -156,6 +156,55 @@
   min-width: 12rem;
 }
 
+.fd-table__data-row td {
+  border-bottom: none;
+}
+
+.fd-table__actions-row td {
+  padding-top: 0;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-surface) 96%, var(--bg-subtle, transparent));
+}
+
+.fd-action-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md, 6px);
+  background: var(--bg-subtle, rgba(0, 0, 0, 0.02));
+}
+
+.fd-action-strip__group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.fd-action-strip__group:not(:last-child) {
+  padding-right: var(--space-3);
+  border-right: 1px solid var(--border-subtle);
+}
+
+@media (max-width: 48rem) {
+  .fd-action-strip__group {
+    width: 100%;
+    padding-right: 0;
+    border-right: none;
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .fd-action-strip__group:last-child {
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+}
+
 .fd-table__actions {
   display: flex;
   flex-wrap: wrap;
@@ -316,4 +365,9 @@
 .fd-table__maturity-method {
   font-size: 0.8125rem;
   color: var(--text-muted, #666);
+}
+
+.fd-table__maturity-missing {
+  color: var(--text-muted, #666);
+  font-size: 0.875rem;
 }

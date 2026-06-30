@@ -2,6 +2,23 @@
 
 **Status:** **FD-ACC-7 implemented** · **FD-ACC-8B implemented** (value history) · **FD-ACC-8C implemented** (return metrics) · **FD-ACC-9 audited** (2026-06-14) · **FD-ACC-10A implemented** (2026-06-24) · **FD-ACC-10B implemented** (2026-06-24) · **FD-TAX-1/1A/2 implemented** (2026-06-26) · **FD-CASH-ASOF-1 implemented** (2026-06-24, create as-of balance UX).
 
+## FD-INTEREST-MATURITY-LOGIC-1 maturity vs payout estimates (2026-06-30)
+
+| Topic | Rule |
+|-------|------|
+| **Compounded** | `estimated_maturity_value` = principal + compounded interest (Actual/365 fractional years); `maturity_value_source` = `AUTO_ESTIMATE` or `USER_CONFIRMED` |
+| **Payout (monthly/quarterly/half-yearly/annual)** | `estimated_maturity_value` = principal; interest estimated separately as `estimated_total_interest` + `estimated_periodic_interest`; `maturity_value_source` = `AUTO_PRINCIPAL` |
+| **Settlement** | Estimates are planning/display only — settlement proceeds remain user-entered; no auto interest payment recording |
+| **Legacy inflated payout rows** | API `resolve_maturity_display()` corrects stored inflated maturity to principal unless `USER_CONFIRMED`; optional `recalculate_fd_maturity_estimates --apply` persists |
+
+## FD-HOLDINGS-UX-1 maturity display (2026-06-30)
+
+| Topic | Rule |
+|-------|------|
+| **Purpose** | `estimated_maturity_value` / `expected_maturity_value` are planning/display fields only |
+| **Settlement** | Realized maturity/closure proceeds come from user-entered settlement amounts — not auto-filled from estimates |
+| **Legacy FDs** | API computes display estimates when DB fields are null; optional `recalculate_fd_maturity_estimates --apply` persists estimate columns only |
+
 ## FD-CASH-ASOF-1 implementation notes (2026-06-24)
 
 | Item | FD-CASH-ASOF-1 outcome |

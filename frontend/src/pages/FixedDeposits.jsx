@@ -33,7 +33,7 @@ import {
   CurrencyValue,
   StatusBadge,
 } from '../components/ui';
-import { fdPayoutLabel, fdStatusBadgeProps, fdStatusCounts, fdMaturityValueSourceBadgeProps } from '../utils/fdDisplay';
+import { fdPayoutLabel, fdStatusBadgeProps, fdStatusCounts, fdMaturityValueSourceBadgeProps, fdDisplayMaturityValue, fdDisplayTotalInterest, fdDisplayPeriodicInterest, fdDisplayMaturitySource, fdIsCompounded, fdIsPayout, FD_ESTIMATE_TYPE_COMPOUNDED, FD_ESTIMATE_TYPE_PAYOUT } from '../utils/fdDisplay';
 import FixedDepositInterestReport from '../components/FixedDepositInterestReport';
 import './FixedDeposits.css';
 
@@ -100,8 +100,11 @@ function hasMisleadingManualBalance(bank) {
   return bank && !bankHasLedger(bank) && Number(bank.current_balance) > 0;
 }
 
-const FD_MATURITY_ESTIMATE_NOTE =
+const FD_MATURITY_COMPOUNDED_NOTE =
   'This is an estimate. Banks may use different rounding, day-count, or compounding rules. Final realized proceeds come from settlement/closure.';
+
+const FD_MATURITY_PAYOUT_NOTE =
+  'This is an estimate. Actual payout dates, rounding, tax withholding, and bank day-count rules can differ. Final interest payments are recorded separately when credited.';
 
 function maturityInputsComplete(form) {
   const principal = parseFloat(form.principal_amount);
@@ -125,6 +128,12 @@ const FD_CASH_LEDGER_NOTE =
 
 const FD_BACKDATED_LEDGER_NOTE =
   'If this FD is backdated, make sure the opening balance or cash deposit is recorded on or before the FD investment date.';
+
+const FD_INVESTMENT_DATE_EDIT_NOTE =
+  'Changing investment date also moves the linked FD opening bank debit to the same date. Maturity estimate recalculates on save.';
+
+const FD_LEDGER_LOCKED_FIELDS_NOTE =
+  'Principal, currency, funding bank account, and portfolio cannot change after the FD opening debit is recorded. Dates, rate, payout, and nominee can be corrected.';
 
 const FD_BACKDATED_HINT =
   'For backdated FDs, record or seed bank cash on or before the investment date.';
@@ -422,7 +431,7 @@ export default function FixedDeposits() {
   );
 
   useEffect(() => {
-    if (!modalOpen || editing || !selectedBank?.id || !form.investment_date) {
+    if (!modalOpen || !selectedBank?.id || !form.investment_date) {
       setAsOfBalanceInfo(null);
       return undefined;
     }
@@ -441,7 +450,7 @@ export default function FixedDeposits() {
     return () => {
       cancelled = true;
     };
-  }, [modalOpen, editing, selectedBank?.id, form.investment_date]);
+  }, [modalOpen, selectedBank?.id, form.investment_date]);
 
   useEffect(() => {
     if (!modalOpen) {
@@ -490,7 +499,7 @@ export default function FixedDeposits() {
     node.focus({ preventScroll: true });
   }, [formError, formErrorDetails]);
 
-  const openingFieldsLocked = Boolean(editing?.has_opening_cash_movement);
+  const ledgerBackedFieldsLocked = Boolean(editing?.has_opening_cash_movement);
   const ledgerBalance = ledgerBalanceForFd(selectedBank);
   const asOfLedgerBalance =
     asOfBalanceInfo?.balance_as_of_date != null
@@ -1136,15 +1145,20 @@ export default function FixedDeposits() {
                 <AppTableHeaderCell numeric>Maturity value</AppTableHeaderCell>
                 <AppTableHeaderCell>Nominee</AppTableHeaderCell>
                 <AppTableHeaderCell>Status</AppTableHeaderCell>
-                <AppTableHeaderCell className="fd-table__actions-col">Actions</AppTableHeaderCell>
               </tr>
             </thead>
             <tbody>
               {items.map((fd) => {
                 const badge = fdStatusBadgeProps(fd.status);
+                const displayMaturityValue = fdDisplayMaturityValue(fd);
+                const displayTotalInterest = fdDisplayTotalInterest(fd);
+                const displayPeriodicInterest = fdDisplayPeriodicInterest(fd);
+                const displayMaturitySource = fdDisplayMaturitySource(fd);
+                const compoundedFd = fdIsCompounded(fd);
+                const payoutFd = fdIsPayout(fd);
                 return (
                   <Fragment key={fd.id}>
-                    <tr>
+                    <tr className="fd-table__data-row">
                       <AppTableCell>{fd.portfolio_name}</AppTableCell>
                       <AppTableCell>{fd.institution_name}</AppTableCell>
                       <AppTableCell className="fd-table__account">{fd.deposit_account_number}</AppTableCell>
@@ -1158,102 +1172,132 @@ export default function FixedDeposits() {
                       <AppTableCell>{fd.investment_date}</AppTableCell>
                       <AppTableCell className="fd-table__maturity">{fd.maturity_date}</AppTableCell>
                       <AppTableCell numeric className="fd-table__maturity-value">
-                        {fd.expected_maturity_value != null ? (
+                        {displayMaturityValue != null ? (
                           <>
                             <CurrencyValue
-                              value={fd.expected_maturity_value}
+                              value={displayMaturityValue}
                               currency={fd.currency}
                             />
-                            {fd.expected_interest != null ? (
+                            {payoutFd ? (
+                              <div className="fd-table__maturity-sub">Principal returned</div>
+                            ) : null}
+                            {displayTotalInterest != null && displayTotalInterest > 0 ? (
                               <div className="fd-table__maturity-sub">
-                                +{formatMoneyAmount(fd.expected_interest, fd.currency)} interest
+                                {payoutFd ? 'Est. total interest: ' : '+'}
+                                {formatMoneyAmount(displayTotalInterest, fd.currency)}
+                                {payoutFd ? '' : ' interest'}
+                              </div>
+                            ) : null}
+                            {payoutFd && displayPeriodicInterest != null ? (
+                              <div className="fd-table__maturity-sub">
+                                Est. {fdPayoutLabel(fd.interest_payout_frequency).toLowerCase()} payout:{' '}
+                                {formatMoneyAmount(displayPeriodicInterest, fd.currency)}
                               </div>
                             ) : null}
                             <div className="fd-table__maturity-sub">
-                              <StatusBadge
-                                {...fdMaturityValueSourceBadgeProps(fd.maturity_value_source)}
-                              />
+                              {compoundedFd ? (
+                                <StatusBadge
+                                  {...fdMaturityValueSourceBadgeProps(displayMaturitySource, fd)}
+                                />
+                              ) : payoutFd ? (
+                                <StatusBadge
+                                  {...fdMaturityValueSourceBadgeProps(displayMaturitySource, fd)}
+                                />
+                              ) : null}
                               {fd.maturity_estimate_method_label ? (
                                 <span className="fd-table__maturity-method">
-                                  {' '}
-                                  · {fd.maturity_estimate_method_label}
+                                  {compoundedFd || payoutFd ? ' · ' : ''}
+                                  {fd.maturity_estimate_method_label}
                                 </span>
                               ) : null}
                             </div>
                           </>
                         ) : (
-                          '—'
+                          <span
+                            className="fd-table__maturity-missing"
+                            title="Insufficient FD data or unsupported payout mode for estimate"
+                          >
+                            Not estimated
+                          </span>
                         )}
                       </AppTableCell>
                       <AppTableCell>{fd.nominee_name || '—'}</AppTableCell>
                       <AppTableCell>
                         <StatusBadge status={badge.status} label={badge.label} />
                       </AppTableCell>
-                      <AppTableCell className="fd-table__actions-col">
-                        <div className="fd-table__actions">
-                          {!isSettledFd(fd) ? (
+                    </tr>
+                    <tr className="fd-table__actions-row">
+                      <td colSpan={13}>
+                        <div className="fd-action-strip" data-testid={`fd-action-strip-${fd.id}`}>
+                          <div className="fd-action-strip__group" aria-label="Common actions">
+                            {!isSettledFd(fd) ? (
+                              <Button
+                                variant="primary"
+                                type="button"
+                                onClick={() => openInterestModal(fd)}
+                              >
+                                Record interest
+                              </Button>
+                            ) : null}
                             <Button
                               variant="secondary"
                               type="button"
-                              onClick={() => openInterestModal(fd)}
+                              onClick={() => toggleInterestPayments(fd)}
                             >
-                              Record interest
+                              {expandedFdId === fd.id ? 'Hide payments' : 'Interest payments'}
                             </Button>
-                          ) : null}
-                          {canMarkMatured(fd) ? (
-                            <Button
-                              variant="secondary"
-                              type="button"
-                              onClick={() => handleMarkMatured(fd)}
-                              disabled={markingMaturedId === fd.id}
-                            >
-                              {markingMaturedId === fd.id ? 'Marking…' : 'Mark matured'}
+                          </div>
+                          <div className="fd-action-strip__group" aria-label="Lifecycle actions">
+                            {canMarkMatured(fd) ? (
+                              <Button
+                                variant="secondary"
+                                type="button"
+                                onClick={() => handleMarkMatured(fd)}
+                                disabled={markingMaturedId === fd.id}
+                              >
+                                {markingMaturedId === fd.id ? 'Marking…' : 'Mark matured'}
+                              </Button>
+                            ) : null}
+                            {canSettle(fd) ? (
+                              <Button
+                                variant="secondary"
+                                type="button"
+                                onClick={() => openSettlementModal(fd)}
+                              >
+                                {fd.status === 'MATURED' ? 'Settle' : 'Settle / Close'}
+                              </Button>
+                            ) : null}
+                            {canRenew(fd) ? (
+                              <Button
+                                variant="secondary"
+                                type="button"
+                                onClick={() => openRenewalModal(fd)}
+                              >
+                                Renew
+                              </Button>
+                            ) : null}
+                          </div>
+                          <div className="fd-action-strip__group" aria-label="Maintenance actions">
+                            <Button variant="secondary" type="button" onClick={() => openEdit(fd)}>
+                              Edit
                             </Button>
-                          ) : null}
-                          {canSettle(fd) ? (
-                            <Button
-                              variant="secondary"
-                              type="button"
-                              onClick={() => openSettlementModal(fd)}
-                            >
-                              {fd.status === 'MATURED' ? 'Settle' : 'Settle / Close'}
-                            </Button>
-                          ) : null}
-                          {canRenew(fd) ? (
-                            <Button
-                              variant="secondary"
-                              type="button"
-                              onClick={() => openRenewalModal(fd)}
-                            >
-                              Renew
-                            </Button>
-                          ) : null}
-                          <Button variant="secondary" type="button" onClick={() => openEdit(fd)}>
-                            Edit
-                          </Button>
-                          {canCancel(fd) ? (
-                            <Button variant="secondary" type="button" onClick={() => handleCancel(fd)}>
-                              Cancel FD
-                            </Button>
-                          ) : null}
-                          {canDeactivate(fd) ? (
-                            <Button variant="secondary" type="button" onClick={() => handleDeactivate(fd)}>
-                              Deactivate
-                            </Button>
-                          ) : null}
-                          <Button
-                            variant="secondary"
-                            type="button"
-                            onClick={() => toggleInterestPayments(fd)}
-                          >
-                            {expandedFdId === fd.id ? 'Hide payments' : 'Interest payments'}
-                          </Button>
+                            {canCancel(fd) ? (
+                              <Button variant="danger" type="button" onClick={() => handleCancel(fd)}>
+                                Cancel FD
+                              </Button>
+                            ) : null}
+                            {canDeactivate(fd) ? (
+                              <Button variant="secondary" type="button" onClick={() => handleDeactivate(fd)}>
+                                Deactivate
+                              </Button>
+                            ) : null}
+                          </div>
                         </div>
-                      </AppTableCell>
+                      </td>
                     </tr>
                     {expandedFdId === fd.id ? (
                       <tr key={`${fd.id}-payments`} className="fd-interest-payments-row">
-                        <td colSpan={14}>
+                        <td colSpan={13}>
                           {interestLoadingFdId === fd.id ? (
                             <p className="settings-hint">Loading interest payments…</p>
                           ) : (interestPaymentsByFd[fd.id] || []).length === 0 ? (
@@ -1532,6 +1576,13 @@ export default function FixedDeposits() {
               </div>
             ) : null}
             <form onSubmit={handleSubmit} className="fd-form">
+              {editing && ledgerBackedFieldsLocked ? (
+                <WarningBanner
+                  severity="info"
+                  message={FD_LEDGER_LOCKED_FIELDS_NOTE}
+                  className="fd-banner"
+                />
+              ) : null}
               <div className="form-group">
                 <label htmlFor="fd-portfolio">Portfolio to track this FD</label>
                 <select
@@ -1539,7 +1590,7 @@ export default function FixedDeposits() {
                   value={form.portfolio_id}
                   onChange={(e) => setForm((p) => ({ ...p, portfolio_id: e.target.value }))}
                   required
-                  disabled={openingFieldsLocked || (!editing && portfolios.length === 0)}
+                  disabled={ledgerBackedFieldsLocked || (!editing && portfolios.length === 0)}
                 >
                   <option value="">Select portfolio</option>
                   {portfolios.map((p) => (
@@ -1556,7 +1607,7 @@ export default function FixedDeposits() {
                   value={form.bank_account_id}
                   onChange={(e) => onBankChange(e.target.value)}
                   required
-                  disabled={openingFieldsLocked}
+                  disabled={ledgerBackedFieldsLocked}
                 >
                   <option value="">Select bank account</option>
                   {bankAccounts.map((b) => (
@@ -1570,12 +1621,14 @@ export default function FixedDeposits() {
                     <p className="settings-hint">
                       Current ledger balance: {formatMoneyAmount(ledgerBalance, selectedBank.currency)}
                     </p>
-                    {!editing && form.investment_date ? (
+                    {form.investment_date ? (
                       <p className="settings-hint">
                         {asOfBalanceLoading
                           ? 'Loading available as of investment date…'
                           : asOfLedgerBalance != null
-                            ? `Available as of FD investment date (${form.investment_date}): ${formatMoneyAmount(asOfLedgerBalance, selectedBank.currency)}`
+                            ? editing
+                              ? `Funding balance as of ${form.investment_date}: ${formatMoneyAmount(asOfLedgerBalance, selectedBank.currency)}`
+                              : `Available as of FD investment date (${form.investment_date}): ${formatMoneyAmount(asOfLedgerBalance, selectedBank.currency)}`
                             : FD_BALANCE_AS_OF_NOTE}
                       </p>
                     ) : (
@@ -1628,12 +1681,12 @@ export default function FixedDeposits() {
                   value={form.principal_amount}
                   onChange={(e) => setForm((p) => ({ ...p, principal_amount: e.target.value }))}
                   required
-                  disabled={openingFieldsLocked}
+                  disabled={ledgerBackedFieldsLocked}
                 />
               </div>
               <div className="form-group">
                 <label htmlFor="fd-currency">Currency</label>
-                <input id="fd-currency" value={form.currency} readOnly disabled={openingFieldsLocked} />
+                <input id="fd-currency" value={form.currency} readOnly disabled={ledgerBackedFieldsLocked} />
               </div>
               <div className="form-group">
                 <label htmlFor="fd-rate">Interest rate (%)</label>
@@ -1671,8 +1724,10 @@ export default function FixedDeposits() {
                   value={form.investment_date}
                   onChange={(e) => setForm((p) => ({ ...p, investment_date: e.target.value }))}
                   required
-                  disabled={openingFieldsLocked}
                 />
+                {editing && ledgerBackedFieldsLocked ? (
+                  <p className="settings-hint">{FD_INVESTMENT_DATE_EDIT_NOTE}</p>
+                ) : null}
               </div>
               <div className="form-group">
                 <label htmlFor="fd-maturity">Maturity date</label>
@@ -1685,7 +1740,13 @@ export default function FixedDeposits() {
                 />
               </div>
               <div className="fd-form__maturity-estimate">
-                <h3>Expected maturity value</h3>
+                <h3>
+                  {form.interest_payout_frequency === 'COMPOUNDED'
+                    ? 'Expected maturity value'
+                    : form.interest_payout_frequency
+                      ? 'Expected interest payout'
+                      : 'Expected maturity value'}
+                </h3>
                 {form.maturity_date && form.investment_date && form.maturity_date <= form.investment_date ? (
                   <WarningBanner
                     severity="warning"
@@ -1693,48 +1754,107 @@ export default function FixedDeposits() {
                     className="fd-banner"
                   />
                 ) : maturityPreviewLoading ? (
-                  <p className="settings-hint">Calculating maturity estimate…</p>
+                  <p className="settings-hint">Calculating estimate…</p>
                 ) : maturityPreview?.estimated_maturity_value != null ? (
                   <ul className="fd-form__error-details settings-hint">
-                    <li>
-                      Estimated maturity value:{' '}
-                      {formatMoneyAmount(maturityPreview.estimated_maturity_value, form.currency)}
-                    </li>
-                    <li>
-                      Estimated interest:{' '}
-                      {formatMoneyAmount(maturityPreview.estimated_interest, form.currency)}
-                    </li>
+                    {maturityPreview.estimate_type === FD_ESTIMATE_TYPE_COMPOUNDED ? (
+                      <>
+                        <li>
+                          Estimated maturity value:{' '}
+                          {formatMoneyAmount(maturityPreview.estimated_maturity_value, form.currency)}
+                        </li>
+                        <li>
+                          Estimated interest:{' '}
+                          {formatMoneyAmount(
+                            maturityPreview.estimated_total_interest ??
+                              maturityPreview.estimated_interest,
+                            form.currency
+                          )}
+                        </li>
+                      </>
+                    ) : (
+                      <>
+                        <li>
+                          Maturity value (principal returned):{' '}
+                          {formatMoneyAmount(maturityPreview.estimated_maturity_value, form.currency)}
+                        </li>
+                        {maturityPreview.estimated_periodic_interest != null ? (
+                          <li>
+                            Estimated periodic interest ({fdPayoutLabel(form.interest_payout_frequency)}):{' '}
+                            {formatMoneyAmount(maturityPreview.estimated_periodic_interest, form.currency)}
+                          </li>
+                        ) : null}
+                        <li>
+                          Estimated total interest:{' '}
+                          {formatMoneyAmount(
+                            maturityPreview.estimated_total_interest ??
+                              maturityPreview.estimated_interest,
+                            form.currency
+                          )}
+                        </li>
+                      </>
+                    )}
                     {maturityPreview.maturity_estimate_method_label ? (
                       <li>Method: {maturityPreview.maturity_estimate_method_label}</li>
                     ) : null}
                   </ul>
                 ) : (
                   <p className="settings-hint">
-                    Enter principal, rate, dates, and compounding to estimate maturity value.
+                    Enter principal, rate, dates, and payout frequency to see an estimate.
                   </p>
                 )}
-                <p className="settings-hint">{FD_MATURITY_ESTIMATE_NOTE}</p>
-                <label className="fd-form__checkbox">
-                  <input
-                    type="checkbox"
-                    checked={form.maturity_value_override}
-                    onChange={(e) =>
-                      setForm((p) => ({
-                        ...p,
-                        maturity_value_override: e.target.checked,
-                        expected_maturity_value:
-                          e.target.checked && maturityPreview?.estimated_maturity_value != null
-                            ? String(maturityPreview.estimated_maturity_value)
-                            : p.expected_maturity_value,
-                      }))
-                    }
-                  />
-                  Use bank/institution maturity value
-                </label>
+                <p className="settings-hint">
+                  {form.interest_payout_frequency === 'COMPOUNDED'
+                    ? FD_MATURITY_COMPOUNDED_NOTE
+                    : form.interest_payout_frequency
+                      ? FD_MATURITY_PAYOUT_NOTE
+                      : FD_MATURITY_COMPOUNDED_NOTE}
+                </p>
+                {form.interest_payout_frequency === 'COMPOUNDED' ? (
+                  <label className="fd-form__checkbox">
+                    <input
+                      type="checkbox"
+                      checked={form.maturity_value_override}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          maturity_value_override: e.target.checked,
+                          expected_maturity_value:
+                            e.target.checked && maturityPreview?.estimated_maturity_value != null
+                              ? String(maturityPreview.estimated_maturity_value)
+                              : p.expected_maturity_value,
+                        }))
+                      }
+                    />
+                    Use bank/institution maturity value
+                  </label>
+                ) : form.interest_payout_frequency ? (
+                  <label className="fd-form__checkbox">
+                    <input
+                      type="checkbox"
+                      checked={form.maturity_value_override}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          maturity_value_override: e.target.checked,
+                          expected_maturity_value:
+                            e.target.checked && form.principal_amount
+                              ? String(form.principal_amount)
+                              : p.expected_maturity_value,
+                        }))
+                      }
+                    />
+                    Confirm maturity principal/value (usually equals principal)
+                  </label>
+                ) : null}
                 {form.maturity_value_override ? (
                   <>
                     <div className="form-group">
-                      <label htmlFor="fd-expected-maturity">Confirmed maturity value</label>
+                      <label htmlFor="fd-expected-maturity">
+                        {form.interest_payout_frequency === 'COMPOUNDED'
+                          ? 'Confirmed maturity value'
+                          : 'Confirmed maturity principal/value'}
+                      </label>
                       <input
                         id="fd-expected-maturity"
                         type="number"

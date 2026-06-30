@@ -25,10 +25,7 @@ from debt.bank_ledger_services import (
     get_fd_opening_cash_movement_id,
     movement_has_been_reversed,
 )
-from finance.fixed_deposits import (
-    maturity_estimate_method_label,
-    maturity_interest_from_value,
-)
+from finance.fixed_deposits import COMPOUNDED_MATURITY
 
 
 class BankAccountSerializer(serializers.ModelSerializer):
@@ -149,6 +146,10 @@ class FixedDepositSerializer(serializers.ModelSerializer):
     expected_interest = serializers.SerializerMethodField()
     maturity_estimate_method_label = serializers.SerializerMethodField()
     maturity_value_warning = serializers.SerializerMethodField()
+    estimate_type = serializers.SerializerMethodField()
+    estimated_total_interest = serializers.SerializerMethodField()
+    estimated_periodic_interest = serializers.SerializerMethodField()
+    estimate_message = serializers.SerializerMethodField()
 
     class Meta:
         model = FixedDeposit
@@ -171,6 +172,10 @@ class FixedDepositSerializer(serializers.ModelSerializer):
             "maturity_value_source",
             "maturity_estimate_method",
             "maturity_estimate_method_label",
+            "estimate_type",
+            "estimated_total_interest",
+            "estimated_periodic_interest",
+            "estimate_message",
             "maturity_value_note",
             "estimated_interest",
             "expected_interest",
@@ -203,26 +208,50 @@ class FixedDepositSerializer(serializers.ModelSerializer):
     def get_portfolio_mismatch_warning(self, obj: FixedDeposit) -> str | None:
         return fixed_deposit_portfolio_mismatch_warning(obj)
 
+    def _maturity_display(self, obj: FixedDeposit) -> dict:
+        cache = getattr(self, "_maturity_display_cache", None)
+        if cache is None:
+            cache = {}
+            self._maturity_display_cache = cache
+        key = obj.pk
+        if key not in cache:
+            from debt.fd_maturity_services import resolve_maturity_display
+
+            cache[key] = resolve_maturity_display(obj)
+        return cache[key]
+
     def get_estimated_interest(self, obj: FixedDeposit):
-        interest = maturity_interest_from_value(
-            obj.principal_amount, obj.estimated_maturity_value
-        )
+        interest = self._maturity_display(obj)["estimated_interest"]
         return float(interest) if interest is not None else None
 
     def get_expected_interest(self, obj: FixedDeposit):
-        interest = maturity_interest_from_value(
-            obj.principal_amount, obj.expected_maturity_value
-        )
+        interest = self._maturity_display(obj)["expected_interest"]
         return float(interest) if interest is not None else None
 
     def get_maturity_estimate_method_label(self, obj: FixedDeposit) -> str | None:
-        return maturity_estimate_method_label(obj.maturity_estimate_method)
+        return self._maturity_display(obj)["maturity_estimate_method_label"]
+
+    def get_estimate_type(self, obj: FixedDeposit) -> str | None:
+        return self._maturity_display(obj)["estimate_type"]
+
+    def get_estimated_total_interest(self, obj: FixedDeposit):
+        interest = self._maturity_display(obj)["estimated_total_interest"]
+        return float(interest) if interest is not None else None
+
+    def get_estimated_periodic_interest(self, obj: FixedDeposit):
+        interest = self._maturity_display(obj)["estimated_periodic_interest"]
+        return float(interest) if interest is not None else None
+
+    def get_estimate_message(self, obj: FixedDeposit) -> str | None:
+        return self._maturity_display(obj)["estimate_message"]
 
     def get_maturity_value_warning(self, obj: FixedDeposit) -> str | None:
-        if (
-            obj.expected_maturity_value is not None
-            and obj.expected_maturity_value < obj.principal_amount
-        ):
+        display = self._maturity_display(obj)
+        if display["estimate_type"] != COMPOUNDED_MATURITY:
+            return None
+        display = self._maturity_display(obj)
+        expected = display["expected_maturity_value"]
+        if expected is not None and expected < obj.principal_amount:
             return (
                 "Expected maturity value is below principal. This may reflect "
                 "premature closure or penalty assumptions."
@@ -235,14 +264,28 @@ class FixedDepositSerializer(serializers.ModelSerializer):
         data["interest_rate_percent"] = float(instance.interest_rate_percent)
         data["investment_date"] = instance.investment_date.isoformat()
         data["maturity_date"] = instance.maturity_date.isoformat()
-        if instance.estimated_maturity_value is not None:
-            data["estimated_maturity_value"] = float(instance.estimated_maturity_value)
+        display = self._maturity_display(instance)
+        if display["estimated_maturity_value"] is not None:
+            data["estimated_maturity_value"] = float(display["estimated_maturity_value"])
         else:
             data["estimated_maturity_value"] = None
-        if instance.expected_maturity_value is not None:
-            data["expected_maturity_value"] = float(instance.expected_maturity_value)
+        if display["expected_maturity_value"] is not None:
+            data["expected_maturity_value"] = float(display["expected_maturity_value"])
         else:
             data["expected_maturity_value"] = None
+        data["maturity_value_source"] = display["maturity_value_source"]
+        data["maturity_estimate_method"] = display["maturity_estimate_method"] or None
+        data["maturity_estimate_method_label"] = display["maturity_estimate_method_label"]
+        data["estimate_type"] = display["estimate_type"]
+        if display["estimated_total_interest"] is not None:
+            data["estimated_total_interest"] = float(display["estimated_total_interest"])
+        else:
+            data["estimated_total_interest"] = None
+        if display["estimated_periodic_interest"] is not None:
+            data["estimated_periodic_interest"] = float(display["estimated_periodic_interest"])
+        else:
+            data["estimated_periodic_interest"] = None
+        data["estimate_message"] = display["estimate_message"]
         if not data.get("maturity_value_note"):
             data["maturity_value_note"] = None
         data["created_at"] = instance.created_at.isoformat()
