@@ -1,23 +1,59 @@
 # Cursor maintenance workflow
 
-## Day to day
+How to change KPulla6 safely with Cursor or any editor.
 
-1. Read `AGENTS.md` and relevant domain doc before editing
-2. Smallest safe change; views thin, logic in services/finance
-3. Run targeted tests + `make docs-check` when docs or API contracts change
-4. Update `docs/changelog.md` for behavior changes
+## Before you edit
 
-## Graphify
+1. Read [agents.md](../agents.md) — points to root `AGENTS.md`
+2. Read the domain doc (cash, FD, API, etc.)
+3. Prefer the smallest change that fixes the problem
 
-Optional codebase navigation — run `make graphify` after major structural changes only. See `.cursor/rules/graphify.mdc`.
+## While you edit
 
-## Docs site
+| Rule | Why |
+|------|-----|
+| Views stay thin | Logic belongs in `*_services.py` or `backend/finance/` |
+| No finance math in React | API returns computed numbers |
+| No live market calls on GET | Use cached `HistoricalPrice` / NAV / FX |
+| Migrations only for schema | No runtime `ALTER TABLE` |
+
+## Before you commit
+
+**Code or API changes**
 
 ```bash
-make docs-serve    # http://127.0.0.1:8002
-make docs-check    # before merging doc-heavy PRs
+make test-backend          # or targeted pytest file
+cd frontend && npm test -- --run   # if UI changed
 ```
 
-How-to: [Audit docs vs code](../how-to/audit-docs-vs-code.md)
+**Docs or API contract changes**
 
-Workflow detail: [workflows.md](../workflows.md)
+```bash
+make docs-check
+```
+
+**Expected:** `docs-check: OK`
+
+**Behavior changes:** add a line to [changelog.md](../changelog.md).
+
+## Graphify (optional)
+
+Navigation aid only — not source of truth.
+
+```bash
+make graphify
+```
+
+Run after major structural changes. Skip for small fixes. Policy: `.cursor/rules/graphify.mdc`.
+
+## Docs site locally
+
+```bash
+make docs-serve
+```
+
+**Open:** http://127.0.0.1:8002
+
+Audit docs vs code: [Audit docs vs code](../how-to/audit-docs-vs-code.md)
+
+Full dev workflow: [workflows.md](../workflows.md)

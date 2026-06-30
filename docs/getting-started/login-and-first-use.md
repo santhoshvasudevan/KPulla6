@@ -1,8 +1,18 @@
 # Login and first use
 
-## Set a local password
+Sign in after bootstrap and confirm the app is usable.
 
-Bootstrap creates an owner account via migrations. Set a password before signing in:
+## Prerequisites
+
+```bash
+make dev
+```
+
+**Expected:** app at http://127.0.0.1:5173 · API health at http://127.0.0.1:8000/api/v1/health
+
+## 1. Set a local password
+
+Bootstrap creates an owner account. Set a password before signing in:
 
 ```bash
 INITIAL_USER_PASSWORD='your-local-password' \
@@ -10,27 +20,43 @@ INITIAL_USER_PASSWORD='your-local-password' \
   --email santhoshkgvasudevan@gmail.com
 ```
 
-Adjust the email if your seed user differs.
+**Expected:** `Password set for user …`
 
-## Sign in
+Change the email if your seed user differs.
+
+## 2. Sign in
 
 1. Open http://127.0.0.1:5173/login
-2. Use **email or username** + password
-3. Or use **Sign in with Google** (requires OAuth setup — [Configure Google OAuth](../how-to/configure-google-oauth.md))
+2. Enter **email or username** + password
+3. **Expected:** redirect to the dashboard
 
-New users can register at `/register` (creates user, default portfolio, and settings).
+**Google sign-in:** requires OAuth in `.env` — [Configure Google OAuth](../how-to/configure-google-oauth.md)
 
-## First-use checklist
+**New user:** register at http://127.0.0.1:5173/register (creates user, default portfolio, settings).
 
-1. **Portfolio view** — header selector: All Portfolios or a single portfolio
-2. **Display currency** — header selector; syncs with Settings
-3. **Transactions** — add or import stock/MF rows
-4. **Refresh cache** — `make refresh` before trusting dashboard valuations
-5. **Dashboard** — summary KPIs and performance chart after cache is warm
+## 3. First-use checklist
 
-## Session behavior
+| Step | Where | Why |
+|------|-------|-----|
+| Pick portfolio scope | Header **Portfolio view** | Scopes transactions, holdings, summary |
+| Pick display currency | Header currency selector | FX for non-base holdings |
+| Add or import data | **Transactions** | Source of truth for holdings |
+| Warm the cache | Terminal: `make refresh` | Dashboard needs cached prices/NAVs |
+| Review dashboard | **Dashboard** | KPIs + performance chart |
 
-- Session cookies + CSRF; API calls use `credentials: 'include'`
+**After refresh:**
+
+```bash
+make refresh
+```
+
+**Expected:** `Refresh complete (stocks, benchmarks, FX, mutual fund NAVs)`
+
+Tutorial: [Refresh market data](../tutorials/refresh-market-data.md)
+
+## Session notes
+
+- API calls use session cookies + CSRF from the Vite app (port **5173**)
 - `401` on protected routes redirects to `/login`
 
-Full auth spec: [Authentication](../auth.md) · Troubleshooting: [Login issues](../troubleshooting/login-issues.md)
+**Problems?** [Login issues](../troubleshooting/login-issues.md) · Full spec: [auth.md](../auth.md)

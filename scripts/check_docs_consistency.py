@@ -102,6 +102,7 @@ REQUIRED_PAGES = [
     "maintenance/docs-consistency-checks.md",
     "maintenance/obsolete-code-audit.md",
     "maintenance/release-checklist.md",
+    "troubleshooting/index.md",
     "troubleshooting/login-issues.md",
     "troubleshooting/google-oauth-errors.md",
     "troubleshooting/missing-prices-navs.md",

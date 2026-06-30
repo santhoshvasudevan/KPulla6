@@ -1,30 +1,44 @@
 # Local docs domain
 
-Use a friendly hostname for the documentation site on your Mac. **Local only** unless you configure real DNS.
+Open the docs site at `http://docs.kpulla6.com:8002` instead of remembering port `8002`.
 
-## Simple port-based setup
+**Local only.** This hostname works on your Mac unless you configure real DNS.
 
-Add to `/etc/hosts`:
+## Port-based setup (recommended)
+
+### 1. Add hosts entry
+
+```bash
+sudo sh -c 'echo "127.0.0.1 docs.kpulla6.com" >> /etc/hosts'
+```
+
+Or edit `/etc/hosts` manually:
 
 ```text
 127.0.0.1 docs.kpulla6.com
 ```
 
-Start the stack:
+### 2. Start the stack
 
 ```bash
 make dev
 ```
 
-Open:
+### 3. Open docs
 
 ```text
 http://docs.kpulla6.com:8002
 ```
 
-MkDocs listens on `127.0.0.1:8002` (see `dev_addr` in `mkdocs.yml`).
+**Verify MkDocs is up:**
 
-## URLs after `make dev`
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8002/
+```
+
+**Expected:** `200`
+
+## All local URLs after `make dev`
 
 | URL | Service |
 |-----|---------|
@@ -33,11 +47,11 @@ MkDocs listens on `127.0.0.1:8002` (see `dev_addr` in `mkdocs.yml`).
 | http://127.0.0.1:8002 | Docs |
 | http://docs.kpulla6.com:8002 | Docs (with hosts entry) |
 
-## Optional no-port setup
+## Optional: no port in the URL
 
-Run a local reverse proxy so you can open `http://docs.kpulla6.com` without `:8002`.
+Use a reverse proxy on port 80. **Not required** for `make dev`.
 
-### Caddy (preferred example)
+### Caddy
 
 ```caddy
 docs.kpulla6.com {
@@ -45,13 +59,9 @@ docs.kpulla6.com {
 }
 ```
 
-Then:
+**Then open:** http://docs.kpulla6.com
 
-```text
-http://docs.kpulla6.com
-```
-
-### nginx (alternative)
+### nginx
 
 ```nginx
 server {
@@ -63,9 +73,7 @@ server {
 }
 ```
 
-The proxy is **optional**. `make dev` does not require it.
-
 ## Notes
 
-- `site_url` in `mkdocs.yml` is set to `http://docs.kpulla6.com/` for correct relative links when using the local domain.
-- Do not expose this setup to the public internet without proper TLS and access controls.
+- MkDocs binds to `127.0.0.1:8002` only — not exposed on your LAN by default.
+- Do not expose this setup to the public internet without TLS and access controls.

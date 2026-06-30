@@ -1,37 +1,59 @@
 # Refresh market data
 
-Goal: populate the PostgreSQL cache so dashboard and holdings show current values.
+Fill the PostgreSQL cache so the dashboard and holdings show current values.
 
-## One command (recommended)
+## Before you start
+
+The app must be running (or at least Postgres + backend for API sync):
+
+```bash
+make dev
+```
+
+Dashboard **does not** fetch live prices on page load — it reads the cache.
+
+## Recommended: sync everything
 
 ```bash
 make refresh
 ```
 
-Syncs stock prices, benchmark indices, FX rates, and mutual fund NAVs.
+**Expected:**
 
-## Granular commands
-
-```bash
-make sync-prices
-make sync-benchmarks
-make sync-fx
-make sync-mutual-fund-navs
+```text
+==> Syncing valuation cache: stock prices, benchmark indices, FX rates, mutual fund NAVs
+...
+==> Refresh complete (stocks, benchmarks, FX, mutual fund NAVs)
 ```
 
-## HTTP alternatives
+**Then open:** http://127.0.0.1:5173 — holdings and dashboard should show updated values (where symbols have cache coverage).
 
-- `POST /api/v1/prices/refresh` — stocks
-- `POST /api/v1/nav/refresh` — MF NAVs
-- `POST /api/v1/portfolio/force-sync` — combined
+## Sync one cache at a time
 
-## Important
+| Command | Cache |
+|---------|--------|
+| `make sync-prices` | Stock `HistoricalPrice` |
+| `make sync-benchmarks` | Benchmark indices |
+| `make sync-fx` | FX rate pairs |
+| `make sync-mutual-fund-navs` | MF NAV rows |
 
-Read APIs (dashboard, holdings, summary) use **cached DB data only** — they do not call Yahoo or AMFI during page load.
+## API alternative (logged in)
+
+| Endpoint | Scope |
+|----------|--------|
+| `POST /api/v1/prices/refresh` | Stocks |
+| `POST /api/v1/nav/refresh` | MF NAVs |
+| `POST /api/v1/portfolio/force-sync` | Combined |
+
+Base URL: http://127.0.0.1:8000/api/v1 — see [API reference](../reference/api-reference.md).
+
+## If values still look wrong
+
+- Check dashboard warnings (`price_status`, `fx_status`)
+- [Missing prices or NAVs](../troubleshooting/missing-prices-navs.md)
 
 ## Next
 
 - [Read the dashboard](read-the-dashboard.md)
-- [Cached market data](../concepts/cached-market-data.md)
-
-How-to detail: [Refresh prices, FX, benchmarks, and NAVs](../how-to/refresh-market-cache.md)
+- Why cache exists: [Cached market data](../concepts/cached-market-data.md)
+- Granular how-to: [Refresh prices, FX, benchmarks, and NAVs](../how-to/refresh-market-cache.md)

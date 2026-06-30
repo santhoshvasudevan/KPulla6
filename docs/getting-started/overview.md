@@ -1,30 +1,46 @@
 # Overview
 
-Portfolio Insight tracks stocks, mutual funds, broker cash, bank cash, and fixed deposits across multiple portfolios. The backend owns all portfolio math; the React UI displays API results only.
+Portfolio Insight is a local-first portfolio tracker on your Mac. You record transactions. The API computes holdings and returns. The UI shows the results.
 
 ## What you can do
 
-- Multi-portfolio scope with a virtual **All Portfolios** view
-- Stock and mutual fund transactions with CSV import
-- Cash-aware BUY/SELL with broker and bank ledgers
-- Fixed deposit lifecycle and interest reporting
-- Dashboard, holdings, and **Metric Sheet** analytics
+| Area | Examples |
+|------|----------|
+| Portfolios | Virtual **All Portfolios** view + up to 5 real portfolios |
+| Stocks & MFs | Manual entry, CSV import, cached price/NAV valuation |
+| Cash | Broker ledger, bank cash, cash-aware BUY/SELL |
+| Fixed deposits | FD lifecycle, bank funding, interest reporting |
+| Analytics | Dashboard, holdings, **Metric Sheet** |
 
 ## Stack
 
 | Layer | Technology |
 |-------|------------|
-| Backend | Django 5, Django REST Framework |
-| Frontend | React 19, Vite |
+| API | Django 5 + DRF (`/api/v1`) |
+| UI | React 19 + Vite |
 | Database | PostgreSQL 16 (Docker Compose) |
 | Docs | MkDocs Material (this site) |
 
-## Status
+## Run it locally
 
-MVP is release-ready for local-first development. See [Current state](../current-state.md) and [Product rules](../product-rules.md) for scope and limitations.
+```bash
+cp .env.example .env
+make bootstrap
+make dev
+```
+
+**Then open:** http://127.0.0.1:5173
+
+Step-by-step: [Quickstart](quickstart.md)
+
+## Status and scope
+
+MVP is release-ready for local-first use. Limits and implemented features: [Current state](../current-state.md) · [Product rules](../product-rules.md).
 
 ## Next steps
 
-- [Quickstart: run locally](quickstart.md)
-- [Common commands](common-commands.md)
-- [Architecture overview](../concepts/architecture-overview.md)
+| Goal | Page |
+|------|------|
+| First login | [Login and first use](login-and-first-use.md) |
+| Daily commands | [Common commands](common-commands.md) |
+| How it fits together | [Architecture overview](../concepts/architecture-overview.md) |

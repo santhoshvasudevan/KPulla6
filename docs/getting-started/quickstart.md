@@ -1,47 +1,90 @@
 # Quickstart: run locally
 
+Get the app, API, and docs running on your Mac in a few minutes.
+
 ## Prerequisites
 
 - Python 3.11+
 - Node.js 20+
-- Docker (PostgreSQL only)
+- Docker (for PostgreSQL only)
 
-## Bootstrap
+## 1. Configure environment
 
 ```bash
 cp .env.example .env
-make bootstrap   # Postgres + migrate + seed
-make dev         # Postgres + Django :8000 + Vite :5173 + Docs :8002
 ```
 
-| URL | Service |
-|-----|---------|
-| http://127.0.0.1:5173 | React app |
-| http://127.0.0.1:8000/api/v1/health | API health |
-| http://127.0.0.1:8002 | Documentation (this site) |
+Edit `.env` only if you need Google OAuth or custom ports.
 
-Stop dev servers (Postgres keeps running):
+## 2. Bootstrap database
 
 ```bash
-make stop-dev
+make bootstrap
 ```
 
-## First login
+**What it does:** starts Postgres, runs migrations, seeds initial data.
 
-After bootstrap, set a password for the seeded owner — see [Login and first use](login-and-first-use.md).
+**Expected:** ends without errors; `docker ps` shows `kpulla6_postgres`.
 
-## Refresh market data
+## 3. Start dev stack
 
-Cached prices and NAVs are not fetched automatically on dashboard load:
+```bash
+make dev
+```
+
+**What it starts:** Postgres, Django `:8000`, Vite `:5173`, MkDocs `:8002`.
+
+**Check the API:**
+
+```bash
+curl -s http://127.0.0.1:8000/api/v1/health
+```
+
+**Expected:**
+
+```json
+{"status":"ok","service":"portfolio-insight"}
+```
+
+(Exact payload may vary slightly — look for HTTP 200 and `"status":"ok"`.)
+
+| Service | Open in browser |
+|---------|-----------------|
+| App | http://127.0.0.1:5173 |
+| Docs | http://127.0.0.1:8002 |
+
+## 4. Set a password and sign in
+
+Bootstrap creates an owner account. Set a local password before login — see [Login and first use](login-and-first-use.md).
+
+## 5. Refresh market cache (optional)
+
+Dashboard valuations use cached DB prices — not live market calls.
 
 ```bash
 make refresh
 ```
 
-See [Refresh market data](../tutorials/refresh-market-data.md).
+**Expected:** sync commands run for stocks, benchmarks, FX, and MF NAVs; ends with `Refresh complete`.
 
-## More
+Details: [Refresh market data](../tutorials/refresh-market-data.md).
+
+## Stop
+
+```bash
+make stop-dev
+```
+
+Stops Django, Vite, and docs. Postgres keeps running.
+
+```bash
+make stop-all
+```
+
+Also stops the Postgres container (data volume preserved).
+
+## Next
 
 - [Common commands](common-commands.md)
 - [Local docs domain](../how-to/local-docs-domain.md)
-- [Development workflow](../workflows.md) (detailed contributor guide)
+- Full contributor workflow: [workflows.md](../workflows.md)

@@ -1,37 +1,50 @@
-# KPulla6 Documentation
+# KPulla6 Docs
 
-**Portfolio Insight** is a local-first portfolio tracker: Django API, React UI, PostgreSQL. Transactions and cash ledgers are the source of truth; prices, FX, and NAVs are cached in the database.
+**Portfolio Insight** tracks stocks, mutual funds, cash, and fixed deposits on your Mac. The API owns all math. The UI displays results.
 
-## Start here
+## I want to…
 
-| I want to… | Go to |
-|------------|--------|
-| Run the app locally | [Quickstart](getting-started/quickstart.md) |
-| Sign in and explore | [Login and first use](getting-started/login-and-first-use.md) |
-| Add holdings or import CSV | [Tutorials](tutorials/add-first-portfolio.md) |
-| Refresh stock prices / NAVs | [Refresh market data](tutorials/refresh-market-data.md) |
-| Understand how returns work | [Portfolio performance](concepts/portfolio-performance.md) |
-| Look up an API endpoint | [API reference](reference/api-reference.md) |
-| Fix a dev problem | [Troubleshooting](troubleshooting/dev-server-ports.md) |
+| Goal | Start here |
+|------|------------|
+| Run the app | [Quickstart](getting-started/quickstart.md) |
+| Sign in | [Login and first use](getting-started/login-and-first-use.md) |
+| Add a portfolio or import CSV | [Tutorials](tutorials/add-first-portfolio.md) |
+| Refresh prices or NAVs | [Refresh market data](tutorials/refresh-market-data.md) |
+| Understand returns | [Portfolio performance](concepts/portfolio-performance.md) |
+| Look up an API | [API reference](reference/api-reference.md) |
+| Fix something broken | [Troubleshooting](troubleshooting/index.md) |
 
-## Local URLs (`make dev`)
+## Local URLs
 
-| Service | URL |
-|---------|-----|
+Start everything:
+
+```bash
+make dev
+```
+
+| What | URL |
+|------|-----|
 | App | http://127.0.0.1:5173 |
 | API health | http://127.0.0.1:8000/api/v1/health |
 | Docs (this site) | http://127.0.0.1:8002 |
-| Docs (local domain) | http://docs.kpulla6.com:8002 — see [Local docs domain](how-to/local-docs-domain.md) |
+| Docs with local hostname | http://docs.kpulla6.com:8002 — [setup](how-to/local-docs-domain.md) |
+
+Stop app + docs (Postgres keeps running):
+
+```bash
+make stop-dev
+```
 
 ## How this site is organized
 
-This documentation follows [Diátaxis](https://diataxis.fr/):
+| Section | Use when you want to… |
+|---------|------------------------|
+| [Getting Started](getting-started/overview.md) | Install and run locally |
+| [Tutorials](tutorials/add-first-portfolio.md) | Learn by doing a first task |
+| [How-to Guides](how-to/local-docs-domain.md) | Solve one specific problem |
+| [Concepts](concepts/architecture-overview.md) | Understand why it works this way |
+| [Reference](reference/make-commands.md) | Look up commands, API, schema |
+| [Troubleshooting](troubleshooting/index.md) | Fix errors |
+| [Maintenance](maintenance/cursor-maintenance-workflow.md) | Contribute or review |
 
-- **Tutorials** — guided first-time tasks
-- **How-to guides** — solve a specific problem
-- **Concepts** — understand the model and “why”
-- **Reference** — facts, commands, schemas, routes
-- **Maintenance** — contributors, audits, release
-- **Troubleshooting** — common errors
-
-Detailed historical specs remain in the repository under `docs/` and are linked from summary pages.
+Long-form specs (`api-design.md`, `architecture.md`, etc.) stay in the repo and are linked from summary pages — not duplicated here.

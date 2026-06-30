@@ -120,6 +120,7 @@ nav:
     - Obsolete backend code audit: maintenance/obsolete-code-audit.md
     - Release checklist: maintenance/release-checklist.md
   - Troubleshooting:
+    - Overview: troubleshooting/index.md
     - Login issues: troubleshooting/login-issues.md
     - Google OAuth errors: troubleshooting/google-oauth-errors.md
     - Missing prices or NAVs: troubleshooting/missing-prices-navs.md
