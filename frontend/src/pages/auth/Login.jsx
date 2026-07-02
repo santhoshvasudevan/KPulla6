@@ -19,7 +19,7 @@ export default function Login() {
     setSubmitting(true);
     try {
       await login(usernameOrEmail, password);
-      navigate('/', { replace: true });
+      navigate('/dashboard', { replace: true });
     } catch (err) {
       setError(err?.message || 'Login failed');
     } finally {

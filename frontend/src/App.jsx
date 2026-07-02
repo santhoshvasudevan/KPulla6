@@ -4,6 +4,7 @@ import { AuthProvider } from './authContext';
 import { ThemeProvider } from './themeContext';
 import { setUnauthorizedHandler } from './api';
 import Layout from './components/Layout';
+import { HomeRoute } from './components/auth/HomeRoute';
 import { ProtectedRoute, PublicOnlyRoute } from './components/auth/ProtectedRoute';
 import Dashboard from './pages/Dashboard';
 import Transactions from './pages/Transactions';
@@ -33,6 +34,8 @@ function AppRoutes() {
     <>
       <UnauthorizedRedirect />
       <Routes>
+        <Route path="/" element={<HomeRoute />} />
+
         <Route element={<PublicOnlyRoute />}>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
@@ -47,8 +50,7 @@ function AppRoutes() {
           }
         >
           <Route element={<Layout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="dashboard" element={<Navigate to="/" replace />} />
+            <Route path="dashboard" element={<Dashboard />} />
             <Route path="transactions" element={<Transactions />} />
             <Route path="cash" element={<Cash />} />
             <Route path="assets" element={<Assets />} />

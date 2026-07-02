@@ -6,7 +6,7 @@ import { Button, WarningBanner } from './ui';
 import ThemeSelector from './ThemeSelector';
 
 const PRIMARY_NAV = [
-  { to: '/', label: 'Dashboard', end: true },
+  { to: '/dashboard', label: 'Dashboard', end: true },
   { to: '/transactions', label: 'Transactions' },
   { to: '/cash', label: 'Cash' },
   { to: '/assets', label: 'Assets' },
@@ -68,7 +68,7 @@ function Layout() {
     try {
       await logout();
     } finally {
-      navigate('/login', { replace: true });
+      navigate('/', { replace: true });
     }
   };
 

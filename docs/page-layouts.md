@@ -40,24 +40,50 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 | Zone | Content |
 |------|---------|
 | **Brand** | KPulla6 + “Executive Portfolio OS” subtitle; compact cached-data note (prices, NAVs, benchmarks, FX). |
-| **Top nav** | Dashboard (`/`), Transactions (`/transactions`), Cash (`/cash`), Assets (`/assets`), Fixed Deposits (`/fixed-deposits`), Compare (`/compare`), Settings (`/settings`). Single authoritative global navigation — no duplicate left sidebar. |
+| **Top nav** | Dashboard (`/dashboard`), Transactions (`/transactions`), Cash (`/cash`), Assets (`/assets`), Fixed Deposits (`/fixed-deposits`), Compare (`/compare`), Settings (`/settings`). Single authoritative global navigation — no duplicate left sidebar. |
 | **Header controls** | Portfolio View select, Display Currency select, Theme selector, signed-in user label, Log out. |
 | **Notice** | `WarningBanner` if portfolio list fetch fails; shell falls back to All Portfolios copy. |
 | **Main** | Centered `<Outlet />` in `app-main__inner` (max-width ~1520px, padded). No permanent left context sidebar. |
 
 **Navigation architecture (P4.4):** One global top nav for all routes. Page-local navigation is in-page section anchors only (Dashboard, Assets, Asset Detail, Fixed Deposits, Compare, Settings) — not duplicate global route menus.
 
-**Route behavior:** `/login`, `/register`, and `/forgot-password` are public-only routes. `/`, `/transactions`, `/cash`, `/assets`, `/assets/:assetSymbol`, `/fixed-deposits`, `/compare`, and `/settings` are protected routes. `/dashboard` redirects to `/`; unknown routes redirect to `/`.
+**Route behavior:** `/` is a public landing page for signed-out visitors; authenticated users at `/` redirect to `/dashboard`. `/login`, `/register`, and `/forgot-password` are public-only routes. `/dashboard`, `/transactions`, `/cash`, `/assets`, `/assets/:assetSymbol`, `/fixed-deposits`, `/compare`, and `/settings` are protected routes. Unknown routes redirect to `/` (landing when signed out; authenticated `/` then redirects to dashboard).
 
-**Auth/session preservation:** `AuthProvider` calls `ensureCsrfCookie()` then `fetchCurrentUser()` on load. Login/register call CSRF first, then auth APIs. `setUnauthorizedHandler()` redirects non-auth `/api/v1/*` 401 responses to `/login`. Logout calls `POST /auth/logout`, clears user state, and navigates to `/login`.
+**Auth/session preservation:** `AuthProvider` calls `ensureCsrfCookie()` then `fetchCurrentUser()` on load. Login/register call CSRF first, then auth APIs. `setUnauthorizedHandler()` redirects non-auth `/api/v1/*` 401 responses to `/login`. Logout calls `POST /auth/logout`, clears user state, and navigates to `/` (public landing).
 
 **Context/API preservation:** `PortfolioProvider` loads `fetchPortfolios()` and `getSettings()`. `apiQuery` is `null` until settings are loaded and a display currency exists; data pages that currently wait for `settingsLoaded && apiQuery` must keep that gate. Sidebar display currency is disabled while settings load and persists through `updateSettings()`.
 
-**Tests:** `App.test.jsx`, `Layout.test.jsx`, `auth.test.js`, `portfolioContext.test.jsx`, `themeContext.test.jsx`, `theme/themeStorage.test.js`.
+**Tests:** `App.test.jsx`, `AppRoutes.inventory.test.jsx`, `Landing.test.jsx`, `Layout.test.jsx`, `auth.test.js`, `portfolioContext.test.jsx`, `themeContext.test.jsx`, `theme/themeStorage.test.js`.
 
 ---
 
-## 4. Dashboard (`/`)
+## 3a. Public landing (`/`)
+
+**Files:** `pages/Landing.jsx` · `pages/Landing.css` · `components/auth/HomeRoute.jsx`
+
+**Layout status:** **Implemented** — public company/landing page for signed-out visitors.
+
+| Section | Layout |
+|---------|--------|
+| **Header** | Sticky top bar — brand “KPulla” + “Portfolio Insight”; right **Login** link to `/login`. |
+| **Hero** | Editorial headline + subhead; primary CTA **Login to Dashboard**; static dashboard preview (mock KPI cards + abstract chart line). Desktop: copy left, preview right; mobile: stacked. |
+| **Story** | “The Story So Far” — product origin narrative. |
+| **Snapshot** | “A Quick Snapshot” — wealth-management positioning panel. |
+| **Why** | Bullet list — why wealth context matters (balances, risk, cash flows, concentration, clarity). |
+| **Simplify** | Six feature cards — portfolio value, returns, risk, allocation, asset types, cached data workflow. |
+| **Philosophy** | Editorial philosophy block. |
+| **Final CTA** | Closing headline + **Login to Dashboard**. |
+| **Footer** | Minimal brand line. |
+
+**States:** No API calls; no `PortfolioProvider`; uses design tokens from `index.css` and UI primitives (`MetricCard`, `ui-btn`) for mock preview only.
+
+**APIs:** None — landing must not fetch private portfolio endpoints.
+
+**Preserve in redesign:** Public-only; no finance calculations in React; mock preview values remain static; authenticated users must not see landing at `/` (redirect to `/dashboard`).
+
+---
+
+## 4. Dashboard (`/dashboard`)
 
 **Files:** `pages/Dashboard.jsx` · `pages/Dashboard.css`
 

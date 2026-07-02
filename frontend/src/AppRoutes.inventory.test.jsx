@@ -49,6 +49,9 @@ vi.mock('./components/Layout', async () => {
   };
 });
 
+vi.mock('./pages/Landing', () => ({
+  default: () => <h1>Landing route</h1>,
+}));
 vi.mock('./pages/Dashboard', () => ({ default: () => <h1>Dashboard route</h1> }));
 vi.mock('./pages/Transactions', () => ({ default: () => <h1>Transactions route</h1> }));
 vi.mock('./pages/Cash', () => ({ default: () => <h1>Cash route</h1> }));
@@ -79,10 +82,11 @@ describe('App route inventory', () => {
   });
 
   it.each([
+    ['/', 'Landing route'],
     ['/login', 'Login route'],
     ['/register', 'Register route'],
     ['/forgot-password', 'Forgot Password route'],
-  ])('renders public auth route %s without the authenticated app shell', async (path, heading) => {
+  ])('renders public route %s without the authenticated app shell', async (path, heading) => {
     renderAt(path);
 
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
@@ -90,7 +94,6 @@ describe('App route inventory', () => {
   });
 
   it.each([
-    ['/', 'Dashboard route'],
     ['/dashboard', 'Dashboard route'],
     ['/transactions', 'Transactions route'],
     ['/cash', 'Cash route'],
@@ -99,8 +102,7 @@ describe('App route inventory', () => {
     ['/fixed-deposits', 'Fixed Deposits route'],
     ['/compare', 'Compare route'],
     ['/settings', 'Settings route'],
-    ['/unknown-route', 'Dashboard route'],
-  ])('renders protected route or redirect %s inside the app shell', async (path, heading) => {
+  ])('renders protected route %s inside the app shell', async (path, heading) => {
     mockAuth.user = { id: 1, username: 'demo', email: 'demo@example.com' };
     mockAuth.isAuthenticated = true;
 
@@ -112,6 +114,24 @@ describe('App route inventory', () => {
     expect(screen.getByTestId('app-shell')).toBeInTheDocument();
   });
 
+  it('redirects authenticated / to dashboard inside the app shell', async () => {
+    mockAuth.user = { id: 1, username: 'demo', email: 'demo@example.com' };
+    mockAuth.isAuthenticated = true;
+
+    renderAt('/');
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Dashboard route' })).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('app-shell')).toBeInTheDocument();
+  });
+
+  it('redirects unknown routes to landing when unauthenticated', async () => {
+    renderAt('/unknown-route');
+
+    expect(await screen.findByRole('heading', { name: 'Landing route' })).toBeInTheDocument();
+    expect(screen.queryByTestId('app-shell')).not.toBeInTheDocument();
+  });
   it('redirects protected routes to login when unauthenticated', async () => {
     renderAt('/transactions');
 

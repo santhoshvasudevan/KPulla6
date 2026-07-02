@@ -70,7 +70,7 @@ describe('Login page', () => {
 
     await waitFor(() => {
       expect(mockLogin).toHaveBeenCalledWith('demo@example.com', 'StrongPass123!');
-      expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true });
+      expect(mockNavigate).toHaveBeenCalledWith('/dashboard', { replace: true });
     });
   });
 

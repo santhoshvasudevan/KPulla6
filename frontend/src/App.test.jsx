@@ -67,7 +67,21 @@ describe('App auth routing', () => {
     mockAuth.logout.mockReset();
   });
 
-  it('shows login page for unauthenticated root redirect to login flow', async () => {
+  it('shows landing page for unauthenticated root', async () => {
+    render(
+      <MemoryRouter initialEntries={['/']}>
+        <App />
+      </MemoryRouter>
+    );
+    expect(
+      await screen.findByRole('heading', {
+        name: /wealth is easier to build when it is clearly understood/i,
+      })
+    ).toBeTruthy();
+    expect(screen.getByRole('link', { name: /^login$/i })).toHaveAttribute('href', '/login');
+  });
+
+  it('shows login page for unauthenticated /login', async () => {
     render(
       <MemoryRouter initialEntries={['/login']}>
         <App />
@@ -80,7 +94,19 @@ describe('App auth routing', () => {
     expect(screen.getAllByText(/register first/i).length).toBeGreaterThan(0);
   });
 
-  it('authenticated user sees dashboard at root', async () => {
+  it('authenticated user sees dashboard at /dashboard', async () => {
+    mockAuth.user = { id: 1, username: 'demo', email: 'demo@example.com' };
+    mockAuth.isAuthenticated = true;
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <App />
+      </MemoryRouter>
+    );
+    expect(await screen.findByText('Dashboard')).toBeTruthy();
+    expect(screen.getByText('Transactions')).toBeTruthy();
+  });
+
+  it('authenticated user visiting / is redirected to dashboard', async () => {
     mockAuth.user = { id: 1, username: 'demo', email: 'demo@example.com' };
     mockAuth.isAuthenticated = true;
     render(
@@ -101,7 +127,7 @@ describe('App auth routing', () => {
     expect(await screen.findByLabelText(/username or email/i)).toBeTruthy();
   });
 
-  it('logout returns user to login', async () => {
+  it('logout returns user to the landing page', async () => {
     mockAuth.user = { id: 1, username: 'demo', email: 'demo@example.com' };
     mockAuth.isAuthenticated = true;
     mockAuth.logout.mockImplementation(async () => {
@@ -109,7 +135,7 @@ describe('App auth routing', () => {
       mockAuth.isAuthenticated = false;
     });
     render(
-      <MemoryRouter initialEntries={['/']}>
+      <MemoryRouter initialEntries={['/dashboard']}>
         <App />
       </MemoryRouter>
     );
@@ -119,5 +145,10 @@ describe('App auth routing', () => {
     await waitFor(() => {
       expect(mockAuth.logout).toHaveBeenCalled();
     });
+    expect(
+      await screen.findByRole('heading', {
+        name: /wealth is easier to build when it is clearly understood/i,
+      })
+    ).toBeTruthy();
   });
 });

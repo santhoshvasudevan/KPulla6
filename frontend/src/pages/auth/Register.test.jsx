@@ -94,7 +94,7 @@ describe('Register page', () => {
     fireEvent.click(screen.getByRole('button', { name: /^register$/i }));
 
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true });
+      expect(mockNavigate).toHaveBeenCalledWith('/dashboard', { replace: true });
     });
   });
 });

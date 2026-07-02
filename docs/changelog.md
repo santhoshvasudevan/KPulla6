@@ -1,5 +1,17 @@
 # Changelog — KPulla6
 
+## 2026-07-02 — Logout redirects to landing page
+
+- **Frontend:** Log out navigates to `/` (public landing) instead of `/login`.
+
+## 2026-07-02 — Public landing page (`/`)
+
+- **Routing:** Unauthenticated `/` shows a public KPulla company/landing page; authenticated `/` redirects to `/dashboard`. Dashboard primary route is now `/dashboard` (was `/`). Protected routes unchanged.
+- **Frontend:** `Landing.jsx` + `Landing.css` — editorial hero, story, snapshot, philosophy, feature cards, static mock dashboard preview; no portfolio API calls.
+- **Auth:** Login/register success navigates to `/dashboard`; public-only auth routes redirect authenticated users to `/dashboard`.
+- **Tests:** `Landing.test.jsx`, updated `App.test.jsx`, `AppRoutes.inventory.test.jsx`, login/register navigate tests.
+- **Docs:** `page-layouts.md`, `frontend-design.md`, `current-state.md`.
+
 ## 2026-06-30 — FD-PERF-2: Portfolio-attributed FD payout income for performance
 
 - **Product model:** Payout FD interest belongs to the FD’s portfolio (`FixedDeposit.portfolio`), not bank visibility. External/excluded bank does not block return recognition.

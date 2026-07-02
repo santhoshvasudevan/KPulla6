@@ -70,12 +70,13 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 
 - **No permanent left sidebar.** Brand, global navigation, portfolio/currency selectors, theme, account, and logout live in a **sticky top header** (`Layout.jsx`).
 - **Brand:** KPulla6 mark + “Executive Portfolio OS” subtitle; compact cached-data note in header.
-- **Top nav:** Dashboard, Transactions, Cash, Assets, Fixed Deposits, Compare, Settings — single authoritative route menu.
+- **Top nav:** Dashboard (`/dashboard`), Transactions, Cash, Assets, Fixed Deposits, Compare, Settings — single authoritative route menu.
 - **Main content:** centered `app-main__inner` (max-width ~1520px), `--bg-app` background, responsive padding.
 - **Page-local nav:** in-page section anchors only (Dashboard, Assets, Asset Detail, Fixed Deposits, Compare, Settings) — not duplicate global routes.
 - **Selectors:** portfolio view and display currency in header; raised surface, strong border, accent focus ring.
 - **Responsive:** header stacks on narrow viewports; nav horizontal scroll; controls wrap; section-nav scroll on mobile (P10).
 - **Auth routes:** Login, Register, Forgot Password use standalone `AuthShell` — no authenticated header.
+- **Public landing (`/`):** Editorial company page for signed-out visitors (`Landing.jsx`); sticky header with Login; hero + static mock dashboard preview; no portfolio API calls. Authenticated users redirect to `/dashboard` via `HomeRoute`.
 
 ### Dashboard
 

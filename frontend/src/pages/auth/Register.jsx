@@ -27,7 +27,7 @@ export default function Register() {
     setSubmitting(true);
     try {
       await register(form);
-      navigate('/', { replace: true });
+      navigate('/dashboard', { replace: true });
     } catch (err) {
       setError(err?.message || 'Registration failed');
     } finally {

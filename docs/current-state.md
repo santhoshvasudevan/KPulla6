@@ -1,7 +1,7 @@
 # Current State — KPulla6 (Portfolio Insight)
 
 ## Last Updated
-2026-06-30 (consistency audit — MF status notes, Executive Portfolio OS shell wording)
+2026-07-02 (public landing page at `/`; dashboard at `/dashboard`)
 
 **Documentation index:** [Home](index.md)
 
@@ -57,7 +57,7 @@ See [performance/dashboard-read-paths.md](./performance/dashboard-read-paths.md)
 
 ## Stack
 - **Backend:** Django 5 + Django REST Framework + django-allauth (session auth, Google OAuth)
-- **Frontend:** React 19 + Vite 6 (Dashboard, Assets, Transactions, Settings, portfolio/currency selectors)
+- **Frontend:** React 19 + Vite 6 (public landing at `/`, Dashboard at `/dashboard`, Assets, Transactions, Settings, portfolio/currency selectors)
 - **Database:** PostgreSQL 16 (Docker Compose)
 - **Reference:** KPulla5 (read-only)
 

@@ -4,12 +4,18 @@ Main React routes (see `frontend/src/App.jsx`):
 
 | Path | Page |
 |------|------|
-| `/` | Dashboard |
+| `/` | Public landing (signed out) or redirect to `/dashboard` (signed in) |
+| `/dashboard` | Dashboard |
+| `/login` | Login |
+| `/register` | Register |
+| `/forgot-password` | Forgot password |
 | `/transactions` | Transactions |
-| `/holdings` | Holdings |
+| `/cash` | Cash |
+| `/assets` | Assets |
 | `/fixed-deposits` | Fixed Deposits |
+| `/compare` | Compare |
 | `/settings` | Settings |
 
-Auth-gated — unauthenticated users redirect to login.
+Auth-gated app routes — unauthenticated users redirect to `/login`. Landing does not call portfolio APIs.
 
 Layout reference: [page-layouts.md](../page-layouts.md) · [frontend-design.md](../frontend-design.md)
