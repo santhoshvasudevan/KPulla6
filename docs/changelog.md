@@ -1,5 +1,9 @@
 # Changelog — KPulla6
 
+## 2026-07-02 — debt/0010 index rename (align with main)
+
+- **Migration:** `debt/0010_rename_bank_accounts_user_port_idx_bank_accoun_user_id_b3da01_idx` — renames the `(user, portfolio)` index on `BankAccount` to Django’s auto-generated name, fixing the `makemigrations` drift warning after CASH-UNIFY-1 (`0009`). Same migration as on `main`; does not include `0011`/`0012` (maturity value fields — not on `fd-integration-fix`).
+
 ## 2026-06-24 — CASH-UNIFY-2: FD portfolio derived from bank account
 
 - **FD create:** `POST /api/v1/fixed-deposits` derives `FixedDeposit.portfolio` from `bank_account.portfolio`. Optional `portfolio_id` must match or is omitted; conflicting or unassigned/ambiguous bank accounts return **400** with structured fields (`bank_account_id`, `bank_account_portfolio_id`, `portfolio_assignment_status`, `hint`, …).
