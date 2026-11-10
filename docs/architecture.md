@@ -1,5 +1,10 @@
 # Architecture — KPulla6 (Portfolio Insight)
 
+**MF analytics exception:** fund-level Asset Detail/Compare use native-INR cached
+NAV returns, not personal cash-flow-adjusted value series. Personal position and
+XIRR estimates are separate; portfolio analytics retain cash-flow adjustment.
+See [the MF performance contract and audit findings](portfolio-finance/17-mf-nav-performance.md).
+
 ## Overview
 Local-first portfolio tracker. **KPulla6** uses Django + DRF + PostgreSQL + React, preserving KPulla5 domain rules and `/api/v1` contracts where practical.
 

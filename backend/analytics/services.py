@@ -34,7 +34,7 @@ returns; see ``_split_adjusted_price_inconsistency_warnings``.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Optional
@@ -68,6 +68,7 @@ from finance.returns import (
     daily_returns_from_values,
     resample_monthly_returns,
     resample_yearly_returns,
+    compound_return,
 )
 from finance.risk_metrics import (
     annualized_volatility,
@@ -151,6 +152,7 @@ class AssetDailyMetricsInputs:
     window_end: date
     xirr_val: Optional[float]
     warnings: list[str]
+    coverage: dict | None = None
 
 
 class CompareSubjectsError(ValueError):
@@ -857,6 +859,7 @@ def build_metric_sheet_from_daily_returns(
     xirr_val: Optional[float],
     benchmark_symbol: str | None,
     warnings: list[str],
+    nav_performance: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """Assemble return/risk/drawdown/period metrics and optional benchmark block."""
     summary = period_summary(daily_fracs)
@@ -864,6 +867,12 @@ def build_metric_sheet_from_daily_returns(
     cum_ret = _economic_cumulative_return_fraction(
         ts_use, flows_by_date, flows_unknown_from, window_end
     )
+    if nav_performance:
+        cum_ret = compound_return(daily_fracs)
+        twror_frac = cum_ret
+        if ts_use:
+            window_start = date.fromisoformat(ts_use[0]["date"])
+            window_end = date.fromisoformat(ts_use[-1]["date"])
 
     metrics_block: dict[str, Any] = {
         "return": {
@@ -981,9 +990,8 @@ def _resolve_asset_metrics_context(
                 )
             resolved_folio = folio_filter
         elif len(folios) > 1:
-            raise AssetDetailValidationError(
-                "folio_number is required when multiple folios exist for this scheme"
-            )
+            resolved_folio = None
+            db_txns = mf_txns
         else:
             resolved_folio = next(iter(folios))
             db_txns = mf_txns
@@ -1081,6 +1089,26 @@ def _prepare_asset_daily_metrics_inputs(
     )
     warnings: list[str] = []
 
+    if ctx.is_mutual_fund:
+        from analytics.nav_performance import load_nav_performance
+
+        daily_pts, values, coverage, warnings = load_nav_performance(
+            ctx.asset_symbol, range_code, today
+        )
+        # Personal XIRR retains its legacy calculation until a separately approved fix.
+        personal_values = _build_asset_value_timeseries(ctx)
+        xirr_val = _compute_asset_xirr(
+            ctx=ctx, terminal_value=_terminal_value_from_timeseries(personal_values), today=today
+        )
+        return AssetDailyMetricsInputs(
+            ctx=ctx, daily_pts=daily_pts,
+            daily_fracs=[p.return_fraction for p in daily_pts], ts_use=values,
+            flows_by_date={}, flows_unknown_from=None,
+            window_start=date.fromisoformat(coverage["start"]) if coverage["start"] else today,
+            window_end=date.fromisoformat(coverage["end"]) if coverage["end"] else today,
+            xirr_val=xirr_val, warnings=warnings, coverage=coverage,
+        )
+
     timeseries_full = _build_asset_value_timeseries(ctx)
     if not timeseries_full:
         warnings.append("No asset value history available.")
@@ -1161,6 +1189,88 @@ def _prepare_asset_daily_metrics_inputs(
     )
 
 
+def _nav_benchmark(symbol: str | None, warnings: list[str]) -> str | None:
+    if not symbol:
+        return None
+    cfg = _get_benchmark_config(symbol)
+    if not cfg:
+        raise BenchmarkConfigError(f"Unknown or disabled benchmark symbol: {symbol!r}")
+    if (cfg.currency or "").upper() != "INR":
+        warnings.append("Fund benchmark metrics unavailable: an explicitly INR benchmark is required.")
+        return None
+    return symbol
+
+
+def _nav_benchmark_block(symbol: str, values: list[dict], warnings: list[str]) -> dict:
+    """Pair NAV and benchmark changes over identical eligible observation intervals."""
+    from finance.nav_returns import nav_return_series
+
+    block = {"symbol": symbol, "paired_count": 0, "metrics": None}
+    if not values:
+        return block
+    start, end = (date.fromisoformat(values[i]["date"]) for i in (0, -1))
+    rows = list_index_prices_in_range(symbol, start, end)
+    if any((r.currency or "").upper() != "INR" for r in rows):
+        warnings.append("Benchmark cache currency is incompatible with native-INR fund performance.")
+        return block
+    benchmark = {r.date: Decimal(r.close_price) for r in rows if r.close_price > 0}
+    fund = {date.fromisoformat(p["date"]): Decimal(str(p["portfolio_value"])) for p in values}
+    common = sorted(set(fund) & set(benchmark))
+    if len(common) < 3:
+        warnings.append("Insufficient overlapping benchmark NAV intervals for comparison metrics.")
+        return block
+    subject_series = nav_return_series([(d, fund[d]) for d in common], start=common[0], end=common[-1])
+    benchmark_series = nav_return_series([(d, benchmark[d]) for d in common], start=common[0], end=common[-1])
+    if subject_series.gaps or benchmark_series.gaps:
+        warnings.append("Benchmark coverage is incomplete: gaps longer than seven days were excluded.")
+        block["coverage"] = {"partial": True, "gaps": [
+            {"start": a.isoformat(), "end": b.isoformat()} for a, b in benchmark_series.gaps]}
+    summary = benchmark_summary(subject_series.points, benchmark_series.points)
+    block["paired_count"] = summary.paired_count
+    if summary.paired_count >= 2:
+        block["metrics"] = {key: _float_or_none(getattr(summary, key)) for key in (
+            "correlation", "beta", "alpha", "active_return", "tracking_error", "information_ratio", "treynor_ratio")}
+    else:
+        warnings.append("Insufficient eligible benchmark NAV intervals after gap filtering.")
+    return block
+
+
+def _apply_nav_contract(payload: dict, inputs: AssetDailyMetricsInputs) -> None:
+    """Separate fund metrics from the existing, unverified personal estimate."""
+    payload["performance_basis"] = "nav"
+    payload["currency"] = "INR"
+    payload["coverage"] = inputs.coverage
+    payload["personal_metrics"] = {
+        "xirr": inputs.xirr_val, "xirr_scope": "full_scope",
+        "status": "requires_review", "basis": "legacy_unverified",
+        "warnings": [
+            "Personal XIRR requires review: the legacy metric calculation mixes currency bases; "
+            "the position header also uses a different cash-flow date/amount convention. "
+            "No XIRR correction has been applied."
+        ],
+    }
+    coverage = inputs.coverage or {}
+    if coverage.get("incomplete") or not any(p.return_fraction is not None for p in inputs.daily_pts):
+        payload["metrics"] = _null_metrics_block()
+        payload["drawdown_periods"] = _empty_drawdown_periods_block()
+        payload["drawdown_series"] = []
+        if payload.get("benchmark"):
+            payload["benchmark"]["metrics"] = None
+    # An unexplained gap makes any intersecting calendar period unavailable.
+    bad_months, bad_years = set(), set()
+    for gap in coverage.get("gaps", []):
+        day = date.fromisoformat(gap["start"]) + timedelta(days=1)
+        end = date.fromisoformat(gap["end"])
+        while day <= end:
+            bad_months.add(day.strftime("%Y-%m"))
+            bad_years.add(str(day.year))
+            day += timedelta(days=1)
+    for key, bad in (("monthly", bad_months), ("yearly", bad_years)):
+        payload["periodic_returns"][key] = [
+            row for row in payload["periodic_returns"].get(key, []) if row["period"] not in bad
+        ]
+
+
 def build_asset_performance_metrics(
     *,
     asset_symbol: str,
@@ -1181,10 +1291,11 @@ def build_asset_performance_metrics(
     )
     ctx = inputs.ctx
     warnings = list(inputs.warnings)
+    if ctx.is_mutual_fund:
+        benchmark_symbol = _nav_benchmark(benchmark_symbol, warnings)
 
     if not inputs.ts_use:
-        return PerformanceMetricsResult(
-            payload=_empty_asset_payload(
+        payload = _empty_asset_payload(
                 scope,
                 ctx=ctx,
                 display_currency=display_currency,
@@ -1193,7 +1304,9 @@ def build_asset_performance_metrics(
                 warnings=warnings,
                 benchmark_symbol=benchmark_symbol,
             )
-        )
+        if ctx.is_mutual_fund:
+            _apply_nav_contract(payload, inputs)
+        return PerformanceMetricsResult(payload=payload)
 
     metrics_block, benchmark_block = build_metric_sheet_from_daily_returns(
         daily_pts=inputs.daily_pts,
@@ -1203,9 +1316,10 @@ def build_asset_performance_metrics(
         flows_unknown_from=inputs.flows_unknown_from,
         window_start=inputs.window_start,
         window_end=inputs.window_end,
-        xirr_val=inputs.xirr_val,
-        benchmark_symbol=benchmark_symbol,
+        xirr_val=None if ctx.is_mutual_fund else inputs.xirr_val,
+        benchmark_symbol=None if ctx.is_mutual_fund else benchmark_symbol,
         warnings=warnings,
+        nav_performance=ctx.is_mutual_fund,
     )
     periodic_returns, drawdown_periods, drawdown_series_block = (
         build_metric_sheet_extension_blocks(inputs.daily_pts)
@@ -1232,6 +1346,11 @@ def build_asset_performance_metrics(
     }
     if benchmark_block is not None:
         payload["benchmark"] = benchmark_block
+
+    if ctx.is_mutual_fund:
+        if benchmark_symbol:
+            payload["benchmark"] = _nav_benchmark_block(benchmark_symbol, inputs.ts_use, warnings)
+        _apply_nav_contract(payload, inputs)
 
     return PerformanceMetricsResult(payload=payload)
 
@@ -1328,6 +1447,21 @@ def build_analytics_compare(
         subject_id = f"asset:{inputs.ctx.asset_symbol}"
         prepared.append((subject_id, inputs))
 
+    if all(inputs.ctx.is_mutual_fund for _, inputs in prepared):
+        from analytics.nav_performance import load_nav_observations, prepare_nav_observations
+
+        raw_by_subject = {sid: load_nav_observations(inputs.ctx.asset_symbol, today) for sid, inputs in prepared}
+        dates_by_subject = [{d for d, _ in raw_by_subject[sid]} for sid, _ in prepared]
+        common_observations = set.intersection(*dates_by_subject)
+        aligned_prepared = []
+        for sid, inputs in prepared:
+            observations = [(d, value) for d, value in raw_by_subject[sid] if d in common_observations]
+            pts, values, coverage, coverage_warnings = prepare_nav_observations(observations, range_code, today)
+            aligned_prepared.append((sid, replace(inputs, daily_pts=pts,
+                daily_fracs=[p.return_fraction for p in pts], ts_use=values,
+                coverage=coverage, warnings=coverage_warnings)))
+        prepared = aligned_prepared
+
     series_by_id = {sid: inputs.daily_pts for sid, inputs in prepared}
     common_dates, aligned_returns = align_multi_subject_returns(series_by_id)
 
@@ -1339,14 +1473,33 @@ def build_analytics_compare(
     aligned_start = common_dates[0] if common_dates else today
     aligned_end = common_dates[-1] if common_dates else today
     normalized_series = normalized_cumulative_return_series(common_dates, aligned_returns)
+    if common_dates and all(inputs.ctx.is_mutual_fund for _, inputs in prepared):
+        baseline_day = date.fromisoformat(prepared[0][1].ts_use[0]["date"])
+        normalized_series = normalized_cumulative_return_series(
+            [baseline_day] + common_dates,
+            {sid: [_ZERO] + returns for sid, returns in aligned_returns.items()},
+        )
+        requested_start = prepared[0][1].coverage.get("requested_start")
+        normalized_series = [p for p in normalized_series if not requested_start or p["date"] >= requested_start]
+    currencies = {"INR" if inputs.ctx.is_mutual_fund else inputs.ctx.base_currency for _, inputs in prepared}
+    mixed_bases = any(inputs.ctx.is_mutual_fund for _, inputs in prepared) and not all(
+        inputs.ctx.is_mutual_fund for _, inputs in prepared
+    )
+    compatible = len(currencies) == 1 and not mixed_bases
+    if any(inputs.ctx.is_mutual_fund for _, inputs in prepared) and not compatible:
+        global_warnings.append("Mixed currency/performance bases: normalized cross-subject comparison is unavailable.")
+        normalized_series = []
+    if any(inputs.ctx.is_mutual_fund and (inputs.coverage or {}).get("incomplete") for _, inputs in prepared):
+        global_warnings.append("NAV coverage is incomplete; normalized comparison is unavailable.")
+        normalized_series = []
 
     subject_payloads: list[dict[str, Any]] = []
     for subject_id, inputs in prepared:
         subject_warnings = list(inputs.warnings)
         ctx = inputs.ctx
 
-        if len(common_dates) >= 2:
-            aligned_fracs = aligned_returns[subject_id]
+        if len(common_dates) >= 2 or (ctx.is_mutual_fund and mixed_bases):
+            aligned_fracs = aligned_returns.get(subject_id, [])
             aligned_pts = [
                 DailyReturnPoint(date=d, return_fraction=r)
                 for d, r in zip(common_dates, aligned_fracs)
@@ -1354,6 +1507,14 @@ def build_analytics_compare(
             aligned_ts_use = _slice_timeseries_to_window(
                 inputs.ts_use, aligned_start, aligned_end
             )
+            if ctx.is_mutual_fund:
+                predecessors = [p for p in inputs.ts_use if p["date"] < aligned_start.isoformat()]
+                aligned_ts_use = predecessors[-1:] + aligned_ts_use
+                if mixed_bases:
+                    # Do not discard fund returns merely to match an incompatible subject.
+                    aligned_pts = inputs.daily_pts
+                    aligned_fracs = inputs.daily_fracs
+                    aligned_ts_use = inputs.ts_use
             metrics_block, _ = build_metric_sheet_from_daily_returns(
                 daily_pts=aligned_pts,
                 daily_fracs=aligned_fracs,
@@ -1362,19 +1523,23 @@ def build_analytics_compare(
                 flows_unknown_from=inputs.flows_unknown_from,
                 window_start=aligned_start,
                 window_end=aligned_end,
-                xirr_val=inputs.xirr_val,
+                xirr_val=None if ctx.is_mutual_fund else inputs.xirr_val,
                 benchmark_symbol=None,
                 warnings=subject_warnings,
+                nav_performance=ctx.is_mutual_fund,
             )
             periodic_returns, drawdown_periods, drawdown_series_block = (
                 build_metric_sheet_extension_blocks(aligned_pts)
             )
             benchmark_block: dict[str, Any] | None = None
-            if benchmark_symbol:
+            eligible_benchmark = _nav_benchmark(benchmark_symbol, subject_warnings) if ctx.is_mutual_fund else benchmark_symbol
+            if eligible_benchmark and ctx.is_mutual_fund:
+                benchmark_block = _nav_benchmark_block(eligible_benchmark, aligned_ts_use, subject_warnings)
+            elif eligible_benchmark:
                 aligned_pts_for_bench = aligned_pts
                 benchmark_block = _benchmark_block_for_subject(
                     subject_daily_pts=aligned_pts_for_bench,
-                    benchmark_symbol=benchmark_symbol,
+                    benchmark_symbol=eligible_benchmark,
                     window_start=aligned_start,
                     window_end=aligned_end,
                     subject_warnings=subject_warnings,
@@ -1412,6 +1577,11 @@ def build_analytics_compare(
                 "warnings": subject_warnings,
             }
         )
+        if ctx.is_mutual_fund:
+            _apply_nav_contract(subject_payloads[-1], inputs)
+        else:
+            subject_payloads[-1]["performance_basis"] = "holding_cash_flow_adjusted"
+            subject_payloads[-1]["currency"] = ctx.base_currency
 
     payload: dict[str, Any] = {
         "range": {
@@ -1427,6 +1597,9 @@ def build_analytics_compare(
         "common_point_count": len(common_dates),
         "warnings": global_warnings,
     }
+    if any(inputs.ctx.is_mutual_fund for _, inputs in prepared):
+        payload["currency"] = next(iter(currencies)) if compatible else "mixed"
+        payload["comparison_compatible"] = compatible
     return CompareResult(payload=payload)
 
 

@@ -3,6 +3,9 @@
 export const METRIC_SHEET_XIRR_FULL_SCOPE_NOTE =
   'XIRR is full-scope; other Metric Sheet values follow the selected range.';
 
+export const PERSONAL_XIRR_REVIEW_NOTE =
+  'Unverified estimate - requires review. Existing personal XIRR APIs use inconsistent currency and cash-flow conventions; these estimates are not directly comparable.';
+
 /**
  * Compare page: requested range vs backend-aligned common window.
  * @param {string} timeRange — selected control value (fallback if API omits range.code)

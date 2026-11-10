@@ -1,5 +1,11 @@
 # Changelog — KPulla6
 
+## 2026-11-10 — Native-INR fund performance and personal-position separation
+
+- **MF analytics:** Asset Detail and Compare share NAV-only fund returns/risk/drawdown inputs, independent of purchase/folio timing and display currency. Added explicit coverage, missing-gap/partial-period handling and currency-compatible comparison checks. Stock/portfolio formulas are unchanged.
+- **Personal context:** Your Position and Your Holding XIRR are separate. Audits confirmed legacy personal XIRR currency inconsistency and portfolio settlement-timing artifacts; warnings and findings are recorded, with corrections still requiring separate approval.
+- **Safety/verification:** No migrations, live portfolio mutations or provider-on-read changes. Regression/API/UI tests and a two-axis review cover specification #3 and its approved phases.
+
 ## 2026-07-02 — Logout redirects to landing page
 
 - **Frontend:** Log out navigates to `/` (public landing) instead of `/login`.

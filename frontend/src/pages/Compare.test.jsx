@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import Compare from './Compare';
@@ -176,6 +176,45 @@ describe('Compare page', () => {
     expect(screen.getAllByText('+12.34%').length).toBeGreaterThan(0);
     expect(screen.getAllByText('+5.67%').length).toBeGreaterThan(0);
     expect(screen.getByText('1.10')).toBeInTheDocument();
+  });
+
+  it.each([false, true])('separates personal MF XIRR and subject bases (both NAV: %s)', async (bothNav) => {
+    const subjects = sampleCompareMetricSheetPayload.subjects.map((subject, index) =>
+      index === 0 || bothNav ? {
+        ...subject, performance_basis: 'nav', currency: 'INR',
+        metrics: { ...subject.metrics, return: { ...subject.metrics.return, xirr: null } },
+        personal_metrics: {
+          xirr: index === 0 ? 0.2876 : null, xirr_scope: 'full_scope', status: 'requires_review',
+          warnings: ['Personal XIRR has inconsistent cash-flow and terminal currencies.'],
+        },
+        coverage: { start: '2025-06-01', end: '2026-05-30', partial_years: ['2026'] },
+      } : { ...subject, currency: 'EUR', performance_basis: 'holding_cash_flow_adjusted' }
+    );
+    api.getCompareMetricSheet.mockResolvedValue({
+      ...sampleCompareMetricSheetPayload, subjects, currency: bothNav ? 'INR' : 'mixed',
+      warnings: bothNav ? [] : ['Mixed performance bases and currencies; relative statistics unavailable.'],
+    });
+    renderCompare();
+    await screen.findByLabelText('compare-asset-a');
+    fireEvent.change(screen.getByLabelText('compare-asset-a'), { target: { value: 'AAPL' } });
+    fireEvent.change(screen.getByLabelText('compare-asset-b'), { target: { value: 'MSFT' } });
+    await screen.findByText('Metric Sheet comparison');
+    expect(screen.getAllByText('NAV · INR')).toHaveLength(bothNav ? 2 : 1);
+    expect(screen.getAllByText('Actual NAV coverage: 2025-06-01 to 2026-05-30')).toHaveLength(bothNav ? 2 : 1);
+    if (!bothNav) {
+      expect(screen.getByText('Cash-flow adjusted · EUR')).toBeInTheDocument();
+      expect(screen.getByText(/mixed performance bases and currencies/i)).toBeInTheDocument();
+      expect(screen.queryByTitle('Best value in this row')).not.toBeInTheDocument();
+    }
+    const personalRow = screen.getByRole('row', { name: /Your Holding XIRR/i });
+    expect(within(personalRow).getByText('+28.76%')).toBeInTheDocument();
+    expect(within(personalRow).getAllByText(/unverified.*requires review/i).length).toBeGreaterThan(0);
+    expect(within(personalRow).getAllByText(/inconsistent cash-flow and terminal currencies/i).length).toBeGreaterThan(0);
+    if (bothNav) {
+      expect(screen.queryByRole('row', { name: /^XIRR/i })).not.toBeInTheDocument();
+      expect(screen.queryByText('XIRR is full-scope; other Metric Sheet values follow the selected range.')).not.toBeInTheDocument();
+    }
+    expect(screen.queryByText(/partial/i)).not.toBeInTheDocument();
   });
 
   it('renders global and subject warnings', async () => {

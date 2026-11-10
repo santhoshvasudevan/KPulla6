@@ -14,7 +14,8 @@ function warningSeverity(message) {
     text.includes('fx') ||
     text.includes('nav') ||
     text.includes('price') ||
-    text.includes('benchmark')
+    text.includes('benchmark') ||
+    text.includes('requires review')
   ) {
     return 'warning';
   }

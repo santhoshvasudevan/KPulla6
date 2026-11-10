@@ -1,5 +1,20 @@
 # Portfolio Insight — API Design (KPulla6)
 
+## Mutual-fund analytics subject separation
+
+MF Asset Detail and Compare use native-INR NAV performance, not personal
+cash-flow-adjusted holding returns. The additive contract, coverage rules and
+approval-gated personal XIRR/portfolio timing audits are specified in
+[MF NAV performance](portfolio-finance/17-mf-nav-performance.md).
+
+MF responses identify `performance_basis: nav`, `currency: INR`, `coverage`, and
+separate `personal_metrics`. Fund `metrics.return.xirr` is unavailable because XIRR
+is personal; the legacy estimate remains in the review-required personal block
+with an explicit warning. Existing routes/auth/scoping are retained. Fund metrics
+do not require choosing a folio solely because several exist. Stock and portfolio
+analytics are unchanged. Older examples below remain applicable to stock/portfolio
+returns; MF return inputs follow this contract.
+
 **Stack:** Django REST Framework · Base URL: `/api/v1`
 
 This document describes the **target** REST API (carried forward from KPulla5). KPulla6 implements endpoints incrementally; only implemented routes are live in the running app.

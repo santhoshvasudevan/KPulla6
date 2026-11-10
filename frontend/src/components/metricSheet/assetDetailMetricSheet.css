@@ -8,3 +8,7 @@
 .asset-detail-metric-sheet__benchmark-select {
   min-width: 180px;
 }
+
+.asset-detail-metric-sheet__position {
+  margin-top: var(--space-4);
+}

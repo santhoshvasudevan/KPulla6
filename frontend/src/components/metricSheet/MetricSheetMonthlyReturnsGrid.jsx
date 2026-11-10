@@ -107,8 +107,8 @@ export default function MetricSheetMonthlyReturnsGrid({
                   ].join(' ')}
                   aria-label={
                     row.yearlyReturn != null && row.yearlyReturn !== ''
-                      ? `${row.year} full-year return ${formatMetricPercentFraction(row.yearlyReturn, { showSign: true })}`
-                      : `${row.year} full-year return not available`
+                      ? `${row.year} year return ${formatMetricPercentFraction(row.yearlyReturn, { showSign: true })}`
+                      : `${row.year} year return not available`
                   }
                 >
                   <span className="metric-sheet-monthly-grid__cell-value">

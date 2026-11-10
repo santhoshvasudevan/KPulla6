@@ -4,6 +4,7 @@ import { fetchAssetDetails } from '../api';
 import { usePortfolio } from '../portfolioContext';
 import { formatCurrency } from '../utils/formatters';
 import { AssetDetailMetricSheet } from '../components/metricSheet';
+import { PERSONAL_XIRR_REVIEW_NOTE } from '../components/metricSheet/metricSheetCopy';
 import {
   PageHeader,
   KpiCard,
@@ -104,6 +105,26 @@ export default function AssetDetail() {
     );
   }
   if (error) {
+    if (/multiple\s*folios/i.test(error)) {
+      return (
+        <div className="asset-detail">
+          <PageHeader title={assetSymbol} subtitle={selectedPortfolioName || 'All Portfolios'} />
+          <ErrorState
+            title="Personal position unavailable"
+            message={error}
+            onRetry={loadData}
+          />
+          <div id="asset-metrics">
+            <AssetDetailMetricSheet
+              assetSymbol={assetSymbol}
+              assetType="MUTUAL_FUND"
+              apiQuery={apiQuery}
+              settingsLoaded={settingsLoaded}
+            />
+          </div>
+        </div>
+      );
+    }
     return (
       <ErrorState
         title="Unable to load asset"
@@ -115,6 +136,7 @@ export default function AssetDetail() {
   if (!data) return null;
 
   const currency = data.currency || 'EUR';
+  const isMutualFund = data.asset_type === 'MUTUAL_FUND';
   const qty = Number(data.cumulative_qty) || 0;
   const transactions = data.transactions || [];
   const sortedTransactions = [...transactions].sort((a, b) =>
@@ -183,7 +205,8 @@ export default function AssetDetail() {
           }
         />
         <KpiCard
-          label="XIRR"
+          label={isMutualFund ? 'Your Holding XIRR' : 'XIRR'}
+          helperText={isMutualFund ? PERSONAL_XIRR_REVIEW_NOTE : undefined}
           variant={kpiVariantFromTone(xirrTone)}
           value={
             <PercentValue value={data.xirr} tone={xirrTone} showSign />
@@ -205,6 +228,7 @@ export default function AssetDetail() {
           apiQuery={apiQuery}
           folioNumber={data.folio_number || null}
           settingsLoaded={settingsLoaded}
+          assetType={data.asset_type}
         />
       </div>
 

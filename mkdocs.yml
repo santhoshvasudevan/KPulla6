@@ -121,6 +121,7 @@ nav:
     - API fixed deposits: reference/api-fixed-deposits.md
     - API cash: reference/api-cash.md
     - API analytics: reference/api-analytics.md
+    - Mutual fund performance: portfolio-finance/17-mf-nav-performance.md
     - Database schema: reference/database-schema.md
     - Make commands: reference/make-commands.md
     - Environment variables: reference/environment-variables.md

@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { fetchBenchmarkIndices, getAssetMetricSheet } from '../../api';
-import { LoadingState, ErrorState, SegmentedControl } from '../ui';
+import { LoadingState, ErrorState, SegmentedControl, MetricCard } from '../ui';
+import { formatMetricPercentFraction } from '../../utils/metricFormatters';
+import { PERSONAL_XIRR_REVIEW_NOTE } from './metricSheetCopy';
 import MetricSheetSection from './MetricSheetSection';
 import MetricSheetSummaryCards from './MetricSheetSummaryCards';
 import MetricSheetRiskReturnTable from './MetricSheetRiskReturnTable';
 import MetricSheetBenchmarkTable from './MetricSheetBenchmarkTable';
 import MetricSheetWarnings from './MetricSheetWarnings';
+import MetricSheetNavCoverage from './MetricSheetNavCoverage';
 import MetricSheetPeriodicReturnsTable from './MetricSheetPeriodicReturnsTable';
 import MetricSheetDrawdownPeriodsTable from './MetricSheetDrawdownPeriodsTable';
 import './assetDetailMetricSheet.css';
@@ -22,6 +25,7 @@ export default function AssetDetailMetricSheet({
   apiQuery,
   folioNumber,
   settingsLoaded,
+  assetType,
 }) {
   const [metricSheetRange, setMetricSheetRange] = useState('1Y');
   const [selectedBenchmark, setSelectedBenchmark] = useState('');
@@ -91,59 +95,81 @@ export default function AssetDetailMetricSheet({
     : `Quantitative Statistics · ${metricSheetRange}`;
 
   const folioMessage = "Select a specific folio to view this asset's Metric Sheet.";
+  const isNav = metricSheetData?.performance_basis === 'nav';
+  const isMutualFund = isNav || assetType === 'MUTUAL_FUND';
 
   return (
-    <MetricSheetSection
-      className="asset-detail-metric-sheet"
-      subtitle={subtitle}
-      actions={
-        <div className="asset-detail-metric-sheet__toolbar">
-          <SegmentedControl
-            ariaLabel="asset-metric-sheet-range"
-            options={rangeOptions}
-            value={metricSheetRange}
-            onChange={setMetricSheetRange}
+    <>
+      <MetricSheetSection
+        title={isNav ? `Fund Performance — ${metricSheetData.currency}` : 'Metric Sheet'}
+        className="asset-detail-metric-sheet"
+        subtitle={subtitle}
+        actions={
+          <div className="asset-detail-metric-sheet__toolbar">
+            <SegmentedControl
+              ariaLabel="asset-metric-sheet-range"
+              options={rangeOptions}
+              value={metricSheetRange}
+              onChange={setMetricSheetRange}
+            />
+            <select
+              aria-label="asset-metric-sheet-benchmark"
+              className="metric-sheet__benchmark-select asset-detail-metric-sheet__benchmark-select"
+              value={selectedBenchmark}
+              onChange={(e) => setSelectedBenchmark(e.target.value)}
+            >
+              <option value="">No benchmark</option>
+              {benchmarkOptions.map((b) => (
+                <option key={b.symbol} value={b.symbol}>
+                  {b.name || b.display_name || b.symbol}
+                </option>
+              ))}
+            </select>
+          </div>
+        }
+      >
+        {metricSheetLoading ? (
+          <LoadingState message="Loading Metric Sheet…" variant="skeleton" />
+        ) : metricSheetError ? (
+          <ErrorState
+            title="Metric Sheet unavailable"
+            message={isFolioRequiredError(metricSheetError) ? folioMessage : metricSheetError}
           />
-          <select
-            aria-label="asset-metric-sheet-benchmark"
-            className="metric-sheet__benchmark-select asset-detail-metric-sheet__benchmark-select"
-            value={selectedBenchmark}
-            onChange={(e) => setSelectedBenchmark(e.target.value)}
-          >
-            <option value="">No benchmark</option>
-            {benchmarkOptions.map((b) => (
-              <option key={b.symbol} value={b.symbol}>
-                {b.name || b.display_name || b.symbol}
-              </option>
-            ))}
-          </select>
-        </div>
-      }
-    >
-      {metricSheetLoading ? (
-        <LoadingState message="Loading Metric Sheet…" variant="skeleton" />
-      ) : metricSheetError ? (
-        <ErrorState
-          title="Metric Sheet unavailable"
-          message={isFolioRequiredError(metricSheetError) ? folioMessage : metricSheetError}
-        />
-      ) : metricSheetData ? (
-        <>
-          <MetricSheetWarnings warnings={metricSheetData.warnings} />
-          <MetricSheetSummaryCards metrics={metricSheetData.metrics} />
-          <MetricSheetRiskReturnTable metrics={metricSheetData.metrics} />
-          {selectedBenchmark && metricSheetData.benchmark ? (
-            <MetricSheetBenchmarkTable benchmark={metricSheetData.benchmark} />
+        ) : metricSheetData ? (
+          <>
+            {isNav ? <MetricSheetNavCoverage coverage={metricSheetData.coverage} /> : null}
+            <MetricSheetWarnings warnings={metricSheetData.warnings} />
+            <MetricSheetSummaryCards metrics={metricSheetData.metrics} showXirr={!isMutualFund} />
+            <MetricSheetRiskReturnTable metrics={metricSheetData.metrics} />
+            {selectedBenchmark && metricSheetData.benchmark ? (
+              <MetricSheetBenchmarkTable benchmark={metricSheetData.benchmark} />
+            ) : null}
+            <MetricSheetPeriodicReturnsTable
+              periodicReturns={metricSheetData.periodic_returns}
+              coverage={metricSheetData.coverage}
+              performanceBasis={metricSheetData.performance_basis}
+            />
+            <MetricSheetDrawdownPeriodsTable
+              drawdownPeriods={metricSheetData.drawdown_periods}
+              drawdownSeries={metricSheetData.drawdown_series}
+            />
+          </>
+        ) : null}
+      </MetricSheetSection>
+      {!metricSheetLoading && !metricSheetError && metricSheetData && isMutualFund ? (
+        <section aria-label="Your Position" className="asset-detail-metric-sheet__position">
+          <h3 className="metric-sheet__section-heading">Your Position</h3>
+          <MetricCard
+            label="Your Holding XIRR"
+            value={formatMetricPercentFraction(metricSheetData.personal_metrics?.xirr, { showSign: true })}
+            helperText={PERSONAL_XIRR_REVIEW_NOTE}
+          />
+          {metricSheetData.personal_metrics?.xirr_scope === 'full_scope' ? (
+            <p className="metric-sheet__note">Your Holding XIRR is full-scope, independent of the selected fund performance range.</p>
           ) : null}
-          <MetricSheetPeriodicReturnsTable
-            periodicReturns={metricSheetData.periodic_returns}
-          />
-          <MetricSheetDrawdownPeriodsTable
-            drawdownPeriods={metricSheetData.drawdown_periods}
-            drawdownSeries={metricSheetData.drawdown_series}
-          />
-        </>
+          <MetricSheetWarnings warnings={metricSheetData.personal_metrics?.warnings} />
+        </section>
       ) : null}
-    </MetricSheetSection>
+    </>
   );
 }

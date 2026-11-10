@@ -81,6 +81,14 @@
   color: var(--text-muted);
 }
 
+.metric-sheet__coverage {
+  display: block;
+  margin-bottom: var(--space-3);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
 .metric-sheet__warnings {
   display: flex;
   flex-direction: column;

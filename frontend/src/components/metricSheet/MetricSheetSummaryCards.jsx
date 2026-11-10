@@ -5,14 +5,14 @@ import {
 } from '../../utils/metricFormatters';
 import { METRIC_SHEET_XIRR_FULL_SCOPE_NOTE } from './metricSheetCopy';
 
-export default function MetricSheetSummaryCards({ metrics, className = '' }) {
+export default function MetricSheetSummaryCards({ metrics, className = '', showXirr = true }) {
   const returns = metrics?.return ?? {};
 
   const cards = [
     { label: 'Cumulative Return', value: returns.cumulative_return },
     { label: 'CAGR', value: returns.cagr },
     { label: 'TWROR', value: returns.twror },
-    { label: 'XIRR', value: returns.xirr },
+    ...(showXirr ? [{ label: 'XIRR', value: returns.xirr }] : []),
   ];
 
   const xirrScopeNote =

@@ -24,6 +24,7 @@ If ports are wrong: [Dev server and port issues](dev-server-ports.md)
 | Google OAuth error | [Google OAuth errors](google-oauth-errors.md) |
 | Missing prices or NAVs | [Missing prices or NAVs](missing-prices-navs.md) |
 | Dashboard slow | [Dashboard is slow](dashboard-slow.md) |
+| MF heatmap shows a large loss around a purchase | [Fund performance and timing diagnosis](../portfolio-finance/17-mf-nav-performance.md#timing-bug-diagnosis) |
 | Database safety concern | [Database safety problems](database-safety.md) |
 | Port in use / wrong URL | [Dev server and port issues](dev-server-ports.md) |
 

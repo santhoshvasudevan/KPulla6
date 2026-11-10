@@ -27,7 +27,9 @@ function YearlyReturnsSubTable({ rows }) {
           <tbody>
             {rows.map((row) => (
               <tr key={row.period}>
-                <th scope="row">{row.period}</th>
+                <th scope="row">
+                  {row.period}
+                </th>
                 <td className="metric-sheet__data-table__num">
                   {formatMetricPercentFraction(row.return, { showSign: true })}
                 </td>
@@ -48,6 +50,8 @@ function YearlyReturnsSubTable({ rows }) {
  */
 export default function MetricSheetPeriodicReturnsTable({
   periodicReturns,
+  coverage,
+  performanceBasis,
   showMonthly = true,
   showYearly = true,
   className = '',
@@ -60,12 +64,12 @@ export default function MetricSheetPeriodicReturnsTable({
 
   return (
     <div className={['metric-sheet__periodic-returns', className].filter(Boolean).join(' ')}>
-      {showYearly ? <MetricSheetYearlyReturnChart yearly={yearly} /> : null}
+      {showYearly ? <MetricSheetYearlyReturnChart yearly={yearly} coverage={coverage} performanceBasis={performanceBasis} /> : null}
       <h3 className="metric-sheet__section-heading">Periodic returns</h3>
       {showMonthly ? (
-        <MetricSheetMonthlyReturnsGrid monthly={monthly} yearly={yearly} />
+        <MetricSheetMonthlyReturnsGrid monthly={monthly} yearly={yearly} coverage={coverage} />
       ) : null}
-      {showYearlyFallbackTable ? <YearlyReturnsSubTable rows={yearly} /> : null}
+      {showYearlyFallbackTable ? <YearlyReturnsSubTable rows={yearly} coverage={coverage} /> : null}
     </div>
   );
 }

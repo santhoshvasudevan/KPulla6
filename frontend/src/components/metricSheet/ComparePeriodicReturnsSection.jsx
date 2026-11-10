@@ -52,7 +52,6 @@ export default function ComparePeriodicReturnsSection({ subjects = [], className
                   const row = (subj.periodic_returns?.yearly ?? []).find(
                     (r) => r.period === period
                   );
-                  const label = subj.name || subj.asset_symbol || subj.id;
                   return (
                     <td
                       key={`${subj.id}-${period}`}

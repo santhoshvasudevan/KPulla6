@@ -1,5 +1,12 @@
 # API — analytics
 
+**Mutual funds:** Asset Detail and Compare return native-INR NAV-only fund metrics,
+independent of personal trades and display currency. Responses expose
+`performance_basis`, `coverage` and separate review-required `personal_metrics`.
+See [the MF contract](../portfolio-finance/17-mf-nav-performance.md) for missing-data,
+partial-period, benchmark, and personal-XIRR semantics. Portfolio metrics remain
+cash-flow-adjusted; this does not authorize a portfolio formula change.
+
 Portfolio summary, performance series, and Metric Sheet endpoints. Deep spec: [api-design.md](../api-design.md) § Phase 9–10 and analytics.
 
 **Base URL:** `http://127.0.0.1:8000/api/v1` · **Auth:** Session — [API authentication](api-auth.md)

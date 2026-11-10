@@ -31,13 +31,13 @@ function formatPercentAxis(fraction) {
 /**
  * Calendar-Year Return bar chart from backend `periodic_returns.yearly`.
  */
-export default function MetricSheetYearlyReturnChart({ yearly = [], className = '' }) {
+export default function MetricSheetYearlyReturnChart({ yearly = [], className = '', performanceBasis }) {
   const chartData = useMemo(() => buildYearlyReturnChartData(yearly), [yearly]);
 
   return (
     <ChartFrame
       title="Calendar-Year Return"
-      subtitle="Cash-flow adjusted return using daily TWROR."
+      subtitle={performanceBasis === 'nav' ? 'NAV return · INR' : 'Cash-flow adjusted return using daily TWROR.'}
       className={['metric-sheet-yearly-chart', className].filter(Boolean).join(' ')}
       panelClassName="metric-sheet-chart-panel"
       compact

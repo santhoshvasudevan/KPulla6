@@ -249,7 +249,8 @@ def test_asset_mf_nav_no_warning_when_latest_nav_recent(api_client, legacy_seede
             folio_number="FOLIO-12345",
         )
     ).json()
-    assert not any("NAV" in w for w in data["warnings"])
+    assert not any("stale" in w.lower() for w in data["warnings"])
+    assert data["metrics"]["return"]["cumulative_return"] is None  # One NAV is not a return.
 
 
 @pytest.mark.django_db
@@ -263,7 +264,7 @@ def test_asset_mf_nav_stale_warning(api_client, legacy_seeded, today_patch):
             folio_number="FOLIO-12345",
         )
     ).json()
-    assert any("Latest cached NAV is older than 5 days" in w for w in data["warnings"])
+    assert any("Latest cached NAV is stale" in w for w in data["warnings"])
 
 
 @pytest.mark.django_db
@@ -314,11 +315,12 @@ def test_asset_mutual_fund_metrics(api_client, legacy_seeded, today_patch):
 
 
 @pytest.mark.django_db
-def test_asset_mf_multiple_folios_requires_folio_number(api_client, legacy_seeded, today_patch):
+def test_asset_mf_multiple_folios_allow_fund_performance(api_client, legacy_seeded, today_patch):
     _mf_buy(api_client, folio_number="FOLIO-A")
     _mf_buy(api_client, folio_number="FOLIO-B", investment_date="2026-03-11")
     r = api_client.get(_asset_metrics_url("120503", range="ALL"))
-    assert r.status_code == 400
+    assert r.status_code == 200
+    assert r.json()["performance_basis"] == "nav"
 
 
 @pytest.mark.django_db

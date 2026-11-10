@@ -68,6 +68,10 @@ describe('AssetDetail Page', () => {
       expect(screen.getByRole('link', { name: 'Metrics' })).toHaveAttribute('href', '#asset-metrics');
     });
     expect(within(document.querySelector('.asset-detail-kpi-grid')).getByText('+12.50%')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getAllByText('XIRR', { exact: true })).toHaveLength(2);
+    });
+    expect(screen.queryByText('Your Holding XIRR')).not.toBeInTheDocument();
   });
 
   it('renders returned metrics', async () => {
@@ -86,6 +90,71 @@ describe('AssetDetail Page', () => {
       expect(screen.getAllByText(/€910\.00/).length).toBeGreaterThan(0);
       expect(within(document.querySelector('.asset-detail-kpi-grid')).getByText('+12.50%')).toBeInTheDocument();
     });
+  });
+
+  it.each([0.2876, 0, null])('separates MF NAV performance from unverified personal XIRR %s', async (xirr) => {
+    api.fetchAssetDetails.mockResolvedValueOnce({
+      ...mockAssetDetail, asset_type: 'MUTUAL_FUND',
+    });
+    api.getAssetMetricSheet.mockResolvedValueOnce({
+      ...mockMetricSheet,
+      performance_basis: 'nav', currency: 'INR',
+      metrics: { ...mockMetricSheet.metrics, return: { cumulative_return: 0.00568975, xirr: null } },
+      personal_metrics: {
+        xirr, xirr_scope: 'full_scope', status: 'requires_review',
+        warnings: ['Personal XIRR has inconsistent cash-flow and terminal currencies.'],
+      },
+      coverage: { partial_months: ['2024-03'], partial_years: ['2024'] },
+      periodic_returns: {
+        monthly: [{ period: '2024-03', return: 0.00568975 }],
+        yearly: [{ period: '2024', return: 0.00568975 }],
+      },
+    });
+    renderDetail();
+    await screen.findByRole('heading', { name: 'Fund Performance — INR' });
+    const position = screen.getByRole('region', { name: 'Your Position' });
+    expect(within(position).getByText('Your Holding XIRR')).toBeInTheDocument();
+    expect(within(position).getByText(xirr == null ? '—' : xirr === 0 ? '0.00%' : '+28.76%')).toBeInTheDocument();
+    expect(within(position).getByText(/unverified.*requires review/i)).toBeInTheDocument();
+    expect(within(position).getByText(/inconsistent cash-flow and terminal currencies/i)).toBeInTheDocument();
+    const header = document.querySelector('.asset-detail-kpi-grid');
+    expect(within(header).getByText('Your Holding XIRR')).toBeInTheDocument();
+    expect(within(header).getByText('+12.50%')).toBeInTheDocument();
+    expect(within(header).getByText(/unverified.*currency/i)).toBeInTheDocument();
+    expect(screen.queryByText('XIRR', { exact: true })).not.toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: /March 2024.*0.57%/i })).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: /2024 year return/i })).toBeInTheDocument();
+    expect(screen.queryByText(/partial/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('cell', { name: /partial/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('cell', { name: /2024 full-year return/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Cash-flow adjusted return using daily TWROR.')).not.toBeInTheDocument();
+    expect(within(header).getByText(/€910\.00/)).toBeInTheDocument();
+  });
+
+  it('loads fund analytics independently when personal position requires a folio', async () => {
+    api.fetchAssetDetails.mockRejectedValueOnce(new Error('folio_number is required when multiple folios exist for this scheme'));
+    api.getAssetMetricSheet.mockResolvedValueOnce({
+      ...mockMetricSheet, performance_basis: 'nav', currency: 'INR',
+      coverage: { start: '2024-03-01', end: '2024-04-30', incomplete: true },
+      metrics: { return: { cumulative_return: null, cagr: null, twror: null, xirr: null } },
+      periodic_returns: { monthly: [{ period: '2024-04', return: 0.0123 }], yearly: [] },
+      personal_metrics: { xirr: 0.2876, status: 'requires_review' },
+    });
+    renderDetail('/assets/118968');
+    await screen.findByRole('heading', { name: 'Fund Performance — INR' });
+    expect(screen.getByText(/multiple folios/i)).toBeInTheDocument();
+    expect(screen.getByText('Actual NAV coverage: 2024-03-01 to 2024-04-30 (Incomplete)')).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: /April 2024.*1.23%/i })).toBeInTheDocument();
+    expect(screen.getByText('+28.76%')).toBeInTheDocument();
+    expect(screen.getByText('Cumulative Return').closest('.ui-metric-card')).toHaveTextContent('—');
+    expect(api.getAssetMetricSheet).toHaveBeenCalledWith('118968', expect.objectContaining({ portfolio_scope: 'all' }));
+  });
+
+  it('does not bypass a position authorization error with an analytics request', async () => {
+    api.fetchAssetDetails.mockRejectedValueOnce(new Error('Forbidden'));
+    renderDetail();
+    await screen.findByText('Forbidden');
+    expect(api.getAssetMetricSheet).not.toHaveBeenCalled();
   });
 
   it('renders safely for zero quantity', async () => {

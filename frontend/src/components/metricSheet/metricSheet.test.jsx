@@ -104,6 +104,12 @@ describe('MetricSheetBenchmarkTable', () => {
 });
 
 describe('MetricSheetWarnings', () => {
+  it('marks the personal XIRR audit as a warning rather than an informational notice', () => {
+    const { container } = render(<MetricSheetWarnings warnings={[
+      'Personal XIRR requires review: the legacy metric calculation mixes currency bases.',
+    ]} />);
+    expect(container.querySelector('.ui-banner--warning')).toBeInTheDocument();
+  });
   it('renders backend warning messages', () => {
     render(<MetricSheetWarnings warnings={samplePortfolioMetricSheetPayload.warnings} />);
     expect(screen.getByText(/split-adjusted/i)).toBeInTheDocument();
@@ -289,6 +295,32 @@ describe('MetricSheetDrawdownChart', () => {
 });
 
 describe('MetricSheetPeriodicReturnsTable', () => {
+  it('uses generic period labels even when coverage metadata identifies truncated periods', () => {
+    render(<MetricSheetPeriodicReturnsTable
+      coverage={{ partial_months: ['2026-01'], partial_years: ['2026'] }}
+      periodicReturns={{
+        monthly: [{ period: '2026-01', return: 0.01 }, { period: '2025-12', return: 0.02 }],
+        yearly: [{ period: '2026', return: 0.01 }, { period: '2025', return: 0.02 }],
+      }}
+    />);
+    expect(screen.getByRole('cell', { name: /January 2026/i })).toHaveTextContent('+1.00%');
+    expect(screen.getByRole('cell', { name: /2026 year return/i })).toHaveTextContent('+1.00%');
+    expect(screen.getByRole('cell', { name: /2025 year return/i })).toHaveTextContent('+2.00%');
+    expect(screen.getByRole('cell', { name: /December 2025/i })).toHaveTextContent('+2.00%');
+    expect(screen.queryByText(/partial/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('cell', { name: /partial|full-year/i })).not.toBeInTheDocument();
+  });
+
+  it('keeps the year unqualified in the yearly-only fallback table', () => {
+    render(<MetricSheetPeriodicReturnsTable
+      coverage={{ partial_years: ['2026'] }}
+      periodicReturns={{ monthly: [], yearly: [{ period: '2026', return: 0.05 }] }}
+    />);
+    expect(screen.getByRole('rowheader', { name: '2026' })).toBeInTheDocument();
+    expect(screen.queryByText(/partial/i)).not.toBeInTheDocument();
+    expect(screen.getByText('+5.00%')).toBeInTheDocument();
+  });
+
   it('renders monthly grid and yearly total column from backend fractions', () => {
     render(
       <MetricSheetPeriodicReturnsTable

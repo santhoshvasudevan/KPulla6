@@ -49,6 +49,9 @@ Always treat **“Planned / not yet implemented”** entries as design targets, 
 
 ## Metric article template
 
+**MF analytics update:** [Fund NAV performance and personal position](17-mf-nav-performance.md)
+defines native-INR fund returns, coverage policy, and approval-gated audit findings.
+
 Detailed metric pages in chapters 04–08 follow this structure:
 
 1. **Simple meaning**

@@ -8,7 +8,9 @@ import {
   COMPARE_HIGHLIGHT_LABELS,
   getCompareHighlightStates,
 } from './compareMetricRanking';
-import { METRIC_SHEET_XIRR_FULL_SCOPE_NOTE } from './metricSheetCopy';
+import { METRIC_SHEET_XIRR_FULL_SCOPE_NOTE, PERSONAL_XIRR_REVIEW_NOTE } from './metricSheetCopy';
+import MetricSheetWarnings from './MetricSheetWarnings';
+import MetricSheetNavCoverage from './MetricSheetNavCoverage';
 
 export const COMPARE_METRIC_HIGHLIGHT_NOTE =
   'Subtle highlights indicate the stronger value where metric direction is clear.';
@@ -48,7 +50,9 @@ function CompareMetricCell({ value, format, highlightState }) {
 
 function CompareMetricRow({ label, subjects, getValue, format = 'percent', helper, metricKey }) {
   const values = subjects.map((subj) => getValue(subj));
-  const highlightStates = metricKey
+  const mixedBases = new Set(subjects.map((s) => s.performance_basis).filter(Boolean)).size > 1;
+  const mixedCurrencies = new Set(subjects.map((s) => s.currency).filter(Boolean)).size > 1;
+  const highlightStates = metricKey && !mixedBases && !mixedCurrencies
     ? getCompareHighlightStates(metricKey, values)
     : [COMPARE_HIGHLIGHT.NEUTRAL, COMPARE_HIGHLIGHT.NEUTRAL];
 
@@ -86,8 +90,9 @@ export default function CompareMetricTable({ subjects = [], showBenchmark = fals
 
   const headers = subjects.map((s) => s.name || s.asset_symbol || s.id);
   const showXirrScopeNote = subjects.some(
-    (s) => s.metrics?.return?.xirr_scope === 'full_scope'
+    (s) => s.performance_basis !== 'nav' && s.metrics?.return?.xirr_scope === 'full_scope'
   );
+  const hasNav = subjects.some((s) => s.performance_basis === 'nav');
 
   return (
     <div className={['compare-metric-table-wrap', 'metric-sheet-table-scroll', className].filter(Boolean).join(' ')}>
@@ -96,9 +101,21 @@ export default function CompareMetricTable({ subjects = [], showBenchmark = fals
         <thead>
           <tr>
             <th scope="col">Metric</th>
-            {headers.map((label) => (
-              <th key={label} scope="col">
+            {headers.map((label, index) => (
+              <th key={subjects[index].id} scope="col">
                 {label}
+                {subjects[index].performance_basis || subjects[index].currency ? (
+                  <span className="compare-metric-table__helper">
+                    {[
+                      subjects[index].performance_basis === 'nav' ? 'NAV' :
+                        ['cash_flow_adjusted', 'holding_cash_flow_adjusted'].includes(subjects[index].performance_basis) ? 'Cash-flow adjusted' : subjects[index].performance_basis,
+                      subjects[index].currency,
+                    ].filter(Boolean).join(' · ')}
+                  </span>
+                ) : null}
+                {subjects[index].performance_basis === 'nav' ? (
+                  <MetricSheetNavCoverage coverage={subjects[index].coverage} />
+                ) : null}
               </th>
             ))}
           </tr>
@@ -124,15 +141,37 @@ export default function CompareMetricTable({ subjects = [], showBenchmark = fals
           metricKey="twror"
           getValue={(s) => s.metrics?.return?.twror}
         />
-        <CompareMetricRow
+        {subjects.some((s) => s.performance_basis !== 'nav') ? <CompareMetricRow
           label="XIRR"
           subjects={subjects}
           metricKey="xirr"
-          getValue={(s) => s.metrics?.return?.xirr}
-        />
+          getValue={(s) => s.performance_basis === 'nav' ? null : s.metrics?.return?.xirr}
+        /> : null}
       </CompareMetricGroup>
       {showXirrScopeNote ? (
         <p className="metric-sheet__note">{METRIC_SHEET_XIRR_FULL_SCOPE_NOTE}</p>
+      ) : null}
+
+      {hasNav ? (
+        <CompareMetricGroup title="Your Position">
+          <tr>
+            <th scope="row">Your Holding XIRR</th>
+            {subjects.map((subject) => (
+              <td key={subject.id}>
+                {cellValue(subject.personal_metrics?.xirr, 'percent')}
+                {subject.performance_basis === 'nav' ? (
+                  <>
+                    <span className="compare-metric-table__helper">{PERSONAL_XIRR_REVIEW_NOTE}</span>
+                    {subject.personal_metrics?.xirr_scope === 'full_scope' ? (
+                      <span className="compare-metric-table__helper">Full-scope personal estimate</span>
+                    ) : null}
+                    <MetricSheetWarnings warnings={subject.personal_metrics?.warnings} />
+                  </>
+                ) : null}
+              </td>
+            ))}
+          </tr>
+        </CompareMetricGroup>
       ) : null}
 
       <CompareMetricGroup title="Risk">
