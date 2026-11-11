@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchHoldings } from '../api';
 import { formatCurrency, formatPercent } from '../utils/formatters';
@@ -36,9 +36,25 @@ import './Assets.css';
 import { usePortfolio } from '../portfolioContext';
 
 const ASSETS_SECTION_NAV = [
-  { href: '#assets-holdings', label: 'Holdings' },
   { href: '#assets-allocation', label: 'Allocation' },
+  { href: '#assets-holdings', label: 'Holdings' },
 ];
+
+const INVESTMENT_TYPES = {
+  MUTUAL_FUND: 'Mutual Funds',
+  STOCK: 'Stocks',
+  FIXED_DEPOSIT: 'Fixed Deposits',
+};
+
+function investmentType(holding) {
+  return holding.asset_type || 'STOCK';
+}
+
+function matchesInvestmentFilter(holding, filter) {
+  if (filter === 'all') return true;
+  if (filter === 'equity' || filter === 'debt') return holding.overview_class === filter;
+  return investmentType(holding) === filter;
+}
 
 function plTone(val) {
   if (val == null || Number.isNaN(Number(val))) return 'neutral';
@@ -66,7 +82,7 @@ function isActiveHolding(h) {
     return Number(h.current_value || 0) > 0;
   }
   if (isFixedDepositHolding(h)) {
-    return h.value_status === 'principal_only' && Number(h.current_value || 0) > 0;
+    return h.value_status === 'principal_only';
   }
   return Number(h.quantity || 0) > 0;
 }
@@ -115,7 +131,7 @@ function HoldingSymbolCell({ holding: h }) {
     <div className="assets-table__symbol-cell">
       <div className="assets-table__symbol-primary">
         <AssetClassPill variant={holdingAssetClassVariant(h)} />
-        <span>{holdingSymbolLabel(h)}</span>
+        <span>{h.asset_name || (isFd ? h.institution_name || "Fixed Deposit" : holdingSymbolLabel(h))}</span>
       </div>
       {isBankCash ? (
         <>
@@ -128,20 +144,23 @@ function HoldingSymbolCell({ holding: h }) {
           ) : null}
         </>
       ) : null}
+      {h.asset_name && h.asset_name !== h.asset_symbol && (
+        <span className="assets-table__symbol-meta">{h.asset_symbol}</span>
+      )}
       {isFd ? (
-        h.maturity_date ? (
+        h.maturity_date || h.deposit_account_number ? (
           <span className="assets-table__symbol-meta">
-            Matures {h.maturity_date}
+            {[h.deposit_account_number, h.maturity_date && `Matures ${h.maturity_date}`].filter(Boolean).join(" · ")}
             {h.status && h.status !== 'ACTIVE' ? ` · ${h.status}` : ''}
           </span>
         ) : null
       ) : null}
-      {isMf && h.scheme_code && h.scheme_name ? (
-        <span className="assets-table__symbol-meta">{h.scheme_code}</span>
-      ) : null}
-      {isMf && h.folio_number ? (
-        <span className="assets-table__symbol-meta">Folio {h.folio_number}</span>
-      ) : null}
+      {isMf && (h.scheme_code || h.folio_number) && (
+        <span className="assets-table__symbol-meta">
+          {[h.scheme_name && h.scheme_code, h.folio_number && `Folio ${h.folio_number}`]
+            .filter(Boolean).join(' · ')}
+        </span>
+      )}
       {h.holding_status === 'oversold' ? (
         <div className="assets-table__badges">
           <span title={h.warnings?.join(' ') || 'Sell quantity exceeded available lots'}>
@@ -198,7 +217,7 @@ function renderHoldingRow(h, navigate) {
         )}
       </AppTableCell>
       <AppTableCell numeric>
-        <CurrencyValue value={h.current_value} currency={currency} />
+        <CurrencyValue value={h.current_value} currency={h.display_currency || currency} />
       </AppTableCell>
       <AppTableCell numeric>
         {isFd || isBankCash ? (
@@ -228,14 +247,29 @@ export default function Assets() {
   const [error, setError] = useState('');
   const [sort, setSort] = useState({ key: 'current_value', direction: 'desc' });
   const [showPrevious, setShowPrevious] = useState(false);
+  const [investmentFilter, setInvestmentFilter] = useState('all');
+  const [overview, setOverview] = useState({});
 
   const [fxStatus, setFxStatus] = useState('ok');
   const [apiWarnings, setApiWarnings] = useState([]);
 
-  const activeHoldings = useMemo(
-    () => holdings.filter(isActiveHolding),
+  const scopedInvestments = useMemo(
+    () => holdings.filter((h) => isActiveHolding(h) && !isBankCashHolding(h)),
     [holdings]
   );
+  const types = [...new Set(scopedInvestments.map(investmentType))];
+  const filterOptions = [
+    ['all', 'All Investments'],
+    ...types.map((type) => [type, INVESTMENT_TYPES[type] || type.replaceAll('_', ' ')]),
+    ['equity', 'Equity'],
+    ['debt', 'Debt'],
+  ];
+  const filter = filterOptions.some(([key]) => key === investmentFilter) ? investmentFilter : 'all';
+  useEffect(() => {
+    if (filter !== investmentFilter) setInvestmentFilter(filter);
+  }, [filter, investmentFilter]);
+  const activeHoldings = scopedInvestments.filter((h) => matchesInvestmentFilter(h, filter));
+  const bankCashHoldings = holdings.filter((h) => isBankCashHolding(h) && isActiveHolding(h));
   const previousHoldings = useMemo(
     () => holdings.filter((h) => !isActiveHolding(h)),
     [holdings]
@@ -244,17 +278,22 @@ export default function Assets() {
   const cashAllocationRows = useMemo(
     () =>
       allocation.filter(
-        (row) => row.is_cash || row.asset_type === 'CASH' || row.asset_type === 'BANK_CASH'
+        (row) => row.is_cash || row.asset_type === 'CASH'
       ),
     [allocation]
   );
 
   const chartHoldings = useMemo(
-    () =>
-      allocation.filter(
-        (h) => h.holding_status !== 'closed' && Number(h.current_value || 0) > 0
-      ),
-    [allocation]
+    () => allocation
+      .filter((h) => !h.is_cash && h.asset_type !== 'CASH' && !isBankCashHolding(h) &&
+        matchesInvestmentFilter(h, filter) && h.holding_status !== 'closed')
+      .map((h) => ({
+        ...h,
+        current_value: Object.hasOwn(h, 'display_current_value') ? h.display_current_value : h.current_value,
+        currency: selectedDisplayCurrency || h.currency,
+      }))
+      .filter((h) => Number(h.current_value) > 0),
+    [allocation, filter, selectedDisplayCurrency]
   );
 
   const chartTotal = useMemo(
@@ -278,7 +317,7 @@ export default function Assets() {
     const str = (v) => String(v || '');
 
     const getValue = (h) => {
-      if (key === 'asset_symbol') return str(h.asset_symbol);
+      if (key === 'asset_symbol') return str(holdingSymbolLabel(h));
       if (key === 'quantity') return num(h.quantity);
       if (key === 'avg_cost') return sortAvgCost(h);
       if (key === 'current_price') return num(h.current_price);
@@ -302,18 +341,23 @@ export default function Assets() {
     });
   };
 
+  const latestRequest = useRef(0);
   const loadData = useCallback(() => {
+    const request = ++latestRequest.current;
     setLoading(true);
     setError('');
     fetchHoldings(apiQuery)
       .then((data) => {
+        if (request !== latestRequest.current) return;
         setHoldings(data.holdings || []);
+        setOverview(data.assets_overview || {});
         setAllocation(data.allocation || data.holdings || []);
         setFxStatus(data.fx_status || 'ok');
         setApiWarnings(data.warnings || []);
         setLoading(false);
       })
       .catch((err) => {
+        if (request !== latestRequest.current) return;
         setError(err.message);
         setLoading(false);
       });
@@ -321,6 +365,7 @@ export default function Assets() {
 
   useEffect(() => {
     loadData();
+    return () => { latestRequest.current += 1; };
   }, [loadData]);
 
   if (loading) return <LoadingState message="Loading holdings…" />;
@@ -354,26 +399,24 @@ export default function Assets() {
       </p>
 
       <div className="assets-page__overview" aria-label="Holdings overview">
-        <KpiCard
-          label="Active positions"
-          value={String(activeHoldings.length)}
-          helperText="Open holdings with quantity or value"
-          size="compact"
-        />
-        <KpiCard
-          label="Allocation slices"
-          value={String(chartHoldings.length)}
-          helperText="Positions included in allocation chart"
-          size="compact"
-        />
-        {cashAllocationRows.length > 0 ? (
+        {['equity', 'debt', 'cash'].map((key) => (
           <KpiCard
-            label="Cash currencies"
-            value={String(cashAllocationRows.length)}
-            helperText="Portfolio cash rows from API"
+            key={key}
+            label={`${key[0].toUpperCase()}${key.slice(1)} total`}
+            value={overview[key] == null ? '—' : formatCurrency(overview[key], selectedDisplayCurrency || 'EUR')}
+            helperText={overview[key] === null ? 'Valuation incomplete' : undefined}
             size="compact"
           />
-        ) : null}
+        ))}
+      </div>
+
+      <div className="assets-section-nav" role="group" aria-label="Investment filters">
+        {filterOptions.map(([key, label]) => (
+          <Button key={key} variant={filter === key ? 'primary' : 'secondary'}
+            aria-pressed={filter === key} onClick={() => setInvestmentFilter(key)}>
+            {label}
+          </Button>
+        ))}
       </div>
 
       {showFxWarning ? (
@@ -440,7 +483,83 @@ export default function Assets() {
         ))}
       </nav>
 
+      {bankCashHoldings.length > 0 && (
+        <DataTableShell title="Bank cash balances" dense>
+          <AppTable compact>
+            <thead><tr>
+              <AppTableHeaderCell>Account</AppTableHeaderCell>
+              <AppTableHeaderCell numeric>Display value</AppTableHeaderCell>
+            </tr></thead>
+            <tbody>{bankCashHoldings.map((h) => (
+              <tr key={holdingRowKey(h)}>
+                <AppTableCell><HoldingSymbolCell holding={h} /></AppTableCell>
+                <AppTableCell numeric>
+                  <CurrencyValue value={h.current_value} currency={h.display_currency || h.currency} />
+                </AppTableCell>
+              </tr>
+            ))}</tbody>
+          </AppTable>
+        </DataTableShell>
+      )}
+
       <div className="assets-main">
+        <aside className="assets-main__chart" id="assets-allocation">
+          <ChartCard
+            title="Allocation by Current Value"
+            subtitle="Active holdings with available current value"
+            className="assets-allocation-card"
+            compact
+          >
+            {activeHoldings.length === 0 && chartHoldings.length === 0 ? (
+              <EmptyState title="No active holdings to display." />
+            ) : chartTotal <= 0 ? (
+              <EmptyState
+                title="Allocation chart unavailable until latest prices are synced."
+                description={
+                  hasMissingPrices
+                    ? 'Latest prices are missing — run make refresh or use the backend refresh endpoint.'
+                    : undefined
+                }
+              />
+            ) : (
+              <div className="assets-chart-panel">
+                <ResponsiveContainer width="100%" height={280}>
+                  <PieChart>
+                    <Pie
+                      data={chartHoldings}
+                      dataKey="current_value"
+                      nameKey="asset_symbol"
+                      outerRadius={90}
+                      innerRadius={55}
+                      paddingAngle={2}
+                      isAnimationActive={false}
+                    >
+                      {chartHoldings.map((_, idx) => (
+                        <Cell key={idx} fill={getSeriesColor(idx)} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={getChartTooltipStyle()}
+                      formatter={(value, _name, payload) => {
+                        const pct = chartTotal > 0 ? Number(value) / chartTotal : 0;
+                        const sym = payload?.payload?.asset_symbol || '';
+                        const currency =
+                          payload?.payload?.currency ||
+                          selectedDisplayCurrency ||
+                          'EUR';
+                        return [
+                          `${formatCurrency(value, currency)} (${formatPercent(pct)})`,
+                          sym,
+                        ];
+                      }}
+                    />
+                    <Legend wrapperStyle={getChartLegendStyle()} iconType="circle" />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </ChartCard>
+        </aside>
         <div className="assets-main__table" id="assets-holdings">
           <DataTableShell
             title="Holdings"
@@ -454,7 +573,7 @@ export default function Assets() {
                 <thead>
                   <tr>
                     <SortableHeader
-                      label="Symbol"
+                      label="Holding"
                       sortKey="asset_symbol"
                       sort={sort}
                       onSort={toggleSort}
@@ -505,64 +624,6 @@ export default function Assets() {
           </DataTableShell>
         </div>
 
-        <aside className="assets-main__chart" id="assets-allocation">
-          <ChartCard
-            title="Allocation by Current Value"
-            subtitle="Active holdings with available current value"
-            className="assets-allocation-card"
-            compact
-          >
-            {activeHoldings.length === 0 && chartHoldings.length === 0 ? (
-              <EmptyState title="No active holdings to display." />
-            ) : chartTotal <= 0 ? (
-              <EmptyState
-                title="Allocation chart unavailable until latest prices are synced."
-                description={
-                  hasMissingPrices
-                    ? 'Latest prices are missing — run make refresh or use the backend refresh endpoint.'
-                    : undefined
-                }
-              />
-            ) : (
-              <div className="assets-chart-panel">
-                <ResponsiveContainer width="100%" height={280}>
-                  <PieChart>
-                    <Pie
-                      data={chartHoldings}
-                      dataKey="current_value"
-                      nameKey="asset_symbol"
-                      outerRadius={90}
-                      innerRadius={55}
-                      paddingAngle={2}
-                      isAnimationActive={false}
-                    >
-                      {chartHoldings.map((_, idx) => (
-                        <Cell key={idx} fill={getSeriesColor(idx)} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={getChartTooltipStyle()}
-                      formatter={(value, _name, payload) => {
-                        const pct = chartTotal > 0 ? Number(value) / chartTotal : 0;
-                        const sym = payload?.payload?.asset_symbol || '';
-                        const currency =
-                          payload?.payload?.native_currency ||
-                          payload?.payload?.currency ||
-                          selectedDisplayCurrency ||
-                          'EUR';
-                        return [
-                          `${formatCurrency(value, currency)} (${formatPercent(pct)})`,
-                          sym,
-                        ];
-                      }}
-                    />
-                    <Legend wrapperStyle={getChartLegendStyle()} iconType="circle" />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </ChartCard>
-        </aside>
       </div>
 
       {previousHoldings.length > 0 ? (

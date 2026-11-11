@@ -510,3 +510,16 @@ def test_holdings_allocation_missing_fx_excludes_cash_with_warning(
     data = api_client.get("/api/v1/portfolio/holdings?display_currency=EUR").json()
     assert not any(r.get("asset_type") == "CASH" for r in data["allocation"])
     assert any("cash balance" in w.lower() for w in data.get("warnings", []))
+
+
+@pytest.mark.django_db
+def test_assets_overview_uses_scoped_value_and_marks_missing_equity(api_client, legacy_seeded):
+    assert _buy(api_client).status_code == 201
+    url = "/api/v1/portfolio/holdings?display_currency=EUR"
+    assert api_client.get(url).json()["assets_overview"] == {
+        "equity": None, "debt": 0, "cash": 0,
+    }
+    _price("AAPL", "120")
+    data = api_client.get(url).json()
+    assert data["assets_overview"] == {"equity": 1200, "debt": 0, "cash": 0}
+    assert data["holdings"][0]["overview_class"] == "equity"

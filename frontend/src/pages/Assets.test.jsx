@@ -121,7 +121,7 @@ describe('Assets Page', () => {
     const rows = screen.getAllByRole('row');
     expect(rows[1]).toHaveTextContent('AAPL');
 
-    fireEvent.click(screen.getByText('Symbol'));
+    fireEvent.click(screen.getByText('Holding'));
     const rowsAfter = screen.getAllByRole('row');
     expect(rowsAfter[1]).toHaveTextContent('AAPL');
 
@@ -386,7 +386,7 @@ describe('Assets Page', () => {
       expect(screen.getByText('Savings')).toBeInTheDocument();
       expect(screen.getByText('Bank Cash')).toBeInTheDocument();
       expect(screen.getByText(/HDFC · 123456/)).toBeInTheDocument();
-      expect(screen.getByText(/HDFC \(FD-001\)/)).toBeInTheDocument();
+      expect(screen.getByText(/FD-001/)).toBeInTheDocument();
       expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3);
     });
   });
@@ -416,7 +416,7 @@ describe('Assets Page', () => {
     });
     renderAssets();
     await waitFor(() => {
-      expect(screen.getByText(/HDFC \(FD-001\)/)).toBeInTheDocument();
+      expect(screen.getByText(/FD-001/)).toBeInTheDocument();
       expect(screen.getByText('Fixed Deposit')).toBeInTheDocument();
       expect(screen.getByText(/Matures 2026-01-01/)).toBeInTheDocument();
       expect(screen.queryByText(/price unavailable/i)).not.toBeInTheDocument();
@@ -435,4 +435,27 @@ describe('Assets Page', () => {
       expect(screen.getByText(/no assets found/i)).toBeInTheDocument();
     });
   });
+});
+
+it('filters active investments without hiding other available types', async () => {
+  api.fetchPortfolios.mockResolvedValue([]);
+  api.getSettings.mockResolvedValue({ display_currency: 'EUR' });
+  api.fetchHoldings.mockResolvedValue({
+    ...mockSummary,
+    assets_overview: { equity: 1755, debt: 250, cash: 100 },
+    holdings: [
+      { ...mockSummary.holdings[0], overview_class: 'equity' },
+      { asset_type: 'MUTUAL_FUND', scheme_name: 'Sample Debt Fund',
+        asset_symbol: '123456', quantity: 3, current_value: 250, overview_class: 'debt' },
+      { asset_type: 'FIXED_DEPOSIT', holding_status: 'closed', current_value: 100 },
+    ],
+  });
+  renderAssets();
+  const funds = await screen.findByRole('button', { name: 'Mutual Funds' });
+  expect(screen.queryByRole('button', { name: 'Fixed Deposits' })).toBeNull();
+  fireEvent.click(funds);
+  expect(screen.getByText('Sample Debt Fund')).toBeInTheDocument();
+  expect(screen.queryByText('AAPL')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Stocks' })).toBeInTheDocument();
+  expect(screen.getByText('Equity total')).toBeInTheDocument();
 });

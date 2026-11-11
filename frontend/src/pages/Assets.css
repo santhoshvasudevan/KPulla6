@@ -77,13 +77,6 @@
   gap: var(--space-4);
 }
 
-@media (min-width: 960px) {
-  .assets-main {
-    grid-template-columns: minmax(0, 1fr) minmax(280px, 35%);
-    align-items: start;
-  }
-}
-
 .assets-main__table {
   min-width: 0;
 }
@@ -118,7 +111,9 @@
 }
 
 .assets-table__symbol {
-  min-width: 10rem;
+  width: 36%;
+  min-width: 12rem;
+  white-space: normal;
 }
 
 .assets-table__symbol-primary {
@@ -134,7 +129,7 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-2);
+  gap: var(--space-1);
 }
 
 .assets-table__symbol-meta {

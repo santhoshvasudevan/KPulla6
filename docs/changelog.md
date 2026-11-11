@@ -1,5 +1,9 @@
 # Changelog — KPulla6
 
+## 2026-11-11 — Assets overview and holdings layout
+
+- Assets shows scoped Equity, Debt, and Cash totals, with investment-type filters for active holdings. Allocation appears above a full-width Holdings table. Hybrid funds count toward Equity in this overview and retain their source classification.
+
 ## 2026-11-10 — Native-INR fund performance and personal-position separation
 
 - **MF analytics:** Asset Detail and Compare share NAV-only fund returns/risk/drawdown inputs, independent of purchase/folio timing and display currency. Added explicit coverage, missing-gap/partial-period handling and currency-compatible comparison checks. Stock/portfolio formulas are unchanged.

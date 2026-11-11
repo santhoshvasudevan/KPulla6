@@ -413,6 +413,8 @@ Query: `portfolio_scope=all`, `portfolio_id`, `display_currency` (`EUR` default;
 
 Default: `portfolio_scope=all` when neither scope param is provided. Cannot combine `portfolio_scope=all` with `portfolio_id` (**422**). Unknown/inactive `portfolio_id` → **404**.
 
+The additive `assets_overview` object reports scoped `equity`, `debt`, and `cash` totals in the requested display currency. A total is null when an included position cannot be valued. Active investment rows include `overview_class` and `display_current_value` for Assets filters and allocation. These fields preserve the source classification and the existing holding value and currency fields.
+
 **Response (200 OK)**
 ```json
 {

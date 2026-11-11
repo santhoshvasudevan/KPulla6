@@ -244,3 +244,35 @@ def test_stock_holdings_unchanged_shape(api_client, legacy_seeded, test_user):
     assert row["asset_symbol"] == "AAPL"
     assert "folio_number" not in row
     assert "nav_status" not in row
+
+
+@pytest.mark.django_db
+def test_assets_overview_converts_hybrid_and_liquid_funds_in_selected_scope(
+    api_client, legacy_seeded, test_user,
+):
+    from fx.services import upsert_fx_rate
+    from portfolios import dates
+    from portfolios.models import Portfolio
+
+    selected = ensure_default_portfolio(test_user)
+    other = Portfolio.objects.create(user=test_user, name="Other", cash_aware_enabled=False)
+    for code, name, portfolio in (
+        ("120503", "Test Balanced Advantage Fund", selected),
+        ("120504", "Test Money Market Fund", selected),
+        ("120505", "Other Equity Fund", other),
+    ):
+        assert _mf_buy(api_client, scheme_code=code, scheme_name=name,
+                       portfolio_id=portfolio.id).status_code == 201
+        _nav(code, "50.00")
+    upsert_fx_rate(from_currency="INR", to_currency="EUR",
+                   row_date=dates.current_date(), rate=Decimal("0.01"))
+    url = f"/api/v1/portfolio/holdings?portfolio_id={selected.id}&display_currency=EUR"
+    data = api_client.get(url).json()
+    assert data["assets_overview"] == {"equity": 50, "debt": 50, "cash": 0}
+    rows = {row["scheme_code"]: row for row in data["holdings"]}
+    assert set(rows) == {"120503", "120504"}
+    assert rows["120503"]["primary_asset_class"] == "HYBRID"
+    assert rows["120503"]["overview_class"] == "equity"
+    assert rows["120504"]["overview_class"] == "debt"
+    assert rows["120504"]["currency"] == "INR"
+    assert rows["120504"]["display_current_value"] == 50

@@ -90,7 +90,7 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 
 ### Assets
 
-- Holdings table is primary; allocation donut supports analysis (~35% width on desktop)
+- Scope totals and investment filters sit above Allocation, followed by a full-width Holdings table. Holdings show names with codes and folios as secondary details.
 - Closed holdings in collapsible section, default collapsed
 - Status badges for oversold, price_missing, closed
 - Empty state when prices missing — explain sync clearly

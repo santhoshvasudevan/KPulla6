@@ -8,16 +8,18 @@ from typing import Optional
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import QuerySet
 
-from cash.services import build_cash_display_summary, cash_allocation_rows
+from cash.services import CashDisplaySummary, build_cash_display_summary, cash_allocation_rows
 from debt.portfolio_value import build_bank_cash_holding_rows, build_fd_holding_rows
 from finance.fifo import calculate_fifo_cost_basis_metrics
 from finance.oversell import detect_oversell
 from finance.types import TransactionType
 from finance.xirr import calculate_xirr
-from fx.lookup import convert_amount_with_fill
+from fx.lookup import convert_amount_with_fill, convert_amount_with_fill_from_maps, load_fx_rate_maps
 from market_data.mutual_fund_classification_bridge import classification_fields_for_asset
+from market_data.models import Asset, AssetType
 from market_data.nav_lookup import latest_nav_for_asset, normalize_scheme_code
 from market_data.price_lookup import latest_historical_price, normalize_asset_symbol
+from portfolios import dates as portfolio_dates
 from portfolios.scope import ResolvedPortfolioScope
 from settings_app.models import DisplayCurrency
 from transactions.finance_adapter import transaction_to_finance_dto
@@ -337,6 +339,58 @@ def _build_mf_holding_item(
     return item
 
 
+def _assets_overview(
+    holdings: list[dict], cash_display: CashDisplaySummary, display_currency: str
+) -> dict[str, float | None]:
+    """Add display values and summarize scoped active positions."""
+    totals = dict(equity=Decimal("0"), debt=Decimal("0"), cash=cash_display.total_display_value)
+    incomplete = {"cash"} if cash_display.fx_status == "fx_unavailable" else set()
+    today = portfolio_dates.current_date()
+    fx_pairs = {
+        (item["currency"], display_currency)
+        for item in holdings
+        if not item.get("display_currency") and item["currency"] != display_currency
+    }
+    fx_maps = load_fx_rate_maps(fx_pairs, today, today) if fx_pairs else {}
+    for item in holdings:
+        asset_type = item.get("asset_type", "STOCK")
+        primary = item.get("primary_asset_class")
+        if asset_type == "BANK_CASH":
+            bucket = "cash"
+        elif asset_type == "FIXED_DEPOSIT" or primary in {"DEBT", "LIQUID"}:
+            bucket = "debt"
+        elif asset_type == "STOCK" or primary in {"EQUITY", "HYBRID"}:
+            bucket = "equity"
+        else:
+            bucket = None
+        item["overview_class"] = bucket
+        if item.get("holding_status") == "closed" or item.get("value_status") == "excluded":
+            continue
+        if asset_type not in {"FIXED_DEPOSIT", "BANK_CASH"} and not item.get("quantity", 0) > 0:
+            continue
+
+        raw_value = item.get("current_value")
+        value = Decimal(str(raw_value)) if raw_value is not None else None
+        if item.get("price_status") == "price_missing":
+            value = None
+        elif item.get("display_currency"):
+            # FD and bank cash rows already carry display-currency current value.
+            if item.get("fx_status") == "fx_unavailable":
+                value = None
+        elif value is not None and item["currency"] != display_currency:
+            value, _ = convert_amount_with_fill_from_maps(
+                value, item["currency"], display_currency, today, fx_maps
+            )
+
+        item["display_current_value"] = _float_or_none(value)
+        if bucket is not None:
+            if value is None:
+                incomplete.add(bucket)
+            else:
+                totals[bucket] += value
+    return {key: None if key in incomplete else float(value) for key, value in totals.items()}
+
+
 @dataclass
 class HoldingsResult:
     fx_status: str
@@ -344,6 +398,7 @@ class HoldingsResult:
     allocation: list[dict] = field(default_factory=list)
     display_currency: str = "EUR"
     warnings: list[str] = field(default_factory=list)
+    assets_overview: dict[str, float | None] = field(default_factory=dict)
 
 
 def build_holdings(
@@ -351,6 +406,7 @@ def build_holdings(
     scope: ResolvedPortfolioScope,
     display_currency: str = "EUR",
     user=None,
+    include_assets_overview: bool = False,
 ) -> HoldingsResult:
     display_currency = _norm_ccy(display_currency)
     queryset = _fifo_eligible_queryset(scope.portfolio_ids)
@@ -360,6 +416,11 @@ def build_holdings(
     holdings: list[dict] = []
     any_fx_missing = False
 
+    stock_names = (
+        dict(Asset.objects.filter(asset_type=AssetType.STOCK, symbol__in=by_symbol)
+             .values_list("symbol", "display_name"))
+        if include_assets_overview and by_symbol else {}
+    )
     for symbol in sorted(by_symbol.keys()):
         db_txns = by_symbol[symbol]
         item = _build_holding_item(
@@ -371,6 +432,8 @@ def build_holdings(
             any_fx_missing = True
         if display_currency != item["currency"]:
             any_fx_missing = True
+        if stock_names.get(symbol):
+            item["asset_name"] = stock_names[symbol]
         holdings.append(item)
 
     for key in sorted(by_mf.keys()):
@@ -417,6 +480,10 @@ def build_holdings(
     elif cash_display.fx_status == "filled" and fx_status == "ok":
         fx_status = "filled"
 
+    assets_overview = (
+        _assets_overview(holdings, cash_display, display_currency)
+        if include_assets_overview else {}
+    )
     allocation: list[dict] = []
     for item in holdings:
         qty = Decimal(str(item.get("quantity") or 0))
@@ -442,6 +509,7 @@ def build_holdings(
         allocation=allocation,
         display_currency=display_currency,
         warnings=list(cash_display.warnings),
+        assets_overview=assets_overview,
     )
 
 

@@ -45,12 +45,14 @@ class PortfolioHoldingsView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
 
         result = build_holdings(
-            scope=scope, display_currency=display_currency, user=request.user
+            scope=scope, display_currency=display_currency, user=request.user,
+            include_assets_overview=True
         )
         payload = {
             "fx_status": result.fx_status,
             "holdings": result.holdings,
             "allocation": result.allocation,
+            "assets_overview": result.assets_overview,
             "display_currency": result.display_currency,
         }
         if result.warnings:
