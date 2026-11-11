@@ -282,7 +282,8 @@ def test_assets_overview_converts_hybrid_and_liquid_funds_in_selected_scope(
 def test_assets_reporting_groups_folios_and_uses_visible_fund_value(api_client, legacy_seeded):
     for folio in ("FOLIO-A", "FOLIO-B"):
         assert _mf_buy(api_client, folio_number=folio,
-                       scheme_name="Test Equity Index Fund").status_code == 201
+                       scheme_name="Test Equity Index Fund",
+                       scheme_category="Equity Scheme - Index Funds").status_code == 201
     assert _mf_buy(api_client, scheme_code="120504", folio_number="FOLIO-A",
                    scheme_name="Test Liquid Fund").status_code == 201
     _nav("120503", "50.00")
@@ -295,7 +296,14 @@ def test_assets_reporting_groups_folios_and_uses_visible_fund_value(api_client, 
         "name": "Test AMC", "value": 12000, "weight": 1,
         "scheme_count": 2, "folio_count": 2,
     }]
-    assert data["assets_reports"]["equity"]["funds"]["total"] == 10000
+    equity = data["assets_reports"]["equity"]["funds"]
+    assert equity["total"] == 10000
+    category = equity["categories"][0]
+    assert category["name"] == "Equity"
+    subcategory = category["children"][0]
+    assert subcategory["name"] == "Index Funds"
+    assert subcategory["children"][0]["units"] == 200
+    assert subcategory["children"][0]["category_missing"] is False
 
 
 @pytest.mark.django_db
@@ -310,8 +318,32 @@ def test_assets_breakdowns_keep_unknown_and_unvalued_funds_visible(api_client, l
     assert funds["amc"][0]["name"] == "Unknown AMC"
     assert funds["amc"][0]["weight"] is None
     category = funds["categories"][0]
-    assert category["name"] == "UNKNOWN"
+    assert category["name"] == "Category not recorded"
     assert "units" not in category
-    scheme = category["children"][0]["children"][0]
+    scheme = category["children"][0]
+    assert scheme["category_missing"] is True
+    assert funds["missing_category_count"] == 1
     assert scheme["units"] == 100
     assert scheme["value"] is None
+
+
+@pytest.mark.django_db
+def test_personal_fund_category_is_scoped_and_can_reset(api_client, legacy_seeded):
+    from django.contrib.auth import get_user_model
+    from rest_framework.test import APIClient
+
+    assert _mf_buy(api_client, scheme_category="Other Scheme - Index Funds").status_code == 201
+    url = "/api/v1/portfolio/fund-categories/120503"
+    holdings_url = "/api/v1/portfolio/holdings?display_currency=INR"
+    outsider = APIClient()
+    outsider.force_authenticate(get_user_model().objects.create_user(username="outsider"))
+    assert outsider.put(url, {"category": "Equity"}, format="json").status_code == 404
+    assert api_client.put(url, {"category": " "}, format="json").status_code == 400
+    assert api_client.put(url, {"category": " Equity ", "subcategory": "Index Fund"}, format="json").status_code == 200
+    node = api_client.get(holdings_url).json()["assets_reports"]["all"]["funds"]["categories"][0]
+    assert node["name"] == "Equity"
+    scheme = node["children"][0]["children"][0]
+    assert scheme["provider_category"] == ["Other", "Index Funds"]
+    assert scheme["personal_category"] == ["Equity", "Index Fund"]
+    assert api_client.delete(url).status_code == 204
+    assert api_client.get(holdings_url).json()["assets_reports"]["all"]["funds"]["categories"][0]["name"] == "Other"

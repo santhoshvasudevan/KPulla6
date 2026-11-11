@@ -18,8 +18,8 @@ def classify_mutual_fund_asset(
 ) -> MutualFundClassification:
     return classify_mutual_fund(
         explicit_primary_asset_class=asset.primary_asset_class,
-        scheme_category=profile.scheme_category if profile else "",
-        scheme_type=profile.scheme_type if profile else "",
+        scheme_category=profile.scheme_category if profile and not profile.scheme_category_from_provider else "",
+        scheme_type=profile.scheme_type if profile and not profile.scheme_type_from_provider else "",
         scheme_name=profile.scheme_name if profile else asset.display_name,
     )
 

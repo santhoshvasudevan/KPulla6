@@ -230,6 +230,11 @@ def _ensure_mf_profile(asset: Asset, payload: MutualFundValidatedPayload) -> Mut
             if value and getattr(profile, field) != value:
                 setattr(profile, field, value)
                 update_fields.append(field)
+            if value and field in {"scheme_category", "scheme_type"}:
+                provenance_field = f"{field}_from_provider"
+                if getattr(profile, provenance_field):
+                    setattr(profile, provenance_field, False)
+                    update_fields.append(provenance_field)
         if update_fields:
             update_fields.append("updated_at")
             profile.save(update_fields=update_fields)

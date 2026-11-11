@@ -487,3 +487,13 @@ Record decisions in [decisions.md](./decisions.md) as they are resolved during M
 - Existing sync pattern: `backend/market_data/services/price_sync.py`
 - Existing holdings: `backend/portfolios/holdings_service.py`
 - AGENTS.md: transactions source of truth; no live external calls on dashboard reads
+
+### Provider categories and personal categories in Assets
+
+NAV refresh fills blank scheme category and scheme type fields from matching MFAPI responses. It preserves existing values and logs conflicts. Provider category text is stored as supplied, and the Breakdowns report separates the category and subcategory at the first separator. Provider metadata fetched during refresh does not alter portfolio asset classification.
+
+To inspect proposed metadata without writing, run `python manage.py backfill_fund_categories` from the backend environment. Repeat `--scheme-code CODE` to restrict the preview. Review the output, then run `make backup-db` and `make db-safety-check` before using `--apply` against local development data. Recheck the database afterward. Apply only fills blank metadata fields and leaves NAV history, transactions, and cash intact.
+
+Under **Assets → Breakdowns → By fund category**, use **Edit category** on a scheme. A personal assignment applies to all your portfolios and folios for that scheme. **Reset to provider** removes it. Neither action changes the shared provider metadata or Equity and Debt totals.
+
+The authenticated `/api/v1/portfolio/fund-categories/{scheme_code}` endpoint supports GET for reusable personal labels, PUT for setting a category and optional subcategory, and DELETE for reset. Access is restricted to schemes held in the user’s portfolios.

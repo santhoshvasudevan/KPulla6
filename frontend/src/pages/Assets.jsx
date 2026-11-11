@@ -552,7 +552,8 @@ export default function Assets() {
               />
             ) : (
               <div className="assets-chart-panel">
-                <ResponsiveContainer width="100%" height={280}>
+                <div className="assets-chart-canvas">
+                <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={chartHoldings}
@@ -560,9 +561,9 @@ export default function Assets() {
                       nameKey="name"
                       onClick={(slice) => selectSlice(slice.payload || slice)}
                       cursor="pointer"
-                      outerRadius={90}
-                      innerRadius={55}
-                      paddingAngle={2}
+                      outerRadius="92%"
+                      innerRadius="47%"
+                      paddingAngle={0.5}
                       isAnimationActive={false}
                     >
                       {chartHoldings.map((slice, idx) => (
@@ -579,6 +580,9 @@ export default function Assets() {
                     />
                   </PieChart>
                 </ResponsiveContainer>
+                </div>
+                <details className="assets-allocation-options">
+                  <summary>Browse allocation holdings ({chartHoldings.length})</summary>
                 <div className="assets-allocation-legend" aria-label="Allocation holdings">
                   {chartHoldings.map((slice, idx) => (
                     <Button key={slice.id} variant="secondary" aria-pressed={selectedSlice?.id === slice.id}
@@ -588,6 +592,7 @@ export default function Assets() {
                     </Button>
                   ))}
                 </div>
+                </details>
               </div>
             )}
           </ChartCard>
@@ -599,7 +604,7 @@ export default function Assets() {
             onClick={() => setSection('breakdowns')}>Breakdowns</Button>
         </div>
         {section === 'breakdowns' ? (
-          <AssetsBreakdowns report={view?.funds} currency={selectedDisplayCurrency || 'EUR'} />
+          <AssetsBreakdowns onChanged={loadData} report={view?.funds} currency={selectedDisplayCurrency || 'EUR'} />
         ) : (
           <div className="assets-main__table" id="assets-holdings">
             {selectedSlice && (

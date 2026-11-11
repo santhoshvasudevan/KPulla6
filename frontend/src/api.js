@@ -1083,3 +1083,10 @@ export function downloadBlobFile(blob, filename) {
 export async function fetchFixedDepositSettlement(settlementId) {
   return fetchWithHandling(`/fixed-deposit-settlements/${settlementId}`);
 }
+
+export function fundCategoryRequest(schemeCode, method = 'GET', labels) {
+  return fetchWithHandling(`/portfolio/fund-categories/${encodeURIComponent(schemeCode)}`, {
+    method,
+    ...(labels && { body: JSON.stringify(labels) }),
+  });
+}

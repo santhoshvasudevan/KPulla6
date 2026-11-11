@@ -190,24 +190,63 @@
   min-width: 0;
 }
 
-.assets-breakdowns summary,
-.assets-breakdowns__category-row {
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--border-subtle);
+/* Keep the chart prominent. The keyboard-accessible holding list is optional. */
+.assets-chart-canvas {
+  width: min(100%, 48rem);
+  height: clamp(18rem, 55vw, 29rem);
+  margin-inline: auto;
 }
 
-.assets-breakdowns summary {
+.assets-allocation-options {
+  margin-block-start: var(--space-3);
+}
+
+.assets-allocation-options > summary {
   cursor: pointer;
+  width: fit-content;
+  margin-inline: auto;
 }
 
-.assets-breakdowns__children {
-  padding-inline-start: var(--space-4);
+.assets-allocation-options .assets-allocation-legend {
+  margin-block-start: var(--space-3);
 }
 
-.assets-breakdowns__metrics {
-  display: inline-flex;
-  flex-wrap: wrap;
-  column-gap: var(--space-4);
-  padding-inline-start: var(--space-3);
+.assets-breakdowns__category-scroll {
+  overflow-x: auto;
+}
+
+.assets-breakdowns__category-grid {
+  min-width: 38rem;
+}
+
+.assets-breakdowns__category-row {
+  display: grid;
+  grid-template-columns: minmax(13rem, 1fr) minmax(8rem, auto) 5rem 5rem 7rem;
+  column-gap: var(--space-3);
+  align-items: start;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+.assets-breakdowns__category-row > :first-child { text-align: left; }
+.assets-breakdowns__category-header { font-weight: 650; }
+.assets-breakdowns summary.assets-breakdowns__category-row { cursor: pointer; font-weight: 600; }
+.assets-breakdowns summary::-webkit-details-marker { display: none; }
+
+.assets-breakdowns__category-name {
+  padding-inline-start: calc(var(--category-depth, 0) * .75rem);
+}
+
+.assets-breakdowns__category-name small {
+  display: block;
+  color: var(--text-secondary);
+}
+
+.assets-breakdowns__disclosure {
+  display: inline-block;
+  margin-inline-end: .35rem;
+}
+
+.assets-breakdowns details[open] > summary .assets-breakdowns__disclosure { transform: rotate(90deg); }

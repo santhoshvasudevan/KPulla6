@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 from market_data.providers.base import PriceProvider
@@ -22,6 +22,7 @@ class MarketDataSyncResult:
     mutual_funds_synced: int = 0
     mutual_funds_skipped: int = 0
     mutual_funds_failed: int = 0
+    category_counts: dict[str, int] = field(default_factory=dict)
 
     @property
     def mutual_funds_success(self) -> bool:
@@ -60,11 +61,13 @@ def sync_all_market_data(
     mf_synced = 0
     mf_skipped = 0
     mf_failed = 0
+    category_counts = {}
     if run_mutual_funds:
         mf_result = sync_mutual_fund_navs()
         mf_synced = mf_result.synced
         mf_skipped = mf_result.skipped
         mf_failed = mf_result.failed
+        category_counts = getattr(mf_result, "category_counts", {})
 
     if price_result.success and bench_ok and fx_ok:
         from django.utils import timezone
@@ -84,4 +87,5 @@ def sync_all_market_data(
         mutual_funds_synced=mf_synced,
         mutual_funds_skipped=mf_skipped,
         mutual_funds_failed=mf_failed,
+        category_counts=category_counts,
     )

@@ -28,3 +28,6 @@ class Command(BaseCommand):
                 f"success={result.success})"
             )
         )
+
+        if getattr(result, "category_counts", None):
+            self.stdout.write(f"MF categories: {result.category_counts}")

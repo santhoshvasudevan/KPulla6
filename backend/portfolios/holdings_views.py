@@ -54,7 +54,7 @@ class PortfolioHoldingsView(APIView):
             "holdings": result.holdings,
             "allocation": result.allocation,
             "assets_overview": result.assets_overview,
-            "assets_reports": build_assets_reports(result.holdings),
+            "assets_reports": build_assets_reports(result.holdings, user=request.user),
             "display_currency": result.display_currency,
         }
         if result.warnings:

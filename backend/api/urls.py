@@ -6,6 +6,7 @@ from portfolios.performance_views import PortfolioPerformanceView
 from portfolios.summary_views import PortfolioSummaryView
 from portfolios.views import PortfolioDetailView, PortfolioListCreateView
 from settings_app.views import SettingsView
+from market_data.category_views import PersonalFundCategoryView
 from market_data.views import (
     BenchmarkIndicesView,
     NavRefreshView,
@@ -25,6 +26,7 @@ from debt.report_views import (
 )
 
 urlpatterns = [
+    path("portfolio/fund-categories/<str:scheme_code>", PersonalFundCategoryView.as_view()),
     path("auth/", include("accounts.urls")),
     path("cash/", include("cash.urls")),
     path("", include("debt.urls")),

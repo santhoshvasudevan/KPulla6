@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Optional
 
@@ -14,6 +14,7 @@ from market_data.providers.mutual_fund_nav_provider import (
     MutualFundNavProvider,
     default_mutual_fund_nav_provider,
 )
+from market_data.services.fund_categories import fill_categories
 from transactions.models import MutualFundTransactionDetail, Transaction
 
 logger = logging.getLogger(__name__)
@@ -149,6 +150,7 @@ class MutualFundNavSyncResult:
     synced: int
     skipped: int
     failed: int
+    category_counts: dict[str, int] = field(default_factory=dict)
 
     @property
     def success(self) -> bool:
@@ -188,6 +190,7 @@ def sync_mutual_fund_navs(
     skipped = 0
     failed = 0
 
+    category_counts = dict(filled=0, unchanged=0, unavailable=0, conflicting=0)
     for profile in _profiles_queryset(only_scheme_codes=only_scheme_codes):
         scheme_code = normalize_scheme_code(profile.scheme_code)
         max_hist = _latest_mutual_fund_nav_date(scheme_code)
@@ -199,19 +202,29 @@ def sync_mutual_fund_navs(
             )
             continue
 
-        start_check = (
-            max_hist + timedelta(days=1)
-            if max_hist is not None
-            else _earliest_relevant_nav_date(scheme_code)
-        )
-        if start_check is not None and start_check > end:
-            synced += 1
-            continue
-
+        if isinstance(provider, AmfiNavProvider):
+            provider.category_responses.pop(scheme_code, None)
         ok = sync_one_mutual_fund(profile, provider, end=end)
+        if isinstance(provider, AmfiNavProvider):
+            received = scheme_code in provider.category_responses
+            metadata = provider.category_responses.pop(scheme_code, None)
+            try:
+                if not received and ok is not False and (
+                    not profile.scheme_category.strip() or not profile.scheme_type.strip()
+                ):
+                    metadata = provider.get_category_metadata(scheme_code)
+                written, conflicts = fill_categories(profile, metadata if ok is not False else None)
+                outcome = "filled" if written else "unchanged" if metadata else "unavailable"
+                category_counts[outcome] += 1
+                if conflicts:
+                    category_counts["conflicting"] += 1
+                    logger.warning("MF category conflicts for %s: %s", scheme_code, ", ".join(conflicts))
+            except Exception as exc:
+                category_counts["unavailable"] += 1
+                logger.warning("MF category update unavailable for %s: %s", scheme_code, exc)
         if ok:
             synced += 1
         else:
             failed += 1
 
-    return MutualFundNavSyncResult(synced=synced, skipped=skipped, failed=failed)
+    return MutualFundNavSyncResult(synced=synced, skipped=skipped, failed=failed, category_counts=category_counts)

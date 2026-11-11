@@ -3,6 +3,9 @@
 from collections import Counter, defaultdict
 from decimal import Decimal
 
+from market_data.models import PersonalFundCategory
+from market_data.services.fund_categories import category_pair
+
 
 def _value(rows):
     values = [row["display_current_value"] for row in rows]
@@ -65,11 +68,10 @@ def _folio_count(rows):
 
 
 def _fund_path(row):
-    category = row.get("scheme_category") or ""
-    parts = [part.strip() for part in category.split(" - ") if part.strip()]
-    return (row.get("primary_asset_class") or "UNKNOWN", *parts) if parts else (
-        row.get("primary_asset_class") or "UNKNOWN", "Unclassified category",
-    )
+    category, subcategory = row.get("personal_category") or category_pair(row.get("scheme_category"))
+    if category:
+        return tuple(label for label in (category, subcategory) if label)
+    return ("Category not recorded",)
 
 
 def _categories(rows, total, depth=0):
@@ -88,7 +90,11 @@ def _categories(rows, total, depth=0):
     ]
     result.extend(
         {"id": f"scheme:{code}", "name": group[0].get("scheme_name") or code,
-         **_fund_stats(group, total), "units": float(sum(Decimal(str(row["quantity"])) for row in group))}
+         **_fund_stats(group, total), "units": float(sum(Decimal(str(row["quantity"])) for row in group)),
+         "category_missing": not bool(group[0].get("scheme_category") or group[0].get("personal_category")),
+         "scheme_code": code,
+         "provider_category": list(category_pair(group[0].get("scheme_category"))),
+         "personal_category": group[0].get("personal_category")}
         for code, group in sorted(schemes.items())
     )
     return result
@@ -107,6 +113,7 @@ def _fund_breakdowns(rows):
     return {
         "total": float(total) if total is not None else None,
         "incomplete": total is None,
+        "missing_category_count": len({row["scheme_code"] for row in rows if not (row.get("scheme_category") or row.get("personal_category"))}),
         "scheme_count": len({row["scheme_code"] for row in rows}),
         "folio_count": _folio_count(rows),
         "amc": sorted(amc, key=lambda row: (-(row["value"] or 0), row["name"])),
@@ -114,12 +121,21 @@ def _fund_breakdowns(rows):
     }
 
 
-def build_assets_reports(holdings):
+def build_assets_reports(holdings, *, user=None):
+    schemes = {row["scheme_code"] for row in holdings if row.get("scheme_code")}
+    personal = {
+        code: (category, subcategory)
+        for code, category, subcategory in PersonalFundCategory.objects.filter(
+            user=user, profile__scheme_code__in=schemes
+        ).values_list("profile__scheme_code", "category", "subcategory")
+    } if user is not None and schemes else {}
     views = defaultdict(list, {"all": [], "equity": [], "debt": []})
     for row in holdings:
         asset_type = row.get("asset_type", "STOCK")
         if "display_current_value" not in row or asset_type in {"BANK_CASH", "CASH"}:
             continue
+        if row.get("scheme_code") in personal:
+            row = {**row, "personal_category": personal[row["scheme_code"]]}
         views["all"].append(row)
         views[asset_type].append(row)
         if row.get("overview_class"):

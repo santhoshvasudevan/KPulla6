@@ -11,6 +11,7 @@ from typing import Callable, Protocol
 
 from market_data.providers.amfi_nav_parser import (
     filter_nav_rows_by_range,
+    mfapi_status_ok,
     normalize_api_scheme_code,
     parse_mfapi_latest_nav,
     parse_mfapi_nav_entries,
@@ -93,6 +94,7 @@ class AmfiNavProvider:
         self._base_url = (base_url or DEFAULT_MFAPI_BASE_URL).rstrip("/")
         self._timeout = timeout
         self._http_get = http_get or http_get_json
+        self.category_responses = {}
 
     def _scheme_url(self, scheme_code: str, *, latest: bool = False) -> str | None:
         code = normalize_api_scheme_code(scheme_code)
@@ -111,6 +113,17 @@ class AmfiNavProvider:
             f"{self._base_url}/mf/{code}"
             f"?startDate={start.isoformat()}&endDate={end.isoformat()}"
         )
+
+    @staticmethod
+    def _category_metadata(payload, scheme_code):
+        meta = payload.get("meta") if isinstance(payload, dict) and mfapi_status_ok(payload) else None
+        if not isinstance(meta, dict) or normalize_api_scheme_code(str(meta.get("scheme_code"))) != normalize_api_scheme_code(scheme_code):
+            return None
+        return meta
+
+    def get_category_metadata(self, scheme_code):
+        url = self._scheme_url(scheme_code, latest=True)
+        return self._category_metadata(self._http_get(url, self._timeout), scheme_code) if url else None
 
     def get_latest_nav(self, scheme_code: str) -> NavPoint | None:
         url = self._scheme_url(scheme_code, latest=True)
@@ -144,7 +157,19 @@ class AmfiNavProvider:
                 exc,
             )
             raise
+        if (
+            not isinstance(payload, dict)
+            or not mfapi_status_ok(payload)
+            or not isinstance(payload.get("data"), list)
+        ):
+            raise AmfiNavFetchError(f"Invalid NAV history response for scheme {scheme_code}")
+        meta = payload.get("meta")
+        if isinstance(meta, dict) and meta.get("scheme_code") is not None and not self._category_metadata(payload, scheme_code):
+            raise AmfiNavFetchError(f"MFAPI returned a different scheme for {scheme_code}")
         rows = parse_mfapi_nav_entries(payload)
+        if payload["data"] and not rows:
+            raise AmfiNavFetchError(f"No valid NAV history rows for scheme {scheme_code}")
+        self.category_responses[scheme_code] = self._category_metadata(payload, scheme_code)
         if not rows:
             logger.warning(
                 "Empty NAV history in MFAPI response for scheme %s (%s..%s)",

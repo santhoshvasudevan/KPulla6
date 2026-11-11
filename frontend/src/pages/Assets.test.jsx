@@ -7,6 +7,7 @@ import { PortfolioProvider } from '../portfolioContext';
 
 vi.mock('../api', () => ({
   fetchHoldings: vi.fn(),
+  fundCategoryRequest: vi.fn(),
   fetchPortfolios: vi.fn(),
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
@@ -484,6 +485,7 @@ it('uses named allocation to drill into Holdings without changing the fund break
   renderAssets();
   fireEvent.click(await screen.findByRole('button', { name: 'Mutual Funds' }));
   fireEvent.click(screen.getByRole('button', { name: 'By folio' }));
+  fireEvent.click(screen.getByText(/Browse allocation holdings/));
   fireEvent.click(screen.getByRole('button', { name: /Sample Index Fund · Folio A/ }));
   expect(screen.queryByText('Folio B')).toBeNull();
   expect(screen.getByRole('button', { name: 'Clear allocation selection' })).toBeInTheDocument();
@@ -491,13 +493,42 @@ it('uses named allocation to drill into Holdings without changing the fund break
   expect(screen.getByText('Sample AMC')).toBeInTheDocument();
   expect(screen.getByText(/2 distinct folios/i)).toBeInTheDocument();
   const category = screen.getByText('Equity funds').closest('summary');
-  fireEvent.click(category);
   expect(category.parentElement).toHaveAttribute('open');
-  expect(screen.getByText('20 units')).toBeVisible();
+  expect(screen.getByText('20')).toBeVisible();
+  fireEvent.click(category);
+  expect(screen.getByText('20')).not.toBeVisible();
   fireEvent.click(screen.getByRole('button', { name: 'Holdings' }));
   fireEvent.click(screen.getByRole('button', { name: 'Clear allocation selection' }));
   expect(screen.getByText('Folio B')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Breakdowns' }));
   fireEvent.click(screen.getByRole('button', { name: 'Debt' }));
   expect(screen.getByText('No mutual funds in this view.')).toBeInTheDocument();
+});
+
+it('sets and resets a scheme category from Breakdowns', async () => {
+  api.fetchPortfolios.mockResolvedValue([]);
+  api.getSettings.mockResolvedValue({ display_currency: 'EUR' });
+  api.fundCategoryRequest.mockResolvedValue({ labels: [{ category: 'Equity', subcategory: 'Index Fund' }] });
+  api.fetchHoldings.mockResolvedValue({
+    holdings: [],
+    assets_reports: { all: {
+      allocation: { scheme: [] },
+      funds: { total: 100, scheme_count: 1, folio_count: 1, amc: [],
+        categories: [{ id: 'scheme:123456', name: 'Example Fund', scheme_code: '123456',
+          provider_category: ['Other', 'Index Funds'], personal_category: ['Equity', 'Index Fund'],
+          value: 100, weight: 1, scheme_count: 1, units: 10 }] },
+    } },
+  });
+  renderAssets();
+  fireEvent.click(await screen.findByRole('button', { name: 'Breakdowns' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Edit category' }));
+  expect(screen.getByText('Provider: Other → Index Funds')).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Category', { exact: true }), { target: { value: 'My Equity' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save category' }));
+  await waitFor(() => expect(api.fundCategoryRequest).toHaveBeenCalledWith(
+    '123456', 'PUT', { category: 'My Equity', subcategory: 'Index Fund' }
+  ));
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit category' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Reset to provider' }));
+  await waitFor(() => expect(api.fundCategoryRequest).toHaveBeenCalledWith('123456', 'DELETE', undefined));
 });

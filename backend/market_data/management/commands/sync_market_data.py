@@ -39,6 +39,8 @@ class Command(BaseCommand):
             f"mutual_funds(synced={result.mutual_funds_synced}, "
             f"skipped={result.mutual_funds_skipped}, failed={result.mutual_funds_failed})"
         )
+        if getattr(result, "category_counts", None):
+            msg += f"; MF categories: {result.category_counts}"
         if result.fx_partial:
             msg += " (fx partial — some pairs may lack provider data)"
         if result.mutual_funds_failed:

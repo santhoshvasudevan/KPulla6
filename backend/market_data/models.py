@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 
@@ -65,6 +66,8 @@ class MutualFundProfile(models.Model):
     fund_house = models.CharField(max_length=255, blank=True, default="")
     scheme_type = models.CharField(max_length=128, blank=True, default="")
     scheme_category = models.CharField(max_length=255, blank=True, default="")
+    scheme_category_from_provider = models.BooleanField(default=False)
+    scheme_type_from_provider = models.BooleanField(default=False)
     isin_growth = models.CharField(max_length=12, blank=True, default="")
     isin_reinvestment = models.CharField(max_length=12, blank=True, default="")
     direct_or_regular = models.CharField(max_length=16, blank=True, default="")
@@ -138,3 +141,15 @@ class BenchmarkIndexConfig(models.Model):
 
     def __str__(self):
         return f"{self.symbol} ({self.display_name})"
+
+
+class PersonalFundCategory(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    profile = models.ForeignKey(MutualFundProfile, on_delete=models.CASCADE)
+    category = models.CharField(max_length=100)
+    subcategory = models.CharField(max_length=100, blank=True, default="")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "profile"], name="unique_personal_fund_category"),
+        ]
