@@ -1,5 +1,10 @@
 # Changelog — KPulla6
 
+## 2026-11-11 — Assets allocation and fund breakdowns
+
+- Assets allocation shows readable holding names and supports scheme or folio grouping, with a drill-down into Holdings.
+- The Breakdowns view shows AMC and category exposure, distinct scheme and folio counts, and scheme-level units.
+
 ## 2026-11-11 — Assets overview and holdings layout
 
 - Assets shows scoped Equity, Debt, and Cash totals, with investment-type filters for active holdings. Allocation appears above a full-width Holdings table. Hybrid funds count toward Equity in this overview and retain their source classification.

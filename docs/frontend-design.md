@@ -91,6 +91,8 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 ### Assets
 
 - Scope totals and investment filters sit above Allocation, followed by a full-width Holdings table. Holdings show names with codes and folios as secondary details.
+- Allocation uses scheme or stock names. Mutual Funds can switch to By folio. A slice or legend button filters Holdings, with a clear action.
+- Breakdowns shows distinct fund and folio counts, an AMC table and expandable fund categories. Percentages use visible mutual fund value, independently of allocation slice selection.
 - Closed holdings in collapsible section, default collapsed
 - Status badges for oversold, price_missing, closed
 - Empty state when prices missing — explain sync clearly

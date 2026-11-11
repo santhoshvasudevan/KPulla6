@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import Assets from './Assets';
@@ -105,7 +105,7 @@ describe('Assets Page', () => {
     await waitFor(() => {
       expect(screen.getByText('Assets Overview')).toBeInTheDocument();
       expect(screen.getByRole('heading', { name: 'Holdings' })).toBeInTheDocument();
-      expect(screen.getByText('AAPL')).toBeInTheDocument();
+      expect(within(screen.getByRole('table')).getByText('AAPL')).toBeInTheDocument();
       expect(screen.queryByText('MSFT')).not.toBeInTheDocument();
       expect(screen.getByText('10.0000')).toBeInTheDocument();
       expect(screen.getByText(/€150\.00/)).toBeInTheDocument();
@@ -125,7 +125,7 @@ describe('Assets Page', () => {
     const rowsAfter = screen.getAllByRole('row');
     expect(rowsAfter[1]).toHaveTextContent('AAPL');
 
-    fireEvent.click(screen.getByText('AAPL'));
+    fireEvent.click(within(screen.getByRole('table')).getByText('AAPL'));
     expect(await screen.findByTestId('asset-detail-route')).toBeInTheDocument();
   });
 
@@ -214,7 +214,7 @@ describe('Assets Page', () => {
     });
     renderAssets();
     await waitFor(() => {
-      expect(screen.getByText('AAPL')).toBeInTheDocument();
+      expect(within(screen.getByRole('table')).getByText('AAPL')).toBeInTheDocument();
     });
     expect(screen.queryByText(/FX unavailable/i)).not.toBeInTheDocument();
   });
@@ -276,7 +276,7 @@ describe('Assets Page', () => {
     renderAssets();
     await waitFor(() => {
       expect(screen.getByText('Oversold')).toBeInTheDocument();
-      expect(screen.getByText('GOOD')).toBeInTheDocument();
+      expect(within(screen.getByRole('table')).getByText('GOOD')).toBeInTheDocument();
     });
   });
 
@@ -454,8 +454,50 @@ it('filters active investments without hiding other available types', async () =
   const funds = await screen.findByRole('button', { name: 'Mutual Funds' });
   expect(screen.queryByRole('button', { name: 'Fixed Deposits' })).toBeNull();
   fireEvent.click(funds);
-  expect(screen.getByText('Sample Debt Fund')).toBeInTheDocument();
+  expect(within(screen.getByRole('table')).getByText('Sample Debt Fund')).toBeInTheDocument();
   expect(screen.queryByText('AAPL')).toBeNull();
   expect(screen.getByRole('button', { name: 'Stocks' })).toBeInTheDocument();
   expect(screen.getByText('Equity total')).toBeInTheDocument();
+});
+
+it('uses named allocation to drill into Holdings without changing the fund breakdown', async () => {
+  api.fetchPortfolios.mockResolvedValue([]);
+  api.getSettings.mockResolvedValue({ display_currency: 'EUR' });
+  const fund = (folio) => ({
+    asset_type: 'MUTUAL_FUND', asset_symbol: '120503', scheme_name: 'Sample Index Fund',
+    holding_key: `120503:${folio}`, folio_number: folio, quantity: 10, current_value: 50,
+  });
+  const scheme = { id: 'scheme', name: 'Sample Index Fund', value: 100, weight: 1,
+    holding_keys: ['120503:A', '120503:B'] };
+  const funds = { total: 100, scheme_count: 1, folio_count: 2, incomplete: false,
+    amc: [{ name: 'Sample AMC', value: 100, weight: 1, scheme_count: 1, folio_count: 2 }],
+    categories: [{ id: 'equity', name: 'Equity funds', value: 100, weight: 1, scheme_count: 1,
+      children: [{ id: 'scheme', name: 'Sample Index Fund', value: 100, weight: 1,
+        scheme_count: 1, units: 20 }] }] };
+  api.fetchHoldings.mockResolvedValue({
+    holdings: [fund('A'), fund('B')],
+    assets_reports: { MUTUAL_FUND: {
+      allocation: { scheme: [scheme], folio: [{ ...scheme, name: 'Sample Index Fund · Folio A',
+        holding_keys: ['120503:A'] }] }, funds,
+    } },
+  });
+  renderAssets();
+  fireEvent.click(await screen.findByRole('button', { name: 'Mutual Funds' }));
+  fireEvent.click(screen.getByRole('button', { name: 'By folio' }));
+  fireEvent.click(screen.getByRole('button', { name: /Sample Index Fund · Folio A/ }));
+  expect(screen.queryByText('Folio B')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Clear allocation selection' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Breakdowns' }));
+  expect(screen.getByText('Sample AMC')).toBeInTheDocument();
+  expect(screen.getByText(/2 distinct folios/i)).toBeInTheDocument();
+  const category = screen.getByText('Equity funds').closest('summary');
+  fireEvent.click(category);
+  expect(category.parentElement).toHaveAttribute('open');
+  expect(screen.getByText('20 units')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Holdings' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Clear allocation selection' }));
+  expect(screen.getByText('Folio B')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Breakdowns' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Debt' }));
+  expect(screen.getByText('No mutual funds in this view.')).toBeInTheDocument();
 });

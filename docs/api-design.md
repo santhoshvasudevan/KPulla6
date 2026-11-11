@@ -415,6 +415,10 @@ Default: `portfolio_scope=all` when neither scope param is provided. Cannot comb
 
 The additive `assets_overview` object reports scoped `equity`, `debt`, and `cash` totals in the requested display currency. A total is null when an included position cannot be valued. Active investment rows include `overview_class` and `display_current_value` for Assets filters and allocation. These fields preserve the source classification and the existing holding value and currency fields.
 
+The additive `assets_reports` object is keyed by view (`all`, `equity`, `debt`, or an active investment type). Allocation returns named, display-currency slices with stable IDs, weights and holding keys. The mutual fund view includes both scheme and folio groupings. When some positions lack valuations, the allocation marks itself incomplete and shows available slices.
+
+Each view's `funds` report includes AMC rows and expandable category rows. Weights use the visible funds' total market value before allocation slice selection. Weights are null when the denominator is zero or incomplete. A folio is counted once per fund house even when it holds multiple schemes. Unit totals appear only on scheme rows.
+
 **Response (200 OK)**
 ```json
 {

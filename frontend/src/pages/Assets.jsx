@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchHoldings } from '../api';
 import { formatCurrency, formatPercent } from '../utils/formatters';
-import { PieChart, Pie, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { PieChart, Pie, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import {
   PageHeader,
   DataTableShell,
@@ -25,13 +25,13 @@ import {
 import {
   getSeriesColor,
   getChartTooltipStyle,
-  getChartLegendStyle,
 } from '../components/charts/chartTheme';
 import {
   holdingRowKey,
   holdingSymbolLabel,
   holdingAssetClassVariant,
 } from '../utils/transactionDisplay';
+import AssetsBreakdowns from './AssetsBreakdowns';
 import './Assets.css';
 import { usePortfolio } from '../portfolioContext';
 
@@ -249,6 +249,10 @@ export default function Assets() {
   const [showPrevious, setShowPrevious] = useState(false);
   const [investmentFilter, setInvestmentFilter] = useState('all');
   const [overview, setOverview] = useState({});
+  const [reports, setReports] = useState(null);
+  const [grouping, setGrouping] = useState('scheme');
+  const [selection, setSelection] = useState(null);
+  const [section, setSection] = useState('holdings');
 
   const [fxStatus, setFxStatus] = useState('ok');
   const [apiWarnings, setApiWarnings] = useState([]);
@@ -268,7 +272,36 @@ export default function Assets() {
   useEffect(() => {
     if (filter !== investmentFilter) setInvestmentFilter(filter);
   }, [filter, investmentFilter]);
-  const activeHoldings = scopedInvestments.filter((h) => matchesInvestmentFilter(h, filter));
+  const filteredHoldings = scopedInvestments.filter((h) => matchesInvestmentFilter(h, filter));
+  const view = reports?.[filter];
+  const allocationGrouping = filter === 'MUTUAL_FUND' ? grouping : 'scheme';
+  const chartHoldings = reports
+    ? view?.allocation?.[allocationGrouping] || []
+    : allocation.flatMap((holding) => {
+      if (holding.is_cash || ['CASH', 'BANK_CASH'].includes(holding.asset_type) ||
+          !isActiveHolding(holding) || !matchesInvestmentFilter(holding, filter)) return [];
+      const value = Object.hasOwn(holding, 'display_current_value')
+        ? holding.display_current_value
+        : (holding.display_currency || holding.currency) === selectedDisplayCurrency
+          ? holding.current_value : null;
+      if (!(Number(value) > 0)) return [];
+      const key = holdingRowKey(holding);
+      return [{ id: key, name: holding.asset_name || holdingSymbolLabel(holding),
+        value, holding_keys: [key] }];
+    });
+  const selectedSlice = selection?.apiQuery === apiQuery &&
+    selection.filter === filter && selection.grouping === allocationGrouping
+    ? chartHoldings.find((slice) => slice.id === selection.id)
+    : null;
+  const activeHoldings = selectedSlice
+    ? filteredHoldings.filter((h) => selectedSlice.holding_keys.includes(holdingRowKey(h)))
+    : filteredHoldings;
+  function selectSlice(slice) {
+    setSelection(selectedSlice?.id === slice.id ? null : {
+      id: slice.id, apiQuery, filter, grouping: allocationGrouping,
+    });
+    setSection('holdings');
+  }
   const bankCashHoldings = holdings.filter((h) => isBankCashHolding(h) && isActiveHolding(h));
   const previousHoldings = useMemo(
     () => holdings.filter((h) => !isActiveHolding(h)),
@@ -281,24 +314,6 @@ export default function Assets() {
         (row) => row.is_cash || row.asset_type === 'CASH'
       ),
     [allocation]
-  );
-
-  const chartHoldings = useMemo(
-    () => allocation
-      .filter((h) => !h.is_cash && h.asset_type !== 'CASH' && !isBankCashHolding(h) &&
-        matchesInvestmentFilter(h, filter) && h.holding_status !== 'closed')
-      .map((h) => ({
-        ...h,
-        current_value: Object.hasOwn(h, 'display_current_value') ? h.display_current_value : h.current_value,
-        currency: selectedDisplayCurrency || h.currency,
-      }))
-      .filter((h) => Number(h.current_value) > 0),
-    [allocation, filter, selectedDisplayCurrency]
-  );
-
-  const chartTotal = useMemo(
-    () => chartHoldings.reduce((s, h) => s + Number(h.current_value || 0), 0),
-    [chartHoldings]
   );
 
   const showFxWarning = useMemo(() => {
@@ -351,6 +366,8 @@ export default function Assets() {
         if (request !== latestRequest.current) return;
         setHoldings(data.holdings || []);
         setOverview(data.assets_overview || {});
+        setReports(data.assets_reports || null);
+        setSelection(null);
         setAllocation(data.allocation || data.holdings || []);
         setFxStatus(data.fx_status || 'ok');
         setApiWarnings(data.warnings || []);
@@ -413,7 +430,7 @@ export default function Assets() {
       <div className="assets-section-nav" role="group" aria-label="Investment filters">
         {filterOptions.map(([key, label]) => (
           <Button key={key} variant={filter === key ? 'primary' : 'secondary'}
-            aria-pressed={filter === key} onClick={() => setInvestmentFilter(key)}>
+            aria-pressed={filter === key} onClick={() => { setInvestmentFilter(key); setGrouping('scheme'); setSelection(null); }}>
             {label}
           </Button>
         ))}
@@ -477,7 +494,8 @@ export default function Assets() {
 
       <nav className="assets-section-nav" aria-label="Assets section navigation">
         {ASSETS_SECTION_NAV.map((item) => (
-          <a key={item.href} className="assets-section-nav__link" href={item.href}>
+          <a key={item.href} className="assets-section-nav__link" href={item.href}
+            onClick={() => { if (item.href === '#assets-holdings') setSection('holdings'); }}>
             {item.label}
           </a>
         ))}
@@ -510,11 +528,22 @@ export default function Assets() {
             className="assets-allocation-card"
             compact
           >
-            {activeHoldings.length === 0 && chartHoldings.length === 0 ? (
+            {filter === 'MUTUAL_FUND' && (
+              <div className="assets-section-nav" role="group" aria-label="Allocation grouping">
+                {[['scheme', 'By scheme'], ['folio', 'By folio']].map(([key, label]) => (
+                  <Button key={key} variant="secondary" aria-pressed={grouping === key}
+                    onClick={() => { setGrouping(key); setSelection(null); }}>
+                    {label}
+                  </Button>
+                ))}
+              </div>
+            )}
+            {view?.allocation?.incomplete && <p>Allocation includes positions with an available value.</p>}
+            {filteredHoldings.length === 0 && chartHoldings.length === 0 ? (
               <EmptyState title="No active holdings to display." />
-            ) : chartTotal <= 0 ? (
+            ) : chartHoldings.length === 0 ? (
               <EmptyState
-                title="Allocation chart unavailable until latest prices are synced."
+                title={hasMissingPrices ? "Allocation chart unavailable until latest prices are synced." : "No valued holdings for this allocation."}
                 description={
                   hasMissingPrices
                     ? 'Latest prices are missing — run make refresh or use the backend refresh endpoint.'
@@ -527,106 +556,124 @@ export default function Assets() {
                   <PieChart>
                     <Pie
                       data={chartHoldings}
-                      dataKey="current_value"
-                      nameKey="asset_symbol"
+                      dataKey="value"
+                      nameKey="name"
+                      onClick={(slice) => selectSlice(slice.payload || slice)}
+                      cursor="pointer"
                       outerRadius={90}
                       innerRadius={55}
                       paddingAngle={2}
                       isAnimationActive={false}
                     >
-                      {chartHoldings.map((_, idx) => (
-                        <Cell key={idx} fill={getSeriesColor(idx)} />
+                      {chartHoldings.map((slice, idx) => (
+                        <Cell key={slice.id} fill={getSeriesColor(idx)}
+                          opacity={selectedSlice && selectedSlice.id !== slice.id ? 0.35 : 1} />
                       ))}
                     </Pie>
                     <Tooltip
                       contentStyle={getChartTooltipStyle()}
-                      formatter={(value, _name, payload) => {
-                        const pct = chartTotal > 0 ? Number(value) / chartTotal : 0;
-                        const sym = payload?.payload?.asset_symbol || '';
-                        const currency =
-                          payload?.payload?.currency ||
-                          selectedDisplayCurrency ||
-                          'EUR';
-                        return [
-                          `${formatCurrency(value, currency)} (${formatPercent(pct)})`,
-                          sym,
-                        ];
-                      }}
+                      formatter={(value, name, item) => [
+                        `${formatCurrency(value, selectedDisplayCurrency || 'EUR')}${item?.payload?.weight == null ? '' : ` (${formatPercent(item.payload.weight)})`}`,
+                        name,
+                      ]}
                     />
-                    <Legend wrapperStyle={getChartLegendStyle()} iconType="circle" />
                   </PieChart>
                 </ResponsiveContainer>
+                <div className="assets-allocation-legend" aria-label="Allocation holdings">
+                  {chartHoldings.map((slice, idx) => (
+                    <Button key={slice.id} variant="secondary" aria-pressed={selectedSlice?.id === slice.id}
+                      onClick={() => selectSlice(slice)}>
+                      <span className="assets-allocation-legend__dot" style={{ background: getSeriesColor(idx) }} />
+                      {slice.name}{slice.weight == null ? '' : ` · ${formatPercent(slice.weight)}`}
+                    </Button>
+                  ))}
+                </div>
               </div>
             )}
           </ChartCard>
         </aside>
-        <div className="assets-main__table" id="assets-holdings">
-          <DataTableShell
-            title="Holdings"
-            subtitle="Click a row to open asset detail"
-            dense
-            empty={activeHoldings.length === 0}
-            emptyTitle="No assets found in portfolio."
-          >
-            {activeHoldings.length > 0 ? (
-              <AppTable compact className="assets-table">
-                <thead>
-                  <tr>
-                    <SortableHeader
-                      label="Holding"
-                      sortKey="asset_symbol"
-                      sort={sort}
-                      onSort={toggleSort}
-                    />
-                    <SortableHeader
-                      label="Quantity"
-                      sortKey="quantity"
-                      sort={sort}
-                      onSort={toggleSort}
-                      numeric
-                    />
-                    <SortableHeader
-                      label="Avg Cost"
-                      sortKey="avg_cost"
-                      sort={sort}
-                      onSort={toggleSort}
-                      numeric
-                    />
-                    <SortableHeader
-                      label="Latest Price"
-                      sortKey="current_price"
-                      sort={sort}
-                      onSort={toggleSort}
-                      numeric
-                    />
-                    <SortableHeader
-                      label="Current Value"
-                      sortKey="current_value"
-                      sort={sort}
-                      onSort={toggleSort}
-                      numeric
-                    />
-                    <SortableHeader
-                      label="Unrealized P/L"
-                      sortKey="unrealized_pl"
-                      sort={sort}
-                      onSort={toggleSort}
-                      numeric
-                    />
-                    <AppTableHeaderCell numeric>XIRR</AppTableHeaderCell>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedHoldings.map((h) => renderHoldingRow(h, navigate))}
-                </tbody>
-              </AppTable>
-            ) : null}
-          </DataTableShell>
+        <div className="assets-section-nav" role="group" aria-label="Assets views">
+          <Button variant={section === 'holdings' ? 'primary' : 'secondary'} aria-pressed={section === 'holdings'}
+            onClick={() => setSection('holdings')}>Holdings</Button>
+          <Button variant={section === 'breakdowns' ? 'primary' : 'secondary'} aria-pressed={section === 'breakdowns'}
+            onClick={() => setSection('breakdowns')}>Breakdowns</Button>
         </div>
-
+        {section === 'breakdowns' ? (
+          <AssetsBreakdowns report={view?.funds} currency={selectedDisplayCurrency || 'EUR'} />
+        ) : (
+          <div className="assets-main__table" id="assets-holdings">
+            {selectedSlice && (
+              <div className="assets-section-nav">
+                <span>Showing {selectedSlice.name}</span>
+                <Button variant="secondary" onClick={() => setSelection(null)}>Clear allocation selection</Button>
+              </div>
+            )}
+            <DataTableShell
+              title="Holdings"
+              subtitle="Click a row to open asset detail"
+              dense
+              empty={activeHoldings.length === 0}
+              emptyTitle="No assets found in portfolio."
+            >
+              {activeHoldings.length > 0 ? (
+                <AppTable compact className="assets-table">
+                  <thead>
+                    <tr>
+                      <SortableHeader
+                        label="Holding"
+                        sortKey="asset_symbol"
+                        sort={sort}
+                        onSort={toggleSort}
+                      />
+                      <SortableHeader
+                        label="Quantity"
+                        sortKey="quantity"
+                        sort={sort}
+                        onSort={toggleSort}
+                        numeric
+                      />
+                      <SortableHeader
+                        label="Avg Cost"
+                        sortKey="avg_cost"
+                        sort={sort}
+                        onSort={toggleSort}
+                        numeric
+                      />
+                      <SortableHeader
+                        label="Latest Price"
+                        sortKey="current_price"
+                        sort={sort}
+                        onSort={toggleSort}
+                        numeric
+                      />
+                      <SortableHeader
+                        label="Current Value"
+                        sortKey="current_value"
+                        sort={sort}
+                        onSort={toggleSort}
+                        numeric
+                      />
+                      <SortableHeader
+                        label="Unrealized P/L"
+                        sortKey="unrealized_pl"
+                        sort={sort}
+                        onSort={toggleSort}
+                        numeric
+                      />
+                      <AppTableHeaderCell numeric>XIRR</AppTableHeaderCell>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedHoldings.map((h) => renderHoldingRow(h, navigate))}
+                  </tbody>
+                </AppTable>
+              ) : null}
+            </DataTableShell>
+          </div>
+        )}
       </div>
 
-      {previousHoldings.length > 0 ? (
+      {section === 'holdings' && previousHoldings.length > 0 ? (
         <AppCard
           className="assets-previous"
           title="Previous holdings"

@@ -276,3 +276,42 @@ def test_assets_overview_converts_hybrid_and_liquid_funds_in_selected_scope(
     assert rows["120504"]["overview_class"] == "debt"
     assert rows["120504"]["currency"] == "INR"
     assert rows["120504"]["display_current_value"] == 50
+
+
+@pytest.mark.django_db
+def test_assets_reporting_groups_folios_and_uses_visible_fund_value(api_client, legacy_seeded):
+    for folio in ("FOLIO-A", "FOLIO-B"):
+        assert _mf_buy(api_client, folio_number=folio,
+                       scheme_name="Test Equity Index Fund").status_code == 201
+    assert _mf_buy(api_client, scheme_code="120504", folio_number="FOLIO-A",
+                   scheme_name="Test Liquid Fund").status_code == 201
+    _nav("120503", "50.00")
+    _nav("120504", "20.00")
+    data = api_client.get("/api/v1/portfolio/holdings?display_currency=INR").json()
+    report = data["assets_reports"]["MUTUAL_FUND"]
+    assert [s["value"] for s in report["allocation"]["scheme"]] == [10000, 2000]
+    assert len(report["allocation"]["folio"]) == 3
+    assert report["funds"]["amc"] == [{
+        "name": "Test AMC", "value": 12000, "weight": 1,
+        "scheme_count": 2, "folio_count": 2,
+    }]
+    assert data["assets_reports"]["equity"]["funds"]["total"] == 10000
+
+
+@pytest.mark.django_db
+def test_assets_breakdowns_keep_unknown_and_unvalued_funds_visible(api_client, legacy_seeded):
+    assert _mf_buy(api_client, fund_house="", scheme_name="Test Fund").status_code == 201
+    url = "/api/v1/portfolio/holdings?display_currency=INR"
+    report = api_client.get(url).json()["assets_reports"]["all"]
+    assert report["allocation"] == {"scheme": [], "incomplete": True}
+    funds = report["funds"]
+    assert funds["incomplete"] is True
+    assert funds["total"] is None
+    assert funds["amc"][0]["name"] == "Unknown AMC"
+    assert funds["amc"][0]["weight"] is None
+    category = funds["categories"][0]
+    assert category["name"] == "UNKNOWN"
+    assert "units" not in category
+    scheme = category["children"][0]["children"][0]
+    assert scheme["units"] == 100
+    assert scheme["value"] is None

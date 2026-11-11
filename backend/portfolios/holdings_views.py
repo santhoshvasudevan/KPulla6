@@ -2,6 +2,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from portfolios.assets_reporting import build_assets_reports
 from portfolios.holdings_service import (
     AssetDetailValidationError,
     AssetNotFoundError,
@@ -53,6 +54,7 @@ class PortfolioHoldingsView(APIView):
             "holdings": result.holdings,
             "allocation": result.allocation,
             "assets_overview": result.assets_overview,
+            "assets_reports": build_assets_reports(result.holdings),
             "display_currency": result.display_currency,
         }
         if result.warnings:

@@ -335,7 +335,11 @@ def _build_mf_holding_item(
         "fx_status": "fx_unavailable" if fx_missing else "ok",
         "_fx_missing": fx_missing,
     }
-    item.update(_mf_classification_fields(db_txns))
+    asset, profile = _mf_asset_and_profile(db_txns)
+    item.update(classification_fields_for_asset(asset, profile))
+    if profile is not None:
+        item["fund_house"] = profile.fund_house.strip()
+        item["scheme_category"] = profile.scheme_category.strip()
     return item
 
 
