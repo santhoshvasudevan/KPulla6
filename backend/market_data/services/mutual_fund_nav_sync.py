@@ -14,7 +14,7 @@ from market_data.providers.mutual_fund_nav_provider import (
     MutualFundNavProvider,
     default_mutual_fund_nav_provider,
 )
-from market_data.services.fund_categories import fill_categories
+from market_data.services.fund_categories import fill_categories, has_missing_metadata
 from transactions.models import MutualFundTransactionDetail, Transaction
 
 logger = logging.getLogger(__name__)
@@ -209,9 +209,7 @@ def sync_mutual_fund_navs(
             received = scheme_code in provider.category_responses
             metadata = provider.category_responses.pop(scheme_code, None)
             try:
-                if not received and ok is not False and (
-                    not profile.scheme_category.strip() or not profile.scheme_type.strip()
-                ):
+                if not received and ok is not False and has_missing_metadata(profile):
                     metadata = provider.get_category_metadata(scheme_code)
                 written, conflicts = fill_categories(profile, metadata if ok is not False else None)
                 outcome = "filled" if written else "unchanged" if metadata else "unavailable"

@@ -499,3 +499,5 @@ Under **Assets → Breakdowns → By classification**, expand to a scheme and us
 The authenticated `/api/v1/portfolio/fund-categories/{scheme_code}` endpoint supports GET for reusable personal labels, PUT for setting a category and optional subcategory, and DELETE for reset. Access is restricted to schemes held in the user’s portfolios.
 
 The Breakdowns views are By AMC, By classification, and By folio. Each defaults to descending market value. Market value and share can sort either way within each level, with unavailable values last. By folio combines matching fund-house and folio numbers across the selected portfolios, and expanded scheme rows list the portfolios represented.
+
+The same preview and refresh also fill blank AMC (fund house) names, even when the category and scheme type are already present. Matching fund-house names and folio numbers combine across schemes in By folio.

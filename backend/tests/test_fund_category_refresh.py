@@ -63,7 +63,7 @@ def test_current_nav_still_fills_category_without_changing_asset_class():
         requests.append(url)
         return {"status": "SUCCESS", "meta": {
             "scheme_code": 123456, "scheme_category": "Equity Scheme - ELSS",
-            "scheme_type": "Open Ended",
+            "scheme_type": "Open Ended", "fund_house": "Example AMC",
         }}
     provider = AmfiNavProvider(http_get=get)
     assert sync_mutual_fund_navs(provider=provider, end=day).success
@@ -71,6 +71,7 @@ def test_current_nav_still_fills_category_without_changing_asset_class():
     profile.refresh_from_db()
     assert profile.scheme_category == "Equity Scheme - ELSS"
     assert profile.scheme_type == "Previously recorded"
+    assert profile.fund_house == "Example AMC"
     assert classify_mutual_fund_asset(asset, profile).primary_asset_class == before
     assert len(requests) == 1 and requests[0].endswith("/latest")
     assert HistoricalPrice.objects.count() == 1

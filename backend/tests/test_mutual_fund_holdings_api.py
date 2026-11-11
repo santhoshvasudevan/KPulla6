@@ -352,3 +352,30 @@ def test_personal_fund_category_is_scoped_and_can_reset(api_client, legacy_seede
     assert scheme["personal_category"] == ["Index Fund", ""]
     assert api_client.delete(url).status_code == 204
     assert api_client.get(holdings_url).json()["assets_reports"]["all"]["funds"]["categories"][0]["name"] == "Equity"
+
+
+@pytest.mark.django_db
+def test_provider_amc_backfill_combines_two_schemes_in_one_folio(api_client, legacy_seeded):
+    from io import StringIO
+    from django.core.management import call_command
+    from market_data.providers.mutual_fund_nav_provider import AmfiNavProvider
+
+    for code in ("120503", "120504"):
+        assert _mf_buy(api_client, scheme_code=code, fund_house="",
+                       scheme_category="Equity Scheme - Index Funds",
+                       scheme_type="Open Ended").status_code == 201
+        _nav(code, "50")
+    url = "/api/v1/portfolio/holdings?display_currency=INR"
+    def funds():
+        return api_client.get(url).json()["assets_reports"]["all"]["funds"]
+    assert len(funds()["folios"]) == 2
+    with patch.object(AmfiNavProvider, "get_category_metadata", return_value={"fund_house": "UTI Mutual Fund"}):
+        out = StringIO()
+        call_command("backfill_fund_categories", stdout=out)
+        assert "fund_house='' → 'UTI Mutual Fund'" in out.getvalue()
+        assert funds()["amc"][0]["name"] == "Unknown AMC"
+        call_command("backfill_fund_categories", apply=True, stdout=StringIO())
+    result = funds()
+    assert result["amc"][0]["name"] == "UTI Mutual Fund"
+    assert len(result["folios"]) == result["folio_count"] == 1
+    assert len(result["folios"][0]["children"]) == 2

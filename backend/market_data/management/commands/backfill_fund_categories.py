@@ -2,7 +2,7 @@ from django.core.management.base import BaseCommand
 
 from market_data.models import MutualFundProfile
 from market_data.providers.mutual_fund_nav_provider import AmfiNavProvider
-from market_data.services.fund_categories import category_changes, category_pair, fill_categories
+from market_data.services.fund_categories import category_changes, category_pair, fill_categories, has_missing_metadata
 
 
 class Command(BaseCommand):
@@ -18,7 +18,7 @@ class Command(BaseCommand):
             profiles = profiles.filter(scheme_code__in=options["scheme_code"])
         provider = AmfiNavProvider()
         for profile in profiles.iterator():
-            if profile.scheme_category.strip() and profile.scheme_type.strip():
+            if not has_missing_metadata(profile):
                 self.stdout.write(f"{profile.scheme_code}: existing={profile.scheme_category!r}, skipped (already populated)")
                 continue
             try:
@@ -31,6 +31,7 @@ class Command(BaseCommand):
             self.stdout.write(
                 f"{profile.scheme_code}: existing={profile.scheme_category!r}, "
                 f"category={category!r}, subcategory={subcategory!r}, "
+                f"fund_house={profile.fund_house!r} → {updates.get('fund_house', profile.fund_house)!r}, "
                 f"updates={', '.join(updates) or 'none'}, conflicts={', '.join(conflicts) or 'none'}"
                 + (" (missing or mismatched metadata)" if not metadata else
                    " (no eligible changes)" if not updates and not conflicts else "")
