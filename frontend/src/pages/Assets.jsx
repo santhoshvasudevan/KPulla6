@@ -357,9 +357,9 @@ export default function Assets() {
   };
 
   const latestRequest = useRef(0);
-  const loadData = useCallback(() => {
+  const loadData = useCallback(({ background = false } = {}) => {
     const request = ++latestRequest.current;
-    setLoading(true);
+    if (!background) setLoading(true);
     setError('');
     fetchHoldings(apiQuery)
       .then((data) => {
@@ -604,7 +604,7 @@ export default function Assets() {
             onClick={() => setSection('breakdowns')}>Breakdowns</Button>
         </div>
         {section === 'breakdowns' ? (
-          <AssetsBreakdowns onChanged={loadData} report={view?.funds} currency={selectedDisplayCurrency || 'EUR'} />
+          <AssetsBreakdowns onChanged={() => loadData({ background: true })} report={view?.funds} currency={selectedDisplayCurrency || 'EUR'} />
         ) : (
           <div className="assets-main__table" id="assets-holdings">
             {selectedSlice && (

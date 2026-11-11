@@ -490,7 +490,9 @@ it('uses named allocation to drill into Holdings without changing the fund break
   expect(screen.queryByText('Folio B')).toBeNull();
   expect(screen.getByRole('button', { name: 'Clear allocation selection' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Breakdowns' }));
+  fireEvent.click(screen.getByRole('button', { name: 'By AMC' }));
   expect(screen.getByText('Sample AMC')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'By classification' }));
   expect(screen.getByText(/2 distinct folios/i)).toBeInTheDocument();
   const category = screen.getByText('Equity funds').closest('summary');
   expect(category.parentElement).toHaveAttribute('open');
@@ -515,20 +517,45 @@ it('sets and resets a scheme category from Breakdowns', async () => {
       allocation: { scheme: [] },
       funds: { total: 100, scheme_count: 1, folio_count: 1, amc: [],
         categories: [{ id: 'scheme:123456', name: 'Example Fund', scheme_code: '123456',
-          provider_category: ['Other', 'Index Funds'], personal_category: ['Equity', 'Index Fund'],
+          provider_category: ['Other', 'Index Funds'], personal_category: ['Index Fund', ''], effective_taxonomy: ['Equity', 'Index Fund'],
           value: 100, weight: 1, scheme_count: 1, units: 10 }] },
     } },
   });
   renderAssets();
   fireEvent.click(await screen.findByRole('button', { name: 'Breakdowns' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Edit category' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Edit classification and category' }));
   expect(screen.getByText('Provider: Other → Index Funds')).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Category', { exact: true }), { target: { value: 'My Equity' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save category' }));
   await waitFor(() => expect(api.fundCategoryRequest).toHaveBeenCalledWith(
-    '123456', 'PUT', { category: 'My Equity', subcategory: 'Index Fund' }
+    '123456', 'PUT', { classification: 'Equity', category: 'My Equity', subcategory: '' }
   ));
-  fireEvent.click(await screen.findByRole('button', { name: 'Edit category' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Edit classification and category' }));
   fireEvent.click(screen.getByRole('button', { name: 'Reset to provider' }));
   await waitFor(() => expect(api.fundCategoryRequest).toHaveBeenCalledWith('123456', 'DELETE', undefined));
+});
+
+it('sorts folios by value and expands schemes without mixing fund houses', async () => {
+  api.fetchPortfolios.mockResolvedValue([]);
+  api.getSettings.mockResolvedValue({ display_currency: 'EUR' });
+  const folio = (id, name, fund_house, value) => ({
+    id, name, fund_house, value, weight: value / 100, scheme_count: 1,
+    children: [{ id: 'scheme:1', name: `${fund_house} fund`, value, scheme_count: 1, units: 10 }],
+  });
+  api.fetchHoldings.mockResolvedValue({ holdings: [], assets_reports: { all: {
+    allocation: { scheme: [] },
+    funds: { scheme_count: 2, folio_count: 2, total: 100, amc: [], categories: [],
+      folios: [folio('a:12', '12', 'AMC A', 30), folio('b:12', '12', 'AMC B', 70)] },
+  } } });
+  renderAssets();
+  fireEvent.click(await screen.findByRole('button', { name: 'Breakdowns' }));
+  fireEvent.click(screen.getByRole('button', { name: 'By folio' }));
+  const pane = screen.getByRole('region', { name: 'Mutual fund breakdowns' });
+  const houses = () => within(pane).getAllByText(/^AMC [AB]$/).map((node) => node.textContent);
+  expect(houses()).toEqual(['AMC B', 'AMC A']);
+  fireEvent.click(within(pane).getByRole('button', { name: /Market value/ }));
+  expect(houses()).toEqual(['AMC A', 'AMC B']);
+  fireEvent.click(within(pane).getByText('AMC A').closest('summary'));
+  expect(within(pane).getByText('AMC A fund')).toBeVisible();
+  expect(within(pane).getByText('AMC B fund')).not.toBeVisible();
 });

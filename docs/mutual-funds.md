@@ -494,6 +494,8 @@ NAV refresh fills blank scheme category and scheme type fields from matching MFA
 
 To inspect proposed metadata without writing, run `python manage.py backfill_fund_categories` from the backend environment. Repeat `--scheme-code CODE` to restrict the preview. Review the output, then run `make backup-db` and `make db-safety-check` before using `--apply` against local development data. Recheck the database afterward. Apply only fills blank metadata fields and leaves NAV history, transactions, and cash intact.
 
-Under **Assets → Breakdowns → By fund category**, use **Edit category** on a scheme. A personal assignment applies to all your portfolios and folios for that scheme. **Reset to provider** removes it. Neither action changes the shared provider metadata or Equity and Debt totals.
+Under **Assets → Breakdowns → By classification**, expand to a scheme and use **Edit classification and category** in Actions. Choose Equity, Debt, or Hybrid. The default follows the scheme’s portfolio asset class; liquid funds default to Debt. Unmapped schemes appear under Needs classification. Provider category labels remain available in the editor. A personal assignment applies to all your portfolios and folios for that scheme. **Reset to provider** removes it. Neither action changes the shared provider metadata or Equity and Debt totals.
 
 The authenticated `/api/v1/portfolio/fund-categories/{scheme_code}` endpoint supports GET for reusable personal labels, PUT for setting a category and optional subcategory, and DELETE for reset. Access is restricted to schemes held in the user’s portfolios.
+
+The Breakdowns views are By AMC, By classification, and By folio. Each defaults to descending market value. Market value and share can sort either way within each level, with unavailable values last. By folio combines matching fund-house and folio numbers across the selected portfolios, and expanded scheme rows list the portfolios represented.

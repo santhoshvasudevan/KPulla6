@@ -292,6 +292,9 @@ def test_assets_reporting_groups_folios_and_uses_visible_fund_value(api_client, 
     report = data["assets_reports"]["MUTUAL_FUND"]
     assert [s["value"] for s in report["allocation"]["scheme"]] == [10000, 2000]
     assert len(report["allocation"]["folio"]) == 3
+    folios = {row["name"]: row for row in report["funds"]["folios"]}
+    assert len(folios["FOLIO-A"]["children"]) == 2
+    assert folios["FOLIO-A"]["value"] == 7000
     assert report["funds"]["amc"] == [{
         "name": "Test AMC", "value": 12000, "weight": 1,
         "scheme_count": 2, "folio_count": 2,
@@ -318,7 +321,7 @@ def test_assets_breakdowns_keep_unknown_and_unvalued_funds_visible(api_client, l
     assert funds["amc"][0]["name"] == "Unknown AMC"
     assert funds["amc"][0]["weight"] is None
     category = funds["categories"][0]
-    assert category["name"] == "Category not recorded"
+    assert category["name"] == "Needs classification"
     assert "units" not in category
     scheme = category["children"][0]
     assert scheme["category_missing"] is True
@@ -339,11 +342,13 @@ def test_personal_fund_category_is_scoped_and_can_reset(api_client, legacy_seede
     outsider.force_authenticate(get_user_model().objects.create_user(username="outsider"))
     assert outsider.put(url, {"category": "Equity"}, format="json").status_code == 404
     assert api_client.put(url, {"category": " "}, format="json").status_code == 400
-    assert api_client.put(url, {"category": " Equity ", "subcategory": "Index Fund"}, format="json").status_code == 200
-    node = api_client.get(holdings_url).json()["assets_reports"]["all"]["funds"]["categories"][0]
-    assert node["name"] == "Equity"
+    assert api_client.put(url, {"classification": "Debt", "category": " Index Fund "}, format="json").status_code == 200
+    data = api_client.get(holdings_url).json()
+    assert data["holdings"][0]["overview_class"] == "equity"
+    node = data["assets_reports"]["all"]["funds"]["categories"][0]
+    assert node["name"] == "Debt"
     scheme = node["children"][0]["children"][0]
     assert scheme["provider_category"] == ["Other", "Index Funds"]
-    assert scheme["personal_category"] == ["Equity", "Index Fund"]
+    assert scheme["personal_category"] == ["Index Fund", ""]
     assert api_client.delete(url).status_code == 204
-    assert api_client.get(holdings_url).json()["assets_reports"]["all"]["funds"]["categories"][0]["name"] == "Other"
+    assert api_client.get(holdings_url).json()["assets_reports"]["all"]["funds"]["categories"][0]["name"] == "Equity"

@@ -67,11 +67,22 @@ def _folio_count(rows):
     })
 
 
+CLASSIFICATIONS = {"EQUITY": "Equity", "DEBT": "Debt", "HYBRID": "Hybrid", "LIQUID": "Debt"}
+
+
 def _fund_path(row):
-    category, subcategory = row.get("personal_category") or category_pair(row.get("scheme_category"))
-    if category:
-        return tuple(label for label in (category, subcategory) if label)
-    return ("Category not recorded",)
+    provider_category, provider_subcategory = category_pair(row.get("scheme_category"))
+    classification = row.get("personal_classification")
+    personal = row.get("personal_category")
+    has_personal_category = bool(personal and personal[0])
+    category, subcategory = personal if has_personal_category else (provider_category, provider_subcategory)
+    if row.get("personal_category") and not classification and category.casefold() in {"equity", "debt", "hybrid"}:
+        classification, category, subcategory = category.title(), subcategory, ""
+    if not classification:
+        classification = CLASSIFICATIONS.get(row.get("primary_asset_class"), "Needs classification")
+    if not has_personal_category and subcategory and category.casefold().removesuffix(" schemes").removesuffix(" scheme") in {"equity", "debt", "hybrid", "other"}:
+        category, subcategory = subcategory, ""
+    return tuple(label for label in (classification, category, subcategory) if label)
 
 
 def _categories(rows, total, depth=0):
@@ -88,16 +99,41 @@ def _categories(rows, total, depth=0):
          "children": _categories(group, total, depth + 1)}
         for name, group in sorted(groups.items())
     ]
-    result.extend(
+    return result + _scheme_rows(schemes, total)
+
+
+def _scheme_rows(schemes, total):
+    return [
         {"id": f"scheme:{code}", "name": group[0].get("scheme_name") or code,
          **_fund_stats(group, total), "units": float(sum(Decimal(str(row["quantity"])) for row in group)),
          "category_missing": not bool(group[0].get("scheme_category") or group[0].get("personal_category")),
          "scheme_code": code,
          "provider_category": list(category_pair(group[0].get("scheme_category"))),
-         "personal_category": group[0].get("personal_category")}
+         "personal_category": group[0].get("personal_category"),
+         "effective_taxonomy": _fund_path(group[0]),
+         "portfolio_names": sorted({name for row in group for name in row.get("portfolio_names", [])})}
         for code, group in sorted(schemes.items())
-    )
-    return result
+    ]
+
+
+def _folio_breakdowns(rows, total):
+    groups = defaultdict(list)
+    for row in rows:
+        if row["folio_number"]:
+            house = row.get("fund_house") or row["scheme_code"]
+            groups[(house.casefold(), row["folio_number"])].append(row)
+    def schemes(group):
+        by_scheme = defaultdict(list)
+        for row in group:
+            by_scheme[row["scheme_code"]].append(row)
+        return _scheme_rows(by_scheme, total)
+
+    return [
+        {"id": f"{house}:{folio}", "name": folio,
+         "fund_house": group[0].get("fund_house") or "Unknown AMC",
+         **_fund_stats(group, total), "children": schemes(group)}
+        for (house, folio), group in groups.items()
+    ]
 
 
 def _fund_breakdowns(rows):
@@ -118,16 +154,17 @@ def _fund_breakdowns(rows):
         "folio_count": _folio_count(rows),
         "amc": sorted(amc, key=lambda row: (-(row["value"] or 0), row["name"])),
         "categories": _categories(rows, total),
+        "folios": _folio_breakdowns(rows, total),
     }
 
 
 def build_assets_reports(holdings, *, user=None):
     schemes = {row["scheme_code"] for row in holdings if row.get("scheme_code")}
     personal = {
-        code: (category, subcategory)
-        for code, category, subcategory in PersonalFundCategory.objects.filter(
+        code: (classification, category, subcategory)
+        for code, classification, category, subcategory in PersonalFundCategory.objects.filter(
             user=user, profile__scheme_code__in=schemes
-        ).values_list("profile__scheme_code", "category", "subcategory")
+        ).values_list("profile__scheme_code", "classification", "category", "subcategory")
     } if user is not None and schemes else {}
     views = defaultdict(list, {"all": [], "equity": [], "debt": []})
     for row in holdings:
@@ -135,7 +172,8 @@ def build_assets_reports(holdings, *, user=None):
         if "display_current_value" not in row or asset_type in {"BANK_CASH", "CASH"}:
             continue
         if row.get("scheme_code") in personal:
-            row = {**row, "personal_category": personal[row["scheme_code"]]}
+            classification, category, subcategory = personal[row["scheme_code"]]
+            row = {**row, "personal_classification": classification, "personal_category": (category, subcategory)}
         views["all"].append(row)
         views[asset_type].append(row)
         if row.get("overview_class"):

@@ -306,12 +306,19 @@ def _build_mf_holding_item(
             include_fees_in_cashflows=True,
         )
 
+    portfolio_units = {}
+    for txn in db_txns:
+        if txn.type in {TransactionType.BUY, TransactionType.SELL}:
+            units = txn.quantity if txn.type == TransactionType.BUY else -txn.quantity
+            portfolio_units[txn.portfolio_id] = portfolio_units.get(txn.portfolio_id, 0) + units
+
     item = {
         "asset_type": "MUTUAL_FUND",
         "asset_symbol": scheme_code,
         "scheme_code": scheme_code,
         "scheme_name": _scheme_name_for_mf_txns(db_txns),
         "folio_number": folio_number,
+        "portfolio_names": sorted({t.portfolio.name for t in db_txns if portfolio_units.get(t.portfolio_id, 0) > 0}),
         "holding_key": _mf_holding_key(scheme_code, folio_number),
         "quantity": float(qty),
         "units": float(qty),

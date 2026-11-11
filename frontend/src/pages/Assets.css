@@ -216,12 +216,12 @@
 }
 
 .assets-breakdowns__category-grid {
-  min-width: 38rem;
+  min-width: 55rem;
 }
 
 .assets-breakdowns__category-row {
   display: grid;
-  grid-template-columns: minmax(13rem, 1fr) minmax(8rem, auto) 5rem 5rem 7rem;
+  grid-template-columns: minmax(13rem, 1fr) minmax(8rem, auto) 5rem 5rem 7rem minmax(11rem, 1fr);
   column-gap: var(--space-3);
   align-items: start;
   padding: var(--space-2);

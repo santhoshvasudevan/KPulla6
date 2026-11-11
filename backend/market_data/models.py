@@ -146,6 +146,7 @@ class BenchmarkIndexConfig(models.Model):
 class PersonalFundCategory(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     profile = models.ForeignKey(MutualFundProfile, on_delete=models.CASCADE)
+    classification = models.CharField(max_length=6, blank=True, default="")
     category = models.CharField(max_length=100)
     subcategory = models.CharField(max_length=100, blank=True, default="")
 

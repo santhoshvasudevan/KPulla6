@@ -8,8 +8,14 @@ from market_data.models import MutualFundProfile, PersonalFundCategory
 
 
 class CategoryInput(serializers.Serializer):
-    category = serializers.CharField(max_length=100)
+    classification = serializers.ChoiceField(choices=["Equity", "Debt", "Hybrid"], required=False)
+    category = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
     subcategory = serializers.CharField(max_length=100, allow_blank=True, required=False, default="")
+
+    def validate(self, attrs):
+        if not attrs["category"] and (not attrs.get("classification") or attrs["subcategory"]):
+            raise serializers.ValidationError("Choose a classification or enter a category. A subcategory needs a category.")
+        return attrs
 
 
 class PersonalFundCategoryView(APIView):

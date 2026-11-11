@@ -1,5 +1,9 @@
 # Changelog — KPulla6
 
+## 2026-11-11 — Sortable classification and folio breakdowns
+
+- Assets Breakdowns adds editable Equity, Debt and Hybrid classification, a scheme Actions column, sorting, and a folio view across portfolios. Personal classification affects Breakdowns only.
+
 ## 2026-11-11 — Assets allocation and fund breakdowns
 
 - Assets allocation shows readable holding names and supports scheme or folio grouping, with a drill-down into Holdings.
