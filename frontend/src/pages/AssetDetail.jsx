@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { fetchAssetDetails, fetchHoldings } from '../api';
 import { usePortfolio } from '../portfolioContext';
@@ -80,29 +80,37 @@ export default function AssetDetail() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const requestGeneration = useRef(0);
 
   const loadData = useCallback(() => {
     if (!settingsLoaded || !apiQuery) return;
+    const generation = ++requestGeneration.current;
+    const isCurrent = () => generation === requestGeneration.current;
     setLoading(true);
     setError('');
     (folioNumber ? fetchAssetDetails(assetSymbol, apiQuery, folioNumber) : fetchAssetDetails(assetSymbol, apiQuery))
       .then((d) => {
+        if (!isCurrent()) return;
         setData(d);
         setLoading(false);
       })
       .catch((e) => {
+        if (!isCurrent()) return;
         setError(e.message);
         setLoading(false);
         if (/multiple\s*folios/i.test(e.message)) {
           fetchHoldings(apiQuery)
             .then(({ holdings = [] }) => {
+              if (!isCurrent()) return;
               const values = [...new Set(holdings
                 .filter((holding) => String(holding.scheme_code || holding.asset_symbol) === assetSymbol)
                 .map((holding) => holding.folio_number)
                 .filter(Boolean))].sort();
               setFolioChoices({ assetSymbol, apiQuery, values });
             })
-            .catch(() => setFolioChoices({ assetSymbol, apiQuery, values: [] }));
+            .catch(() => {
+              if (isCurrent()) setFolioChoices({ assetSymbol, apiQuery, values: [] });
+            });
         }
       });
   }, [assetSymbol, apiQuery, folioNumber, settingsLoaded]);
@@ -110,6 +118,7 @@ export default function AssetDetail() {
   useEffect(() => {
     if (!settingsLoaded || !apiQuery) return;
     loadData();
+    return () => { requestGeneration.current += 1; };
   }, [loadData, settingsLoaded, apiQuery]);
 
   const folioPicker = folios.length > 0 && (

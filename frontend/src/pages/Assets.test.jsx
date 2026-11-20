@@ -72,6 +72,24 @@ function renderAssets() {
 }
 
 describe('Assets Page', () => {
+  it('encodes the selected folio in the Asset Detail navigation URL', async () => {
+    const folio = 'F/1 + &?#';
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });
+    api.fetchHoldings.mockResolvedValue({ holdings: [{
+      asset_symbol: '120503', asset_type: 'MUTUAL_FUND', scheme_code: '120503',
+      scheme_name: 'Encoded Folio Fund', folio_number: folio, holding_key: `120503:${folio}`,
+      quantity: 10, currency: 'INR', current_value: 1000, holding_status: 'ok',
+    }] });
+    renderAssets();
+    fireEvent.click(await screen.findByText('Encoded Folio Fund'));
+    await screen.findByTestId('asset-detail-route');
+    const url = new URL(screen.getByTestId('location').textContent, 'http://localhost');
+    expect(url.pathname).toBe('/assets/120503');
+    expect(url.searchParams.get('folio_number')).toBe(folio);
+    expect(url.hash).toBe('');
+  });
+
   it('renders page header and section navigation', async () => {
     api.fetchPortfolios.mockResolvedValueOnce([]);
     api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });

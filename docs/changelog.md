@@ -1,5 +1,9 @@
 # Changelog — KPulla6
 
+## 2026-11-20 — Folio navigation authorization and encoding
+
+- Asset Detail ignores superseded requests so late folio errors cannot overwrite the current authorization result. Added Assets URL, decoded-detail and API-client special-character folio coverage, alongside query-preservation tests (#34).
+
 ## 2026-11-20 — Pending-purchase valuation edge cases
 
 - Added bounded-range, missing-NAV, direct/filled/missing-FX and legacy-mode regressions (#33). Historical display conversion now loads the opening FX lookback; recognized fund units without cached NAV remain unavailable instead of showing a cash-only portfolio value.

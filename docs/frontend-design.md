@@ -99,6 +99,11 @@ Recharts reads theme tokens via `getChartTooltipStyle()`, `getChartGridProps()`,
 
 ### Asset Detail
 
+Folio navigation preserves other URL query parameters and encodes folio numbers
+as query values, including slashes, spaces and reserved characters. Responses from
+superseded asset/scope requests are ignored so a late ambiguous-folio response
+cannot replace the current authorization error or restore an old folio picker.
+
 - Metric Sheet layout: hero KPIs → cost basis / market sections → transaction history
 - Breadcrumb back to Assets
 

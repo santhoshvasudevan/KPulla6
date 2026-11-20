@@ -162,6 +162,18 @@ describe('API Service', () => {
     expect(data).toEqual(mockResponse);
   });
 
+  it('fetchAssetDetails safely round-trips a special-character folio with its scope', async () => {
+    const folio = 'F/1 + &?#';
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ folio_number: folio }) });
+    await api.fetchAssetDetails('120503', { portfolio_id: 2, display_currency: 'INR' }, folio);
+    const url = new URL(global.fetch.mock.calls[0][0], 'http://localhost');
+    expect(url.pathname).toBe('/api/v1/portfolio/assets/120503');
+    expect(url.searchParams.get('folio_number')).toBe(folio);
+    expect(url.searchParams.get('portfolio_id')).toBe('2');
+    expect(url.searchParams.get('display_currency')).toBe('INR');
+    expect(url.hash).toBe('');
+  });
+
   it('fetchBankAccounts calls the correct endpoint', async () => {
     global.fetch.mockResolvedValueOnce({ ok: true, json: async () => [] });
     await api.fetchBankAccounts();

@@ -1,6 +1,6 @@
 import { render, screen, waitFor, fireEvent, within, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { Link, MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import AssetDetail from './AssetDetail';
 import * as api from '../api';
 import { PortfolioProvider } from '../portfolioContext';
@@ -38,11 +38,12 @@ const mockAssetDetail = {
 
 const mockMetricSheet = { ...samplePortfolioMetricSheetPayload };
 
-function renderDetail(route = '/assets/A') {
+function renderDetail(route = '/assets/A', controls = null) {
   return render(
     <PortfolioProvider disableFetch initialPortfolios={[]}>
       <MemoryRouter initialEntries={[route]}>
         <LocationProbe />
+        {controls}
         <Routes>
           <Route path="/assets/:assetSymbol" element={<AssetDetail />} />
         </Routes>
@@ -203,6 +204,38 @@ describe('AssetDetail Page', () => {
     expect(api.fetchAssetDetails).toHaveBeenLastCalledWith(
       '119288', expect.objectContaining({ portfolio_scope: 'all' }), 'F/2'
     );
+  });
+
+  it('keeps the current authorization error when an earlier asset request fails late', async () => {
+    let rejectPrevious;
+    api.fetchAssetDetails
+      .mockImplementationOnce(() => new Promise((_, reject) => { rejectPrevious = reject; }))
+      .mockRejectedValueOnce(new Error('Forbidden portfolio scope'));
+    renderDetail('/assets/119288', <Link to="/assets/120503">Open another asset</Link>);
+    await waitFor(() => expect(api.fetchAssetDetails).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('link', { name: 'Open another asset' }));
+    await screen.findByText('Forbidden portfolio scope');
+    await act(async () => {
+      rejectPrevious(new Error('folio_number is required when multiple folios exist for this scheme'));
+    });
+    expect(screen.getByText('Forbidden portfolio scope')).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Folio' })).not.toBeInTheDocument();
+    expect(api.getAssetMetricSheet).not.toHaveBeenCalled();
+  });
+
+  it('passes a decoded special-character folio from the route without losing context', async () => {
+    const folio = 'F/1 + &?#';
+    api.fetchAssetDetails.mockResolvedValueOnce({ ...mockAssetDetail,
+      asset_symbol: '120503', asset_type: 'MUTUAL_FUND', folio_number: folio });
+    renderDetail(`/assets/120503?view=metrics&folio_number=${encodeURIComponent(folio)}`);
+    await screen.findByText('Position / Cost Basis');
+    expect(api.fetchAssetDetails).toHaveBeenCalledWith(
+      '120503', expect.objectContaining({ portfolio_scope: 'all', display_currency: 'EUR' }), folio
+    );
+    expect(new URLSearchParams(screen.getByTestId('location-search').textContent).get('view')).toBe('metrics');
+    await waitFor(() => expect(api.getAssetMetricSheet).toHaveBeenCalledWith(
+      '120503', expect.objectContaining({ folio_number: folio })
+    ));
   });
 
   it('loads fund analytics independently when personal position requires a folio', async () => {
