@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
 from finance.cash import (
@@ -164,7 +164,8 @@ def _cash_effect(row: _SimRow) -> tuple[Decimal | None, bool]:
                 row.price_per_share or _ZERO,
                 row.fees or _ZERO,
             )
-        return -required, True
+        # Simulate the persisted ledger amount, not unrounded CSV precision.
+        return -required.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP), True
 
     if row.txn_type == TransactionType.SELL:
         if row.paid_value is not None:
@@ -180,6 +181,7 @@ def _cash_effect(row: _SimRow) -> tuple[Decimal | None, bool]:
                 row.price_per_share or _ZERO,
                 row.fees or _ZERO,
             )
+        proceeds = proceeds.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
         if proceeds <= 0:
             return None, False
         return proceeds, False

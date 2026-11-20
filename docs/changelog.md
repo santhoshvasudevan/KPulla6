@@ -19,6 +19,12 @@
 - **Personal context:** Your Position and Your Holding XIRR are separate. Audits confirmed legacy personal XIRR currency inconsistency and portfolio settlement-timing artifacts; warnings and findings are recorded, with corrections still requiring separate approval.
 - **Safety/verification:** No migrations, live portfolio mutations or provider-on-read changes. Regression/API/UI tests and a two-axis review cover specification #3 and its approved phases.
 
+## 2026-11-09 — CSV cash funding precision
+
+- **Fix:** CSV cash previews round simulated BUY/SELL cash effects to the ledger's four decimal places (`ROUND_HALF_UP`), matching settlement writes. Previously high-precision amounts could produce invalid proposed deposits and HTTP 500 after confirmation, leaving the cash dialog open.
+- **Safety:** SQLite regression tests cover confirmed MF imports, preview precision, and rollback of deposits, transactions, and settlements after failures. No schema or API shape changes.
+- **Troubleshooting:** Added a dedicated CSV cash funding import page with confirmation diagnosis and safe retry guidance, linked from the symptom index and documentation navigation.
+
 ## 2026-08-02 — Debt migration alignment for maturity value source
 
 - **Fix:** Added the missing debt migration so `FixedDeposit.maturity_value_source` matches the Django model width (`max_length=32`), resolving the `make refresh` warning about unapplied model changes in the `debt` app.
