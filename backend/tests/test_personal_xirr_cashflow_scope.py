@@ -86,6 +86,9 @@ def test_personal_xirr_uses_investment_date_not_nav_date(api_client, legacy_seed
     assert personal["xirr"] == pytest.approx(expected, abs=1e-9)
     assert personal["xirr"] != pytest.approx(wrong_nav_date, abs=1e-4)
     assert personal["xirr"] == pytest.approx(0.0654, abs=5e-4)
+    years = (date(2026, 8, 16) - date(2024, 1, 1)).days / 365.0
+    npv = -10000.0 + 11808.953 / ((1.0 + personal["xirr"]) ** years)
+    assert abs(npv) < 1.0
 
 
 @pytest.mark.django_db
@@ -108,6 +111,30 @@ def test_personal_xirr_buy_paid_value_does_not_double_count_fees(api_client, leg
     personal = _metrics(api_client, folio_number=FOLIO)["personal_metrics"]
     assert personal["xirr"] == pytest.approx(expected, abs=1e-9)
     assert personal["xirr"] != pytest.approx(double_counted, abs=1e-4)
+
+
+@pytest.mark.django_db
+def test_personal_xirr_sell_paid_value_zero_uses_units_nav_fees_fallback(
+    api_client, legacy_seeded, monkeypatch
+):
+    monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2025, 6, 1))
+    assert api_client.post("/api/v1/transactions", _mf_payload(
+        investment_date="2024-01-01", nav_date="2024-01-01", nav="100",
+        units_allotted="100", paid_value="10000", market_value="10000",
+        folio_number=FOLIO,
+    ), format="json").status_code == 201
+    sell = api_client.post("/api/v1/transactions", _mf_payload(
+        type="SELL", investment_date="2025-01-01", nav_date="2025-01-01", nav="120",
+        units_allotted="100", paid_value="0", market_value="12000",
+        fees="50", folio_number=FOLIO,
+    ), format="json")
+    assert sell.status_code == 201, sell.json()
+    expected = _oracle([
+        (date(2024, 1, 1), -10000.0),
+        (date(2025, 1, 1), 11950.0),  # 100*120 - 50
+    ])
+    personal = _metrics(api_client, folio_number=FOLIO)["personal_metrics"]
+    assert personal["xirr"] == pytest.approx(expected, abs=1e-9)
 
 
 @pytest.mark.django_db

@@ -10,11 +10,14 @@ from django.db.models import QuerySet
 
 from cash.services import CashDisplaySummary, build_cash_display_summary, cash_allocation_rows
 from debt.portfolio_value import build_bank_cash_holding_rows, build_fd_holding_rows
-from finance.cash import mf_sell_cash_proceeds
 from finance.fifo import calculate_fifo_cost_basis_metrics
 from finance.oversell import detect_oversell
+from finance.personal_holding_xirr import (
+    mf_holding_settlement_amount,
+    solve_native_inr_holding_xirr,
+)
 from finance.types import TransactionType
-from finance.xirr import calculate_xirr, solve_xirr
+from finance.xirr import calculate_xirr
 from fx.lookup import convert_amount_with_fill, convert_amount_with_fill_from_maps, load_fx_rate_maps
 from market_data.mutual_fund_classification_bridge import classification_fields_for_asset
 from market_data.models import Asset, AssetType
@@ -195,36 +198,35 @@ def _float_or_none(value: Decimal | None) -> float | None:
 
 
 def mutual_fund_holding_xirr(db_txns, current_nav, *, today):
-    """Full-position money-weighted return from native INR settlement flows."""
+    """Adapt ORM MF transactions to the native-INR personal XIRR helper."""
     if not db_txns or any(txn.date > today for txn in db_txns):
         return None
     finance_txns = _to_finance_dtos(db_txns)
     if detect_oversell(finance_txns):
         return None
     qty = calculate_fifo_cost_basis_metrics(finance_txns, current_price=current_nav).cumulative_qty
-    if qty > 0 and (current_nav is None or current_nav <= 0):
-        return None
-    flows = {}
+    settlement_flows = []
     for txn in db_txns:
         detail = txn.mutual_fund_detail
-        if txn.type == TransactionType.BUY:
-            amount = -detail.paid_value
-        elif txn.type == TransactionType.SELL:
-            amount = txn.actual_cash_received
-            if amount is None:
-                amount = mf_sell_cash_proceeds(
-                    paid_value=detail.paid_value, units_allotted=detail.units_allotted,
-                    nav=detail.nav, fees=txn.fees,
-                )
-        else:
+        amount = mf_holding_settlement_amount(
+            txn_type=txn.type,
+            paid_value=detail.paid_value,
+            units_allotted=detail.units_allotted,
+            nav=detail.nav,
+            fees=txn.fees or Decimal("0"),
+            actual_cash_received=txn.actual_cash_received,
+        )
+        if amount is None:
             continue
         if detail.investment_date > today:
             return None
-        flows[detail.investment_date] = flows.get(detail.investment_date, Decimal("0")) + amount
-    if qty > 0:
-        flows[today] = flows.get(today, Decimal("0")) + qty * current_nav
-    dates = sorted(flows)
-    return solve_xirr(dates, [float(flows[day]) for day in dates])
+        settlement_flows.append((detail.investment_date, amount))
+    return solve_native_inr_holding_xirr(
+        settlement_flows,
+        remaining_qty=qty,
+        current_nav=current_nav,
+        today=today,
+    )
 
 
 def cached_mutual_fund_holding_xirr(scheme_code, db_txns, *, today):

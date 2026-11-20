@@ -9,9 +9,12 @@ export const PERSONAL_XIRR_REVIEW_NOTE =
 export const PERSONAL_XIRR_INR_NOTE =
   'Annualized personal return in INR, based on your dated purchases and redemptions and the latest cached NAV.';
 
+export function personalXirrHelperText(status) {
+  return status === 'requires_review' ? PERSONAL_XIRR_REVIEW_NOTE : PERSONAL_XIRR_INR_NOTE;
+}
+
 export const NAV_RETURN_NOTE =
   'NAV return measures the fund’s performance. Your purchases and redemptions affect Your Holding XIRR.';
-
 /**
  * Compare page: requested range vs backend-aligned common window.
  * @param {string} timeRange — selected control value (fallback if API omits range.code)

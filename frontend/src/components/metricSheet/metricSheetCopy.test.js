@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   formatCompareRangeContext,
   METRIC_SHEET_XIRR_FULL_SCOPE_NOTE,
+  PERSONAL_XIRR_INR_NOTE,
+  PERSONAL_XIRR_REVIEW_NOTE,
+  personalXirrHelperText,
 } from './metricSheetCopy';
 
 describe('metricSheetCopy', () => {
@@ -20,5 +23,11 @@ describe('metricSheetCopy', () => {
   it('exports XIRR full-scope note copy', () => {
     expect(METRIC_SHEET_XIRR_FULL_SCOPE_NOTE).toMatch(/full-scope/i);
     expect(METRIC_SHEET_XIRR_FULL_SCOPE_NOTE).toMatch(/selected range/i);
+  });
+
+  it('selects personal XIRR helper text from status', () => {
+    expect(personalXirrHelperText('requires_review')).toBe(PERSONAL_XIRR_REVIEW_NOTE);
+    expect(personalXirrHelperText('calculated')).toBe(PERSONAL_XIRR_INR_NOTE);
+    expect(personalXirrHelperText('unavailable')).toBe(PERSONAL_XIRR_INR_NOTE);
   });
 });

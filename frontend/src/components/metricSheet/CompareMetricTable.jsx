@@ -8,7 +8,7 @@ import {
   COMPARE_HIGHLIGHT_LABELS,
   getCompareHighlightStates,
 } from './compareMetricRanking';
-import { METRIC_SHEET_XIRR_FULL_SCOPE_NOTE, PERSONAL_XIRR_INR_NOTE, PERSONAL_XIRR_REVIEW_NOTE } from './metricSheetCopy';
+import { METRIC_SHEET_XIRR_FULL_SCOPE_NOTE, personalXirrHelperText } from './metricSheetCopy';
 import MetricSheetWarnings from './MetricSheetWarnings';
 import MetricSheetNavCoverage from './MetricSheetNavCoverage';
 
@@ -161,7 +161,7 @@ export default function CompareMetricTable({ subjects = [], showBenchmark = fals
                 {cellValue(subject.personal_metrics?.xirr, 'percent')}
                 {subject.performance_basis === 'nav' ? (
                   <>
-                    <span className="compare-metric-table__helper">{subject.personal_metrics?.status === 'requires_review' ? PERSONAL_XIRR_REVIEW_NOTE : PERSONAL_XIRR_INR_NOTE}</span>
+                    <span className="compare-metric-table__helper">{personalXirrHelperText(subject.personal_metrics?.status)}</span>
                     {subject.personal_metrics?.xirr_scope === 'full_scope' ? (
                       <span className="compare-metric-table__helper">Full-scope personal return</span>
                     ) : null}

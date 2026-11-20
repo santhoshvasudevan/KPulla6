@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { fetchBenchmarkIndices, getAssetMetricSheet } from '../../api';
 import { LoadingState, ErrorState, SegmentedControl, MetricCard } from '../ui';
 import { formatMetricPercentFraction } from '../../utils/metricFormatters';
-import { NAV_RETURN_NOTE, PERSONAL_XIRR_INR_NOTE, PERSONAL_XIRR_REVIEW_NOTE } from './metricSheetCopy';
+import { NAV_RETURN_NOTE, personalXirrHelperText } from './metricSheetCopy';
 import MetricSheetSection from './MetricSheetSection';
 import MetricSheetSummaryCards from './MetricSheetSummaryCards';
 import MetricSheetRiskReturnTable from './MetricSheetRiskReturnTable';
@@ -164,7 +164,7 @@ export default function AssetDetailMetricSheet({
           <MetricCard
             label="Your Holding XIRR"
             value={formatMetricPercentFraction(metricSheetData.personal_metrics?.xirr, { showSign: true })}
-            helperText={metricSheetData.personal_metrics?.status === 'requires_review' ? PERSONAL_XIRR_REVIEW_NOTE : PERSONAL_XIRR_INR_NOTE}
+            helperText={personalXirrHelperText(metricSheetData.personal_metrics?.status)}
           />
           {metricSheetData.personal_metrics?.xirr_scope === 'full_scope' ? (
             <p className="metric-sheet__note">Your Holding XIRR is full-scope, independent of the selected fund performance range.</p>

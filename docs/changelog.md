@@ -1,5 +1,9 @@
 # Changelog — KPulla6
 
+## 2026-11-20 — Personal XIRR validation and finance extraction
+
+- Moved native-INR holding settlement/XIRR math into `finance/personal_holding_xirr.py` (Django adapter remains thin). Added pure-finance oracle/NPV coverage, paid-value-zero sell fallback HTTP coverage, and shared UI helper-text selection for review-required vs calculated states.
+
 ## 2026-11-20 — Personal XIRR cash-flow and scope regressions
 
 - Added HTTP regressions for investment-date cash flows, fee-inclusive paid value (no double count), actual redemption receipts, partial/same-day flows, missing/nonpositive/oversold unavailable states, folio/portfolio scope, display-currency/range independence, and holdings/Asset Detail/Metric Sheet/Compare parity.
