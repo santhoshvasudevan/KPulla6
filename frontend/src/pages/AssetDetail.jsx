@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { fetchAssetDetails } from '../api';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { fetchAssetDetails, fetchHoldings } from '../api';
 import { usePortfolio } from '../portfolioContext';
 import { formatCurrency } from '../utils/formatters';
 import { AssetDetailMetricSheet } from '../components/metricSheet';
@@ -69,8 +69,14 @@ function DetailRow({ label, children }) {
 
 export default function AssetDetail() {
   const { assetSymbol } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const folioNumber = searchParams.get('folio_number');
+  const [folioChoices, setFolioChoices] = useState(null);
   const { apiQuery, selectedPortfolioName, selectedDisplayCurrency, settingsLoaded } =
     usePortfolio();
+  const folios = folioChoices?.assetSymbol === assetSymbol && folioChoices.apiQuery === apiQuery
+    ? folioChoices.values
+    : [];
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -79,7 +85,7 @@ export default function AssetDetail() {
     if (!settingsLoaded || !apiQuery) return;
     setLoading(true);
     setError('');
-    fetchAssetDetails(assetSymbol, apiQuery)
+    (folioNumber ? fetchAssetDetails(assetSymbol, apiQuery, folioNumber) : fetchAssetDetails(assetSymbol, apiQuery))
       .then((d) => {
         setData(d);
         setLoading(false);
@@ -87,13 +93,37 @@ export default function AssetDetail() {
       .catch((e) => {
         setError(e.message);
         setLoading(false);
+        if (/multiple\s*folios/i.test(e.message)) {
+          fetchHoldings(apiQuery)
+            .then(({ holdings = [] }) => {
+              const values = [...new Set(holdings
+                .filter((holding) => String(holding.scheme_code || holding.asset_symbol) === assetSymbol)
+                .map((holding) => holding.folio_number)
+                .filter(Boolean))].sort();
+              setFolioChoices({ assetSymbol, apiQuery, values });
+            })
+            .catch(() => setFolioChoices({ assetSymbol, apiQuery, values: [] }));
+        }
       });
-  }, [assetSymbol, apiQuery, settingsLoaded]);
+  }, [assetSymbol, apiQuery, folioNumber, settingsLoaded]);
 
   useEffect(() => {
     if (!settingsLoaded || !apiQuery) return;
     loadData();
   }, [loadData, settingsLoaded, apiQuery]);
+
+  const folioPicker = folios.length > 0 && (
+    <label>
+      Folio{' '}
+      <select
+        value={folioNumber || ''}
+        onChange={(event) => setSearchParams({ folio_number: event.target.value })}
+      >
+        <option value="" disabled>Select a folio</option>
+        {folios.map((folio) => <option key={folio} value={folio}>{folio}</option>)}
+      </select>
+    </label>
+  );
 
   if (!settingsLoaded || loading) {
     return (
@@ -109,11 +139,11 @@ export default function AssetDetail() {
       return (
         <div className="asset-detail">
           <PageHeader title={assetSymbol} subtitle={selectedPortfolioName || 'All Portfolios'} />
-          <ErrorState
+          {folioPicker || <ErrorState
             title="Personal position unavailable"
             message={error}
             onRetry={loadData}
-          />
+          />}
           <div id="asset-metrics">
             <AssetDetailMetricSheet
               assetSymbol={assetSymbol}
@@ -165,6 +195,7 @@ export default function AssetDetail() {
           }
         />
       </header>
+      {folioPicker}
 
       {data.fx_status === 'fx_unavailable' ? (
         <WarningBanner

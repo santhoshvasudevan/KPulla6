@@ -225,9 +225,10 @@ export async function fetchBenchmarkIndices() {
   return data.indices || [];
 }
 
-export async function fetchAssetDetails(assetSymbol, scopeParams = null) {
+export async function fetchAssetDetails(assetSymbol, scopeParams = null, folioNumber = null) {
   const sym = encodeURIComponent(assetSymbol);
   const params = withScopeParams({}, scopeParams);
+  if (folioNumber) params.set("folio_number", folioNumber);
   return fetchWithHandling(`/portfolio/assets/${sym}?${params.toString()}`);
 }
 

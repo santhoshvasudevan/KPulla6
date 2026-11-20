@@ -180,12 +180,14 @@ function renderHoldingRow(h, navigate) {
   const isBankCash = isBankCashHolding(h);
   const rowKey = holdingRowKey(h);
   const clickable = !isFd && !isBankCash;
+  const assetPath = `/assets/${encodeURIComponent(h.asset_symbol)}`;
+  const folioQuery = h.folio_number ? `?${new URLSearchParams({ folio_number: h.folio_number })}` : '';
 
   return (
     <tr
       key={rowKey}
       className={clickable ? 'assets-table__row-clickable' : undefined}
-      onClick={clickable ? () => navigate(`/assets/${h.asset_symbol}`) : undefined}
+      onClick={clickable ? () => navigate(assetPath + folioQuery) : undefined}
     >
       <AppTableCell className="assets-table__symbol">
         <HoldingSymbolCell holding={h} />

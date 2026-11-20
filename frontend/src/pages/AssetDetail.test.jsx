@@ -8,6 +8,7 @@ import samplePortfolioMetricSheetPayload from '../components/metricSheet/fixture
 
 vi.mock('../api', () => ({
   fetchAssetDetails: vi.fn(),
+  fetchHoldings: vi.fn().mockResolvedValue({ holdings: [] }),
   getAssetMetricSheet: vi.fn(),
   fetchBenchmarkIndices: vi.fn(),
   fetchPortfolios: vi.fn(),
@@ -129,6 +130,26 @@ describe('AssetDetail Page', () => {
     expect(screen.queryByRole('cell', { name: /2024 full-year return/i })).not.toBeInTheDocument();
     expect(screen.queryByText('Cash-flow adjusted return using daily TWROR.')).not.toBeInTheDocument();
     expect(within(header).getByText(/€910\.00/)).toBeInTheDocument();
+  });
+
+
+  it('opens the selected folio when a scheme has multiple positions', async () => {
+    api.fetchAssetDetails
+      .mockRejectedValueOnce(new Error('folio_number is required when multiple folios exist for this scheme'))
+      .mockResolvedValueOnce({ ...mockAssetDetail, folio_number: 'F/2' });
+    api.fetchHoldings.mockResolvedValueOnce({ holdings: [
+      { scheme_code: '119288', folio_number: 'F/1' },
+      { scheme_code: '119288', folio_number: 'F/2' },
+      { scheme_code: '120503', folio_number: 'Other' },
+    ] });
+    renderDetail('/assets/119288');
+    const picker = await screen.findByRole('combobox', { name: 'Folio' });
+    expect(within(picker).queryByText('Other')).not.toBeInTheDocument();
+    fireEvent.change(picker, { target: { value: 'F/2' } });
+    await screen.findByText('Position / Cost Basis');
+    expect(api.fetchAssetDetails).toHaveBeenLastCalledWith(
+      '119288', expect.objectContaining({ portfolio_scope: 'all' }), 'F/2'
+    );
   });
 
   it('loads fund analytics independently when personal position requires a folio', async () => {
