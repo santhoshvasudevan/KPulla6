@@ -1,10 +1,15 @@
 import { render, screen, waitFor, fireEvent, within, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import AssetDetail from './AssetDetail';
 import * as api from '../api';
 import { PortfolioProvider } from '../portfolioContext';
 import samplePortfolioMetricSheetPayload from '../components/metricSheet/fixtures/samplePortfolioMetricSheetPayload';
+
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location-search">{location.search}</div>;
+}
 
 vi.mock('../api', () => ({
   fetchAssetDetails: vi.fn(),
@@ -37,6 +42,7 @@ function renderDetail(route = '/assets/A') {
   return render(
     <PortfolioProvider disableFetch initialPortfolios={[]}>
       <MemoryRouter initialEntries={[route]}>
+        <LocationProbe />
         <Routes>
           <Route path="/assets/:assetSymbol" element={<AssetDetail />} />
         </Routes>
@@ -147,6 +153,50 @@ describe('AssetDetail Page', () => {
     expect(within(picker).queryByText('Other')).not.toBeInTheDocument();
     fireEvent.change(picker, { target: { value: 'F/2' } });
     await screen.findByText('Position / Cost Basis');
+    expect(api.fetchAssetDetails).toHaveBeenLastCalledWith(
+      '119288', expect.objectContaining({ portfolio_scope: 'all' }), 'F/2'
+    );
+  });
+
+  it('clears stale folio picker choices when the asset symbol changes', async () => {
+    api.fetchAssetDetails
+      .mockRejectedValueOnce(new Error('folio_number is required when multiple folios exist for this scheme'))
+      .mockRejectedValueOnce(new Error('folio_number is required when multiple folios exist for this scheme'));
+    api.fetchHoldings
+      .mockResolvedValueOnce({ holdings: [
+        { scheme_code: '119288', folio_number: 'OLD-1' },
+        { scheme_code: '119288', folio_number: 'OLD-2' },
+      ] })
+      .mockResolvedValueOnce({ holdings: [
+        { scheme_code: '120503', folio_number: 'NEW-A' },
+        { scheme_code: '120503', folio_number: 'NEW-B' },
+      ] });
+    const { unmount } = renderDetail('/assets/119288');
+    expect(await screen.findByRole('option', { name: 'OLD-1' })).toBeInTheDocument();
+    unmount();
+    renderDetail('/assets/120503');
+    expect(await screen.findByRole('option', { name: 'NEW-A' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'OLD-1' })).not.toBeInTheDocument();
+  });
+
+  it('preserves existing query parameters when changing folio', async () => {
+    api.fetchAssetDetails
+      .mockRejectedValueOnce(new Error('folio_number is required when multiple folios exist for this scheme'))
+      .mockResolvedValueOnce({ ...mockAssetDetail, folio_number: 'F/2' });
+    api.fetchHoldings.mockResolvedValueOnce({ holdings: [
+      { scheme_code: '119288', folio_number: 'F/1' },
+      { scheme_code: '119288', folio_number: 'F/2' },
+    ] });
+    renderDetail('/assets/119288?view=metrics&ref=assets');
+    expect(screen.getByTestId('location-search')).toHaveTextContent('?view=metrics&ref=assets');
+    const picker = await screen.findByRole('combobox', { name: 'Folio' });
+    fireEvent.change(picker, { target: { value: 'F/2' } });
+    await screen.findByText('Position / Cost Basis');
+    const search = screen.getByTestId('location-search').textContent || '';
+    const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
+    expect(params.get('folio_number')).toBe('F/2');
+    expect(params.get('view')).toBe('metrics');
+    expect(params.get('ref')).toBe('assets');
     expect(api.fetchAssetDetails).toHaveBeenLastCalledWith(
       '119288', expect.objectContaining({ portfolio_scope: 'all' }), 'F/2'
     );

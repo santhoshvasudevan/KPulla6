@@ -117,7 +117,14 @@ export default function AssetDetail() {
       Folio{' '}
       <select
         value={folioNumber || ''}
-        onChange={(event) => setSearchParams({ folio_number: event.target.value })}
+        onChange={(event) => {
+          const folio = event.target.value;
+          setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            next.set('folio_number', folio);
+            return next;
+          });
+        }}
       >
         <option value="" disabled>Select a folio</option>
         {folios.map((folio) => <option key={folio} value={folio}>{folio}</option>)}

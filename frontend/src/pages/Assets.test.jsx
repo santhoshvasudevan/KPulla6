@@ -1,9 +1,14 @@
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import Assets from './Assets';
 import * as api from '../api';
 import { PortfolioProvider } from '../portfolioContext';
+
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location">{`${location.pathname}${location.search}`}</div>;
+}
 
 vi.mock('../api', () => ({
   fetchHoldings: vi.fn(),
@@ -56,6 +61,7 @@ function renderAssets() {
   return render(
     <PortfolioProvider>
       <MemoryRouter initialEntries={['/assets']}>
+        <LocationProbe />
         <Routes>
           <Route path="/assets" element={<Assets />} />
           <Route path="/assets/:assetSymbol" element={<div data-testid="asset-detail-route" />} />
@@ -128,6 +134,32 @@ describe('Assets Page', () => {
 
     fireEvent.click(within(screen.getByRole('table')).getByText('AAPL'));
     expect(await screen.findByTestId('asset-detail-route')).toBeInTheDocument();
+  });
+
+  it('navigates to Asset Detail with the selected folio query parameter', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'EUR' });
+    api.fetchHoldings.mockResolvedValue({
+      holdings: [{
+        asset_type: 'MUTUAL_FUND',
+        asset_symbol: '120503',
+        scheme_code: '120503',
+        scheme_name: 'Sample Fund',
+        folio_number: 'F/12',
+        holding_key: '120503:F/12',
+        quantity: 10,
+        current_value: 500,
+        currency: 'INR',
+        overview_class: 'equity',
+      }],
+    });
+    renderAssets();
+    fireEvent.click(await screen.findByRole('button', { name: 'Mutual Funds' }));
+    fireEvent.click(within(screen.getByRole('table')).getByText('Sample Fund'));
+    expect(await screen.findByTestId('asset-detail-route')).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent(
+      `/assets/120503?${new URLSearchParams({ folio_number: 'F/12' })}`
+    );
   });
 
   it('previous holdings is collapsed initially and can be expanded', async () => {

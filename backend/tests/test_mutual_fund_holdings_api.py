@@ -197,6 +197,15 @@ def test_mf_asset_detail_multiple_folios_requires_folio_number(api_client, legac
 
 
 @pytest.mark.django_db
+def test_mf_asset_detail_unknown_folio_returns_not_found(api_client, legacy_seeded):
+    _mf_buy(api_client, folio_number="FOLIO-X")
+    _nav("120503", "48.00")
+    r = api_client.get("/api/v1/portfolio/assets/120503?folio_number=MISSING")
+    assert r.status_code == 404
+    assert "folio" in r.json()["detail"].lower()
+
+
+@pytest.mark.django_db
 def test_holdings_no_external_nav_provider(api_client, legacy_seeded):
     _mf_buy(api_client)
     _nav("120503", "50.00")
