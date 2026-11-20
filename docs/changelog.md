@@ -1,5 +1,9 @@
 # Changelog — KPulla6
 
+## 2026-11-20 — Personal XIRR cash-flow and scope regressions
+
+- Added HTTP regressions for investment-date cash flows, fee-inclusive paid value (no double count), actual redemption receipts, partial/same-day flows, missing/nonpositive/oversold unavailable states, folio/portfolio scope, display-currency/range independence, and holdings/Asset Detail/Metric Sheet/Compare parity.
+
 ## 2026-11-20 — Exclude future NAV from personal XIRR
 
 - Personal mutual-fund XIRR values remaining units with the latest cached NAV on or before the valuation date. Later cache rows cannot change that date's return; open positions without eligible NAV are unavailable; fully redeemed positions still use realized cash flows.
