@@ -66,6 +66,11 @@ unavailable (never zero-valued or future-valued). A fully redeemed position may
 still compute from realized cash flows without a terminal NAV. Display currency
 has no effect on this INR return.
 
+When cash flows have no solvable annualized rate (for example equal payments and
+receipts on the same day with no remaining units), personal XIRR is unavailable,
+not zero. HTTP regressions cover this state and future-NAV exclusion consistently
+across holdings, Asset Detail, Metric Sheet and Compare.
+
 Cumulative NAV Return and TWROR are the same compounded NAV measure on this
 surface because personal cash flows are outside the fund NAV series. The UI shows
 one return card; API consumers retain both existing fields.

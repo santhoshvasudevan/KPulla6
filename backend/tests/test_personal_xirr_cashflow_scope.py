@@ -335,3 +335,65 @@ def test_personal_xirr_independent_of_display_currency_and_range(
     assert inr_1y["personal_metrics"]["xirr_scope"] == "full_scope"
     assert eur_all["personal_metrics"]["basis"] == "native_inr"
     assert eur_all["metrics"] != inr_1y["metrics"] or eur_all["range"] != inr_1y["range"]
+
+
+def _personal_returns_across_surfaces(client):
+    asset = _metrics(client, folio_number=FOLIO)["personal_metrics"]
+    response = client.get("/api/v1/analytics/compare", {
+        "subjects": f"asset:{SCHEME},asset:120504", "range": "ALL",
+    })
+    assert response.status_code == 200, response.json()
+    compared = next(s for s in response.json()["subjects"] if s["asset_symbol"] == SCHEME)
+    return {
+        "holdings": _holding_xirr(client),
+        "detail": _detail_xirr(client),
+        "metrics": asset["xirr"],
+        "compare": compared["personal_metrics"]["xirr"],
+    }, [asset, compared["personal_metrics"]]
+
+
+@pytest.mark.django_db
+def test_unsolvable_same_day_cash_flows_are_unavailable_on_every_surface(
+    api_client, legacy_seeded, monkeypatch,
+):
+    monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2025, 1, 1))
+    for kind in ("BUY", "SELL"):
+        response = api_client.post("/api/v1/transactions", _mf_payload(
+            type=kind, investment_date="2024-01-01", nav_date="2024-01-01",
+            nav="100", units_allotted="100", paid_value="10000", market_value="10000",
+            folio_number=FOLIO,
+        ), format="json")
+        assert response.status_code == 201, response.json()
+    assert api_client.post("/api/v1/transactions", _mf_payload(
+        scheme_code="120504", folio_number=FOLIO,
+    ), format="json").status_code == 201
+    # Equal same-day receipts/payments and no remaining units have no unique annual rate.
+    values, blocks = _personal_returns_across_surfaces(api_client)
+    assert values == dict.fromkeys(values)
+    for block in blocks:
+        assert block["status"] == "unavailable"
+        assert block["basis"] == "native_inr"
+
+
+@pytest.mark.django_db
+def test_future_nav_and_future_only_cache_have_http_parity_on_every_surface(
+    api_client, legacy_seeded, monkeypatch,
+):
+    monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 8, 16))
+    for scheme in (SCHEME, "120504"):
+        assert api_client.post("/api/v1/transactions", _mf_payload(
+            scheme_code=scheme, investment_date="2024-01-01", nav_date="2024-01-01",
+            nav="100", units_allotted="100", paid_value="10000", market_value="10000",
+            folio_number=FOLIO,
+        ), format="json").status_code == 201
+        _nav("2026-08-16", "118.089530", scheme)
+    before, _ = _personal_returns_across_surfaces(api_client)
+    for result in before.values():
+        assert result == pytest.approx(0.065399998671, abs=1e-10)
+    _nav("2026-08-17", "200")
+    after, _ = _personal_returns_across_surfaces(api_client)
+    assert after == before
+    HistoricalPrice.objects.filter(asset_symbol=SCHEME, date__lte=date(2026, 8, 16)).delete()
+    future_only, blocks = _personal_returns_across_surfaces(api_client)
+    assert future_only == dict.fromkeys(future_only)
+    assert all(block["status"] == "unavailable" for block in blocks)
