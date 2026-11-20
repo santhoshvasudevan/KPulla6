@@ -3,6 +3,7 @@ from decimal import Decimal
 from rest_framework import serializers
 
 from transactions.models import Transaction, TransactionType
+from transactions.mf_nav_validation import verify_mutual_fund_nav_inputs
 from transactions.mutual_fund_services import validate_mutual_fund_transaction_payload
 from transactions.services import validate_transaction_payload
 
@@ -56,9 +57,17 @@ class TransactionSerializer(serializers.ModelSerializer):
             data["units_allotted"] = float(detail.units_allotted)
             data["paid_value"] = float(detail.paid_value)
             data["market_value"] = float(detail.market_value)
-            data["nav_verification_status"] = detail.nav_verification_status
-            if detail.nav_verification_message:
-                data["nav_verification_message"] = detail.nav_verification_message
+            # Saved verification is a write-time snapshot; the cache can change later.
+            verification = verify_mutual_fund_nav_inputs(
+                scheme_code=instance.asset_symbol,
+                nav_date=detail.nav_date,
+                entered_nav=detail.nav,
+                units_allotted=detail.units_allotted,
+                market_value=detail.market_value,
+            )
+            data["nav_verification_status"] = verification.status
+            if verification.message:
+                data["nav_verification_message"] = verification.message
         return data
 
 

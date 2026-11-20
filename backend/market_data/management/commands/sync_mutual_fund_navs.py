@@ -25,7 +25,7 @@ class Command(BaseCommand):
             style(
                 f"MF NAV sync finished (synced={result.synced}, "
                 f"skipped={result.skipped}, failed={result.failed}, "
-                f"success={result.success})"
+                f"success={result.success}); skipped includes no-new-data/up-to-date schemes"
             )
         )
 

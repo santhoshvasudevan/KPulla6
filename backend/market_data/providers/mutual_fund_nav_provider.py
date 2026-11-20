@@ -171,7 +171,7 @@ class AmfiNavProvider:
             raise AmfiNavFetchError(f"No valid NAV history rows for scheme {scheme_code}")
         self.category_responses[scheme_code] = self._category_metadata(payload, scheme_code)
         if not rows:
-            logger.warning(
+            logger.info(
                 "Empty NAV history in MFAPI response for scheme %s (%s..%s)",
                 scheme_code,
                 start,

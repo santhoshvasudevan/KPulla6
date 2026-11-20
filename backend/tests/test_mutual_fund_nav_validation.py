@@ -161,6 +161,70 @@ def test_create_mf_value_mismatch_still_saves(api_client, legacy_seeded):
 
 
 @pytest.mark.django_db
+def test_list_rechecks_nav_after_cache_is_populated(api_client, legacy_seeded):
+    created = api_client.post("/api/v1/transactions", _mf_payload(), format="json").json()
+    assert created["nav_verification_status"] == "NAV_MISSING"
+    _cached_nav("120503", "2026-03-15", "42.500000")
+    with patch(
+        "market_data.providers.mutual_fund_nav_provider.AmfiNavProvider.get_nav_history",
+        side_effect=AssertionError("no provider calls on reads"),
+    ):
+        response = api_client.get("/api/v1/transactions")
+    assert response.status_code == 200
+    item = next(row for row in response.json()["items"] if row["id"] == created["id"])
+    assert item["nav_verification_status"] == "VERIFIED"
+    assert item.get("nav_verification_message", "") == ""
+    from transactions.models import MutualFundTransactionDetail, Transaction
+    detail = MutualFundTransactionDetail.objects.get(transaction_id=created["id"])
+    assert detail.nav_verification_status == "NAV_MISSING"  # Stored write-time snapshot.
+    assert detail.nav == Decimal("42.5")
+    assert detail.paid_value == Decimal("4255")
+    assert Transaction.objects.get(pk=created["id"]).quantity == Decimal("100")
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "cache_date,nav,expected",
+    [("2026-03-14", "42.5", "NAV_MISSING"),
+     ("2026-03-15", "43", "NAV_MISMATCH")],
+)
+def test_list_does_not_hide_real_nav_gaps_or_mismatches(
+    api_client, legacy_seeded, cache_date, nav, expected
+):
+    created = api_client.post("/api/v1/transactions", _mf_payload(), format="json").json()
+    _cached_nav("120503", cache_date, nav)
+    response = api_client.get("/api/v1/transactions")
+    assert response.status_code == 200
+    item = next(row for row in response.json()["items"] if row["id"] == created["id"])
+    assert item["nav_verification_status"] == expected
+
+
+@pytest.mark.django_db
+def test_refresh_then_list_updates_nav_label_without_transaction_edits(api_client, legacy_seeded):
+    from market_data.providers.mutual_fund_nav_provider import NavPoint
+    from tests.test_mutual_fund_nav_sync import MockNavProvider
+
+    created = api_client.post("/api/v1/transactions", _mf_payload(), format="json").json()
+    provider = MockNavProvider({"120503": [NavPoint(date(2026, 3, 15), Decimal("42.5"), "INR")]})
+    with patch(
+        "market_data.services.mutual_fund_nav_sync.default_mutual_fund_nav_provider",
+        return_value=provider,
+    ):
+        refreshed = api_client.post("/api/v1/nav/refresh", {"scheme_codes": ["120503"]}, format="json")
+    assert refreshed.status_code == 202
+    assert refreshed.json()["failed"] == 0
+    with patch(
+        "market_data.providers.mutual_fund_nav_provider.http_get_json",
+        side_effect=AssertionError("no network on transaction reads"),
+    ):
+        response = api_client.get("/api/v1/transactions")
+    item = next(row for row in response.json()["items"] if row["id"] == created["id"])
+    assert item["nav_verification_status"] == "VERIFIED"
+    for field in ("nav", "units_allotted", "paid_value", "market_value", "fees"):
+        assert item[field] == created[field]
+
+
+@pytest.mark.django_db
 def test_update_mf_recomputes_verification_status(api_client, legacy_seeded):
     created = api_client.post("/api/v1/transactions", _mf_payload(), format="json").json()
     assert created["nav_verification_status"] == "NAV_MISSING"

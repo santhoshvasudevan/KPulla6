@@ -157,11 +157,59 @@ def test_sync_creates_mutual_fund_historical_price_rows(seeded, test_user):
 
 
 @pytest.mark.django_db
+def test_refresh_fills_missing_transaction_date_before_latest_cache(seeded, test_user):
+    missing = date(2026, 3, 15)
+    asset = _mf_buy_with_detail(test_user, nav_date=missing)
+    HistoricalPrice.objects.create(
+        asset_symbol="120503", asset_type=AssetType.MUTUAL_FUND, asset=asset,
+        date=date(2026, 3, 20), close_price=Decimal("43"), currency="INR",
+    )
+    provider = MockNavProvider({"120503": [NavPoint(missing, Decimal("42.5"), "INR")]})
+    result = sync_mutual_fund_navs(provider=provider, end=date(2026, 3, 21))
+    assert result.failed == 0
+    assert HistoricalPrice.objects.filter(
+        asset_symbol="120503", asset_type=AssetType.MUTUAL_FUND, date=missing
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_empty_history_is_skipped_not_synced_or_failed(seeded, test_user):
+    _mf_buy_with_detail(test_user, nav_date=date(2026, 3, 15))
+    provider = MockNavProvider()
+    result = sync_mutual_fund_navs(provider=provider, end=date(2026, 3, 20))
+    assert result.synced == 0
+    assert result.skipped == 1
+    assert result.failed == 0
+
+
+@pytest.mark.django_db
+def test_no_new_nav_reports_cached_date_without_warning(seeded, test_user, caplog):
+    asset = _mf_buy_with_detail(test_user, nav_date=date(2026, 3, 15))
+    HistoricalPrice.objects.create(
+        asset_symbol="120503", asset_type=AssetType.MUTUAL_FUND, asset=asset,
+        date=date(2026, 3, 15), close_price=Decimal("42.5"), currency="INR",
+    )
+    with caplog.at_level("INFO"):
+        result = sync_mutual_fund_navs(provider=MockNavProvider(), end=date(2026, 3, 16))
+    assert result.synced == 0
+    assert result.skipped == 1
+    assert result.failed == 0
+    assert "No new NAV available for 120503; cached through 2026-03-15" in caplog.text
+    assert not any(record.levelname in ("WARNING", "ERROR") for record in caplog.records)
+
+
+@pytest.mark.django_db
 def test_sync_incremental_from_latest_cached_plus_one(seeded, test_user):
     today = date.today()
     asset = _mf_asset(scheme_code="120503")
     profile = _mf_profile(asset)
     _mf_buy_with_detail(test_user, scheme_code="120503", nav_date=today - timedelta(days=10))
+    # Required historical transaction dates are already covered in this case.
+    HistoricalPrice.objects.create(
+        asset_symbol="120503", date=today - timedelta(days=10),
+        close_price=Decimal("42.50"), currency="INR",
+        asset_type=AssetType.MUTUAL_FUND, source="amfi", asset=asset,
+    )
     HistoricalPrice.objects.create(
         asset_symbol="120503",
         date=today - timedelta(days=6),
@@ -181,7 +229,7 @@ def test_sync_incremental_from_latest_cached_plus_one(seeded, test_user):
     )
     sync_one_mutual_fund(profile, provider)
     assert provider.history_calls[0][1] == today - timedelta(days=5)
-    assert HistoricalPrice.objects.filter(asset_symbol="120503").count() == 3
+    assert HistoricalPrice.objects.filter(asset_symbol="120503").count() == 4
 
 
 @pytest.mark.django_db

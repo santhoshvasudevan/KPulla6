@@ -23,6 +23,7 @@ If ports are wrong: [Dev server and port issues](dev-server-ports.md)
 | Cannot log in / redirect loop | [Login issues](login-issues.md) |
 | Google OAuth error | [Google OAuth errors](google-oauth-errors.md) |
 | Missing prices or NAVs | [Missing prices or NAVs](missing-prices-navs.md) |
+| Transactions shows NAV Not In Cache after refresh | [Transaction NAV verification](missing-prices-navs.md#symptom-transactions-shows-nav-not-in-cache-after-refresh) |
 | CSV import asks for cash again after confirmation | [CSV cash funding import](csv-cash-funding-import.md) |
 | Dashboard slow | [Dashboard is slow](dashboard-slow.md) |
 | MF heatmap shows a large loss around a purchase | [Fund performance and timing diagnosis](../portfolio-finance/17-mf-nav-performance.md#timing-bug-diagnosis) |

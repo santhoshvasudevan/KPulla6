@@ -45,6 +45,8 @@ class Command(BaseCommand):
             msg += " (fx partial — some pairs may lack provider data)"
         if result.mutual_funds_failed:
             msg += " (mutual fund NAV failures — see logs; batch continued)"
+        if result.mutual_funds_skipped:
+            msg += " (NAV skipped: no new data, already current, or no transaction anchor)"
         if result.success and result.mutual_funds_failed == 0:
             self.stdout.write(self.style.SUCCESS(msg))
         else:

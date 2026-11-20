@@ -59,6 +59,20 @@ def _earliest_relevant_nav_date(scheme_code: str) -> date | None:
     return min(candidates)
 
 
+def _earliest_missing_transaction_nav_date(scheme_code: str, end: date) -> date | None:
+    cached_dates = HistoricalPrice.objects.filter(
+        asset_symbol=scheme_code, asset_type=AssetType.MUTUAL_FUND,
+        close_price__gt=0,
+    ).values("date")
+    return (
+        MutualFundTransactionDetail.objects.filter(
+            transaction__asset_symbol=scheme_code, nav_date__lte=end,
+        )
+        .exclude(nav_date__in=cached_dates)
+        .aggregate(earliest=Min("nav_date"))["earliest"]
+    )
+
+
 def upsert_mutual_fund_nav(
     *,
     scheme_code: str,
@@ -88,19 +102,19 @@ def sync_one_mutual_fund(
     provider: MutualFundNavProvider,
     *,
     end: date | None = None,
-) -> bool:
+) -> bool | None:
     """
     Incrementally sync NAV history for one mutual fund profile.
 
-    Returns False on provider failure; True when skipped (up-to-date / empty) or synced.
+    Return True for rows synced, False on provider failure, None for no updates.
     """
     asset = profile.asset
     if asset.asset_type != AssetType.MUTUAL_FUND or not asset.is_active:
-        return True
+        return None
 
     scheme_code = normalize_scheme_code(profile.scheme_code or asset.symbol)
     if not scheme_code:
-        return True
+        return None
 
     end = end or date.today()
     max_hist_date = _latest_mutual_fund_nav_date(scheme_code)
@@ -113,10 +127,15 @@ def sync_one_mutual_fund(
                 "Skipping MF NAV sync for %s: no cached NAV and no transaction/detail date",
                 scheme_code,
             )
-            return True
+            return None
+
+    missing_date = _earliest_missing_transaction_nav_date(scheme_code, end)
+    if missing_date is not None:
+        start_date = min(start_date, missing_date)
 
     if start_date > end:
-        return True
+        logger.info("No new NAV available for %s; cached through %s", scheme_code, max_hist_date)
+        return None
 
     try:
         rows = provider.get_nav_history(scheme_code, start_date, end)
@@ -125,13 +144,14 @@ def sync_one_mutual_fund(
         return False
 
     if not rows:
-        logger.warning(
-            "Empty NAV history for %s from %s to %s",
-            scheme_code,
-            start_date,
-            end,
-        )
-        return True
+        if missing_date is not None:
+            logger.warning(
+                "No NAV rows returned for %s (%s..%s); transaction NAV date %s remains missing",
+                scheme_code, start_date, end, missing_date,
+            )
+        else:
+            logger.info("No new NAV available for %s; cached through %s", scheme_code, max_hist_date)
+        return None
 
     default_ccy = asset.currency or MF_NAV_CURRENCY
     for row in rows:
@@ -220,8 +240,10 @@ def sync_mutual_fund_navs(
             except Exception as exc:
                 category_counts["unavailable"] += 1
                 logger.warning("MF category update unavailable for %s: %s", scheme_code, exc)
-        if ok:
+        if ok is True:
             synced += 1
+        elif ok is None:
+            skipped += 1
         else:
             failed += 1
 

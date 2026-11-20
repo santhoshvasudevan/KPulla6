@@ -19,6 +19,17 @@
 - **Personal context:** Your Position and Your Holding XIRR are separate. Audits confirmed legacy personal XIRR currency inconsistency and portfolio settlement-timing artifacts; warnings and findings are recorded, with corrections still requiring separate approval.
 - **Safety/verification:** No migrations, live portfolio mutations or provider-on-read changes. Regression/API/UI tests and a two-axis review cover specification #3 and its approved phases.
 
+## 2026-11-09 — Current NAV verification and accurate refresh outcomes
+
+- **Transactions:** API verification reflects the current exact-date cached NAV instead of a stale saved import-time snapshot. Reads remain provider-free and do not alter transaction values or stored snapshots. Missing dates and mismatches remain visible.
+- **NAV refresh:** Include missing historical transaction NAV dates even when newer cache rows exist. Count valid empty/up-to-date results as skipped rather than synced; keep provider errors and malformed payloads as failures. No schema or API field changes.
+- **Tests/docs:** Added SQLite regressions for stale verification, exact-date gaps, refresh-to-list behavior, historical backfill, and refresh outcomes; documented diagnosis and safe recovery.
+
+## 2026-08-01 — Market data refresh skips invalid provider prices
+
+- **Fix:** `make refresh` no longer fails when yfinance returns `NaN` or infinite adjusted-close values; invalid provider rows are skipped before writing `HistoricalPrice.close_price`.
+- **Tests:** `cd backend && DJANGO_TEST_USE_SQLITE=1 .venv/bin/python -m pytest tests/test_market_data_sync.py -q`.
+
 ## 2026-11-09 — CSV cash funding precision
 
 - **Fix:** CSV cash previews round simulated BUY/SELL cash effects to the ledger's four decimal places (`ROUND_HALF_UP`), matching settlement writes. Previously high-precision amounts could produce invalid proposed deposits and HTTP 500 after confirmation, leaving the cash dialog open.

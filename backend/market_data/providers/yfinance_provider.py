@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
+import math
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from market_data.providers.base import DailyPrice, PriceProvider
 from market_data.price_lookup import normalize_asset_symbol
@@ -13,6 +14,21 @@ logger = logging.getLogger(__name__)
 def _norm_ccy(value: str | None) -> str:
     return (value or "USD").strip().upper() or "USD"
 
+
+
+
+def _finite_decimal_from_provider_value(value) -> Decimal | None:
+    try:
+        as_float = float(value)
+    except (TypeError, ValueError, InvalidOperation):
+        return None
+    if not math.isfinite(as_float):
+        return None
+
+    decimal_value = Decimal(str(as_float))
+    if not decimal_value.is_finite():
+        return None
+    return decimal_value
 
 def _adj_close_or_close_series(hist):
     if hist is None or getattr(hist, "empty", True):
@@ -52,11 +68,20 @@ class YFinancePriceProvider:
 
         rows: list[DailyPrice] = []
         for idx, val in series.items():
+            close = _finite_decimal_from_provider_value(val)
+            if close is None:
+                logger.warning(
+                    "Skipping invalid yfinance price for %s on %s: %r",
+                    sym,
+                    idx,
+                    val,
+                )
+                continue
             row_date = idx.date() if hasattr(idx, "date") else idx
             rows.append(
                 DailyPrice(
                     date=row_date,
-                    close=Decimal(str(float(val))),
+                    close=close,
                     currency=currency or "USD",
                 )
             )

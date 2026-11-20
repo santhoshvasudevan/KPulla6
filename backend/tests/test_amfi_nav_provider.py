@@ -147,6 +147,16 @@ class TestAmfiNavProvider:
         with pytest.raises(AmfiNavFetchError):
             provider.get_nav_history("120503", date(2026, 3, 1), date(2026, 3, 2))
 
+    @pytest.mark.parametrize("payload", [
+        {"status": "ERROR", "data": []},
+        {"status": "SUCCESS", "data": "invalid"},
+        {"status": "SUCCESS", "data": [{"date": "invalid", "nav": "bad"}]},
+    ])
+    def test_bad_history_is_failure_not_no_new_data(self, payload):
+        provider = AmfiNavProvider(http_get=lambda url, timeout: payload)
+        with pytest.raises(AmfiNavFetchError):
+            provider.get_nav_history("120503", date(2026, 3, 1), date(2026, 3, 2))
+
 
 @pytest.mark.django_db
 def test_sync_stores_parsed_nav_rows_from_live_provider(seeded, test_user):

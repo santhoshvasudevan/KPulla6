@@ -5,12 +5,14 @@ from decimal import Decimal
 from io import StringIO
 from unittest.mock import patch
 
+import pandas as pd
 import pytest
 from django.core.management import call_command
 
 from market_data.models import AssetType, BenchmarkIndexConfig, HistoricalPrice
 from market_data.price_lookup import latest_historical_price, normalize_asset_symbol
 from market_data.providers.base import DailyPrice
+from market_data.providers.yfinance_provider import YFinancePriceProvider
 from market_data.providers.mutual_fund_nav_provider import NavPoint
 from market_data.services.benchmark_sync import sync_benchmark_prices
 from market_data.services.market_data_sync import sync_all_market_data
@@ -264,6 +266,44 @@ def test_sync_handles_provider_error(seeded, test_user):
     provider = MockPriceProvider(fail={"AAPL"})
     assert sync_one_stock_symbol("AAPL", provider) is False
 
+
+
+
+@patch("yfinance.Ticker")
+def test_yfinance_provider_skips_nan_and_infinite_prices(mock_ticker):
+    ticker = mock_ticker.return_value
+    ticker.info = {"currency": "USD"}
+    ticker.history.return_value = pd.DataFrame(
+        {
+            "Adj Close": [
+                100.25,
+                float("nan"),
+                float("inf"),
+                101.75,
+            ]
+        },
+        index=pd.to_datetime(
+            [
+                "2026-01-02",
+                "2026-01-03",
+                "2026-01-04",
+                "2026-01-05",
+            ]
+        ),
+    )
+
+    rows, currency = YFinancePriceProvider().fetch_history(
+        "AAPL",
+        date(2026, 1, 1),
+        date(2026, 1, 6),
+    )
+
+    assert currency == "USD"
+    assert [(row.date, row.close) for row in rows] == [
+        (date(2026, 1, 2), Decimal("100.25")),
+        (date(2026, 1, 5), Decimal("101.75")),
+    ]
+    ticker.history.assert_called_once()
 
 @pytest.mark.django_db
 def test_prices_refresh_without_symbols(api_client, seeded, test_user):
