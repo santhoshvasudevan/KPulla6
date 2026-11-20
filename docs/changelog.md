@@ -19,6 +19,11 @@
 - **Personal context:** Your Position and Your Holding XIRR are separate. Audits confirmed legacy personal XIRR currency inconsistency and portfolio settlement-timing artifacts; warnings and findings are recorded, with corrections still requiring separate approval.
 - **Safety/verification:** No migrations, live portfolio mutations or provider-on-read changes. Regression/API/UI tests and a two-axis review cover specification #3 and its approved phases.
 
+## 2026-08-02 — Debt migration alignment for maturity value source
+
+- **Fix:** Added the missing debt migration so `FixedDeposit.maturity_value_source` matches the Django model width (`max_length=32`), resolving the `make refresh` warning about unapplied model changes in the `debt` app.
+- **Validation:** `makemigrations debt --check --dry-run`, targeted fixed-deposit API tests, `make refresh`, and docs checks.
+
 ## 2026-07-02 — Logout redirects to landing page
 
 - **Frontend:** Log out navigates to `/` (public landing) instead of `/login`.
