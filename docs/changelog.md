@@ -30,6 +30,12 @@
 - **Fix:** `make refresh` no longer fails when yfinance returns `NaN` or infinite adjusted-close values; invalid provider rows are skipped before writing `HistoricalPrice.close_price`.
 - **Tests:** `cd backend && DJANGO_TEST_USE_SQLITE=1 .venv/bin/python -m pytest tests/test_market_data_sync.py -q`.
 
+## 2026-11-09 — Dashboard reconciliation and allocation currency
+
+- **Fix:** Convert native stock/MF values with cached FX before building dashboard allocation buckets. Previously INR amounts could be labelled EUR despite correct headline conversion. Missing FX remains explicitly partial rather than leaking unconverted values.
+- **Clarity:** KPI hover definitions explain current cached valuation versus remaining FIFO cost basis. Existing headline formulas and transaction values are unchanged; gross BUY payments are a different measure.
+- **Tests/docs:** Added allocation-currency and missing-FX regressions, KPI tooltip coverage, and a dedicated dashboard totals troubleshooting page linked from the symptom index.
+
 ## 2026-10-09 — Stock close prices and cash dividends
 
 - **Prices:** Stock sync stores Yahoo’s market close (`auto_adjust=False`), which is split-adjusted and not dividend-adjusted. Benchmarks still use adjusted closes. Existing cached stock rows stay dividend-adjusted until stock history is rebuilt.

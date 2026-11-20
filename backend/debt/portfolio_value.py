@@ -441,6 +441,15 @@ def calculate_allocation_buckets(
     other = Decimal("0")
     any_fx_missing = False
 
+    today = portfolio_dates.current_date()
+    fx_pairs = {
+        ((item.get("currency") or disp_ccy).strip().upper(), disp_ccy)
+        for item in stock_mf_holdings
+        if item.get("asset_type") not in {"FIXED_DEPOSIT", "BANK_CASH"}
+    }
+    fx_maps = load_fx_rate_maps(fx_pairs, today - timedelta(days=7), today)
+    any_fx_filled = False
+
     for item in stock_mf_holdings:
         asset_type = item.get("asset_type")
         if asset_type in {"FIXED_DEPOSIT", "BANK_CASH"}:
@@ -456,6 +465,15 @@ def calculate_allocation_buckets(
             continue
         if item.get("holding_status") == "closed":
             continue
+        # Stock/MF holdings are native-currency amounts; buckets are display-currency.
+        cv, fx_st = convert_amount_with_fill_from_maps(
+            cv, (item.get("currency") or disp_ccy).strip().upper(),
+            disp_ccy, today, fx_maps,
+        )
+        if cv is None:
+            any_fx_missing = True
+            continue
+        any_fx_filled = any_fx_filled or fx_st == "filled"
         if asset_type == "MUTUAL_FUND":
             bucket = _classify_asset_class_bucket(item.get("primary_asset_class"))
         else:
@@ -466,8 +484,6 @@ def calculate_allocation_buckets(
             debt += cv
         else:
             other += cv
-        if item.get("fx_status") == "fx_unavailable":
-            any_fx_missing = True
 
     fd_calc = calculate_fd_holdings_for_scope(scope, display_currency=disp_ccy)
     debt += fd_calc.current_value
@@ -477,7 +493,7 @@ def calculate_allocation_buckets(
     if cash_display_total > 0:
         other += cash_display_total
 
-    fx_status = "fx_unavailable" if any_fx_missing else "ok"
+    fx_status = "fx_unavailable" if any_fx_missing else "filled" if any_fx_filled else "ok"
     return AllocationBuckets(
         equity=equity,
         debt=debt,

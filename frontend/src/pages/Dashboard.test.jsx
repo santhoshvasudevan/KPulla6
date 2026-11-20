@@ -221,6 +221,8 @@ describe('Dashboard Component', () => {
     await waitFor(() => {
       expect(screen.getByText('Current Value')).toBeInTheDocument();
       expect(screen.getByText('Total Invested')).toBeInTheDocument();
+      expect(screen.getByTitle(/remaining FIFO cost basis/i)).toHaveTextContent('Total Invested');
+      expect(screen.getByTitle(/latest cached prices and NAVs/i)).toHaveTextContent('Current Value');
       expect(screen.getByText('Total P/L')).toBeInTheDocument();
       expect(within(screen.getByTestId('dashboard-kpi-strip')).getByText('XIRR')).toBeInTheDocument();
       expect(within(screen.getByTestId('dashboard-kpi-strip')).getByText(/€18,500\.00/)).toBeInTheDocument();

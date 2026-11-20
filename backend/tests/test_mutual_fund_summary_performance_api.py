@@ -85,6 +85,33 @@ def _mf_nav(scheme: str, d: str, close: str):
 
 
 @pytest.mark.django_db
+def test_dashboard_allocation_uses_same_display_currency_as_headline(api_client, legacy_seeded, monkeypatch):
+    monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
+    response = _mf_buy(api_client)
+    assert response.status_code == 201
+    _mf_nav("120503", "2026-03-20", "50")
+    upsert_fx_rate(from_currency="INR", to_currency="EUR", row_date=date(2026, 3, 20), rate=Decimal("0.01"))
+    data = api_client.get(
+        "/api/v1/portfolio/summary?include_timeseries=false&display_currency=EUR"
+    ).json()
+    assert data["current_value"] == 50
+    assert data["total_invested"] == 42.5  # Remaining cost basis, not gross BUY payments.
+    assert data["allocation_buckets"]["currency"] == "EUR"
+    assert sum(row["value"] for row in data["allocation_buckets"]["buckets"]) == 50
+
+
+@pytest.mark.django_db
+def test_dashboard_allocation_never_labels_unconverted_inr_as_eur(api_client, legacy_seeded, monkeypatch):
+    monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
+    assert _mf_buy(api_client).status_code == 201
+    _mf_nav("120503", "2026-03-20", "50")
+    data = api_client.get(
+        "/api/v1/portfolio/summary?include_timeseries=false&display_currency=EUR"
+    ).json()
+    assert data["allocation_buckets"]["fx_status"] == "fx_unavailable"
+    assert sum(row["value"] for row in data["allocation_buckets"]["buckets"]) == 0
+
+@pytest.mark.django_db
 def test_summary_single_mf_buy_with_cached_nav(api_client, legacy_seeded):
     _mf_buy(api_client)
     _mf_nav("120503", "2026-03-20", "50.00")

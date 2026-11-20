@@ -416,12 +416,20 @@ export default function Dashboard() {
 
       <div className="dashboard-kpi-strip" data-testid="dashboard-kpi-strip">
         <KpiCard
-          label="Current Value"
+          label={
+            <span title="Remaining holdings at latest cached prices and NAVs, plus included cash and fixed deposits, in the selected display currency.">
+              Current Value
+            </span>
+          }
           size="compact"
           value={<CurrencyValue value={summary.current_value} currency={displayCurrency} />}
         />
         <KpiCard
-          label="Total Invested"
+          label={
+            <span title="Remaining FIFO cost basis of current holdings, excluding fees, plus included fixed-deposit principal and bank-cash basis. Not the sum of all BUY payments; sold holdings are removed. Shown in the selected display currency.">
+              Total Invested
+            </span>
+          }
           size="compact"
           value={<CurrencyValue value={summary.total_invested} currency={displayCurrency} />}
         />

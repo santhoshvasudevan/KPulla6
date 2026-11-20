@@ -572,6 +572,15 @@ Validation: `portfolio_scope=all` + `portfolio_id` → **422**; unknown/inactive
 
 **Metrics:** FIFO remaining cost basis (`total_invested`), latest cached prices for `current_value`, `realized_pl` / `unrealized_pl` / `total_pl`, optional portfolio `xirr` (full-scope). **`current_value` includes cash** (Cash-6A). **Performance `value` / `twror` / `cumulative_return`** use cash-inclusive daily values and cash-aware external flows when `cash_aware_enabled=true` (Cash-6C.2); legacy portfolios keep investment-only TWROR/cumulative return.
 
+
+`total_invested` is not gross historical BUY payments: sold FIFO lots are removed
+at cost, and stock/MF fees are excluded from FIFO basis under the existing rule.
+Dashboard KPI tooltips clarify this distinction. Allocation buckets convert native
+stock/MF holdings to the requested display currency with cached FX before summing;
+unconvertible amounts are excluded with `allocation_buckets.fx_status=fx_unavailable`,
+never relabelled as display-currency amounts. FD/bank cash already converted by
+their services must not be converted a second time.
+
 **Portfolio `xirr` (Cash-6C.1):**
 
 | Mode | External flows | Terminal value |

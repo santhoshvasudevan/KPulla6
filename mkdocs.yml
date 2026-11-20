@@ -145,6 +145,7 @@ nav:
     - Missing prices or NAVs: troubleshooting/missing-prices-navs.md
     - CSV cash funding import: troubleshooting/csv-cash-funding-import.md
     - Dashboard is slow: troubleshooting/dashboard-slow.md
+    - Dashboard totals: troubleshooting/dashboard-totals.md
     - Database safety problems: troubleshooting/database-safety.md
     - Dev server and port issues: troubleshooting/dev-server-ports.md
   - Decisions:
