@@ -33,6 +33,7 @@
 ## 2026-11-11 — Mutual fund folio navigation
 
 - Assets holdings open the selected mutual fund folio. A scheme link with several folios offers a picker while fund NAV performance remains available.
+- Folio picker updates preserve other Asset Detail query parameters.
 
 ## 2026-11-11 — More room for Assets allocation and fund categories
 
