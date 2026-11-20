@@ -6,7 +6,7 @@
 
 ## 2026-11-20 — Pending-purchase valuation edge cases
 
-- Added bounded-range, missing-NAV, direct/filled/missing-FX and legacy-mode regressions (#33). Historical display conversion now loads the opening FX lookback; recognized fund units without cached NAV remain unavailable instead of showing a cash-only portfolio value.
+- Added bounded-range, missing-NAV, direct/filled/missing-FX and legacy-mode regressions (#33). Historical display conversion now loads the opening FX lookback; recognized fund units without cached NAV remain unavailable instead of showing a cash-only portfolio value. All Portfolios preserves an unknown child valuation even beside known holdings, including cumulative-return and TWROR history.
 
 ## 2026-11-20 — Compare personal folio scope
 

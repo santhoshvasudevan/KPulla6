@@ -164,7 +164,9 @@ Daily portfolio value \(PV_d\) = **investment value + cash + pending mutual fund
 Pending purchases that began before a selected chart range are carried into that
 range. Once units are recognized, missing cached NAV leaves investment value
 unavailable; broker cash alone must not be presented as the complete portfolio,
-including at the chart's terminal point. Native, portfolio-base and display
+including at the chart's terminal point and when aggregated with other portfolios.
+This missing-NAV rule does not change the existing partial-value fallback for
+FX-only gaps. Native, portfolio-base and display
 currencies are converted once per boundary, with the normal cached FX lookback
 also applied to the beginning of ALL history. Legacy cash-unaware portfolios do
 not acquire cash-aware pending purchase value.

@@ -710,6 +710,7 @@ def _build_portfolio_value_timeseries(
                 "portfolio_value": None if daily_fx_missing or daily_nav_missing else float(daily_value),
                 "invested_amount": float(daily_inv),
                 "fx_status": fx_status,
+                "_nav_missing": daily_nav_missing,
             }
         )
         d += timedelta(days=1)
@@ -778,9 +779,14 @@ def _aggregate_timeseries_lists(series_list: list[list[dict]]) -> list[dict]:
                     "invested_amount": 0.0,
                     "fx_status": "ok",
                     "_pv_known": False,
+                    "_pv_unknown": False,
                 }
             row = by_date[d]
             child_pv = pt.get("portfolio_value")
+            # Preserve missing NAV even when FX gaps coexist; FX-only partial
+            # aggregation retains its established behavior.
+            if pt.get("_nav_missing"):
+                row["_pv_unknown"] = True
             if child_pv is not None:
                 if row["_pv_known"]:
                     row["portfolio_value"] = float(row["portfolio_value"]) + float(
@@ -798,7 +804,9 @@ def _aggregate_timeseries_lists(series_list: list[list[dict]]) -> list[dict]:
     out: list[dict] = []
     for d in sorted(by_date.keys()):
         row = by_date[d]
-        if not row.pop("_pv_known"):
+        known = row.pop("_pv_known")
+        unknown = row.pop("_pv_unknown")
+        if unknown or not known:
             row["portfolio_value"] = None
         out.append(row)
     return out

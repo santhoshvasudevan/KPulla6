@@ -81,6 +81,79 @@ def test_missing_nav_after_recognition_stays_unknown_not_pending_cash(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("metric", ["value", "cumulative_return", "twror"])
+def test_all_portfolios_preserves_missing_nav_beside_valued_holdings(
+    api_client, cash_aware_portfolio, test_user, monkeypatch, metric,
+):
+    from portfolios.models import Portfolio
+
+    monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 17))
+    missing = cash_aware_portfolio
+    missing.base_currency = "INR"
+    missing.save(update_fields=["base_currency"])
+    known = Portfolio.objects.create(
+        user=test_user, name="Valued portfolio", base_currency="INR",
+        cash_aware_enabled=True,
+    )
+    for portfolio in (missing, known):
+        _deposit(portfolio, day="2026-03-10", amount="10000", currency="INR")
+    _buy(api_client, missing)
+    response = api_client.post("/api/v1/transactions", _mf_payload(
+        portfolio_id=known.id, scheme_code="119062", investment_date="2026-03-12",
+        nav_date="2026-03-16", paid_value="4250", market_value="4250", fees="0",
+    ), format="json")
+    assert response.status_code == 201, response.json()
+    HistoricalPrice.objects.create(
+        asset_symbol="119062", asset_type=AssetType.MUTUAL_FUND,
+        date=date(2026, 3, 16), close_price=Decimal("42.5"), currency="INR",
+    )
+    response = api_client.get("/api/v1/portfolio/performance", {
+        "portfolio_scope": "all", "display_currency": "INR",
+        "range": "ALL", "metric": metric,
+    })
+    assert response.status_code == 200, response.json()
+    data = response.json()
+    points = data["points"] if isinstance(data, dict) else data
+    values = {point["date"]: point["value"] for point in points}
+    if metric == "value":
+        assert values["2026-03-13"] == pytest.approx(20000)
+    assert values["2026-03-16"] is None
+    assert values["2026-03-17"] is None
+    for selector in ({"portfolio_id": missing.id}, {"portfolio_scope": "all"}):
+        summary = api_client.get("/api/v1/portfolio/summary", {
+            **selector, "display_currency": "INR",
+        })
+        assert summary.status_code == 200
+        assert all("_nav_missing" not in point for point in summary.json()["timeseries"])
+
+
+@pytest.mark.django_db
+def test_missing_display_fx_retains_known_child_value(
+    api_client, legacy_seeded, test_user, monkeypatch,
+):
+    from portfolios.models import Portfolio
+    from tests.test_cash_aware_transactions_api import _stock_payload
+
+    monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 17))
+    euro = Portfolio.objects.get(user=test_user, is_default=True)
+    known = Portfolio.objects.create(user=test_user, name="INR", base_currency="INR")
+    response = api_client.post("/api/v1/transactions", _stock_payload(
+        portfolio_id=euro.id, date="2026-03-10", quantity="1", fees="0",
+    ), format="json")
+    assert response.status_code == 201, response.json()
+    HistoricalPrice.objects.create(
+        asset_symbol="AAPL", asset_type=AssetType.STOCK, date=date(2026, 3, 10),
+        close_price=Decimal("100"), currency="EUR",
+    )
+    _buy(api_client, known)
+    _nav("2026-03-16")
+    values, _ = _performance(api_client, known, scope="all", currency="INR")
+    # EUR->INR is missing, but the established FX-only partial-value policy
+    # retains the INR holding rather than treating it as missing NAV.
+    assert values["2026-03-16"] == pytest.approx(4250)
+
+
+@pytest.mark.django_db
 @pytest.mark.parametrize("scope", ["single", "all"])
 @pytest.mark.parametrize("fx_mode", ["direct", "filled", "missing"])
 def test_pending_and_investments_convert_once_across_base_and_display_currency(

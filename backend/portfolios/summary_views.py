@@ -69,7 +69,10 @@ class PortfolioSummaryView(APIView):
             "base_currency": result.base_currency,
             "display_currency": result.display_currency,
             "fx_status": result.fx_status,
-            "timeseries": result.timeseries,
+            "timeseries": [
+                {key: value for key, value in point.items() if key != "_nav_missing"}
+                for point in result.timeseries
+            ],
         }
         if result.warnings:
             payload["warnings"] = result.warnings
