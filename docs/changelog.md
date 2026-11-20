@@ -54,6 +54,11 @@
 - **Cash:** A SELL may record `actual_cash_received` above calculated proceeds (`qty × price − fees`, or mutual-fund proceeds). The extra cash is a positive `TAX_RELEASED` ledger row (released withheld tax, such as capital-gains tax returned on a loss). `SELL_SETTLEMENT` stays at calculated proceeds. Net cash is the actual amount received.
 - **Frontend:** The transaction modal previews “Withheld tax released” when actual cash is higher than calculated proceeds.
 
+## 2026-10-06 — Google sign-in from 127.0.0.1
+
+- **Fix:** Sign in with Google now starts on `http://localhost:<port>` when the app is opened at `127.0.0.1` or `::1`. The OAuth callback is `localhost:8000`, and a session cookie set on `127.0.0.1` is not sent there, which made django-allauth return **Third-Party Login Failure** (HTTP 401).
+- **Docs:** `docs/troubleshooting/google-oauth-errors.md`.
+
 ## 2026-08-01 — Transaction modal corporate-action guidance
 
 - **Frontend:** Add Transaction now explains when to use `STOCK_SPLIT` versus a zero-price `BUY` for bonus shares, spin-offs, demergers, or new tickers allocated from an existing holding.

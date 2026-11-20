@@ -44,6 +44,22 @@ export function AuthLinks({ register = false }) {
 /** django-allauth Google login entry (proxied to Django; SOCIALACCOUNT_LOGIN_ON_GET redirects immediately). */
 export const GOOGLE_LOGIN_PATH = '/accounts/google/login/?process=login';
 
+/**
+ * Hosts that do not share cookies with `localhost`.
+ * The OAuth callback is `http://localhost:8000/...`, so the session cookie
+ * must be set on `localhost` or allauth cannot recover the login state.
+ */
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', '::1', '[::1]']);
+
+export function resolveGoogleLoginUrl(locationLike = window.location) {
+  const hostname = locationLike?.hostname || '';
+  if (!LOOPBACK_HOSTS.has(hostname)) {
+    return GOOGLE_LOGIN_PATH;
+  }
+  const port = locationLike.port || '5173';
+  return `http://localhost:${port}${GOOGLE_LOGIN_PATH}`;
+}
+
 export function GoogleSignInButton() {
   return (
     <Button
@@ -51,7 +67,7 @@ export function GoogleSignInButton() {
       variant="secondary"
       className="auth-google-btn"
       onClick={() => {
-        window.location.assign(GOOGLE_LOGIN_PATH);
+        window.location.assign(resolveGoogleLoginUrl(window.location));
       }}
     >
       Sign in with Google

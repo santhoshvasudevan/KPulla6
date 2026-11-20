@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AuthShell, GOOGLE_LOGIN_PATH, GoogleSignInButton } from './AuthShell';
+import { AuthShell, GOOGLE_LOGIN_PATH, GoogleSignInButton, resolveGoogleLoginUrl } from './AuthShell';
 
 describe('AuthShell', () => {
   it('renders KPulla6 brand identity and panel title', () => {
@@ -34,5 +34,17 @@ describe('GoogleSignInButton', () => {
     render(<GoogleSignInButton />);
     fireEvent.click(screen.getByRole('button', { name: /sign in with google/i }));
     expect(window.location.assign).toHaveBeenCalledWith(GOOGLE_LOGIN_PATH);
+  });
+
+  it('starts Google OAuth on localhost when the app is opened at 127.0.0.1', () => {
+    expect(
+      resolveGoogleLoginUrl({ hostname: '127.0.0.1', port: '5173' })
+    ).toBe(`http://localhost:5173${GOOGLE_LOGIN_PATH}`);
+    expect(resolveGoogleLoginUrl({ hostname: '::1', port: '5173' })).toBe(
+      `http://localhost:5173${GOOGLE_LOGIN_PATH}`
+    );
+    expect(resolveGoogleLoginUrl({ hostname: 'localhost', port: '5173' })).toBe(
+      GOOGLE_LOGIN_PATH
+    );
   });
 });
