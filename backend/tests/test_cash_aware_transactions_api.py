@@ -1165,3 +1165,80 @@ def test_performance_carries_funded_mutual_fund_purchase_until_nav(
     march = next(row for row in metrics["periodic_returns"]["monthly"] if row["period"] == "2026-03")
     assert march["return"] == pytest.approx(0)
     assert metrics["drawdown_periods"]["worst"] == []
+
+
+@pytest.mark.django_db
+def test_same_day_mf_purchase_is_not_double_counted(api_client, cash_aware_portfolio, monkeypatch):
+    """Settlement and NAV on the same day must not invent pending value."""
+    from market_data.models import AssetType, HistoricalPrice
+
+    monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 16))
+    portfolio = cash_aware_portfolio
+    _deposit(portfolio, day="2026-03-15", amount="10000", currency="INR")
+    assert api_client.post(
+        "/api/v1/transactions",
+        _mf_payload(
+            portfolio_id=portfolio.id,
+            investment_date="2026-03-16",
+            nav_date="2026-03-16",
+            paid_value="4250.00",
+            market_value="4250.00",
+        ),
+        format="json",
+    ).status_code == 201
+    HistoricalPrice.objects.create(
+        asset_symbol="120503", date=date(2026, 3, 16), close_price=Decimal("42.50"),
+        currency="INR", source="test", asset_type=AssetType.MUTUAL_FUND,
+    )
+    url = (
+        f"/api/v1/portfolio/performance?portfolio_id={portfolio.id}"
+        "&display_currency=INR&range=ALL&metric=value"
+    )
+    values = {p["date"]: p["value"] for p in api_client.get(url).json()}
+    # Cash 5750 + units 4250; no pending add-on on the recognition date.
+    assert values.get("2026-03-16") == pytest.approx(10000)
+
+
+@pytest.mark.django_db
+def test_overlapping_pending_mf_purchases_are_both_carried(
+    api_client, cash_aware_portfolio, monkeypatch
+):
+    from market_data.models import AssetType, HistoricalPrice
+
+    monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
+    portfolio = cash_aware_portfolio
+    _deposit(portfolio, day="2026-03-10", amount="20000", currency="INR")
+    assert api_client.post(
+        "/api/v1/transactions",
+        _mf_payload(
+            portfolio_id=portfolio.id, folio_number="F1",
+            investment_date="2026-03-13", nav_date="2026-03-17",
+            paid_value="4250.00", market_value="4250.00",
+        ),
+        format="json",
+    ).status_code == 201
+    assert api_client.post(
+        "/api/v1/transactions",
+        _mf_payload(
+            portfolio_id=portfolio.id, folio_number="F2",
+            investment_date="2026-03-14", nav_date="2026-03-18",
+            paid_value="2125.00", market_value="2125.00",
+            units_allotted="50", nav="42.5",
+        ),
+        format="json",
+    ).status_code == 201
+    for day, close in (("2026-03-17", "42.50"), ("2026-03-18", "42.50")):
+        HistoricalPrice.objects.create(
+            asset_symbol="120503", date=date.fromisoformat(day),
+            close_price=Decimal(close), currency="INR", source="test",
+            asset_type=AssetType.MUTUAL_FUND,
+        )
+    url = (
+        f"/api/v1/portfolio/performance?portfolio_id={portfolio.id}"
+        "&display_currency=INR&range=ALL&metric=value"
+    )
+    values = {p["date"]: p["value"] for p in api_client.get(url).json()}
+    # Both purchases pending on 15th: cash after buys + both pending amounts.
+    assert values.get("2026-03-15") == pytest.approx(20000)
+    assert values.get("2026-03-17") == pytest.approx(20000)
+    assert values.get("2026-03-18") == pytest.approx(20000)
