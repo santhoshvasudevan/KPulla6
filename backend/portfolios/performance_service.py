@@ -101,6 +101,8 @@ def _align_terminal_value_with_summary(
     terminal_iso = today.isoformat()
     for point in reversed(timeseries_full):
         if point["date"] <= terminal_iso:
+            if point.get("portfolio_value") is None:
+                return
             point["portfolio_value"] = float(summary.current_value)
             return
 
@@ -123,7 +125,7 @@ def _convert_investment_ts_to_display(
         return raw_ts
     series_start = date.fromisoformat(raw_ts[0]["date"])
     end = date.fromisoformat(raw_ts[-1]["date"])
-    fx_start = _data_load_start(emit_start, series_start)
+    fx_start = _data_load_start(emit_start or series_start, series_start)
     fx_maps = load_fx_rate_maps({(portfolio_base, disp_ccy)}, fx_start, end)
     converted: list[dict] = []
     for p in raw_ts:

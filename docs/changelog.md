@@ -1,5 +1,9 @@
 # Changelog — KPulla6
 
+## 2026-11-20 — Pending-purchase valuation edge cases
+
+- Added bounded-range, missing-NAV, direct/filled/missing-FX and legacy-mode regressions (#33). Historical display conversion now loads the opening FX lookback; recognized fund units without cached NAV remain unavailable instead of showing a cash-only portfolio value.
+
 ## 2026-11-20 — Compare personal folio scope
 
 - Compare now honors an explicit folio filter for personal XIRR instead of silently using all folios. Unknown folios return 404; fund NAV performance is unchanged. Distinct-return folio fixtures prevent false parity checks.

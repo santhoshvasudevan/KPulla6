@@ -161,6 +161,14 @@ This models “money appears on BUY day” even when the user already held cash 
 
 Daily portfolio value \(PV_d\) = **investment value + cash + pending mutual fund purchases** (same valuation components as `metric=value`). A linked BUY settlement contributes its paid amount from the settlement date through the day before the units enter holdings. This amount is valued with cached FX where needed and is unavailable to spend. The units replace it on the NAV date, and the settlement remains an internal movement.
 
+Pending purchases that began before a selected chart range are carried into that
+range. Once units are recognized, missing cached NAV leaves investment value
+unavailable; broker cash alone must not be presented as the complete portfolio,
+including at the chart's terminal point. Native, portfolio-base and display
+currencies are converted once per boundary, with the normal cached FX lookback
+also applied to the beginning of ALL history. Legacy cash-unaware portfolios do
+not acquire cash-aware pending purchase value.
+
 **Display currency vs native cash (cash-only portfolios):**
 
 - When **all cash is in the same currency as `display_currency`** and there are **no investments**, portfolio XIRR, TWROR, and cumulative return should be **approximately 0** (deposits are external flows that match the cash-inclusive value series).

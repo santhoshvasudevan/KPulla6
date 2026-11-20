@@ -476,7 +476,8 @@ def _mf_timeseries_by_date(
         nav_dict.setdefault(scheme, {})[row.date] = Decimal(row.close_price)
 
     fx_pairs = {(MF_BASE_CURRENCY, portfolio_base)}
-    fx_maps = load_fx_rate_maps(fx_pairs, load_start, today)
+    fx_start = min(load_start, loop_start - timedelta(days=FX_LOOKBACK_DAYS))
+    fx_maps = load_fx_rate_maps(fx_pairs, fx_start, today)
 
     qty_dict: dict[str, dict[date, Decimal]] = {}
     inv_dict: dict[str, dict[date, Decimal]] = {}
@@ -526,6 +527,7 @@ def _mf_timeseries_by_date(
         daily_value_inr = Decimal("0")
         daily_inv_inr = Decimal("0")
         daily_fx_missing = False
+        daily_nav_missing = False
 
         for key in by_mf:
             st = current_state[key]
@@ -540,6 +542,8 @@ def _mf_timeseries_by_date(
             daily_inv_inr += st["inv"]
             if st["qty"] > 0 and st["nav"] is not None:
                 daily_value_inr += st["qty"] * st["nav"]
+            elif st["qty"] > 0:
+                daily_nav_missing = True
 
         value_base: Decimal | None = Decimal("0")
         if daily_value_inr > 0:
@@ -565,9 +569,10 @@ def _mf_timeseries_by_date(
             inv_base = inv_conv
 
         daily[d] = {
-            "value": None if daily_fx_missing else value_base,
+            "value": None if daily_fx_missing or daily_nav_missing else value_base,
             "invested": inv_base,
             "fx_missing": daily_fx_missing,
+            "nav_missing": daily_nav_missing,
         }
         d += timedelta(days=1)
 
@@ -650,6 +655,7 @@ def _build_portfolio_value_timeseries(
         daily_value = Decimal("0")
         daily_inv = Decimal("0")
         daily_fx_missing = False
+        daily_nav_missing = False
         fx_status = "ok"
 
         for sym in by_symbol:
@@ -690,6 +696,7 @@ def _build_portfolio_value_timeseries(
         mf_pt = mf_daily.get(d)
         if mf_pt is not None:
             daily_inv += mf_pt["invested"]
+            daily_nav_missing = mf_pt.get("nav_missing", False)
             if mf_pt.get("fx_missing"):
                 if mf_pt["value"] is None:
                     daily_fx_missing = True
@@ -700,7 +707,7 @@ def _build_portfolio_value_timeseries(
         timeseries.append(
             {
                 "date": d.isoformat(),
-                "portfolio_value": None if daily_fx_missing else float(daily_value),
+                "portfolio_value": None if daily_fx_missing or daily_nav_missing else float(daily_value),
                 "invested_amount": float(daily_inv),
                 "fx_status": fx_status,
             }
@@ -834,7 +841,7 @@ def build_all_scope_portfolio_value_timeseries(
         end = date.fromisoformat(raw_ts[-1]["date"])
         fx_maps: dict[tuple[str, str], dict[date, Decimal]] = {}
         if portfolio_base != disp_ccy:
-            fx_start = _data_load_start(emit_start_date, series_start)
+            fx_start = _data_load_start(emit_start_date or series_start, series_start)
             fx_maps = load_fx_rate_maps({(portfolio_base, disp_ccy)}, fx_start, end)
         converted: list[dict] = []
         for p in raw_ts:
