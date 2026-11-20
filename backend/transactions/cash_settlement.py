@@ -14,12 +14,16 @@ from cash.models import CashEntryType, CashLedgerEntry
 from cash.services import (
     assert_delete_entries_would_not_make_cash_negative,
     assert_delete_settlement_would_not_make_cash_negative,
+    assert_proposed_ledger_non_negative,
     assert_sufficient_cash_for_purchase,
     validate_cash_currency,
 )
 from finance.cash import (
+    CashLedgerPoint,
+    dividend_net_cash,
     mf_buy_cash_required,
     mf_sell_cash_proceeds,
+    sell_tax_released_amount,
     sell_tax_withheld_amount,
     stock_buy_cash_required,
     stock_sell_cash_proceeds,
@@ -109,24 +113,109 @@ def _sell_settlement_specs(
                 _tax_withheld_note(txn),
             )
         )
+    released = sell_tax_released_amount(calculated_proceeds, txn.actual_cash_received)
+    if released > 0:
+        specs.append(
+            SettlementSpec(
+                CashEntryType.TAX_RELEASED,
+                _quantize_cash_amount(released),
+                ledger_date,
+                currency,
+                _tax_withheld_note(txn),
+            )
+        )
     return specs
 
 
-def _stock_settlement_specs(txn: Transaction) -> list[SettlementSpec]:
-    if txn.type in {TransactionType.STOCK_SPLIT, TransactionType.DIVIDEND}:
+def _dividend_settlement_specs(txn: Transaction) -> list[SettlementSpec]:
+    if txn.dividend_gross is None:
         return []
+    gross = _quantize_cash_amount(txn.dividend_gross)
+    tax = _quantize_cash_amount(txn.dividend_tax_withheld or Decimal("0"))
+    if gross <= 0:
+        raise _validation_error("Gross dividend must be greater than 0")
+    if tax < 0 or tax > gross:
+        raise _validation_error("Tax withheld cannot exceed gross dividend")
+    if dividend_net_cash(gross, tax) < 0:
+        raise _validation_error("Tax withheld cannot exceed gross dividend")
+
+    currency = validate_cash_currency(txn.currency)
+    note = _settlement_note(txn)
+    specs = [
+        SettlementSpec(
+            CashEntryType.DIVIDEND_CASH,
+            gross,
+            txn.date,
+            currency,
+            note,
+        )
+    ]
+    if tax > 0:
+        specs.append(
+            SettlementSpec(
+                CashEntryType.TAX,
+                -tax,
+                txn.date,
+                currency,
+                _tax_withheld_note(txn) or note,
+            )
+        )
+    return specs
+
+
+def _assert_dividend_replacement_non_negative(
+    txn: Transaction,
+    portfolio: Portfolio,
+    specs: list[SettlementSpec],
+) -> None:
+    existing = list(
+        CashLedgerEntry.objects.filter(linked_transaction_id=txn.pk).order_by("id")
+    )
+    if not existing:
+        return
+    currency = specs[0].currency if specs else existing[0].currency
+    dates = [entry.date for entry in existing]
+    dates.extend(spec.ledger_date for spec in specs if spec.ledger_date is not None)
+    proposed = [
+        CashLedgerPoint(
+            date=spec.ledger_date,
+            currency=spec.currency or currency,
+            amount=spec.amount,
+        )
+        for spec in specs
+        if spec.ledger_date is not None and spec.amount is not None and spec.currency
+    ]
+    assert_proposed_ledger_non_negative(
+        portfolio,
+        currency,
+        exclude_entry_ids={entry.id for entry in existing},
+        proposed_points=proposed,
+        from_date=min(dates),
+    )
+
+
+def _stock_settlement_specs(txn: Transaction) -> list[SettlementSpec]:
+    if txn.type == TransactionType.STOCK_SPLIT:
+        return []
+    if txn.type == TransactionType.DIVIDEND:
+        return _dividend_settlement_specs(txn)
 
     currency = validate_cash_currency(txn.currency)
     note = _settlement_note(txn)
 
     if txn.type == TransactionType.BUY:
-        required = stock_buy_cash_required(
-            txn.quantity, txn.price_per_share or Decimal("0"), txn.fees
+        required = _quantize_cash_amount(
+            stock_buy_cash_required(
+                txn.quantity, txn.price_per_share or Decimal("0"), txn.fees
+            )
         )
+        # Zero-cost receipts (spin-off, bonus, demerger) move no cash.
+        if required == 0:
+            return []
         return [
             SettlementSpec(
                 CashEntryType.BUY_SETTLEMENT,
-                -_quantize_cash_amount(required),
+                -required,
                 txn.date,
                 currency,
                 note,
@@ -200,7 +289,7 @@ def _mf_settlement_spec(
 
 
 def _get_linked_settlement(txn: Transaction) -> CashLedgerEntry | None:
-    """Primary linked BUY/SELL settlement row (excludes TAX_WITHHELD)."""
+    """Primary linked BUY/SELL settlement row (excludes tax withheld/released)."""
     return (
         CashLedgerEntry.objects.filter(
             linked_transaction_id=txn.pk,
@@ -220,7 +309,12 @@ def _delete_surplus_linked_entries(
     sell_entries_to_check = [
         entry
         for entry in entries
-        if entry.entry_type == CashEntryType.SELL_SETTLEMENT
+        if entry.entry_type
+        in (
+            CashEntryType.SELL_SETTLEMENT,
+            CashEntryType.TAX_RELEASED,
+            CashEntryType.DIVIDEND_CASH,
+        )
     ]
     if sell_entries_to_check:
         assert_delete_entries_would_not_make_cash_negative(sell_entries_to_check)
@@ -315,6 +409,8 @@ def sync_stock_settlement(txn: Transaction) -> None:
     if not portfolio.cash_aware_enabled:
         return
     specs = _stock_settlement_specs(txn)
+    if txn.type == TransactionType.DIVIDEND:
+        _assert_dividend_replacement_non_negative(txn, portfolio, specs)
     _sync_settlement_specs(txn, portfolio, specs)
 
 

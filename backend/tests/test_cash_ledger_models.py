@@ -90,6 +90,7 @@ def test_cash_ledger_entry_invalid_currency_rejected(test_user):
         (CashEntryType.BUY_SETTLEMENT, Decimal("50")),
         (CashEntryType.SELL_SETTLEMENT, Decimal("-50")),
         (CashEntryType.TAX_WITHHELD, Decimal("50")),
+        (CashEntryType.TAX_RELEASED, Decimal("-50")),
     ],
 )
 def test_cash_ledger_entry_sign_validation(test_user, entry_type, amount):

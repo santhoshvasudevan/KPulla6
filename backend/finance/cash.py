@@ -139,6 +139,21 @@ def sell_tax_withheld_amount(
     return gap if gap > 0 else _ZERO
 
 
+def dividend_net_cash(gross: Decimal, tax_withheld: Decimal) -> Decimal:
+    """Cash credited for a dividend: gross amount minus tax withheld."""
+    return gross - tax_withheld
+
+
+def sell_tax_released_amount(
+    calculated_proceeds: Decimal,
+    actual_cash_received: Decimal | None,
+) -> Decimal:
+    """Positive released withheld tax when actual received is above calculated proceeds."""
+    actual = sell_actual_cash_received(calculated_proceeds, actual_cash_received)
+    gap = actual - calculated_proceeds
+    return gap if gap > 0 else _ZERO
+
+
 def mf_sell_cash_proceeds(
     *,
     paid_value: Decimal,

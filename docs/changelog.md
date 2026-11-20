@@ -30,6 +30,25 @@
 - **Fix:** `make refresh` no longer fails when yfinance returns `NaN` or infinite adjusted-close values; invalid provider rows are skipped before writing `HistoricalPrice.close_price`.
 - **Tests:** `cd backend && DJANGO_TEST_USE_SQLITE=1 .venv/bin/python -m pytest tests/test_market_data_sync.py -q`.
 
+## 2026-10-09 — Stock close prices and cash dividends
+
+- **Prices:** Stock sync stores Yahoo’s market close (`auto_adjust=False`), which is split-adjusted and not dividend-adjusted. Benchmarks still use adjusted closes. Existing cached stock rows stay dividend-adjusted until stock history is rebuilt.
+- **Dividends:** A cash-aware `DIVIDEND` with `dividend_gross` and `dividend_tax_withheld` writes `DIVIDEND_CASH` for the gross amount and `TAX` for the withholding. Net broker cash is gross minus tax. Share count does not change. The add-transaction form asks for those amounts instead of quantity and price.
+
+## 2026-10-07 — Zero-cost stock receipts
+
+- **Fix:** A cash-aware BUY with price and fees of 0 (spin-off, bonus shares, demerger allocation) is saved without a cash ledger row. Previously settlement tried to write amount 0 and the request returned HTTP 500.
+
+## 2026-10-07 — SELL cash above calculated proceeds
+
+- **Cash:** A SELL may record `actual_cash_received` above calculated proceeds (`qty × price − fees`, or mutual-fund proceeds). The extra cash is a positive `TAX_RELEASED` ledger row (released withheld tax, such as capital-gains tax returned on a loss). `SELL_SETTLEMENT` stays at calculated proceeds. Net cash is the actual amount received.
+- **Frontend:** The transaction modal previews “Withheld tax released” when actual cash is higher than calculated proceeds.
+
+## 2026-08-01 — Transaction modal corporate-action guidance
+
+- **Frontend:** Add Transaction now explains when to use `STOCK_SPLIT` versus a zero-price `BUY` for bonus shares, spin-offs, demergers, or new tickers allocated from an existing holding.
+- **Tests:** Added frontend coverage for the guidance and zero-price stock allocation submission; added backend API coverage that zero-price stock `BUY` remains accepted.
+
 ## 2026-11-09 — CSV cash funding precision
 
 - **Fix:** CSV cash previews round simulated BUY/SELL cash effects to the ledger's four decimal places (`ROUND_HALF_UP`), matching settlement writes. Previously high-precision amounts could produce invalid proposed deposits and HTTP 500 after confirmation, leaving the cash dialog open.

@@ -557,6 +557,57 @@ def assert_delete_entries_would_not_make_cash_negative(
             )
 
 
+
+def assert_proposed_ledger_non_negative(
+    portfolio: Portfolio,
+    currency: str,
+    *,
+    exclude_entry_ids: set[int],
+    proposed_points: list[CashLedgerPoint],
+    from_date: date,
+) -> None:
+    """Block a ledger replacement whose running balance would go negative."""
+    ccy = validate_cash_currency(currency)
+    points = _ledger_points_for_currency(
+        portfolio,
+        ccy,
+        exclude_entry_ids=exclude_entry_ids,
+    )
+    points.extend(proposed_points)
+    if not points:
+        return
+    dates = [point.date for point in points]
+    start = min(from_date, min(dates))
+    end = max(dates)
+    series = cash_balance_timeseries(points, start, end)
+    day_balances = series.get(ccy, [])
+    earliest_negative: date | None = None
+    lowest = Decimal("0")
+    for day, balance in day_balances:
+        if day < from_date:
+            continue
+        if balance < lowest:
+            lowest = balance
+        if balance < 0 and earliest_negative is None:
+            earliest_negative = day
+    if earliest_negative is None:
+        return
+    affected = _collect_affected_entries(
+        portfolio,
+        ccy,
+        earliest_negative,
+        exclude_entry_id=None,
+    )
+    raise FutureCashImpactError(
+        FutureCashImpact(
+            currency=ccy,
+            earliest_negative_date=earliest_negative,
+            lowest_balance=lowest,
+            affected_entries=affected,
+        )
+    )
+
+
 def _withdrawal_available_on_date(
     portfolio: Portfolio,
     currency: str,

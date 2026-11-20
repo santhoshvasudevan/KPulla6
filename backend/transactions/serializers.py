@@ -25,6 +25,8 @@ class TransactionSerializer(serializers.ModelSerializer):
             "currency",
             "fees",
             "actual_cash_received",
+            "dividend_gross",
+            "dividend_tax_withheld",
             "settlement_note",
             "split_from",
             "split_to",
@@ -38,6 +40,8 @@ class TransactionSerializer(serializers.ModelSerializer):
             "price_per_share",
             "fees",
             "actual_cash_received",
+            "dividend_gross",
+            "dividend_tax_withheld",
             "split_from",
             "split_to",
         ):
@@ -118,6 +122,18 @@ class TransactionWriteSerializer(serializers.Serializer):
         allow_null=True,
         allow_blank=True,
     )
+    dividend_gross = serializers.DecimalField(
+        max_digits=18,
+        decimal_places=4,
+        required=False,
+        allow_null=True,
+    )
+    dividend_tax_withheld = serializers.DecimalField(
+        max_digits=18,
+        decimal_places=4,
+        required=False,
+        allow_null=True,
+    )
 
     def validate(self, attrs):
         try:
@@ -133,6 +149,8 @@ class TransactionWriteSerializer(serializers.Serializer):
                 split_to=attrs.get("split_to"),
                 actual_cash_received=attrs.get("actual_cash_received"),
                 settlement_note=attrs.get("settlement_note"),
+                dividend_gross=attrs.get("dividend_gross"),
+                dividend_tax_withheld=attrs.get("dividend_tax_withheld"),
             )
         except Exception as exc:
             from transactions.services import TransactionValidationError

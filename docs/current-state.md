@@ -100,7 +100,7 @@ See [performance/dashboard-read-paths.md](./performance/dashboard-read-paths.md)
   - **FIX-2:** `portfolio_scope=all` headline monetary fields sum per-active-portfolio summaries in requested `display_currency` (fixes mixed EUR stock + INR MF under-count)
   - `portfolios/summary_service.py`, `portfolios/summary_views.py`
   - Value timeseries uses `build_split_adjusted_lot_snapshots` with cached split-adjusted prices so pre-split holdings are quantity-adjusted before daily valuation
-  - **Stock price invariant:** yfinance sync stores **Adj Close** (split-adjusted); raw nominal pre-split prices are unsupported for valuation/Metric Sheet analytics — see `test_stock_split_valuation_api.py`, `test_analytics_split_metrics_api.py`
+  - **Stock price invariant:** yfinance stock sync stores the market **Close** (`auto_adjust=False`: split-adjusted, not dividend-adjusted). Benchmarks still use adjusted closes. Raw nominal pre-split prices are unsupported for valuation/Metric Sheet analytics — see `test_stock_split_valuation_api.py`, `test_analytics_split_metrics_api.py`
   - `market_data/price_repository.py`, `fx/lookup.convert_amount_with_fill`
   - Read path: no external market-data calls; no auto-sync on summary request
 - **Portfolio performance** (Phase 10):
@@ -225,7 +225,7 @@ Design doc: [cash-ledger.md](./cash-ledger.md).
 | Cash page UI (`/cash`) — balances, ledger, deposit/withdrawal modals | **Done** (Cash-3B) |
 | Manual ledger edit/delete (`PUT`/`DELETE /cash/ledger/{id}`) | **Done** (Cash-3D + **Cash-4D**) — manual rows only; future-impact **409** with `affected_entries`; no cascade delete |
 | Unified Add Transaction modal on `/transactions` (Cash / Stock / MF) | **Done** (Cash-3G) — cash via `/cash/deposits` and `/cash/withdrawals`; cash edit on `/cash` only |
-| Cash-aware BUY/SELL settlements (`cash_aware_enabled`) | **Done** (Cash-4A, CASH-SELL-1B) — `BUY_SETTLEMENT` / `SELL_SETTLEMENT`; optional SELL `actual_cash_received` + `TAX_WITHHELD`; insufficient BUY → 400 + shortfall payload |
+| Cash-aware BUY/SELL settlements (`cash_aware_enabled`) | **Done** (Cash-4A, CASH-SELL-1B) — `BUY_SETTLEMENT` / `SELL_SETTLEMENT`; optional SELL `actual_cash_received` + `TAX_WITHHELD` or `TAX_RELEASED`; insufficient BUY → 400 + shortfall payload |
 | Transaction edit/delete future-impact errors + UX | **Done** (TXN-AUDIT-2/3) — **409** structured payload; `/transactions` + `TransactionModal` panels |
 | CSV import cash shortfall preview + confirmed deposits | **Done** (Cash-5) |
 | Cash transfers (same + cross currency) | **Done** (Cash-8A/8B) — user-entered amounts; no market FX |

@@ -6,6 +6,7 @@ const ENTRY_TYPE_LABELS = {
   BUY_SETTLEMENT: 'Buy settlement',
   SELL_SETTLEMENT: 'Sell settlement',
   TAX_WITHHELD: 'Tax withheld',
+  TAX_RELEASED: 'Tax released',
   DIVIDEND_CASH: 'Dividend (cash)',
   INTEREST: 'Interest',
   FEE: 'Fee',
@@ -60,6 +61,7 @@ export function cashEntryBadgeStatus(entryType) {
     case 'DIVIDEND_CASH':
     case 'INTEREST':
     case 'FX_CONVERSION_IN':
+    case 'TAX_RELEASED':
       return 'gain';
     case 'CASH_WITHDRAWAL':
     case 'TRANSFER_OUT':
@@ -82,6 +84,7 @@ export const LEDGER_ENTRY_TYPE_OPTIONS = [
   { value: 'BUY_SETTLEMENT', label: 'Buy settlement' },
   { value: 'SELL_SETTLEMENT', label: 'Sell settlement' },
   { value: 'TAX_WITHHELD', label: 'Tax withheld' },
+  { value: 'TAX_RELEASED', label: 'Tax released' },
   { value: 'DIVIDEND_CASH', label: 'Dividend (cash)' },
   { value: 'INTEREST', label: 'Interest' },
   { value: 'FEE', label: 'Fee' },

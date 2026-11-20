@@ -13,6 +13,10 @@ Transaction list, create, update, delete, and CSV import. Deep spec: [api-design
 | **Auth** | Session |
 | **Purpose** | Paginated transaction list |
 
+Mutual-fund `nav_verification_status` and optional message reflect the current
+exact-date NAV cache, not just the saved import-time snapshot. Reads do not call
+providers or modify transactions. Missing dates and mismatches remain warnings.
+
 ### Query parameters
 
 | Param | Default | Notes |

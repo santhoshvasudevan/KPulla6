@@ -11,7 +11,11 @@ from django.db.models import Count
 from cash.models import CashEntryType, CashLedgerEntry
 from cash.services import is_manual_editable_entry
 from portfolios.models import Portfolio
-from transactions.cash_settlement import _mf_settlement_spec, _stock_settlement_spec
+from transactions.cash_settlement import (
+    _dividend_settlement_specs,
+    _mf_settlement_spec,
+    _stock_settlement_spec,
+)
 from transactions.models import MutualFundTransactionDetail, Transaction, TransactionType
 
 
@@ -33,7 +37,12 @@ def _issue_counts(issues: list[SettlementIssue]) -> dict[str, int]:
 
 def _expected_settlement(txn: Transaction) -> tuple[str | None, Decimal | None, object | None]:
     """Return (entry_type, amount, ledger_date) from production settlement rules."""
-    if txn.type in {TransactionType.STOCK_SPLIT, TransactionType.DIVIDEND}:
+    if txn.type == TransactionType.STOCK_SPLIT:
+        return None, None, None
+    if txn.type == TransactionType.DIVIDEND:
+        for spec in _dividend_settlement_specs(txn):
+            if spec.entry_type == CashEntryType.DIVIDEND_CASH:
+                return spec.entry_type, spec.amount, spec.ledger_date
         return None, None, None
     try:
         detail = txn.mutual_fund_detail
@@ -59,6 +68,7 @@ def check_settlement_integrity(
             entry_type__in=(
                 CashEntryType.BUY_SETTLEMENT,
                 CashEntryType.SELL_SETTLEMENT,
+                CashEntryType.DIVIDEND_CASH,
             ),
         )
         .select_related("linked_transaction", "portfolio")
@@ -115,6 +125,7 @@ def check_settlement_integrity(
         if txn.portfolio_id in cash_aware_ids and txn.type in (
             TransactionType.BUY,
             TransactionType.SELL,
+            TransactionType.DIVIDEND,
         ):
             if expected_type is not None and not linked:
                 issues.append(
@@ -252,6 +263,7 @@ def check_settlement_integrity(
             entry_type__in=(
                 CashEntryType.BUY_SETTLEMENT,
                 CashEntryType.SELL_SETTLEMENT,
+                CashEntryType.DIVIDEND_CASH,
             ),
         )
         .values("linked_transaction_id")

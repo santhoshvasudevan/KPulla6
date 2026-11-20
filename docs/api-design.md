@@ -349,7 +349,7 @@ Future-impact `detail`: `"This transaction change would make future cash balance
 }
 ```
 
-Simulation: rows in chronological order; existing ledger + simulated deposits/settlements; BUY uses transaction currency only; MF BUY uses `paid_value` / `investment_date`; SELL credits proceeds; `STOCK_SPLIT` / `DIVIDEND` no cash effect.
+Simulation: rows in chronological order; existing ledger + simulated deposits/settlements; BUY uses transaction currency only; MF BUY uses `paid_value` / `investment_date`; SELL credits proceeds; `STOCK_SPLIT` and CSV `DIVIDEND` rows (no gross amount) have no cash effect.
 
 **Import with confirmation:** `POST /api/v1/transactions/import-csv?create_cash_deposits=true&cash_preview_confirmed=true` — deposits from fresh preview, then import (all-or-nothing).
 
@@ -848,7 +848,7 @@ Full design: [cash-ledger.md](./cash-ledger.md) · agent rules: [320-cash-ledger
 | POST | `/api/v1/cash/bulk-entries/apply` | **Done** (Cash-7D) — confirmed bulk manual entries |
 | POST | `/api/v1/transactions/import-csv/preview-cash` | **Done** (Cash-5) — CSV cash simulation; no writes |
 
-**Settlement rows** (`BUY_SETTLEMENT`, `SELL_SETTLEMENT`, `TAX_WITHHELD`, transfer legs, FX legs) are **system-protected** — created/updated/deleted only via `/api/v1/transactions` or `/api/v1/cash/transfers`, not via manual cash ledger edit.
+**Settlement rows** (`BUY_SETTLEMENT`, `SELL_SETTLEMENT`, `TAX_WITHHELD`, `TAX_RELEASED`, transfer legs, FX legs) are **system-protected** — created/updated/deleted only via `/api/v1/transactions` or `/api/v1/cash/transfers`, not via manual cash ledger edit.
 
 **No implicit FX:** BUY sufficiency and withdrawal checks use **same-currency** ledger cash only. No `FX_CONVERSION_*` write endpoint in current phase.
 
@@ -1185,10 +1185,10 @@ When `portfolio.cash_aware_enabled` is **true**, `POST` / `PUT` / `DELETE` `/api
 
 | Type | Settlement | Cash check |
 |------|------------|------------|
-| `BUY` | `BUY_SETTLEMENT` (negative) = `quantity × price_per_share + fees` on `transaction.date` | Required cash in `transaction.currency` as of transaction date |
-| `SELL` | `SELL_SETTLEMENT` (positive) = calculated proceeds; optional `TAX_WITHHELD` (negative) when `actual_cash_received` &lt; calculated | Reject if proceeds ≤ 0; reject if actual &gt; calculated |
+| `BUY` | `BUY_SETTLEMENT` (negative) = `quantity × price_per_share + fees` on `transaction.date`. Omitted when that amount is 0. | Required cash in `transaction.currency` as of transaction date when the amount is greater than 0 |
+| `SELL` | `SELL_SETTLEMENT` (positive) = calculated proceeds; optional `TAX_WITHHELD` (negative) when `actual_cash_received` &lt; calculated; optional `TAX_RELEASED` (positive) when actual &gt; calculated | Reject if proceeds ≤ 0 |
 | `STOCK_SPLIT` | None | None |
-| `DIVIDEND` | None (deferred) | None |
+| `DIVIDEND` | `DIVIDEND_CASH` (positive) = `dividend_gross`; optional `TAX` (negative) = `dividend_tax_withheld` when greater than 0. Omitted when `dividend_gross` is absent (legacy CSV row). | Reject when tax exceeds gross. Deleting or reducing the credit is blocked when later cash would go negative |
 
 **Mutual fund**
 

@@ -70,6 +70,7 @@ Cash must **not** be analyzed like a stock or mutual fund:
 | `BUY_SETTLEMENT` | Decrease | **Internal** | Cash used to pay for a BUY (`linked_transaction` → BUY) |
 | `SELL_SETTLEMENT` | Increase | **Internal** | Calculated SELL proceeds credited to cash (audit gross) |
 | `TAX_WITHHELD` | Decrease | **Internal** | Tax withheld / broker adjustment when `actual_cash_received` &lt; calculated proceeds |
+| `TAX_RELEASED` | Increase | **Internal** | Released withheld tax when `actual_cash_received` &gt; calculated proceeds |
 | `DIVIDEND_CASH` | Increase | Internal or external depending on product rule | Cash dividend credited (may link to `DIVIDEND` txn) |
 | `INTEREST` | Increase | Usually internal | Broker interest on cash balance |
 | `FEE` | Decrease | Internal | Cash fees (account, wire) |
@@ -84,7 +85,7 @@ Cash must **not** be analyzed like a stock or mutual fund:
 
 - **`BUY_SETTLEMENT`** reduces cash by settlement amount (typically `qty × price + fees` in transaction currency).
 - **`SELL_SETTLEMENT`** increases cash by **calculated** proceeds (typically `qty × price − fees`).
-- **`TAX_WITHHELD`** decreases cash by `calculated − actual_cash_received` when the user enters a lower actual received amount on SELL. Net cash impact = `actual_cash_received`. Tax reporting is a future feature; the ledger row is the foundation.
+- **`TAX_WITHHELD`** decreases cash by `calculated − actual_cash_received` when the user enters a lower actual received amount on SELL. **`TAX_RELEASED`** increases cash by `actual_cash_received − calculated` when the broker returns previously withheld tax (for example a capital-loss sale). Net cash impact = `actual_cash_received`. Tax reporting is a future feature; the ledger row is the foundation.
 - **`CASH_DEPOSIT` / `CASH_WITHDRAWAL`** are **external** portfolio flows for TWROR/XIRR at portfolio scope.
 - **`TRANSFER_OUT` / `TRANSFER_IN`:** external for the **individual** portfolio’s TWROR/XIRR; **neutral** when `portfolio_scope=all` (internal movement between user portfolios).
 
@@ -199,7 +200,7 @@ Ledger signed amounts use deposit **+** / withdrawal **−**; external flows map
 
 - **External flows:** `CASH_DEPOSIT`, `CASH_WITHDRAWAL`, and **unlinked** `ADJUSTMENT` (manual reconciliation only).
 - **External rows:** `CASH_DEPOSIT`, `CASH_WITHDRAWAL`, unlinked `ADJUSTMENT`, and **`TRANSFER_IN` / `TRANSFER_OUT`** (Cash-8A).
-- **Excluded internal rows:** `BUY_SETTLEMENT`, `SELL_SETTLEMENT`, `TAX_WITHHELD`, `FEE`, `TAX`, `DIVIDEND_CASH`, `INTEREST`, `FX_CONVERSION_*`, rows with `linked_transaction`, and `transfer_group` rows that are not transfer legs (FX conversion).
+- **Excluded internal rows:** `BUY_SETTLEMENT`, `SELL_SETTLEMENT`, `TAX_WITHHELD`, `TAX_RELEASED`, `FEE`, `TAX`, `DIVIDEND_CASH`, `INTEREST`, `FX_CONVERSION_*`, rows with `linked_transaction`, and `transfer_group` rows that are not transfer legs (FX conversion).
 - **Terminal value:** investment holdings **plus** cash balances in the calculation currency (cached FX, 7-day fill; missing FX → `xirr: null` + warning).
 - **BUY/SELL transactions** are **not** portfolio-level external XIRR flows when `cash_aware_enabled=true`.
 
@@ -273,8 +274,8 @@ Gate: `portfolio.cash_aware_enabled == true` only. No auto-enable.
 
 | Asset | BUY | SELL | Split / dividend |
 |-------|-----|------|------------------|
-| Stock/ETF | `BUY_SETTLEMENT` = −(qty×price+fees), date = `transaction.date` | `SELL_SETTLEMENT` = +(qty×price−fees); optional `TAX_WITHHELD` = −(calculated−actual) | No ledger row |
-| Mutual fund | `BUY_SETTLEMENT` = −`paid_value`, date = **`investment_date`** | `SELL_SETTLEMENT` = +calculated proceeds; optional `TAX_WITHHELD` when `actual_cash_received` set, date = **`investment_date`** | N/A |
+| Stock/ETF | `BUY_SETTLEMENT` = −(qty×price+fees), date = `transaction.date`. No row when that amount is 0 (spin-off / bonus at zero cost). | `SELL_SETTLEMENT` = +(qty×price−fees); optional `TAX_WITHHELD` = −(calculated−actual) or `TAX_RELEASED` = +(actual−calculated) | Split: no ledger row. Dividend with `dividend_gross`: `DIVIDEND_CASH` = +gross and optional `TAX` = −tax withheld. Net cash = gross − tax. |
+| Mutual fund | `BUY_SETTLEMENT` = −`paid_value`, date = **`investment_date`** | `SELL_SETTLEMENT` = +calculated proceeds; optional `TAX_WITHHELD` or `TAX_RELEASED` when `actual_cash_received` differs, date = **`investment_date`** | N/A |
 
 - Update/delete: settlement row updated or removed with the transaction; BUY updates re-check cash excluding the old settlement.
 - Delete: settlement removed first; deleting a SELL settlement blocked if later cash would go negative.

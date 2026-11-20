@@ -4,7 +4,10 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from market_data.providers.base import PriceProvider
-from market_data.providers.yfinance_provider import default_price_provider
+from market_data.providers.yfinance_provider import (
+    default_price_provider,
+    default_stock_price_provider,
+)
 from market_data.services.benchmark_sync import sync_benchmark_prices
 from market_data.services.mutual_fund_nav_sync import (
     MutualFundNavSyncResult,
@@ -41,13 +44,18 @@ def sync_all_market_data(
     run_mutual_funds: bool = True,
 ) -> MarketDataSyncResult:
     """Run stock prices, benchmarks, optional FX, and optional mutual fund NAV sync."""
-    provider = price_provider or default_price_provider()
+    if price_provider is not None:
+        stock_provider = price_provider
+        benchmark_provider = price_provider
+    else:
+        stock_provider = default_stock_price_provider()
+        benchmark_provider = default_price_provider()
     price_result = sync_stock_prices(
         only_symbols=only_symbols,
-        provider=provider,
+        provider=stock_provider,
         update_last_sync=False,
     )
-    bench_ok = sync_benchmark_prices(provider=provider)
+    bench_ok = sync_benchmark_prices(provider=benchmark_provider)
 
     fx_ok = True
     fx_partial = False

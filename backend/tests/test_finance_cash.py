@@ -10,6 +10,9 @@ from finance.cash import (
     has_sufficient_cash,
     mf_buy_cash_required,
     mf_sell_cash_proceeds,
+    dividend_net_cash,
+    sell_tax_released_amount,
+    sell_tax_withheld_amount,
     stock_buy_cash_required,
     stock_sell_cash_proceeds,
 )
@@ -30,6 +33,19 @@ def test_stock_buy_and_sell_settlement_amounts():
     assert stock_sell_cash_proceeds(Decimal("10"), Decimal("100"), Decimal("5")) == Decimal(
         "995"
     )
+
+
+def test_sell_tax_withheld_and_released_are_mutually_exclusive():
+    calculated = Decimal("12819")
+    withheld_actual = Decimal("12000")
+    assert sell_tax_withheld_amount(calculated, withheld_actual) == Decimal("819")
+    assert sell_tax_released_amount(calculated, withheld_actual) == Decimal("0")
+
+    released_actual = Decimal("13755.32")
+    assert sell_tax_withheld_amount(calculated, released_actual) == Decimal("0")
+    assert sell_tax_released_amount(calculated, released_actual) == Decimal("936.32")
+    assert sell_tax_released_amount(calculated, None) == Decimal("0")
+    assert sell_tax_released_amount(calculated, calculated) == Decimal("0")
 
 
 def test_mf_buy_and_sell_settlement_amounts():
@@ -132,3 +148,8 @@ def test_cash_balance_timeseries_includes_pre_start_opening():
     )
     assert series["EUR"][0] == (date(2026, 1, 1), Decimal("500"))
     assert series["EUR"][1] == (date(2026, 1, 2), Decimal("600"))
+
+
+def test_dividend_net_cash_is_gross_minus_tax():
+    assert dividend_net_cash(Decimal("25"), Decimal("6.60")) == Decimal("18.40")
+    assert dividend_net_cash(Decimal("25"), Decimal("0")) == Decimal("25")

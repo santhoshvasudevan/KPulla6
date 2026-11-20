@@ -40,6 +40,8 @@ function emptyStockForm(portfolioId = '') {
     fees: '0',
     actual_cash_received: '',
     settlement_note: '',
+    dividend_gross: '',
+    dividend_tax_withheld: '',
     split_from: '',
     split_to: '',
   };
@@ -83,6 +85,9 @@ function stockFormFromTransaction(txn) {
     actual_cash_received:
       txn.actual_cash_received != null ? String(txn.actual_cash_received) : '',
     settlement_note: txn.settlement_note || '',
+    dividend_gross: txn.dividend_gross != null ? String(txn.dividend_gross) : '',
+    dividend_tax_withheld:
+      txn.dividend_tax_withheld != null ? String(txn.dividend_tax_withheld) : '',
     split_from: txn.split_from?.toString() || '',
     split_to: txn.split_to?.toString() || '',
   };
@@ -150,6 +155,14 @@ function previewTaxWithheld(calculated, actualRaw) {
   return withheld > 0 ? withheld : 0;
 }
 
+function previewTaxReleased(calculated, actualRaw) {
+  if (calculated == null || actualRaw === '' || actualRaw == null) return null;
+  const actual = parseFloat(actualRaw);
+  if (Number.isNaN(actual) || actual <= 0) return null;
+  const released = actual - calculated;
+  return released > 0 ? released : 0;
+}
+
 function appendSellSettlementFields(payload, form) {
   const actual = parseOptionalNumber(form.actual_cash_received);
   if (actual !== undefined) payload.actual_cash_received = actual;
@@ -184,20 +197,37 @@ function validateMutualFundForm(form) {
   return null;
 }
 
+function previewDividendNet(form) {
+  const gross = parseFloat(form.dividend_gross);
+  const taxRaw = form.dividend_tax_withheld === '' ? 0 : parseFloat(form.dividend_tax_withheld);
+  if (Number.isNaN(gross) || gross <= 0) return null;
+  const tax = Number.isNaN(taxRaw) ? 0 : taxRaw;
+  if (tax < 0 || tax > gross) return null;
+  return { gross, tax, net: gross - tax, currency: (form.currency || '').trim() };
+}
+
 function buildStockPayload(formData) {
   const isStockSplit = formData.type === 'STOCK_SPLIT';
+  const isDividend = formData.type === 'DIVIDEND';
   const payload = {
     asset_symbol: formData.asset_symbol,
     date: formData.date,
     type: formData.type,
     currency: formData.currency,
     portfolio_id: formData.portfolio_id ? Number(formData.portfolio_id) : null,
-    quantity: isStockSplit ? 0 : parseFloat(formData.quantity),
-    price_per_share: isStockSplit ? 0 : parseFloat(formData.price_per_share),
-    fees: isStockSplit ? 0 : parseFloat(formData.fees || 0),
+    quantity: isStockSplit || isDividend ? 0 : parseFloat(formData.quantity),
+    price_per_share: isStockSplit || isDividend ? 0 : parseFloat(formData.price_per_share),
+    fees: isStockSplit || isDividend ? 0 : parseFloat(formData.fees || 0),
     split_from: isStockSplit ? parseFloat(formData.split_from) : null,
     split_to: isStockSplit ? parseFloat(formData.split_to) : null,
   };
+  if (isDividend) {
+    payload.dividend_gross = parseFloat(formData.dividend_gross);
+    const tax = formData.dividend_tax_withheld === '' ? 0 : parseFloat(formData.dividend_tax_withheld);
+    payload.dividend_tax_withheld = Number.isNaN(tax) ? 0 : tax;
+    const note = String(formData.settlement_note ?? '').trim();
+    if (note) payload.settlement_note = note;
+  }
   if (formData.type === 'SELL') {
     appendSellSettlementFields(payload, formData);
   }
@@ -454,6 +484,15 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
         onSuccess?.({ kind: 'asset' });
       } else {
         const isStockSplit = stockForm.type === 'STOCK_SPLIT';
+        const isDividend = stockForm.type === 'DIVIDEND';
+        if (isDividend) {
+          const dividendPreview = previewDividendNet(stockForm);
+          if (!dividendPreview) {
+            setError('Enter a gross dividend greater than zero. Tax withheld cannot exceed it.');
+            setSubmitting(false);
+            return;
+          }
+        }
         if (isStockSplit) {
           const splitFrom = parseFloat(stockForm.split_from);
           const splitTo = parseFloat(stockForm.split_to);
@@ -576,6 +615,10 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
             previewStockCalculatedProceeds(stockForm),
             stockForm.actual_cash_received
           ),
+          released: previewTaxReleased(
+            previewStockCalculatedProceeds(stockForm),
+            stockForm.actual_cash_received
+          ),
           currency: stockForm.currency,
         }
       : null;
@@ -585,6 +628,10 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
       ? {
           calculated: previewMfCalculatedProceeds(mfForm),
           withheld: previewTaxWithheld(
+            previewMfCalculatedProceeds(mfForm),
+            mfForm.actual_cash_received
+          ),
+          released: previewTaxReleased(
             previewMfCalculatedProceeds(mfForm),
             mfForm.actual_cash_received
           ),
@@ -836,12 +883,19 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
                           onChange={handleMfChange}
                         />
                         <p className="modal-form__hint">
-                          Leave empty to use calculated proceeds.
+                          Leave empty to use calculated proceeds. A higher amount records
+                          released withheld tax.
                         </p>
                       </div>
                       {mfSellPreview?.withheld != null && mfSellPreview.withheld > 0 ? (
                         <p className="modal-sell-settlement__withheld">
                           Tax withheld / broker adjustment: {mfSellPreview.withheld.toFixed(2)}{' '}
+                          {mfSellPreview.currency}
+                        </p>
+                      ) : null}
+                      {mfSellPreview?.released != null && mfSellPreview.released > 0 ? (
+                        <p className="modal-sell-settlement__withheld">
+                          Withheld tax released: {mfSellPreview.released.toFixed(2)}{' '}
                           {mfSellPreview.currency}
                         </p>
                       ) : null}
@@ -960,7 +1014,58 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
                     </div>
                   </div>
 
-                  {stockForm.type !== 'STOCK_SPLIT' && (
+                  <div className="modal-form__hint modal-form__hint--callout">
+                    <strong>Corporate actions:</strong> use STOCK_SPLIT only when the same ticker
+                    changes by a split ratio. For bonus shares, spin-offs, demergers, or a new
+                    ticker allocated because you held another company, record the received ticker as
+                    a BUY with Price / Share set to 0 and Fees set to 0.
+                  </div>
+
+                  {stockForm.type === 'DIVIDEND' && (
+                    <div className="modal-sell-settlement">
+                      <div className="form-row">
+                        <div className="form-group">
+                          <label>Gross dividend</label>
+                          <input
+                            type="number"
+                            step="any"
+                            name="dividend_gross"
+                            value={stockForm.dividend_gross}
+                            onChange={handleStockChange}
+                            required
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>Tax withheld</label>
+                          <input
+                            type="number"
+                            step="any"
+                            name="dividend_tax_withheld"
+                            value={stockForm.dividend_tax_withheld}
+                            onChange={handleStockChange}
+                          />
+                          <p className="modal-form__hint">Leave empty when the broker withheld no tax.</p>
+                        </div>
+                      </div>
+                      {previewDividendNet(stockForm) ? (
+                        <p className="modal-sell-settlement__preview">
+                          Net cash: {previewDividendNet(stockForm).net.toFixed(2)}{' '}
+                          {previewDividendNet(stockForm).currency}
+                        </p>
+                      ) : null}
+                      <div className="form-group">
+                        <label>Note</label>
+                        <input
+                          type="text"
+                          name="settlement_note"
+                          value={stockForm.settlement_note}
+                          onChange={handleStockChange}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {stockForm.type !== 'STOCK_SPLIT' && stockForm.type !== 'DIVIDEND' && (
                     <>
                       <div className="form-row">
                         <div className="form-group">
@@ -1015,7 +1120,8 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
                               onChange={handleStockChange}
                             />
                             <p className="modal-form__hint">
-                              Leave empty to use calculated proceeds.
+                              Leave empty to use calculated proceeds. A higher amount records
+                              released withheld tax.
                             </p>
                           </div>
                           {stockSellPreview?.withheld != null &&
@@ -1023,6 +1129,13 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
                             <p className="modal-sell-settlement__withheld">
                               Tax withheld / broker adjustment:{' '}
                               {stockSellPreview.withheld.toFixed(2)} {stockSellPreview.currency}
+                            </p>
+                          ) : null}
+                          {stockSellPreview?.released != null &&
+                          stockSellPreview.released > 0 ? (
+                            <p className="modal-sell-settlement__withheld">
+                              Withheld tax released: {stockSellPreview.released.toFixed(2)}{' '}
+                              {stockSellPreview.currency}
                             </p>
                           ) : null}
                           <div className="form-group">

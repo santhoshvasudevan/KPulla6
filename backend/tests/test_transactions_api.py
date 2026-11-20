@@ -173,6 +173,27 @@ def test_post_creates_dividend(api_client, legacy_seeded):
 
 
 @pytest.mark.django_db
+def test_post_allows_zero_price_buy_for_received_stock_allocation(api_client, legacy_seeded):
+    response = api_client.post(
+        "/api/v1/transactions",
+        _payload(
+            asset_symbol="NEWCO",
+            quantity="4",
+            price_per_share="0",
+            fees="0",
+        ),
+        format="json",
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["asset_symbol"] == "NEWCO"
+    assert data["type"] == "BUY"
+    assert data["quantity"] == 4.0
+    assert data["price_per_share"] == 0.0
+
+
+@pytest.mark.django_db
 def test_post_creates_stock_split(api_client, legacy_seeded, test_user):
     default = ensure_default_portfolio(test_user)
     response = api_client.post(

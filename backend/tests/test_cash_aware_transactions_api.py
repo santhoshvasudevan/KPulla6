@@ -133,6 +133,54 @@ def test_cash_aware_buy_creates_settlement(api_client, seeded, test_user):
 
 
 @pytest.mark.django_db
+def test_cash_aware_zero_cost_buy_creates_no_settlement(api_client, seeded, test_user):
+    """Spin-off / bonus receipts at price 0 and fees 0 do not write a zero cash row."""
+    portfolio = _enable_cash_aware(ensure_default_portfolio(test_user))
+    response = api_client.post(
+        "/api/v1/transactions",
+        _stock_payload(
+            portfolio_id=portfolio.id,
+            asset_symbol="MBGL",
+            quantity="25",
+            price_per_share="0",
+            fees="0",
+        ),
+        format="json",
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["asset_symbol"] == "MBGL"
+    assert data["quantity"] == 25.0
+    assert data["price_per_share"] == 0.0
+    assert not CashLedgerEntry.objects.filter(linked_transaction_id=data["id"]).exists()
+    from diagnostics.settlement_integrity import check_settlement_integrity
+
+    issues = check_settlement_integrity([portfolio])
+    assert not any(issue.transaction_id == data["id"] for issue in issues)
+
+
+@pytest.mark.django_db
+def test_cash_aware_zero_price_buy_with_fees_settles_fees(api_client, seeded, test_user):
+    portfolio = _enable_cash_aware(ensure_default_portfolio(test_user))
+    _deposit(portfolio, day="2026-05-01", amount="10")
+    response = api_client.post(
+        "/api/v1/transactions",
+        _stock_payload(
+            portfolio_id=portfolio.id,
+            asset_symbol="MBGL",
+            quantity="25",
+            price_per_share="0",
+            fees="2",
+        ),
+        format="json",
+    )
+    assert response.status_code == 201
+    entry = CashLedgerEntry.objects.get(linked_transaction_id=response.json()["id"])
+    assert entry.entry_type == CashEntryType.BUY_SETTLEMENT
+    assert entry.amount == Decimal("-2")
+
+
+@pytest.mark.django_db
 def test_cash_aware_buy_insufficient_cash(api_client, seeded, test_user):
     portfolio = _enable_cash_aware(ensure_default_portfolio(test_user))
     _deposit(portfolio, day="2026-05-01", amount="500")
@@ -1011,3 +1059,62 @@ def test_legacy_txn_edit_after_cash_aware_enable_requires_funding(
     assert response.json()["detail"] == "Insufficient cash balance for purchase."
     assert not CashLedgerEntry.objects.filter(linked_transaction_id=created["id"]).exists()
     assert Transaction.objects.filter(pk=created["id"]).exists()
+
+
+@pytest.mark.django_db
+def test_cash_aware_dividend_records_gross_and_tax(api_client, seeded, test_user):
+    portfolio = _enable_cash_aware(ensure_default_portfolio(test_user))
+    _deposit(portfolio, day="2026-06-01", amount="1000")
+
+    response = api_client.post(
+        "/api/v1/transactions",
+        {
+            "portfolio_id": portfolio.id,
+            "asset_symbol": "AAPL",
+            "date": "2026-06-15",
+            "type": "DIVIDEND",
+            "currency": "EUR",
+            "dividend_gross": "25.00",
+            "dividend_tax_withheld": "6.60",
+            "settlement_note": "Q2",
+        },
+        format="json",
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["dividend_gross"] == pytest.approx(25.0)
+    assert body["dividend_tax_withheld"] == pytest.approx(6.6)
+    assert body["quantity"] == 0
+
+    rows = list(
+        CashLedgerEntry.objects.filter(linked_transaction_id=body["id"]).order_by("id")
+    )
+    assert [(row.entry_type, row.amount) for row in rows] == [
+        (CashEntryType.DIVIDEND_CASH, Decimal("25.0000")),
+        (CashEntryType.TAX, Decimal("-6.6000")),
+    ]
+    from cash.ledger_details import build_ledger_entry_details
+
+    assert "Dividend for AAPL" in build_ledger_entry_details(rows[0])
+    assert "Net 18.4 EUR" in build_ledger_entry_details(rows[0])
+    assert "Tax withheld for DIVIDEND AAPL" in build_ledger_entry_details(rows[1])
+
+
+@pytest.mark.django_db
+def test_cash_aware_dividend_rejects_tax_above_gross(api_client, seeded, test_user):
+    portfolio = _enable_cash_aware(ensure_default_portfolio(test_user))
+    response = api_client.post(
+        "/api/v1/transactions",
+        {
+            "portfolio_id": portfolio.id,
+            "asset_symbol": "AAPL",
+            "date": "2026-06-15",
+            "type": "DIVIDEND",
+            "currency": "EUR",
+            "dividend_gross": "10",
+            "dividend_tax_withheld": "12",
+        },
+        format="json",
+    )
+    assert response.status_code == 400
+    assert not CashLedgerEntry.objects.filter(entry_type=CashEntryType.DIVIDEND_CASH).exists()

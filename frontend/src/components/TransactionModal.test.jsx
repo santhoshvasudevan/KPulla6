@@ -102,6 +102,13 @@ describe('TransactionModal STOCK_SPLIT behavior', () => {
     expect(container.querySelector('input[name="split_to"]')).toBeInTheDocument();
   });
 
+  it('explains stock split versus new ticker stock allocations', () => {
+    renderModal();
+    expect(screen.getByText(/use STOCK_SPLIT only when the same ticker/i)).toBeInTheDocument();
+    expect(screen.getByText(/record the received ticker as a BUY/i)).toBeInTheDocument();
+    expect(screen.getByText(/Price \/ Share set to 0/i)).toBeInTheDocument();
+  });
+
   it('hides price and fee fields for STOCK_SPLIT', () => {
     const { container } = renderModal();
     fireEvent.change(container.querySelector('select[name="type"]'), { target: { value: 'STOCK_SPLIT' } });
@@ -153,6 +160,38 @@ describe('TransactionModal STOCK_SPLIT behavior', () => {
       );
       expect(api.createTransaction.mock.calls[0][0].asset_type).toBeUndefined();
       expect(onSuccess).toHaveBeenCalledWith({ kind: 'asset' });
+    });
+  });
+
+  it('submits zero-price stock BUY for received new-ticker allocations', async () => {
+    api.createTransaction.mockResolvedValueOnce({});
+    const { container } = render(
+      <PortfolioProvider
+        initialPortfolios={[
+          { id: 1, name: 'Default Portfolio', is_default: true, is_active: true, base_currency: 'EUR' },
+        ]}
+        disableFetch
+      >
+        <TransactionModal isOpen onClose={vi.fn()} onSuccess={vi.fn()} />
+      </PortfolioProvider>
+    );
+    fireEvent.change(container.querySelector('input[name="asset_symbol"]'), { target: { value: 'NEWCO' } });
+    fireEvent.change(container.querySelector('input[name="quantity"]'), { target: { value: '4' } });
+    fireEvent.change(container.querySelector('input[name="price_per_share"]'), { target: { value: '0' } });
+    fireEvent.change(container.querySelector('input[name="fees"]'), { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(api.createTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          asset_symbol: 'NEWCO',
+          type: 'BUY',
+          quantity: 4,
+          price_per_share: 0,
+          fees: 0,
+          portfolio_id: 1,
+        })
+      );
     });
   });
 });
@@ -933,25 +972,54 @@ describe('TransactionModal stock/MF BUY insufficient cash', () => {
     expect(screen.getByText(/Tax withheld \/ broker adjustment: 68.00 EUR/i)).toBeInTheDocument();
   });
 
-  it('shows backend validation error when actual exceeds calculated', async () => {
-    api.createTransaction.mockRejectedValueOnce(
-      new TransactionApiError('Actual cash received cannot exceed calculated proceeds.', {})
-    );
+  it('SELL shows released withheld tax when actual cash received is higher', () => {
     const { container } = render(
       <PortfolioProvider initialPortfolios={portfolios} disableFetch>
         <TransactionModal isOpen onClose={vi.fn()} onSuccess={vi.fn()} />
       </PortfolioProvider>
     );
-    fireEvent.change(container.querySelector('input[name="asset_symbol"]'), { target: { value: 'AAPL' } });
     fireEvent.change(container.querySelector('select[name="type"]'), { target: { value: 'SELL' } });
-    fireEvent.change(container.querySelector('input[name="quantity"]'), { target: { value: '10' } });
-    fireEvent.change(container.querySelector('input[name="price_per_share"]'), { target: { value: '100' } });
+    fireEvent.change(container.querySelector('input[name="quantity"]'), { target: { value: '60' } });
+    fireEvent.change(container.querySelector('input[name="price_per_share"]'), {
+      target: { value: '213.65' },
+    });
+    fireEvent.change(container.querySelector('input[name="fees"]'), { target: { value: '0' } });
+    fireEvent.change(container.querySelector('input[name="actual_cash_received"]'), {
+      target: { value: '13755.32' },
+    });
+    expect(screen.getByText(/Calculated proceeds: 12819.00 EUR/i)).toBeInTheDocument();
+    expect(screen.getByText(/Withheld tax released: 936.32 EUR/i)).toBeInTheDocument();
+  });
+
+  it('submit SELL sends actual cash above calculated proceeds', async () => {
+    api.createTransaction.mockResolvedValueOnce({});
+    const { container } = render(
+      <PortfolioProvider initialPortfolios={portfolios} disableFetch>
+        <TransactionModal isOpen onClose={vi.fn()} onSuccess={vi.fn()} />
+      </PortfolioProvider>
+    );
+    fireEvent.change(container.querySelector('input[name="asset_symbol"]'), { target: { value: 'ADBE' } });
+    fireEvent.change(container.querySelector('select[name="type"]'), { target: { value: 'SELL' } });
+    fireEvent.change(container.querySelector('input[name="quantity"]'), { target: { value: '60' } });
+    fireEvent.change(container.querySelector('input[name="price_per_share"]'), {
+      target: { value: '213.65' },
+    });
+    fireEvent.change(container.querySelector('input[name="fees"]'), { target: { value: '0' } });
+    fireEvent.change(container.querySelector('input[name="actual_cash_received"]'), {
+      target: { value: '13755.32' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => {
-      expect(
-        screen.getByText('Actual cash received cannot exceed calculated proceeds.')
-      ).toBeInTheDocument();
+      expect(api.createTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          asset_symbol: 'ADBE',
+          type: 'SELL',
+          quantity: 60,
+          price_per_share: 213.65,
+          actual_cash_received: 13755.32,
+        })
+      );
     });
   });
 
@@ -973,5 +1041,43 @@ describe('TransactionModal stock/MF BUY insufficient cash', () => {
       expect(onClose).toHaveBeenCalled();
     });
     expect(screen.queryByText(/Shortfall:/)).not.toBeInTheDocument();
+  });
+
+  it('DIVIDEND asks for gross and tax and submits net inputs', async () => {
+    api.createTransaction.mockResolvedValueOnce({});
+    const { container } = render(
+      <PortfolioProvider initialPortfolios={portfolios} disableFetch>
+        <TransactionModal isOpen onClose={vi.fn()} onSuccess={vi.fn()} />
+      </PortfolioProvider>
+    );
+    fireEvent.change(container.querySelector('input[name="asset_symbol"]'), {
+      target: { value: 'AAPL' },
+    });
+    fireEvent.change(container.querySelector('select[name="type"]'), {
+      target: { value: 'DIVIDEND' },
+    });
+    expect(container.querySelector('input[name="quantity"]')).toBeNull();
+    fireEvent.change(container.querySelector('input[name="dividend_gross"]'), {
+      target: { value: '25' },
+    });
+    fireEvent.change(container.querySelector('input[name="dividend_tax_withheld"]'), {
+      target: { value: '6.6' },
+    });
+    expect(screen.getByText(/Net cash: 18.40 EUR/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(api.createTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'DIVIDEND',
+          asset_symbol: 'AAPL',
+          dividend_gross: 25,
+          dividend_tax_withheld: 6.6,
+          quantity: 0,
+          price_per_share: 0,
+          fees: 0,
+        })
+      );
+    });
   });
 });

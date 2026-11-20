@@ -12,8 +12,8 @@ from django.core.management import call_command
 from market_data.models import AssetType, BenchmarkIndexConfig, HistoricalPrice
 from market_data.price_lookup import latest_historical_price, normalize_asset_symbol
 from market_data.providers.base import DailyPrice
-from market_data.providers.yfinance_provider import YFinancePriceProvider
 from market_data.providers.mutual_fund_nav_provider import NavPoint
+from market_data.providers.yfinance_provider import YFinancePriceProvider
 from market_data.services.benchmark_sync import sync_benchmark_prices
 from market_data.services.market_data_sync import sync_all_market_data
 from market_data.services.price_sync import (
@@ -267,8 +267,6 @@ def test_sync_handles_provider_error(seeded, test_user):
     assert sync_one_stock_symbol("AAPL", provider) is False
 
 
-
-
 @patch("yfinance.Ticker")
 def test_yfinance_provider_skips_nan_and_infinite_prices(mock_ticker):
     ticker = mock_ticker.return_value
@@ -304,6 +302,34 @@ def test_yfinance_provider_skips_nan_and_infinite_prices(mock_ticker):
         (date(2026, 1, 5), Decimal("101.75")),
     ]
     ticker.history.assert_called_once()
+    assert ticker.history.call_args.kwargs["auto_adjust"] is True
+
+
+@patch("yfinance.Ticker")
+def test_yfinance_stock_provider_uses_unadjusted_close(mock_ticker):
+    ticker = mock_ticker.return_value
+    ticker.info = {"currency": "USD"}
+    ticker.history.return_value = pd.DataFrame(
+        {
+            "Close": [110.0, 111.5],
+            "Adj Close": [100.0, 101.0],
+        },
+        index=pd.to_datetime(["2026-01-02", "2026-01-05"]),
+    )
+
+    rows, currency = YFinancePriceProvider(adjust_close=False).fetch_history(
+        "GOOG",
+        date(2026, 1, 1),
+        date(2026, 1, 6),
+    )
+
+    assert currency == "USD"
+    assert [(row.date, row.close) for row in rows] == [
+        (date(2026, 1, 2), Decimal("110.0")),
+        (date(2026, 1, 5), Decimal("111.5")),
+    ]
+    assert ticker.history.call_args.kwargs["auto_adjust"] is False
+
 
 @pytest.mark.django_db
 def test_prices_refresh_without_symbols(api_client, seeded, test_user):
@@ -602,7 +628,7 @@ def test_sync_all_market_data_routes_symbols_to_correct_providers(seeded, test_u
     )
 
     with patch(
-        "market_data.services.market_data_sync.default_price_provider",
+        "market_data.services.market_data_sync.default_stock_price_provider",
         return_value=stock_provider,
     ):
         with patch(
@@ -678,6 +704,9 @@ def test_sync_all_market_data_incremental_with_warm_caches(seeded, test_user):
     )
 
     with patch(
+        "market_data.services.market_data_sync.default_stock_price_provider",
+        return_value=provider,
+    ), patch(
         "market_data.services.market_data_sync.default_price_provider",
         return_value=provider,
     ):

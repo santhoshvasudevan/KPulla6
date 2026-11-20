@@ -42,9 +42,10 @@ General safety: `AGENTS.md`, `docs/data-safety.md`, `docs/workflows.md`.
 
 ## Settlement rules
 
-- **BUY** → negative `BUY_SETTLEMENT` linked to transaction.
-- **SELL** → positive `SELL_SETTLEMENT` linked to transaction.
+- **BUY** → negative `BUY_SETTLEMENT` linked to transaction when cash is required. Price and fees of 0 (spin-off / bonus) create no ledger row.
+- **SELL** → positive `SELL_SETTLEMENT` linked to transaction. Optional `actual_cash_received` adds negative `TAX_WITHHELD` when lower than calculated proceeds, or positive `TAX_RELEASED` when higher. Net cash equals actual received.
 - **STOCK_SPLIT** → no cash movement.
+- **DIVIDEND** with `dividend_gross` → positive `DIVIDEND_CASH` plus optional negative `TAX`. Net cash = gross − tax. No share-count change. A dividend without gross (legacy CSV) creates no ledger row.
 - **MF:** BUY uses `paid_value`; ledger **`date` = `investment_date`** (not `nav_date`).
 - Settlements must link to the asset transaction (`linked_transaction`).
 - Create / update / delete settlement **atomically** with the asset transaction.

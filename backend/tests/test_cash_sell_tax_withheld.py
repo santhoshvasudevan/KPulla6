@@ -141,17 +141,46 @@ def _error_text(response) -> str:
 
 
 @pytest.mark.django_db
-def test_sell_actual_exceeds_calculated_rejected(api_client, seeded, test_user):
+def test_sell_actual_above_calculated_records_released_withheld_tax(
+    api_client, seeded, test_user
+):
+    """Capital-loss sale can return previously withheld tax above sale proceeds."""
     portfolio = _enable_cash_aware(ensure_default_portfolio(test_user))
     response = api_client.post(
         "/api/v1/transactions",
-        _stock_payload(portfolio_id=portfolio.id, actual_cash_received="1000"),
+        _stock_payload(
+            portfolio_id=portfolio.id,
+            asset_symbol="ADBE",
+            quantity="60",
+            price_per_share="213.65",
+            fees="0",
+            actual_cash_received="13755.32",
+            settlement_note="Released withheld capital gains tax",
+        ),
         format="json",
     )
-    assert response.status_code == 400
-    assert _error_text(response) == (
-        "Actual cash received cannot exceed calculated proceeds."
+    assert response.status_code == 201
+    data = response.json()
+    assert data["actual_cash_received"] == 13755.32
+    txn_id = data["id"]
+    sell_entry = CashLedgerEntry.objects.get(
+        linked_transaction_id=txn_id, entry_type=CashEntryType.SELL_SETTLEMENT
     )
+    released_entry = CashLedgerEntry.objects.get(
+        linked_transaction_id=txn_id, entry_type=CashEntryType.TAX_RELEASED
+    )
+    assert not CashLedgerEntry.objects.filter(
+        linked_transaction_id=txn_id, entry_type=CashEntryType.TAX_WITHHELD
+    ).exists()
+    assert sell_entry.amount == Decimal("12819")
+    assert released_entry.amount == Decimal("936.32")
+    assert released_entry.note == "Released withheld capital gains tax"
+    balances = cash_balance_on_date(_ledger_points(portfolio), date(2026, 6, 1))
+    assert balances["EUR"] == Decimal("13755.32")
+    details = build_ledger_entry_details(released_entry)
+    assert "ADBE" in details
+    assert "Released" in details
+    assert "936.32" in details
 
 
 @pytest.mark.django_db

@@ -446,10 +446,6 @@ def _validate_sell_cash_fields(
         raise TransactionValidationError(
             "SELL proceeds must be greater than zero after fees"
         )
-    if actual_cash_received > calculated_proceeds:
-        raise TransactionValidationError(
-            "Actual cash received cannot exceed calculated proceeds."
-        )
     return actual_cash_received, note
 
 
@@ -466,6 +462,8 @@ def validate_transaction_payload(
     split_to: Decimal | None,
     actual_cash_received=None,
     settlement_note: str | None = None,
+    dividend_gross: Decimal | None = None,
+    dividend_tax_withheld: Decimal | None = None,
 ) -> dict[str, Any]:
     symbol = normalize_asset_symbol(asset_symbol or "")
     if not symbol:
@@ -502,7 +500,25 @@ def validate_transaction_payload(
             "split_to": split_to,
             "actual_cash_received": None,
             "settlement_note": None,
+            "dividend_gross": None,
+            "dividend_tax_withheld": None,
         }
+
+    if txn_type == TransactionType.DIVIDEND:
+        return _validate_dividend_payload(
+            symbol=symbol,
+            date=date,
+            quantity=quantity,
+            price_per_share=price_per_share,
+            fees=fees,
+            currency=currency,
+            actual_cash_received=_parse_optional_positive_decimal(
+                actual_cash_received, field="actual_cash_received"
+            ),
+            settlement_note=settlement_note,
+            dividend_gross=dividend_gross,
+            dividend_tax_withheld=dividend_tax_withheld,
+        )
 
     if txn_type not in TransactionType.values:
         raise TransactionValidationError(f"Unsupported transaction type: {txn_type}")
@@ -544,4 +560,81 @@ def validate_transaction_payload(
         "split_to": None,
         "actual_cash_received": validated_actual,
         "settlement_note": validated_note,
+        "dividend_gross": None,
+        "dividend_tax_withheld": None,
+    }
+
+
+def _validate_dividend_payload(
+    *,
+    symbol: str,
+    date,
+    quantity: Decimal | None,
+    price_per_share: Decimal | None,
+    fees: Decimal | None,
+    currency: str | None,
+    actual_cash_received: Decimal | None,
+    settlement_note: str | None,
+    dividend_gross: Decimal | None,
+    dividend_tax_withheld: Decimal | None,
+) -> dict[str, Any]:
+    if actual_cash_received is not None:
+        raise TransactionValidationError(
+            "actual_cash_received is only allowed for SELL transactions"
+        )
+    note = (settlement_note or "").strip() or None
+    currency_code = (currency or "EUR").strip().upper() or "EUR"
+
+    if dividend_gross is None:
+        if note:
+            raise TransactionValidationError(
+                "settlement_note is only allowed for SELL transactions"
+            )
+        if quantity is None or quantity <= 0:
+            raise TransactionValidationError("quantity must be greater than 0")
+        if price_per_share is None or price_per_share < 0:
+            raise TransactionValidationError(
+                "price_per_share must be greater than or equal to 0"
+            )
+        fee_value = Decimal("0") if fees is None else fees
+        if fee_value < 0:
+            raise TransactionValidationError("fees must be greater than or equal to 0")
+        return {
+            "asset_symbol": symbol,
+            "date": date,
+            "type": TransactionType.DIVIDEND,
+            "quantity": quantity,
+            "price_per_share": price_per_share,
+            "fees": fee_value,
+            "currency": currency_code,
+            "split_from": None,
+            "split_to": None,
+            "actual_cash_received": None,
+            "settlement_note": None,
+            "dividend_gross": None,
+            "dividend_tax_withheld": None,
+        }
+
+    if dividend_gross <= 0:
+        raise TransactionValidationError("Gross dividend must be greater than 0")
+    tax = Decimal("0") if dividend_tax_withheld is None else dividend_tax_withheld
+    if tax < 0:
+        raise TransactionValidationError("Tax withheld must be greater than or equal to 0")
+    if tax > dividend_gross:
+        raise TransactionValidationError("Tax withheld cannot exceed gross dividend")
+
+    return {
+        "asset_symbol": symbol,
+        "date": date,
+        "type": TransactionType.DIVIDEND,
+        "quantity": Decimal("0"),
+        "price_per_share": Decimal("0"),
+        "fees": Decimal("0"),
+        "currency": currency_code,
+        "split_from": None,
+        "split_to": None,
+        "actual_cash_received": None,
+        "settlement_note": note,
+        "dividend_gross": dividend_gross,
+        "dividend_tax_withheld": tax,
     }

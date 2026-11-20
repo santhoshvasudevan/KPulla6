@@ -11,7 +11,7 @@ from django.utils import timezone
 from market_data.models import AssetType, HistoricalPrice
 from market_data.price_lookup import normalize_asset_symbol
 from market_data.providers.base import PriceProvider
-from market_data.providers.yfinance_provider import default_price_provider
+from market_data.providers.yfinance_provider import default_stock_price_provider
 from market_data.services.symbols import (
     earliest_transaction_date_for_symbol,
     stock_transaction_symbols,
@@ -181,7 +181,7 @@ def sync_stock_prices(
     Incrementally sync STOCK historical prices for transaction symbols.
     When only_symbols is set, sync intersection with transaction symbols only.
     """
-    provider = provider or default_price_provider()
+    provider = provider or default_stock_price_provider()
     txn_symbols = stock_transaction_symbols()
     if only_symbols is not None:
         requested = {normalize_asset_symbol(s) for s in only_symbols if s}

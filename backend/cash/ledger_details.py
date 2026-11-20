@@ -109,7 +109,7 @@ def _mf_settlement_details(entry: CashLedgerEntry, txn, detail: MutualFundTransa
     return _join_parts(parts)
 
 
-def _tax_withheld_details(entry: CashLedgerEntry, txn) -> str:
+def _tax_withheld_details(entry: CashLedgerEntry, txn, *, released: bool = False) -> str:
     try:
         detail = txn.mutual_fund_detail
     except MutualFundTransactionDetail.DoesNotExist:
@@ -119,12 +119,20 @@ def _tax_withheld_details(entry: CashLedgerEntry, txn) -> str:
         calculated = _mf_calculated_proceeds(txn, detail)
         symbol = txn.asset_symbol
         folio_number = detail.folio.folio_number if detail.folio_id else ""
-        headline = f"Tax withheld / broker adjustment for SELL {symbol}"
+        headline = (
+            f"Withheld tax released for SELL {symbol}"
+            if released
+            else f"Tax withheld / broker adjustment for SELL {symbol}"
+        )
         if folio_number:
             headline = f"{headline} · Folio {folio_number}"
     else:
         calculated = _stock_calculated_proceeds(txn)
-        headline = f"Tax withheld / broker adjustment for SELL {txn.asset_symbol}"
+        headline = (
+            f"Withheld tax released for SELL {txn.asset_symbol}"
+            if released
+            else f"Tax withheld / broker adjustment for SELL {txn.asset_symbol}"
+        )
 
     actual = txn.actual_cash_received
     parts = [headline]
@@ -133,9 +141,10 @@ def _tax_withheld_details(entry: CashLedgerEntry, txn) -> str:
     if actual is not None:
         parts.append(f"Actual received {_fmt_money(actual, txn.currency)}")
     if calculated is not None and actual is not None:
-        withheld = calculated - actual
-        if withheld > 0:
-            parts.append(f"Withheld {_fmt_money(withheld, txn.currency)}")
+        gap = (actual - calculated) if released else (calculated - actual)
+        if gap > 0:
+            label = "Released" if released else "Withheld"
+            parts.append(f"{label} {_fmt_money(gap, txn.currency)}")
     note = (entry.note or txn.settlement_note or "").strip()
     if note:
         parts.append(note)
@@ -194,6 +203,28 @@ def _fallback_details(entry: CashLedgerEntry) -> str:
     return label if label else "Cash ledger entry"
 
 
+def _dividend_details(entry: CashLedgerEntry, txn) -> str:
+    currency = entry.currency
+    gross = txn.dividend_gross
+    tax = txn.dividend_tax_withheld or Decimal("0")
+    if entry.entry_type == CashEntryType.TAX:
+        return _join_parts(
+            [
+                f"Tax withheld for DIVIDEND {txn.asset_symbol}",
+                _fmt_money(tax, currency),
+            ]
+        )
+    net = None if gross is None else gross - tax
+    return _join_parts(
+        [
+            f"Dividend for {txn.asset_symbol}",
+            f"Gross {_fmt_money(gross, currency)}",
+            f"Tax {_fmt_money(tax, currency)}" if tax > 0 else "",
+            f"Net {_fmt_money(net, currency)}",
+        ]
+    )
+
+
 def build_ledger_entry_details(entry: CashLedgerEntry) -> str:
     """Build a single human-readable details string from persisted ledger data."""
     entry_type = entry.entry_type
@@ -203,8 +234,13 @@ def build_ledger_entry_details(entry: CashLedgerEntry) -> str:
             return _manual_entry_details(entry)
 
     txn = entry.linked_transaction
-    if txn is not None and entry_type == CashEntryType.TAX_WITHHELD:
-        return _tax_withheld_details(entry, txn)
+    if txn is not None and entry_type in {
+        CashEntryType.TAX_WITHHELD,
+        CashEntryType.TAX_RELEASED,
+    }:
+        return _tax_withheld_details(
+            entry, txn, released=entry_type == CashEntryType.TAX_RELEASED
+        )
 
     if txn is not None and entry_type in {
         CashEntryType.BUY_SETTLEMENT,
@@ -227,6 +263,12 @@ def build_ledger_entry_details(entry: CashLedgerEntry) -> str:
 
     if entry_type in {CashEntryType.FX_CONVERSION_OUT, CashEntryType.FX_CONVERSION_IN}:
         return _fx_conversion_details(entry)
+
+    if txn is not None and txn.type == TransactionType.DIVIDEND and entry_type in {
+        CashEntryType.DIVIDEND_CASH,
+        CashEntryType.TAX,
+    }:
+        return _dividend_details(entry, txn)
 
     if entry_type in {
         CashEntryType.DIVIDEND_CASH,

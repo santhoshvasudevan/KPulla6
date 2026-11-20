@@ -156,6 +156,17 @@
   line-height: 1.45;
 }
 
+.modal-form__hint--callout {
+  padding: var(--space-3);
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.modal-form__hint--callout strong {
+  color: var(--text-primary);
+}
+
 .modal-cash-shortfall {
   padding: var(--space-3);
   background: color-mix(in srgb, var(--loss) 8%, var(--bg-surface));

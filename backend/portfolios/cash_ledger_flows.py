@@ -24,6 +24,7 @@ CASH_AWARE_INTERNAL_ENTRY_TYPES = frozenset(
         CashEntryType.BUY_SETTLEMENT,
         CashEntryType.SELL_SETTLEMENT,
         CashEntryType.TAX_WITHHELD,
+        CashEntryType.TAX_RELEASED,
         CashEntryType.DIVIDEND_CASH,
         CashEntryType.INTEREST,
         CashEntryType.FEE,

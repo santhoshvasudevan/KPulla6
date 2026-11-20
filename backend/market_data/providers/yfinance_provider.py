@@ -15,6 +15,14 @@ def _norm_ccy(value: str | None) -> str:
     return (value or "USD").strip().upper() or "USD"
 
 
+def _adj_close_or_close_series(hist):
+    if hist is None or getattr(hist, "empty", True):
+        return None
+    if "Adj Close" in hist.columns:
+        return hist["Adj Close"]
+    if "Close" in hist.columns:
+        return hist["Close"]
+    return None
 
 
 def _finite_decimal_from_provider_value(value) -> Decimal | None:
@@ -30,18 +38,14 @@ def _finite_decimal_from_provider_value(value) -> Decimal | None:
         return None
     return decimal_value
 
-def _adj_close_or_close_series(hist):
-    if hist is None or getattr(hist, "empty", True):
-        return None
-    if "Adj Close" in hist.columns:
-        return hist["Adj Close"]
-    if "Close" in hist.columns:
-        return hist["Close"]
-    return None
-
 
 class YFinancePriceProvider:
     """yfinance-backed price history (used by sync commands and manual refresh only)."""
+
+    def __init__(self, *, adjust_close: bool = True):
+        # Benchmarks keep adjusted closes. Stocks use the market close
+        # (split-adjusted, not dividend-adjusted) so dividends are explicit.
+        self.adjust_close = adjust_close
 
     def fetch_history(
         self, symbol: str, start: date, end: date
@@ -53,8 +57,17 @@ class YFinancePriceProvider:
             return [], None
 
         ticker = yf.Ticker(sym)
-        hist = ticker.history(start=start, end=end + timedelta(days=1))
-        series = _adj_close_or_close_series(hist)
+        hist = ticker.history(
+            start=start,
+            end=end + timedelta(days=1),
+            auto_adjust=self.adjust_close,
+        )
+        if self.adjust_close:
+            series = _adj_close_or_close_series(hist)
+        elif hist is None or getattr(hist, "empty", True) or "Close" not in hist.columns:
+            series = None
+        else:
+            series = hist["Close"]
         if series is None or series.empty:
             return [], None
 
@@ -89,7 +102,13 @@ class YFinancePriceProvider:
 
 
 def default_price_provider() -> PriceProvider:
-    return YFinancePriceProvider()
+    """Adjusted closes for benchmarks."""
+    return YFinancePriceProvider(adjust_close=True)
+
+
+def default_stock_price_provider() -> PriceProvider:
+    """Market close for stocks: split-adjusted, not dividend-adjusted."""
+    return YFinancePriceProvider(adjust_close=False)
 
 
 def normalize_provider_symbol(symbol: str, *, is_benchmark: bool = False) -> str:
