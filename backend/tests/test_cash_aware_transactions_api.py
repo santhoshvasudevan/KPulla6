@@ -1118,3 +1118,50 @@ def test_cash_aware_dividend_rejects_tax_above_gross(api_client, seeded, test_us
     )
     assert response.status_code == 400
     assert not CashLedgerEntry.objects.filter(entry_type=CashEntryType.DIVIDEND_CASH).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("scope", ["single", "all"])
+def test_performance_carries_funded_mutual_fund_purchase_until_nav(
+    api_client, cash_aware_portfolio, monkeypatch, scope
+):
+    from market_data.models import AssetType, HistoricalPrice
+
+    monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 17))
+    portfolio = cash_aware_portfolio
+    _deposit(portfolio, day="2026-03-12", amount="10000", currency="INR")
+    _deposit(portfolio, day="2026-03-13", amount="4250", currency="INR")
+    response = api_client.post(
+        "/api/v1/transactions",
+        _mf_payload(
+            portfolio_id=portfolio.id, investment_date="2026-03-13",
+            nav_date="2026-03-16", paid_value="4250.00",
+        ),
+        format="json",
+    )
+    assert response.status_code == 201, response.json()
+    HistoricalPrice.objects.create(
+        asset_symbol="120503", date=date(2026, 3, 16), close_price=Decimal("42.50"),
+        currency="INR", source="test", asset_type=AssetType.MUTUAL_FUND,
+    )
+    selector = "portfolio_scope=all" if scope == "all" else f"portfolio_id={portfolio.id}"
+    url = f"/api/v1/portfolio/performance?{selector}&display_currency=INR&range=ALL"
+    returns = {p["date"]: p["value"] for p in api_client.get(f"{url}&metric=twror").json()}
+    assert {day: returns.get(day) for day in ("2026-03-13", "2026-03-15", "2026-03-16")} == {
+        "2026-03-13": pytest.approx(0),
+        "2026-03-15": pytest.approx(0),
+        "2026-03-16": pytest.approx(0),
+    }
+    values = {p["date"]: p["value"] for p in api_client.get(f"{url}&metric=value").json()}
+    assert {day: values.get(day) for day in ("2026-03-13", "2026-03-15", "2026-03-16")} == {
+        "2026-03-13": pytest.approx(14250),
+        "2026-03-15": pytest.approx(14250),
+        "2026-03-16": pytest.approx(14250),
+    }
+
+    metrics = api_client.get(
+        f"/api/v1/analytics/performance-metrics?{selector}&display_currency=INR&range=7D"
+    ).json()
+    march = next(row for row in metrics["periodic_returns"]["monthly"] if row["period"] == "2026-03")
+    assert march["return"] == pytest.approx(0)
+    assert metrics["drawdown_periods"]["worst"] == []

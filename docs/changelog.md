@@ -30,6 +30,10 @@
 - **Fix:** `make refresh` no longer fails when yfinance returns `NaN` or infinite adjusted-close values; invalid provider rows are skipped before writing `HistoricalPrice.close_price`.
 - **Tests:** `cd backend && DJANGO_TEST_USE_SQLITE=1 .venv/bin/python -m pytest tests/test_market_data_sync.py -q`.
 
+## 2026-11-11 — Pending mutual fund purchases in portfolio history
+
+- Cash-aware historical valuations carry a linked fund purchase from its cash settlement date through the day before units enter holdings. This prevents artificial portfolio returns and drawdowns during allotment gaps. Pending amounts are unavailable to spend. No API or schema changes.
+
 ## 2026-11-09 — Dashboard reconciliation and allocation currency
 
 - **Fix:** Convert native stock/MF values with cached FX before building dashboard allocation buckets. Previously INR amounts could be labelled EUR despite correct headline conversion. Missing FX remains explicitly partial rather than leaking unconverted values.

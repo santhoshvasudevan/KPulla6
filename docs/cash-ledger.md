@@ -159,7 +159,7 @@ This models “money appears on BUY day” even when the user already held cash 
 | `STOCK_SPLIT` | Zero (unchanged) |
 | `TRANSFER_*` (manual edit) / `FX_CONVERSION_*` / linked rows | Manual edit excluded; transfers created via `POST /cash/transfers` (Cash-8A) |
 
-Daily portfolio value \(PV_d\) = **investment value + cash** (same series as `metric=value`, Cash-6B).
+Daily portfolio value \(PV_d\) = **investment value + cash + pending mutual fund purchases** (same valuation components as `metric=value`). A linked BUY settlement contributes its paid amount from the settlement date through the day before the units enter holdings. This amount is valued with cached FX where needed and is unavailable to spend. The units replace it on the NAV date, and the settlement remains an internal movement.
 
 **Display currency vs native cash (cash-only portfolios):**
 

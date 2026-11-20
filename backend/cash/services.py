@@ -10,7 +10,7 @@ from typing import Literal
 
 from django.contrib.auth.models import AbstractBaseUser
 from django.db import transaction as db_transaction
-from django.db.models import QuerySet
+from django.db.models import F, QuerySet
 
 from cash.constants import SUPPORTED_CASH_CURRENCIES
 from cash.models import CashEntryType, CashLedgerEntry, CashTransferGroup
@@ -555,7 +555,6 @@ def assert_delete_entries_would_not_make_cash_negative(
                     affected_entries=affected,
                 )
             )
-
 
 
 def assert_proposed_ledger_non_negative(
@@ -1237,6 +1236,31 @@ def cash_summary_payload(summary: CashDisplaySummary) -> dict:
     }
 
 
+def _pending_mutual_fund_purchase_points(
+    scope: ResolvedPortfolioScope, start_date: date, end_date: date
+) -> list[CashLedgerPoint]:
+    settlements = CashLedgerEntry.objects.filter(
+        portfolio_id__in=scope.portfolio_ids,
+        portfolio__cash_aware_enabled=True,
+        entry_type=CashEntryType.BUY_SETTLEMENT,
+        is_reversal=False,
+        amount__lt=0,
+        date__lte=end_date,
+        linked_transaction__type="BUY",
+        linked_transaction__portfolio_id=F("portfolio_id"),
+        linked_transaction__mutual_fund_detail__isnull=False,
+        linked_transaction__date__gt=F("date"),
+    ).filter(linked_transaction__date__gt=start_date).values_list(
+        "date", "linked_transaction__date", "currency", "amount"
+    )
+    points = []
+    for settlement_date, recognition_date, currency, amount in settlements:
+        # The units replace the pending investment on the recognition date.
+        points.append(CashLedgerPoint(settlement_date, currency, -amount))
+        points.append(CashLedgerPoint(recognition_date, currency, amount))
+    return points
+
+
 def build_cash_value_timeseries(
     scope: ResolvedPortfolioScope,
     display_currency: str,
@@ -1251,6 +1275,19 @@ def build_cash_value_timeseries(
     day using cached FX (7-day fill). Missing FX for a currency on a day excludes
     that currency's amount for that day and marks ``fx_status`` as ``fx_unavailable``.
     """
+    return _build_cash_value_timeseries(
+        scope, display_currency, start_date=start_date, end_date=end_date,
+    )
+
+
+def _build_cash_value_timeseries(
+    scope: ResolvedPortfolioScope,
+    display_currency: str,
+    *,
+    start_date: date,
+    end_date: date,
+    pending_points: list[CashLedgerPoint] | None = None,
+) -> list[dict]:
     if end_date < start_date:
         return []
 
@@ -1259,28 +1296,17 @@ def build_cash_value_timeseries(
         return []
 
     disp_ccy = _norm_display_currency(display_currency)
-    by_portfolio_currency: dict[tuple[int, str], list[CashLedgerPoint]] = {}
-    for entry in entries:
-        key = (entry.portfolio_id, entry.currency)
-        by_portfolio_currency.setdefault(key, []).append(ledger_entry_to_point(entry))
-
-    currencies = {entry.currency for entry in entries}
-    daily_native: dict[str, dict[date, Decimal]] = {c: {} for c in currencies}
-
-    for (_pid, ccy), points in by_portfolio_currency.items():
-        series = cash_balance_timeseries(points, start_date, end_date)
-        for day, bal in series.get(ccy, []):
-            daily_native[ccy][day] = daily_native[ccy].get(day, Decimal("0")) + bal
+    points = [ledger_entry_to_point(entry) for entry in entries]
+    points.extend(pending_points or [])
+    daily_native = {
+        currency: dict(series)
+        for currency, series in cash_balance_timeseries(points, start_date, end_date).items()
+    }
+    currencies = daily_native.keys()
 
     fx_pairs = {(c, disp_ccy) for c in currencies if c != disp_ccy}
     fx_start = start_date - timedelta(days=FX_LOOKBACK_DAYS)
     fx_maps = load_fx_rate_maps(fx_pairs, fx_start, end_date) if fx_pairs else {}
-
-    days: set[date] = set()
-    for ccy_map in daily_native.values():
-        days.update(ccy_map.keys())
-    if not days:
-        return []
 
     result: list[dict] = []
     d = start_date
@@ -1324,16 +1350,18 @@ def merge_cash_into_value_timeseries(
     end_date: date,
 ) -> tuple[list[dict], list[str]]:
     """
-    Add daily cash display totals to investment ``portfolio_value`` rows.
+    Add daily cash and pending purchase values to investment ``portfolio_value`` rows.
 
     When ``investment_ts`` is empty, returns a cash-only series over
     ``[start_date, end_date]``.
     """
-    cash_ts = build_cash_value_timeseries(
+    pending_points = _pending_mutual_fund_purchase_points(scope, start_date, end_date)
+    cash_ts = _build_cash_value_timeseries(
         scope,
         display_currency,
         start_date=start_date,
         end_date=end_date,
+        pending_points=pending_points,
     )
     warnings: list[str] = []
     if cash_ts and any(p.get("fx_status") == "fx_unavailable" for p in cash_ts):
@@ -1342,8 +1370,13 @@ def merge_cash_into_value_timeseries(
     if not cash_ts:
         return investment_ts, warnings
 
-    if not investment_ts:
-        return [
+    first_investment_date = investment_ts[0]["date"] if investment_ts else None
+    include_opening = first_investment_date and any(
+        point.date.isoformat() < first_investment_date for point in pending_points
+    )
+    opening = []
+    if not investment_ts or include_opening:
+        opening = [
             {
                 "date": p["date"],
                 "portfolio_value": p["cash_value"],
@@ -1351,10 +1384,11 @@ def merge_cash_into_value_timeseries(
                 "fx_status": p.get("fx_status", "ok"),
             }
             for p in cash_ts
-        ], warnings
+            if first_investment_date is None or p["date"] < first_investment_date
+        ]
 
     cash_by_date = {p["date"]: p for p in cash_ts}
-    out: list[dict] = []
+    out = opening
     for row in investment_ts:
         merged = dict(row)
         cash_pt = cash_by_date.get(row["date"])

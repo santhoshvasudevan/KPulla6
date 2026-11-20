@@ -17,7 +17,6 @@ from finance.performance_range import resolve_performance_range_start
 from finance.performance_stats import contributions_and_withdrawals_through
 from finance.twror import compute_twror_series
 from fx.lookup import (
-    convert_amount_with_fill,
     convert_amount_with_fill_from_maps,
     load_fx_rate_maps,
 )
@@ -257,6 +256,13 @@ def build_return_value_timeseries(
                     )
                 else:
                     raw_ts = []
+                if child_txns:
+                    raw_ts = _convert_investment_ts_to_display(
+                        raw_ts,
+                        portfolio_base=portfolio_base_currency(child_txns),
+                        disp_ccy=disp_ccy,
+                        emit_start=emit_start,
+                    )
                 cash_start = cash_ledger_inception_date(child_scope) or today
                 loop_start = emit_start if emit_start is not None else cash_start
                 merged, cash_warnings = merge_cash_into_value_timeseries(
@@ -357,6 +363,13 @@ def build_return_value_timeseries(
             )
         else:
             raw_ts = []
+        if all_txns:
+            raw_ts = _convert_investment_ts_to_display(
+                raw_ts,
+                portfolio_base=portfolio_base_currency(all_txns),
+                disp_ccy=disp_ccy,
+                emit_start=emit_start,
+            )
         cash_start = cash_ledger_inception_date(scope) or today
         loop_start = emit_start if emit_start is not None else cash_start
         merged, cash_warnings = merge_cash_into_value_timeseries(
@@ -691,6 +704,10 @@ def build_portfolio_performance(
         value_timeseries_inception_date(user, scope, today=today) if user else None
     )
     series_inception = min(inception, fd_bank_start) if fd_bank_start else inception
+    if scope.kind == "all_active" or _single_portfolio_cash_aware_returns(scope):
+        cash_start = cash_ledger_inception_date(scope)
+        if cash_start:
+            series_inception = min(series_inception, cash_start)
     range_start = resolve_performance_range_start(range_code, today, series_inception)
     range_start_iso = range_start.isoformat()
     emit_start = None if range_code == "ALL" else range_start
@@ -706,10 +723,20 @@ def build_portfolio_performance(
         )
 
     if metric == "value":
+        if not use_all_scope_display:
+            inv_ts = _convert_investment_ts_to_display(
+                inv_ts,
+                portfolio_base=base_currency,
+                disp_ccy=disp_ccy,
+                emit_start=emit_start,
+            )
         if inv_ts:
             ts_start = date.fromisoformat(inv_ts[0]["date"])
             ts_end = date.fromisoformat(inv_ts[-1]["date"])
             loop_start = min(ts_start, fd_bank_start) if fd_bank_start else ts_start
+            cash_start = cash_ledger_inception_date(scope)
+            if cash_start and range_code == "ALL":
+                loop_start = min(loop_start, cash_start)
             timeseries_full, value_warnings = merge_cash_into_value_timeseries(
                 inv_ts,
                 scope=scope,
@@ -760,20 +787,9 @@ def build_portfolio_performance(
             user=user,
         )
 
-        needs_display_conv = (
-            not use_all_scope_display
-            and norm_display_currency(base_currency) != disp_ccy
-        )
-
-        def _convert_value(pv: float, pt_date: date) -> float | None:
-            if not needs_display_conv:
-                return float(pv)
-            cv, _ = convert_amount_with_fill(pv, base_currency, disp_ccy, pt_date)
-            return float(cv) if cv is not None else None
-
         out: list[PerformancePoint] = []
         for p in timeseries_full:
-            if p["date"] < range_start_iso:
+            if range_code != "ALL" and p["date"] < range_start_iso:
                 continue
             pv = p.get("portfolio_value")
             if pv is None:
@@ -783,11 +799,9 @@ def build_portfolio_performance(
                     )
                 )
                 continue
-            pt_date = date.fromisoformat(p["date"])
-            cv = float(pv) if use_all_scope_display else _convert_value(float(pv), pt_date)
             out.append(
                 PerformancePoint(
-                    date=p["date"], value=cv, metric="value", currency=disp_ccy
+                    date=p["date"], value=float(pv), metric="value", currency=disp_ccy
                 )
             )
         return PerformanceSeriesResult(points=out, warnings=value_warnings)

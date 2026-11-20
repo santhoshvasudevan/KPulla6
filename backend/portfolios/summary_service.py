@@ -902,10 +902,13 @@ def _build_single_portfolio_summary(
             ts_start = date.fromisoformat(raw_ts[0]["date"])
             ts_end = date.fromisoformat(raw_ts[-1]["date"])
             loop_start = min(ts_start, fd_bank_start) if fd_bank_start else ts_start
+            cash_start = cash_ledger_inception_date(scope)
+            if cash_start:
+                loop_start = min(loop_start, cash_start)
             timeseries, _ = merge_cash_into_value_timeseries(
                 raw_ts,
                 scope=scope,
-                display_currency=disp_ccy,
+                display_currency=portfolio_base,
                 start_date=loop_start,
                 end_date=ts_end,
             )
@@ -918,7 +921,7 @@ def _build_single_portfolio_summary(
             timeseries, _ = merge_cash_into_value_timeseries(
                 [],
                 scope=scope,
-                display_currency=disp_ccy,
+                display_currency=portfolio_base,
                 start_date=loop_start,
                 end_date=today,
             )
