@@ -97,6 +97,28 @@ def test_dashboard_allocation_uses_same_display_currency_as_headline(api_client,
     assert data["current_value"] == 50
     assert data["total_invested"] == 42.5  # Remaining cost basis, not gross BUY payments.
     assert data["allocation_buckets"]["currency"] == "EUR"
+    # Same-day FX is a direct hit ("ok"); lookback fill is covered separately.
+    assert data["allocation_buckets"]["fx_status"] == "ok"
+    assert sum(row["value"] for row in data["allocation_buckets"]["buckets"]) == 50
+
+
+@pytest.mark.django_db
+def test_dashboard_allocation_uses_filled_fx_within_lookback(
+    api_client, legacy_seeded, monkeypatch
+):
+    monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
+    assert _mf_buy(api_client).status_code == 201
+    _mf_nav("120503", "2026-03-20", "50")
+    # No same-day rate; seven-day fill should still convert and mark filled.
+    upsert_fx_rate(
+        from_currency="INR", to_currency="EUR",
+        row_date=date(2026, 3, 17), rate=Decimal("0.01"),
+    )
+    data = api_client.get(
+        "/api/v1/portfolio/summary?include_timeseries=false&display_currency=EUR"
+    ).json()
+    assert data["allocation_buckets"]["currency"] == "EUR"
+    assert data["allocation_buckets"]["fx_status"] == "filled"
     assert sum(row["value"] for row in data["allocation_buckets"]["buckets"]) == 50
 
 
