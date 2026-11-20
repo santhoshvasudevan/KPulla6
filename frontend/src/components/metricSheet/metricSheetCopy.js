@@ -6,6 +6,12 @@ export const METRIC_SHEET_XIRR_FULL_SCOPE_NOTE =
 export const PERSONAL_XIRR_REVIEW_NOTE =
   'Unverified estimate - requires review. Existing personal XIRR APIs use inconsistent currency and cash-flow conventions; these estimates are not directly comparable.';
 
+export const PERSONAL_XIRR_INR_NOTE =
+  'Annualized personal return in INR, based on your dated purchases and redemptions and the latest cached NAV.';
+
+export const NAV_RETURN_NOTE =
+  'NAV return measures the fund’s performance. Your purchases and redemptions affect Your Holding XIRR.';
+
 /**
  * Compare page: requested range vs backend-aligned common window.
  * @param {string} timeRange — selected control value (fallback if API omits range.code)

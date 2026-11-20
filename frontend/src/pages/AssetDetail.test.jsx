@@ -99,7 +99,7 @@ describe('AssetDetail Page', () => {
     });
   });
 
-  it.each([0.2876, 0, null])('separates MF NAV performance from unverified personal XIRR %s', async (xirr) => {
+  it.each([0.2876, 0, null])('separates MF NAV performance from native-INR personal XIRR %s', async (xirr) => {
     api.fetchAssetDetails.mockResolvedValueOnce({
       ...mockAssetDetail, asset_type: 'MUTUAL_FUND',
     });
@@ -108,8 +108,10 @@ describe('AssetDetail Page', () => {
       performance_basis: 'nav', currency: 'INR',
       metrics: { ...mockMetricSheet.metrics, return: { cumulative_return: 0.00568975, xirr: null } },
       personal_metrics: {
-        xirr, xirr_scope: 'full_scope', status: 'requires_review',
-        warnings: ['Personal XIRR has inconsistent cash-flow and terminal currencies.'],
+        xirr, xirr_scope: 'full_scope',
+        status: xirr == null ? 'unavailable' : 'calculated',
+        basis: 'native_inr',
+        warnings: [],
       },
       coverage: { partial_months: ['2024-03'], partial_years: ['2024'] },
       periodic_returns: {
@@ -122,18 +124,19 @@ describe('AssetDetail Page', () => {
     const position = screen.getByRole('region', { name: 'Your Position' });
     expect(within(position).getByText('Your Holding XIRR')).toBeInTheDocument();
     expect(within(position).getByText(xirr == null ? '—' : xirr === 0 ? '0.00%' : '+28.76%')).toBeInTheDocument();
-    expect(within(position).getByText(/unverified.*requires review/i)).toBeInTheDocument();
-    expect(within(position).getByText(/inconsistent cash-flow and terminal currencies/i)).toBeInTheDocument();
+    expect(within(position).getByText(/annualized personal return in INR/i)).toBeInTheDocument();
     const header = document.querySelector('.asset-detail-kpi-grid');
     expect(within(header).getByText('Your Holding XIRR')).toBeInTheDocument();
     expect(within(header).getByText('+12.50%')).toBeInTheDocument();
-    expect(within(header).getByText(/unverified.*currency/i)).toBeInTheDocument();
+    expect(within(header).getByText(/annualized personal return in INR/i)).toBeInTheDocument();
     expect(screen.queryByText('XIRR', { exact: true })).not.toBeInTheDocument();
     expect(screen.getByRole('cell', { name: /March 2024.*0.57%/i })).toBeInTheDocument();
     expect(screen.getByRole('cell', { name: /2024 year return/i })).toBeInTheDocument();
     expect(screen.queryByText(/partial/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('cell', { name: /partial/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('cell', { name: /2024 full-year return/i })).not.toBeInTheDocument();
+    expect(screen.getByText('Cumulative NAV Return')).toBeInTheDocument();
+    expect(screen.queryByText('TWROR', { exact: true })).not.toBeInTheDocument();
     expect(screen.queryByText('Cash-flow adjusted return using daily TWROR.')).not.toBeInTheDocument();
     expect(within(header).getByText(/€910\.00/)).toBeInTheDocument();
   });
@@ -209,7 +212,7 @@ describe('AssetDetail Page', () => {
       coverage: { start: '2024-03-01', end: '2024-04-30', incomplete: true },
       metrics: { return: { cumulative_return: null, cagr: null, twror: null, xirr: null } },
       periodic_returns: { monthly: [{ period: '2024-04', return: 0.0123 }], yearly: [] },
-      personal_metrics: { xirr: 0.2876, status: 'requires_review' },
+      personal_metrics: { xirr: 0.2876, status: 'calculated', basis: 'native_inr' },
     });
     renderDetail('/assets/118968');
     await screen.findByRole('heading', { name: 'Fund Performance — INR' });
@@ -217,7 +220,7 @@ describe('AssetDetail Page', () => {
     expect(screen.getByText('Actual NAV coverage: 2024-03-01 to 2024-04-30 (Incomplete)')).toBeInTheDocument();
     expect(screen.getByRole('cell', { name: /April 2024.*1.23%/i })).toBeInTheDocument();
     expect(screen.getByText('+28.76%')).toBeInTheDocument();
-    expect(screen.getByText('Cumulative Return').closest('.ui-metric-card')).toHaveTextContent('—');
+    expect(screen.getByText('Cumulative NAV Return').closest('.ui-metric-card')).toHaveTextContent('—');
     expect(api.getAssetMetricSheet).toHaveBeenCalledWith('118968', expect.objectContaining({ portfolio_scope: 'all' }));
   });
 

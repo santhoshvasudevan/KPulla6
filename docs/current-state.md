@@ -344,6 +344,7 @@ Design doc: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md). MVP:
 | Portfolio / asset / compare APIs (Phase 5–7) | **Done** |
 | Dashboard / Asset Detail / Compare Metric Sheet UI (Phase 8B–8D, 9B–13C) | **Done** |
 | Periodic returns, drawdown periods/series, monthly grid, charts | **Done** |
+| MF personal XIRR (`personal_metrics`, native INR) | **Done** (#19) — shared holding calculation; fund NAV metrics remain separate |
 
 ## Indian Mutual Funds (MF-1..MF-11b — complete)
 

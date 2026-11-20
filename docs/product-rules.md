@@ -72,9 +72,9 @@ Settlement sync: `backend/transactions/cash_settlement.py` (atomic with transact
 
 **MF subject distinction:** Fund-level Asset Detail/Compare metrics use cached
 NAV-only returns in native INR, independent of trades/folios and display currency.
-Personal positions and Your Holding XIRR remain separate and transaction-based;
-the existing personal estimate is review-required pending a separately approved
-correction. Portfolio-level metrics retain cash-flow-adjusted returns. See the
+Personal positions and Your Holding XIRR use a shared native-INR money-weighted
+return (`personal_metrics.basis: native_inr`) for the selected position scope.
+Portfolio-level metrics retain cash-flow-adjusted returns. See the
 [MF performance contract](portfolio-finance/17-mf-nav-performance.md).
 
 | Rule | Detail |

@@ -4,7 +4,7 @@ import { fetchAssetDetails, fetchHoldings } from '../api';
 import { usePortfolio } from '../portfolioContext';
 import { formatCurrency } from '../utils/formatters';
 import { AssetDetailMetricSheet } from '../components/metricSheet';
-import { PERSONAL_XIRR_REVIEW_NOTE } from '../components/metricSheet/metricSheetCopy';
+import { PERSONAL_XIRR_INR_NOTE } from '../components/metricSheet/metricSheetCopy';
 import {
   PageHeader,
   KpiCard,
@@ -244,7 +244,7 @@ export default function AssetDetail() {
         />
         <KpiCard
           label={isMutualFund ? 'Your Holding XIRR' : 'XIRR'}
-          helperText={isMutualFund ? PERSONAL_XIRR_REVIEW_NOTE : undefined}
+          helperText={isMutualFund ? PERSONAL_XIRR_INR_NOTE : undefined}
           variant={kpiVariantFromTone(xirrTone)}
           value={
             <PercentValue value={data.xirr} tone={xirrTone} showSign />

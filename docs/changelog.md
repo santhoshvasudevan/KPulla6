@@ -1,5 +1,11 @@
 # Changelog — KPulla6
 
+## 2026-11-20 — Native-INR personal XIRR for mutual fund holdings
+
+- **Personal XIRR:** Asset Detail header, holdings, Metric Sheet and Compare share one native-INR money-weighted return (`personal_metrics.basis: native_inr`, status `calculated`/`unavailable`). Investment dates, paid values / net redemption proceeds, and remaining units at cached NAV replace the legacy EUR-mixed estimate (~491.67% on the 958-day fixture → ~6.54%).
+- **Fund metrics unchanged:** NAV-only fund performance stays separate; `metrics.return.xirr` remains unavailable for MF subjects. Display currency does not affect the INR personal return. Portfolio XIRR formulas are unchanged.
+- **UI/docs:** Your Holding XIRR helper copy and Cumulative NAV Return labeling; contract docs updated in `17-mf-nav-performance.md` and API references.
+
 ## 2026-11-11 — Sortable classification and folio breakdowns
 
 - Assets Breakdowns adds editable Equity, Debt and Hybrid classification, a scheme Actions column, sorting, and a folio view across portfolios. Personal classification affects Breakdowns only.

@@ -54,12 +54,18 @@ MF asset analytics and MF Compare subjects add `performance_basis: nav`,
 status, gap intervals, partial months and partial years. Existing return/risk/
 drawdown/period keys remain, but now describe the fund, not the investor.
 
-`metrics.return.xirr` is unavailable for a fund NAV series: XIRR is personal, not a
-fund metric. The existing personal estimate is retained separately under
-`personal_metrics` with `xirr`, `xirr_scope: full_scope`, `basis: legacy_unverified`,
-`status: requires_review` and explicit warnings. This separation is not a claimed
-financial correction. Display-currency selection affects monetary positions,
-not the native-INR fund block. Stock and portfolio analytics retain their meaning.
+`metrics.return.xirr` is unavailable for fund NAV performance. Personal XIRR
+is returned separately under `personal_metrics` with `xirr_scope: full_scope`,
+`basis: native_inr` and status `calculated` or `unavailable`. The Asset Detail
+position header, holdings, Metric Sheet and Compare use the same calculation
+for the same position scope. It uses investment dates and recorded payments or
+net redemption proceeds, with remaining units valued at cached NAV in INR.
+Missing NAV for an open position or oversold data leaves the estimate unavailable.
+Display currency has no effect on this INR return.
+
+Cumulative NAV Return and TWROR are the same compounded NAV measure on this
+surface because personal cash flows are outside the fund NAV series. The UI shows
+one return card; API consumers retain both existing fields.
 
 ## Timing bug diagnosis
 
@@ -71,7 +77,7 @@ dates or shifting the user's portfolio deposits. Reload Asset Detail after the
 backend reloads. Missing cache coverage still needs an explicit NAV refresh, not
 zero-filled return values.
 
-## Personal XIRR audit: correction requires separate approval
+## Historical personal XIRR audit
 
 The legacy MF Metric Sheet invokes a helper whose default calculation currency is
 EUR. Payments are converted to EUR while its supplied terminal value remains INR.
@@ -81,10 +87,8 @@ native currency. The existing position-header path instead uses NAV dates and
 reconstructed unit-price cash flows, not the actual payment dates and paid values.
 It therefore is not an automatically valid reference answer either.
 
-Both estimates remain review-required. The audit does not authorize changing
-XIRR, replacing its result with a fabricated null, or rewriting payment dates.
-Follow-up acceptance must cover actual payment dates/amounts, partial/full sales,
-scope, fees, missing irrelevant FX, and consistent native-currency valuation.
+The shared native-INR holding calculation replaces those two legacy estimates.
+It does not rewrite payment dates or change portfolio XIRR.
 
 ## Portfolio timing audit: correction requires separate approval
 

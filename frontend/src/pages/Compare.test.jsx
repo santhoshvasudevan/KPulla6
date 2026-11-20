@@ -184,8 +184,10 @@ describe('Compare page', () => {
         ...subject, performance_basis: 'nav', currency: 'INR',
         metrics: { ...subject.metrics, return: { ...subject.metrics.return, xirr: null } },
         personal_metrics: {
-          xirr: index === 0 ? 0.2876 : null, xirr_scope: 'full_scope', status: 'requires_review',
-          warnings: ['Personal XIRR has inconsistent cash-flow and terminal currencies.'],
+          xirr: index === 0 ? 0.2876 : null, xirr_scope: 'full_scope',
+          status: index === 0 ? 'calculated' : 'unavailable',
+          basis: 'native_inr',
+          warnings: [],
         },
         coverage: { start: '2025-06-01', end: '2026-05-30', partial_years: ['2026'] },
       } : { ...subject, currency: 'EUR', performance_basis: 'holding_cash_flow_adjusted' }
@@ -208,8 +210,7 @@ describe('Compare page', () => {
     }
     const personalRow = screen.getByRole('row', { name: /Your Holding XIRR/i });
     expect(within(personalRow).getByText('+28.76%')).toBeInTheDocument();
-    expect(within(personalRow).getAllByText(/unverified.*requires review/i).length).toBeGreaterThan(0);
-    expect(within(personalRow).getAllByText(/inconsistent cash-flow and terminal currencies/i).length).toBeGreaterThan(0);
+    expect(within(personalRow).getAllByText(/annualized personal return in INR/i).length).toBeGreaterThan(0);
     if (bothNav) {
       expect(screen.queryByRole('row', { name: /^XIRR/i })).not.toBeInTheDocument();
       expect(screen.queryByText('XIRR is full-scope; other Metric Sheet values follow the selected range.')).not.toBeInTheDocument();

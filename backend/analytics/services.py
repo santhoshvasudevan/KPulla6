@@ -53,7 +53,6 @@ from finance.drawdowns import (
     max_drawdown,
     worst_drawdown_periods,
 )
-from finance.mutual_fund_cashflows import MutualFundCashflowEvent, merge_portfolio_xirr
 from finance.performance_stats import (
     cagr_from_total_return,
     contributions_and_withdrawals_through,
@@ -85,7 +84,9 @@ from market_data.nav_lookup import latest_nav_for_asset, normalize_scheme_code
 from market_data.price_lookup import normalize_asset_symbol
 from market_data.price_repository import list_index_prices_in_range, list_stock_prices_in_range
 from portfolios import dates as portfolio_dates
-from portfolios.holdings_service import AssetDetailValidationError, AssetNotFoundError
+from portfolios.holdings_service import (
+    AssetDetailValidationError, AssetNotFoundError, cached_mutual_fund_holding_xirr,
+)
 from portfolios.models import Portfolio
 from portfolios.external_flows_service import portfolio_external_flows_for_scope
 from portfolios.performance_service import (
@@ -231,29 +232,6 @@ def _scheme_name_for_mf_txns(db_txns: list[TransactionModel]) -> str:
         if profile is not None:
             return profile.scheme_name
     return normalize_scheme_code(db_txns[0].asset_symbol)
-
-
-def _mf_cashflow_events(db_txns: list[TransactionModel]) -> list[MutualFundCashflowEvent]:
-    events: list[MutualFundCashflowEvent] = []
-    for txn in db_txns:
-        if not _is_mutual_fund_transaction(txn):
-            continue
-        detail = txn.mutual_fund_detail
-        if txn.type == TransactionType.BUY.value:
-            events.append(
-                MutualFundCashflowEvent(
-                    flow_date=detail.investment_date,
-                    amount=-Decimal(detail.paid_value),
-                )
-            )
-        elif txn.type == TransactionType.SELL.value:
-            events.append(
-                MutualFundCashflowEvent(
-                    flow_date=detail.investment_date,
-                    amount=Decimal(detail.paid_value),
-                )
-            )
-    return events
 
 
 def _to_fifo_dtos(db_txns: list[TransactionModel]):
@@ -706,16 +684,8 @@ def _compute_asset_xirr(
     terminal_value: Decimal,
     today: date,
 ) -> Optional[float]:
-    if not ctx.asset_txns:
+    if not ctx.asset_txns or ctx.is_mutual_fund:
         return None
-    if ctx.is_mutual_fund:
-        return merge_portfolio_xirr(
-            [],
-            _mf_cashflow_events(ctx.asset_txns),
-            terminal_value=terminal_value,
-            current_date=today,
-            include_fees_in_cashflows=True,
-        )
     stock_dtos = apply_stock_split_adjustments(_to_fifo_dtos(ctx.asset_txns))
     qty = Decimal("0")
     for t in stock_dtos:
@@ -1095,11 +1065,7 @@ def _prepare_asset_daily_metrics_inputs(
         daily_pts, values, coverage, warnings = load_nav_performance(
             ctx.asset_symbol, range_code, today
         )
-        # Personal XIRR retains its legacy calculation until a separately approved fix.
-        personal_values = _build_asset_value_timeseries(ctx)
-        xirr_val = _compute_asset_xirr(
-            ctx=ctx, terminal_value=_terminal_value_from_timeseries(personal_values), today=today
-        )
+        xirr_val = cached_mutual_fund_holding_xirr(ctx.asset_symbol, ctx.asset_txns, today=today)
         return AssetDailyMetricsInputs(
             ctx=ctx, daily_pts=daily_pts,
             daily_fracs=[p.return_fraction for p in daily_pts], ts_use=values,
@@ -1236,18 +1202,15 @@ def _nav_benchmark_block(symbol: str, values: list[dict], warnings: list[str]) -
 
 
 def _apply_nav_contract(payload: dict, inputs: AssetDailyMetricsInputs) -> None:
-    """Separate fund metrics from the existing, unverified personal estimate."""
+    """Separate NAV metrics from native-INR personal XIRR."""
     payload["performance_basis"] = "nav"
     payload["currency"] = "INR"
     payload["coverage"] = inputs.coverage
     payload["personal_metrics"] = {
         "xirr": inputs.xirr_val, "xirr_scope": "full_scope",
-        "status": "requires_review", "basis": "legacy_unverified",
-        "warnings": [
-            "Personal XIRR requires review: the legacy metric calculation mixes currency bases; "
-            "the position header also uses a different cash-flow date/amount convention. "
-            "No XIRR correction has been applied."
-        ],
+        "status": "calculated" if inputs.xirr_val is not None else "unavailable",
+        "basis": "native_inr",
+        "warnings": [],
     }
     coverage = inputs.coverage or {}
     if coverage.get("incomplete") or not any(p.return_fraction is not None for p in inputs.daily_pts):

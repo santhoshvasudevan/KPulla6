@@ -4,13 +4,14 @@
 
 MF Asset Detail and Compare use native-INR NAV performance, not personal
 cash-flow-adjusted holding returns. The additive contract, coverage rules and
-approval-gated personal XIRR/portfolio timing audits are specified in
+personal XIRR semantics are specified in
 [MF NAV performance](portfolio-finance/17-mf-nav-performance.md).
 
 MF responses identify `performance_basis: nav`, `currency: INR`, `coverage`, and
-separate `personal_metrics`. Fund `metrics.return.xirr` is unavailable because XIRR
-is personal; the legacy estimate remains in the review-required personal block
-with an explicit warning. Existing routes/auth/scoping are retained. Fund metrics
+separate `personal_metrics` with `basis: native_inr` and status `calculated` or
+`unavailable`. Fund `metrics.return.xirr` is unavailable because XIRR is personal;
+position header, holdings, Metric Sheet and Compare share the same native-INR
+holding calculation. Existing routes/auth/scoping are retained. Fund metrics
 do not require choosing a folio solely because several exist. Stock and portfolio
 analytics are unchanged. Older examples below remain applicable to stock/portfolio
 returns; MF return inputs follow this contract.

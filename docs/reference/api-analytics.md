@@ -2,7 +2,8 @@
 
 **Mutual funds:** Asset Detail and Compare return native-INR NAV-only fund metrics,
 independent of personal trades and display currency. Responses expose
-`performance_basis`, `coverage` and separate review-required `personal_metrics`.
+`performance_basis`, `coverage` and separate native-INR `personal_metrics`
+(`basis: native_inr`, status `calculated` or `unavailable`).
 See [the MF contract](../portfolio-finance/17-mf-nav-performance.md) for missing-data,
 partial-period, benchmark, and personal-XIRR semantics. Portfolio metrics remain
 cash-flow-adjusted; this does not authorize a portfolio formula change.

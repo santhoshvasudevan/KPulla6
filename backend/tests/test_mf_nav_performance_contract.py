@@ -151,19 +151,28 @@ def test_analytics_get_does_not_write_and_preserves_asset_access(api_client, leg
 
 
 @pytest.mark.django_db
-def test_personal_xirr_currency_audit_retains_estimate_with_review_warning(api_client, legacy_seeded, monkeypatch):
+def test_personal_xirr_uses_native_inr_settlement_flows(api_client, legacy_seeded, monkeypatch):
+    """958-day oracle: −₹10,000 on 2024-01-01 → ₹11,808.953 on 2026-08-16 ≈ 6.54%.
+
+    Independent two-flow annualization confirms ~6.54%. The legacy ~491.67% result
+    mixed EUR-converted principal with an INR terminal value and must not return.
+    """
     from fx.services import upsert_fx_rate
+
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 8, 16))
     api_client.post("/api/v1/transactions", _mf_payload(
         investment_date="2024-01-01", nav_date="2024-01-01", nav="100",
         units_allotted="100", paid_value="10000", market_value="10000"), format="json")
     nav("2026-08-16", "118.089530")
+    # Irrelevant FX must not change the native-INR personal return.
     upsert_fx_rate(from_currency="INR", to_currency="EUR", row_date=date(2024, 1, 1), rate=Decimal("0.01111111"))
     data = metrics(api_client)
-    # Characterization of the approval-gated defect, not a new financial target.
-    assert data["personal_metrics"]["xirr"] == pytest.approx(4.9167493, abs=1e-4)
-    assert data["personal_metrics"]["status"] == "requires_review"
-    assert any("currency" in w for w in data["personal_metrics"]["warnings"])
+    personal = data["personal_metrics"]
+    assert personal["xirr"] == pytest.approx(0.0654, abs=5e-4)
+    assert personal["status"] == "calculated"
+    assert personal["basis"] == "native_inr"
+    assert personal["xirr_scope"] == "full_scope"
+    assert personal["warnings"] == []
     assert data["metrics"]["return"]["xirr"] is None
 
 
