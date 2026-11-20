@@ -27,24 +27,28 @@ class NavLookupResult:
     status: str  # "ok" | "nav_missing"
 
 
-def latest_nav_for_asset(asset_or_code: Asset | str) -> NavLookupResult | None:
+def latest_nav_for_asset(
+    asset_or_code: Asset | str,
+    *,
+    as_of: date | None = None,
+) -> NavLookupResult | None:
     """
     Latest cached NAV from HistoricalPrice (MUTUAL_FUND rows only).
 
+    When ``as_of`` is set, only rows with ``date <= as_of`` are eligible.
     Reads DB only — never calls an external NAV provider.
     """
     scheme_code = _resolve_scheme_code(asset_or_code)
     if not scheme_code:
         return None
 
-    row = (
-        HistoricalPrice.objects.filter(
-            asset_symbol=scheme_code,
-            asset_type=AssetType.MUTUAL_FUND,
-        )
-        .order_by("-date", "-id")
-        .first()
+    qs = HistoricalPrice.objects.filter(
+        asset_symbol=scheme_code,
+        asset_type=AssetType.MUTUAL_FUND,
     )
+    if as_of is not None:
+        qs = qs.filter(date__lte=as_of)
+    row = qs.order_by("-date", "-id").first()
     if row is None:
         return NavLookupResult(
             scheme_code=scheme_code,

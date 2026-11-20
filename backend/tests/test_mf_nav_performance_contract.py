@@ -177,6 +177,46 @@ def test_personal_xirr_uses_native_inr_settlement_flows(api_client, legacy_seede
 
 
 @pytest.mark.django_db
+def test_personal_xirr_ignores_nav_after_valuation_date(api_client, legacy_seeded, monkeypatch):
+    """Future cached NAV must not leak into personal XIRR for a pinned valuation date.
+
+    With only 2026-08-16 NAV the oracle is ~6.54%. A 2026-08-17 row that would
+    inflate the rate to ~30.22% when used as 'latest' must be ignored.
+    """
+    monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 8, 16))
+    assert api_client.post("/api/v1/transactions", _mf_payload(
+        investment_date="2024-01-01", nav_date="2024-01-01", nav="100",
+        units_allotted="100", paid_value="10000", market_value="10000"), format="json"
+    ).status_code == 201
+    nav("2026-08-16", "118.089530")
+    nav("2026-08-17", "150")  # future relative to valuation date
+    personal = metrics(api_client)["personal_metrics"]
+    assert personal["xirr"] == pytest.approx(0.0654, abs=5e-4)
+    assert personal["status"] == "calculated"
+
+    # Same-day NAV remains eligible; an earlier eligible NAV is fine when same-day is absent.
+    HistoricalPrice.objects.filter(asset_symbol="120503", date=date(2026, 8, 16)).delete()
+    nav("2026-08-15", "118.089530")
+    personal_earlier = metrics(api_client)["personal_metrics"]
+    assert personal_earlier["xirr"] == pytest.approx(0.0654, abs=5e-4)
+
+    # Future-only cache → open position unavailable (not zero / not future-valued).
+    HistoricalPrice.objects.filter(asset_symbol="120503", date__lte=date(2026, 8, 16)).delete()
+    personal_future_only = metrics(api_client)["personal_metrics"]
+    assert personal_future_only["xirr"] is None
+    assert personal_future_only["status"] == "unavailable"
+
+    # Closed position can still compute from realized cash flows without terminal NAV.
+    sell = api_client.post("/api/v1/transactions", _mf_payload(
+        type="SELL", investment_date="2026-08-10", nav_date="2026-08-10", nav="118.089530",
+        units_allotted="100", paid_value="11808.953", market_value="11808.953"), format="json")
+    assert sell.status_code == 201, sell.json()
+    personal_closed = metrics(api_client)["personal_metrics"]
+    assert personal_closed["xirr"] == pytest.approx(0.0654, abs=5e-3)
+    assert personal_closed["status"] == "calculated"
+
+
+@pytest.mark.django_db
 def test_compare_recalculates_returns_on_common_nav_intervals(api_client, legacy_seeded, monkeypatch):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 5))
     for scheme in ("120503", "120504"):

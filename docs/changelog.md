@@ -1,5 +1,9 @@
 # Changelog — KPulla6
 
+## 2026-11-20 — Exclude future NAV from personal XIRR
+
+- Personal mutual-fund XIRR values remaining units with the latest cached NAV on or before the valuation date. Later cache rows cannot change that date's return; open positions without eligible NAV are unavailable; fully redeemed positions still use realized cash flows.
+
 ## 2026-11-20 — Native-INR personal XIRR for mutual fund holdings
 
 - **Personal XIRR:** Asset Detail header, holdings, Metric Sheet and Compare share one native-INR money-weighted return (`personal_metrics.basis: native_inr`, status `calculated`/`unavailable`). Investment dates, paid values / net redemption proceeds, and remaining units at cached NAV replace the legacy EUR-mixed estimate (~491.67% on the 958-day fixture → ~6.54%).

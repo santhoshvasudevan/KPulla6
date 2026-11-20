@@ -59,9 +59,12 @@ is returned separately under `personal_metrics` with `xirr_scope: full_scope`,
 `basis: native_inr` and status `calculated` or `unavailable`. The Asset Detail
 position header, holdings, Metric Sheet and Compare use the same calculation
 for the same position scope. It uses investment dates and recorded payments or
-net redemption proceeds, with remaining units valued at cached NAV in INR.
-Missing NAV for an open position or oversold data leaves the estimate unavailable.
-Display currency has no effect on this INR return.
+net redemption proceeds, with remaining units valued at the latest cached NAV
+dated on or before the valuation date (`portfolios.dates.current_date()`).
+NAV rows after that date are ignored. An open position with no eligible NAV is
+unavailable (never zero-valued or future-valued). A fully redeemed position may
+still compute from realized cash flows without a terminal NAV. Display currency
+has no effect on this INR return.
 
 Cumulative NAV Return and TWROR are the same compounded NAV measure on this
 surface because personal cash flows are outside the fund NAV series. The UI shows

@@ -228,7 +228,12 @@ def mutual_fund_holding_xirr(db_txns, current_nav, *, today):
 
 
 def cached_mutual_fund_holding_xirr(scheme_code, db_txns, *, today):
-    nav, _, _, _ = _resolve_nav(scheme_code=scheme_code, display_currency=MF_BASE_CURRENCY)
+    nav_result = latest_nav_for_asset(scheme_code, as_of=today)
+    nav = (
+        nav_result.nav
+        if nav_result is not None and nav_result.status == "ok" and nav_result.nav is not None
+        else None
+    )
     return mutual_fund_holding_xirr(db_txns, nav, today=today)
 
 
@@ -336,9 +341,8 @@ def _build_mf_holding_item(
     if nav_status == "nav_missing" and qty > 0:
         warnings.append("Latest cached NAV is missing")
 
-    xirr = mutual_fund_holding_xirr(
-        db_txns, current_nav, today=portfolio_dates.current_date()
-    )
+    today = portfolio_dates.current_date()
+    xirr = cached_mutual_fund_holding_xirr(scheme_code, db_txns, today=today)
 
     portfolio_units = {}
     for txn in db_txns:
@@ -732,9 +736,8 @@ def _build_mf_asset_detail(
     if nav_status == "nav_missing" and qty > 0:
         warnings.append("Latest cached NAV is missing")
 
-    xirr = mutual_fund_holding_xirr(
-        db_txns, current_nav, today=portfolio_dates.current_date()
-    )
+    today = portfolio_dates.current_date()
+    xirr = cached_mutual_fund_holding_xirr(scheme_code, db_txns, today=today)
 
     asset, profile = _mf_asset_and_profile(db_txns)
     cls_fields = classification_fields_for_asset(asset, profile)
