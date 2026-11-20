@@ -117,7 +117,7 @@ Compare subjects: `align_multi_subject_returns` + metrics on sliced window; XIRR
 ### Stock splits
 
 - Quantities: split-adjusted snapshots.  
-- Prices: must be **Adj Close** (yfinance) — invariant documented in `analytics/services.py`.  
+- Prices: must be split-adjusted market **Close** (yfinance `auto_adjust=False`) — invariant documented in `analytics/services.py`. Dividends are not inside the price.
 - Warning when post-split value drop ≈ split factor.
 
 ### Mutual funds

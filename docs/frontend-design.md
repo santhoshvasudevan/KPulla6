@@ -372,7 +372,9 @@ Route `/transactions` — primary entry for recording activity:
 
 Component: `CashEntryFormFields.jsx` (shared cash form fields); `TransactionModal.jsx`.
 
-**SELL settlement (CASH-SELL-1B):** When type is `SELL`, show calculated proceeds preview, optional **Actual cash received**, withheld/adjustment preview, and **Settlement note**. Hidden for BUY / `STOCK_SPLIT`. React previews math only; backend computes `SELL_SETTLEMENT` + `TAX_WITHHELD`.
+**SELL settlement (CASH-SELL-1B):** When type is `SELL`, show calculated proceeds preview, optional **Actual cash received**, withheld or released-tax preview, and **Settlement note**. Hidden for BUY / `STOCK_SPLIT`. React previews math only; backend computes `SELL_SETTLEMENT` plus `TAX_WITHHELD` (actual lower) or `TAX_RELEASED` (actual higher).
+
+**DIVIDEND:** When type is `DIVIDEND`, hide quantity, price, and fees. Show **Gross dividend**, **Tax withheld**, a net-cash preview (`gross − tax`), and an optional note. Backend writes `DIVIDEND_CASH` and, when tax is greater than zero, `TAX`.
 
 ## Cash-aware portfolio status (Cash-4A.2) — **Implemented**
 

@@ -519,6 +519,18 @@ Response:
 
 Per-scheme provider failure increments `failed` and adds a warning; other schemes continue.
 
+
+`synced` counts schemes for which NAV rows were written. `skipped` includes
+up-to-date schemes, valid empty/no-new-data responses, and schemes without a
+transaction anchor. Empty data does not prove historical coverage is complete.
+Timeouts, provider error statuses, malformed history payloads, and nonempty
+responses containing no valid NAV rows count as failures, not no-new-data.
+Refresh normally starts after the latest cached date, but extends the range back
+to the earliest transaction `nav_date` lacking a positive exact-date cached NAV.
+This covers newly imported older transactions and transaction-date gaps without
+substituting another date's NAV. Unavailable provider dates remain missing.
+
+
 ### `GET /api/v1/benchmarks/indices`
 
 Returns enabled rows from `benchmark_index_config` (seeded on `make seed`):
@@ -1219,7 +1231,7 @@ When `portfolio.cash_aware_enabled` is **true**, `POST` / `PUT` / `DELETE` `/api
 ```
 
 - Atomic: transaction and settlement succeed or fail together.
-- `DELETE` removes linked settlement rows first (then transaction). Deleting SELL settlements (`SELL_SETTLEMENT` + `TAX_WITHHELD`) is blocked if net removal would make later balances negative.
+- `DELETE` removes linked settlement rows first (then transaction). Deleting SELL settlements (`SELL_SETTLEMENT`, `TAX_WITHHELD`, `TAX_RELEASED`) is blocked if net removal would make later balances negative.
 - SELL write body (optional): `actual_cash_received` (positive), `settlement_note` (text). Response includes both fields.
 - Linked settlements are not editable via `PUT/DELETE /cash/ledger/{id}` (**409**).
 
@@ -1408,6 +1420,14 @@ Full design: [mutual-funds.md](./mutual-funds.md).
 **List/create response extensions (MF rows only):** `asset_type`, `scheme_code`, `scheme_name`, `folio_number`, `investment_date`, `nav_date`, `nav`, `units_allotted`, `paid_value`, `market_value`, `nav_verification_status`, optional `nav_verification_message`. Stock rows unchanged (no `asset_type` field).
 
 **`nav_verification_status` (MF-6):**
+
+
+Transaction responses re-evaluate verification against the current exact-date
+database cache. Saved status/message fields remain write-time snapshots; GET
+does not update them or transaction values and never calls a NAV provider.
+After an explicit NAV refresh, reload the transaction list to see current
+verification. A real missing exact-date NAV or mismatch remains visible.
+
 
 | Status | Meaning |
 |--------|---------|

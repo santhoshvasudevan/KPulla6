@@ -331,7 +331,7 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 
 **Global polish (P10):** sticky section-nav horizontal scroll on small screens; shared focus-visible states; dark-mode card border refinement; header nav scrollbar styling.
 
-**Google OAuth:** `GoogleSignInButton` calls `window.location.assign('/accounts/google/login/?process=login')`; Vite proxies `/accounts` to Django/allauth. Successful allauth login redirects to `FRONTEND_URL/`.
+**Google OAuth:** `GoogleSignInButton` calls `window.location.assign` on `/accounts/google/login/?process=login`. From `127.0.0.1` or `::1` it uses `http://localhost:<port>` so the session cookie matches the `localhost:8000` callback. Vite proxies `/accounts` to Django/allauth. Successful allauth login redirects to `FRONTEND_URL/`.
 
 **CSRF/session:** `AuthProvider` ensures CSRF cookie on app load and before login/register. `fetchWithHandling` uses `credentials: 'include'` and adds `X-CSRFToken` for unsafe methods when the `csrftoken` cookie exists.
 

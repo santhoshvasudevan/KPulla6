@@ -128,3 +128,18 @@ Every Background Agent completion must report:
 - **Deferred items** intentionally left out of scope
 
 Backlog index and operating guide: [docs/backlog/README.md](./docs/backlog/README.md).
+
+## Agent skills
+
+### Issue tracker
+
+Before publishing or implementing tracked work, read
+docs/agents/issue-tracker.md. Use GitHub Issues for KPulla6.
+
+### Triage labels
+
+Before classifying issues, read docs/agents/triage-labels.md.
+
+### Domain docs
+
+Before domain design or implementation, read docs/agents/domain.md.

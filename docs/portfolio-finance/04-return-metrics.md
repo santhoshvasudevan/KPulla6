@@ -394,6 +394,6 @@ TWROR, cumulative return (per subject on same window)
 | Rolling 12-month return | Would need rolling window API |
 | Money-weighted monthly return | Calendar-year uses TWROR daily, not MWR |
 | Tax-adjusted return | No tax lot engine in analytics |
-| Dividend-adjusted total return index | Stock prices use cached Adj Close; dividends not modeled separately |
+| Dividend-adjusted total return index | Stock prices use the market close (not dividend-adjusted). Cash dividends are explicit `DIVIDEND` transactions |
 
 See [12 — Implementation notes](./12-metric-implementation-notes.md).

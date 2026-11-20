@@ -34,6 +34,16 @@
 
 - Assets holdings open the selected mutual fund folio. A scheme link with several folios offers a picker while fund NAV performance remains available.
 
+## 2026-11-11 — More room for Assets allocation and fund categories
+
+- Assets uses a larger allocation donut with names and weights on hover and a collapsed holding list for keyboard and touch selection.
+- The fund category breakdown aligns values, weights, counts and scheme units in columns. Missing category metadata is reported once per view and marked on affected schemes.
+
+## 2026-11-10 — Agent workflow configuration
+
+- **Workflow:** Configured GitHub Issues for specifications and implementation tickets, the five default triage labels, and single-context domain documentation guidance. Added agent entry-point references without replacing existing product rules or backlog guidance.
+- **Scope:** Documentation and GitHub label setup only; no runtime behavior or portfolio data changes.
+
 ## 2026-11-11 — Pending mutual fund purchases in portfolio history
 
 - Cash-aware historical valuations carry a linked fund purchase from its cash settlement date through the day before units enter holdings. This prevents artificial portfolio returns and drawdowns during allotment gaps. Pending amounts are unavailable to spend. No API or schema changes.
