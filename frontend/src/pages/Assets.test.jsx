@@ -599,7 +599,7 @@ it('sorts folios by value and expands schemes without mixing fund houses', async
   } } });
   renderAssets();
   fireEvent.click(await screen.findByRole('button', { name: 'Breakdowns' }));
-  fireEvent.click(screen.getByRole('button', { name: 'By folio' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'By folio' }));
   const pane = screen.getByRole('region', { name: 'Mutual fund breakdowns' });
   const houses = () => within(pane).getAllByText(/^AMC [AB]$/).map((node) => node.textContent);
   expect(houses()).toEqual(['AMC B', 'AMC A']);
