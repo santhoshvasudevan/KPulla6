@@ -1387,6 +1387,7 @@ def build_analytics_compare(
     range_code: str,
     display_currency: str,
     benchmark_symbol: str | None = None,
+    folio_number: str | None = None,
     today: date | None = None,
 ) -> CompareResult:
     """
@@ -1406,6 +1407,7 @@ def build_analytics_compare(
             scope=scope,
             range_code=range_code,
             today=today,
+            folio_number=folio_number,
         )
         subject_id = f"asset:{inputs.ctx.asset_symbol}"
         prepared.append((subject_id, inputs))

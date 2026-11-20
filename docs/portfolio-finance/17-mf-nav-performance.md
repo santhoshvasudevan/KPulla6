@@ -71,6 +71,12 @@ receipts on the same day with no remaining units), personal XIRR is unavailable,
 not zero. HTTP regressions cover this state and future-NAV exclusion consistently
 across holdings, Asset Detail, Metric Sheet and Compare.
 
+Compare honors an explicit `folio_number` for each mutual-fund subject's personal
+scope. The requested folio must exist for each MF subject inside the authorized
+portfolio scope; otherwise the request returns 404 rather than silently falling
+back to combined folios. Omit the parameter to compare combined personal scopes.
+Fund NAV history remains unfiltered by the folio selection.
+
 Cumulative NAV Return and TWROR are the same compounded NAV measure on this
 surface because personal cash flows are outside the fund NAV series. The UI shows
 one return card; API consumers retain both existing fields.

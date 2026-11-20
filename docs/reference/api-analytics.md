@@ -8,6 +8,10 @@ See [the MF contract](../portfolio-finance/17-mf-nav-performance.md) for missing
 partial-period, benchmark, and personal-XIRR semantics. Portfolio metrics remain
 cash-flow-adjusted; this does not authorize a portfolio formula change.
 
+On Compare, optional `folio_number` filters each MF subject's personal scope;
+an absent or unauthorized folio for either MF subject returns 404. Omission keeps
+combined-folio personal metrics. This never filters the fund NAV history.
+
 Portfolio summary, performance series, and Metric Sheet endpoints. Deep spec: [api-design.md](../api-design.md) § Phase 9–10 and analytics.
 
 **Base URL:** `http://127.0.0.1:8000/api/v1` · **Auth:** Session — [API authentication](api-auth.md)

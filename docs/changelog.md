@@ -1,5 +1,9 @@
 # Changelog — KPulla6
 
+## 2026-11-20 — Compare personal folio scope
+
+- Compare now honors an explicit folio filter for personal XIRR instead of silently using all folios. Unknown folios return 404; fund NAV performance is unchanged. Distinct-return folio fixtures prevent false parity checks.
+
 ## 2026-11-20 — Personal XIRR validation and finance extraction
 
 - Moved native-INR holding settlement/XIRR math into `finance/personal_holding_xirr.py` (Django adapter remains thin). Added pure-finance oracle/NPV coverage, paid-value-zero sell fallback HTTP coverage, and shared UI helper-text selection for review-required vs calculated states.

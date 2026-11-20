@@ -149,6 +149,7 @@ class CompareAnalyticsView(APIView):
                 range_code=params["range_code"],
                 display_currency=params["display_currency"],
                 benchmark_symbol=params["benchmark"],
+                folio_number=params["folio_number"],
             )
         except AssetDetailValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)

@@ -243,7 +243,7 @@ def test_personal_xirr_folio_and_portfolio_scope_and_surface_parity(
     ), format="json").status_code == 201
     assert api_client.post("/api/v1/transactions", _mf_payload(
         investment_date="2024-01-01", nav_date="2024-01-01", nav="100",
-        units_allotted="50", paid_value="5000", market_value="5000",
+        units_allotted="50", paid_value="10000", market_value="5000",
         folio_number="F-B", portfolio_id=primary.id,
     ), format="json").status_code == 201
     assert api_client.post("/api/v1/transactions", _mf_payload(
@@ -255,7 +255,7 @@ def test_personal_xirr_folio_and_portfolio_scope_and_surface_parity(
         scheme_code="120504", scheme_name="Compare Peer Fund",
         investment_date="2024-01-01", nav_date="2024-01-01", nav="100",
         units_allotted="10", paid_value="1000", market_value="1000",
-        folio_number="PEER", portfolio_id=primary.id,
+        folio_number="F-A", portfolio_id=primary.id,
     ), format="json").status_code == 201
     _nav("2025-01-01", "120")
     _nav("2025-01-01", "120", scheme="120504")
@@ -265,7 +265,7 @@ def test_personal_xirr_folio_and_portfolio_scope_and_surface_parity(
         (date(2025, 1, 1), 12000.0),
     ])
     expected_fb = _oracle([
-        (date(2024, 1, 1), -5000.0),
+        (date(2024, 1, 1), -10000.0),
         (date(2025, 1, 1), 6000.0),
     ])
     expected_fa_all = _oracle([
@@ -307,6 +307,11 @@ def test_personal_xirr_folio_and_portfolio_scope_and_surface_parity(
     assert subject["personal_metrics"]["basis"] == "native_inr"
     # Fund NAV block remains independent of personal scope selection.
     assert subject["metrics"]["return"]["xirr"] is None
+    unknown_folio = api_client.get("/api/v1/analytics/compare", {
+        "subjects": f"asset:{SCHEME},asset:120504", "range": "ALL",
+        "folio_number": "NOT-OWNED", "portfolio_id": primary.id,
+    })
+    assert unknown_folio.status_code == 404
 
 
 @pytest.mark.django_db
