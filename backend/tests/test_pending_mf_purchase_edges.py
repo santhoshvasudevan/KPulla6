@@ -198,3 +198,46 @@ def test_legacy_purchase_does_not_gain_cash_aware_pending_value(
     values, _ = _performance(api_client, portfolio)
     assert all(day >= "2026-03-16" for day in values)
     assert values["2026-03-16"] == pytest.approx(4250)
+
+
+@pytest.mark.django_db
+def test_pending_purchase_preserves_funding_then_reflects_genuine_nav_rise(
+    api_client, cash_aware_portfolio, monkeypatch,
+):
+    """Story 9: after allotment, non-flat NAV must move value/returns without inventing cash."""
+    monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 17))
+    portfolio = cash_aware_portfolio
+    _deposit(portfolio, day="2026-03-10", amount="10000", currency="INR")
+    _buy(api_client, portfolio)
+    _nav("2026-03-16", "42.5")
+    _nav("2026-03-17", "45.0")
+
+    values, warnings = _performance(api_client, portfolio)
+    assert not warnings
+    # Pending gap stays continuous with funding (cash 5750 + pending/units 4250).
+    assert values["2026-03-13"] == pytest.approx(10000)
+    assert values["2026-03-15"] == pytest.approx(10000)
+    assert values["2026-03-16"] == pytest.approx(10000)
+    # Recognition-day units then reprice with the higher cached NAV.
+    assert values["2026-03-17"] == pytest.approx(10250)
+
+    twror = api_client.get("/api/v1/portfolio/performance", {
+        "portfolio_id": portfolio.id, "display_currency": "INR",
+        "range": "ALL", "metric": "twror",
+    })
+    assert twror.status_code == 200
+    returns = {p["date"]: p["value"] for p in twror.json()}
+    assert returns["2026-03-13"] == pytest.approx(0)
+    assert returns["2026-03-15"] == pytest.approx(0)
+    assert returns["2026-03-16"] == pytest.approx(0)
+    assert returns["2026-03-17"] == pytest.approx(2.5)
+
+    cash = api_client.get("/api/v1/cash/balances", {
+        "portfolio_id": portfolio.id, "as_of_date": "2026-03-15",
+    })
+    assert cash.status_code == 200
+    assert cash.json()["balances"] == [{"currency": "INR", "balance": 5750.0}]
+    cash_after = api_client.get("/api/v1/cash/balances", {
+        "portfolio_id": portfolio.id, "as_of_date": "2026-03-17",
+    })
+    assert cash_after.json()["balances"] == [{"currency": "INR", "balance": 5750.0}]
