@@ -172,6 +172,23 @@ def test_holdings_includes_fd_row(api_client, seeded, test_user):
 
 
 @pytest.mark.django_db
+def test_assets_overview_counts_active_fd_as_debt(api_client, seeded, test_user):
+    """Assets overview Debt total includes active fixed deposits (#12/#13)."""
+    portfolio = ensure_default_portfolio(test_user)
+    bank = _bank(test_user)
+    _create_fd(test_user, portfolio.id, bank.id, principal="100000")
+    data = api_client.get(
+        "/api/v1/portfolio/holdings?display_currency=INR"
+    ).json()
+    fd_rows = [h for h in data["holdings"] if h.get("asset_type") == "FIXED_DEPOSIT"]
+    assert len(fd_rows) == 1
+    assert fd_rows[0]["overview_class"] == "debt"
+    assert fd_rows[0]["display_current_value"] == 100000.0
+    assert data["assets_overview"]["debt"] == 100000.0
+    assert data["assets_overview"]["equity"] == 0
+
+
+@pytest.mark.django_db
 def test_summary_allocation_buckets_include_debt(api_client, seeded, test_user):
     portfolio = ensure_default_portfolio(test_user)
     bank = _bank(test_user)
