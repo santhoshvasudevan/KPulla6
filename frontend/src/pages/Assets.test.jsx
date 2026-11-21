@@ -3,11 +3,21 @@ import { describe, it, expect, vi } from 'vitest';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import Assets from './Assets';
 import * as api from '../api';
-import { PortfolioProvider } from '../portfolioContext';
+import { PortfolioProvider, usePortfolio } from '../portfolioContext';
 
 function LocationProbe() {
   const location = useLocation();
   return <div data-testid="location">{`${location.pathname}${location.search}`}</div>;
+}
+
+function PortfolioScopeControls() {
+  const { selectPortfolio, selectAllPortfolios } = usePortfolio();
+  return (
+    <div>
+      <button type="button" onClick={() => selectPortfolio(2, 'Second')}>Select Second</button>
+      <button type="button" onClick={() => selectAllPortfolios()}>Select All</button>
+    </div>
+  );
 }
 
 vi.mock('../api', () => ({
@@ -57,11 +67,12 @@ const mockSummary = {
   ]
 };
 
-function renderAssets() {
+function renderAssets(providerProps = {}) {
   return render(
-    <PortfolioProvider>
+    <PortfolioProvider {...providerProps}>
       <MemoryRouter initialEntries={['/assets']}>
         <LocationProbe />
+        <PortfolioScopeControls />
         <Routes>
           <Route path="/assets" element={<Assets />} />
           <Route path="/assets/:assetSymbol" element={<div data-testid="asset-detail-route" />} />
@@ -69,6 +80,52 @@ function renderAssets() {
       </MemoryRouter>
     </PortfolioProvider>
   );
+}
+
+function mockMutualFundAllocationPayload() {
+  const fund = (folio) => ({
+    asset_type: 'MUTUAL_FUND', asset_symbol: '120503', scheme_name: 'Sample Index Fund',
+    holding_key: `120503:${folio}`, folio_number: folio, quantity: 10, current_value: 50,
+    overview_class: 'equity',
+  });
+  const stock = {
+    asset_type: 'STOCK', asset_symbol: 'AAPL', asset_name: 'Apple',
+    holding_key: 'AAPL', quantity: 1, current_value: 175, overview_class: 'equity',
+  };
+  const scheme = {
+    id: 'MUTUAL_FUND:120503', name: 'Sample Index Fund', value: 100, weight: 1,
+    holding_keys: ['120503:A', '120503:B'],
+  };
+  const funds = {
+    total: 100, scheme_count: 1, folio_count: 2, incomplete: false,
+    amc: [{ name: 'Sample AMC', value: 100, weight: 1, scheme_count: 1, folio_count: 2 }],
+    categories: [{
+      id: 'equity', name: 'Equity funds', value: 100, weight: 1, scheme_count: 1,
+      children: [{
+        id: 'scheme', name: 'Sample Index Fund', value: 100, weight: 1,
+        scheme_count: 1, units: 20,
+      }],
+    }],
+  };
+  return {
+    holdings: [fund('A'), fund('B'), stock],
+    assets_reports: {
+      MUTUAL_FUND: {
+        allocation: {
+          scheme: [scheme],
+          folio: [{ ...scheme, id: 'MUTUAL_FUND:120503:A', name: 'Sample Index Fund · Folio A',
+            holding_keys: ['120503:A'] }],
+        },
+        funds,
+      },
+      STOCK: {
+        allocation: {
+          scheme: [{ id: 'STOCK:AAPL', name: 'Apple', value: 175, weight: 1, holding_keys: ['AAPL'] }],
+        },
+        funds: { total: 0, amc: [], categories: [] },
+      },
+    },
+  };
 }
 
 describe('Assets Page', () => {
@@ -514,24 +571,7 @@ it('filters active investments without hiding other available types', async () =
 it('uses named allocation to drill into Holdings without changing the fund breakdown', async () => {
   api.fetchPortfolios.mockResolvedValue([]);
   api.getSettings.mockResolvedValue({ display_currency: 'EUR' });
-  const fund = (folio) => ({
-    asset_type: 'MUTUAL_FUND', asset_symbol: '120503', scheme_name: 'Sample Index Fund',
-    holding_key: `120503:${folio}`, folio_number: folio, quantity: 10, current_value: 50,
-  });
-  const scheme = { id: 'scheme', name: 'Sample Index Fund', value: 100, weight: 1,
-    holding_keys: ['120503:A', '120503:B'] };
-  const funds = { total: 100, scheme_count: 1, folio_count: 2, incomplete: false,
-    amc: [{ name: 'Sample AMC', value: 100, weight: 1, scheme_count: 1, folio_count: 2 }],
-    categories: [{ id: 'equity', name: 'Equity funds', value: 100, weight: 1, scheme_count: 1,
-      children: [{ id: 'scheme', name: 'Sample Index Fund', value: 100, weight: 1,
-        scheme_count: 1, units: 20 }] }] };
-  api.fetchHoldings.mockResolvedValue({
-    holdings: [fund('A'), fund('B')],
-    assets_reports: { MUTUAL_FUND: {
-      allocation: { scheme: [scheme], folio: [{ ...scheme, name: 'Sample Index Fund · Folio A',
-        holding_keys: ['120503:A'] }] }, funds,
-    } },
-  });
+  api.fetchHoldings.mockResolvedValue(mockMutualFundAllocationPayload());
   renderAssets();
   fireEvent.click(await screen.findByRole('button', { name: 'Mutual Funds' }));
   fireEvent.click(screen.getByRole('button', { name: 'By folio' }));
@@ -555,6 +595,60 @@ it('uses named allocation to drill into Holdings without changing the fund break
   fireEvent.click(screen.getByRole('button', { name: 'Breakdowns' }));
   fireEvent.click(screen.getByRole('button', { name: 'Debt' }));
   expect(screen.getByText('No mutual funds in this view.')).toBeInTheDocument();
+});
+
+it('clears allocation selection when grouping, filter, or portfolio scope changes', async () => {
+  api.fetchPortfolios.mockResolvedValue([
+    { id: 1, name: 'Default', is_active: true },
+    { id: 2, name: 'Second', is_active: true },
+  ]);
+  api.getSettings.mockResolvedValue({ display_currency: 'EUR' });
+  api.fetchHoldings.mockResolvedValue(mockMutualFundAllocationPayload());
+  renderAssets({
+    initialPortfolios: [
+      { id: 1, name: 'Default', is_active: true },
+      { id: 2, name: 'Second', is_active: true },
+    ],
+    initialSelection: { mode: 'all', name: 'All Portfolios' },
+    initialDisplayCurrency: 'EUR',
+    disableFetch: true,
+  });
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Mutual Funds' }));
+  fireEvent.click(screen.getByRole('button', { name: 'By folio' }));
+  fireEvent.click(screen.getByText(/Browse allocation holdings/));
+  fireEvent.click(screen.getByRole('button', { name: /Sample Index Fund · Folio A/ }));
+  expect(screen.queryByText('Folio B')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Clear allocation selection' })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'By scheme' }));
+  expect(screen.queryByRole('button', { name: 'Clear allocation selection' })).toBeNull();
+  expect(screen.getByText('Folio B')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'By folio' }));
+  fireEvent.click(screen.getByText(/Browse allocation holdings/));
+  fireEvent.click(screen.getByRole('button', { name: /Sample Index Fund · Folio A/ }));
+  expect(screen.queryByText('Folio B')).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Stocks' }));
+  expect(screen.queryByRole('button', { name: 'Clear allocation selection' })).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Mutual Funds' }));
+  fireEvent.click(screen.getByRole('button', { name: 'By folio' }));
+  fireEvent.click(screen.getByText(/Browse allocation holdings/));
+  fireEvent.click(screen.getByRole('button', { name: /Sample Index Fund · Folio A/ }));
+  expect(screen.getByRole('button', { name: 'Clear allocation selection' })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Select Second' }));
+  await waitFor(() => {
+    expect(api.fetchHoldings).toHaveBeenCalledWith(
+      expect.objectContaining({ portfolio_id: 2, display_currency: 'EUR' }),
+    );
+  });
+  await waitFor(() => {
+    expect(screen.queryByRole('button', { name: 'Clear allocation selection' })).toBeNull();
+  });
+  expect(screen.getByText('Folio B')).toBeInTheDocument();
 });
 
 it('sets and resets a scheme category from Breakdowns', async () => {
