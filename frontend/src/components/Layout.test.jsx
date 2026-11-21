@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, it, expect, vi } from 'vitest';
@@ -6,6 +9,11 @@ import { PortfolioProvider, usePortfolio } from '../portfolioContext';
 import { AuthProvider } from '../authContext';
 import { ThemeProvider } from '../themeContext';
 import * as api from '../api';
+
+const layoutCss = readFileSync(
+  resolve(dirname(fileURLToPath(import.meta.url)), 'Layout.css'),
+  'utf8',
+);
 
 vi.mock('../api', () => ({
   fetchPortfolios: vi.fn(),
@@ -287,6 +295,13 @@ describe('Layout component', () => {
 
     const primaryNav = screen.getByLabelText('Main navigation');
     expect(within(primaryNav).getAllByRole('link')).toHaveLength(7);
+  });
+
+  it('keeps desktop header nav scrollable and brand copy constrained in CSS', () => {
+    const navRule = layoutCss.match(/\.app-header__nav\s*\{[^}]+\}/);
+    expect(navRule?.[0]).toMatch(/overflow-x:\s*auto/);
+    expect(layoutCss).toMatch(/\.app-header__brand\s*>\s*div\s*\{[^}]*min-width:\s*0/);
+    expect(layoutCss).toMatch(/\.app-header__data-note\s*\{[^}]*overflow-wrap:\s*anywhere/);
   });
 
   it('highlights Cash nav link on /cash route', async () => {

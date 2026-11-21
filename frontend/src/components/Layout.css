@@ -31,6 +31,11 @@
   min-width: 0;
 }
 
+.app-header__brand > div {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .app-header__brand-mark {
   width: 2.25rem;
   height: 2.25rem;
@@ -60,6 +65,7 @@
   color: var(--text-muted);
   font-size: 0.75rem;
   letter-spacing: 0.01em;
+  overflow-wrap: anywhere;
 }
 
 .app-header__data-note {
@@ -67,11 +73,14 @@
   color: var(--text-muted);
   font-size: 0.6875rem;
   line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .app-header__nav {
-  justify-content: center;
+  justify-content: flex-start;
   min-width: 0;
+  overflow-x: auto;
+  padding-bottom: var(--space-1);
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
 }
@@ -261,12 +270,6 @@
     grid-template-columns: 1fr;
     align-items: stretch;
     gap: var(--space-3);
-  }
-
-  .app-header__nav {
-    justify-content: flex-start;
-    overflow-x: auto;
-    padding-bottom: var(--space-1);
   }
 
   .app-header__actions {

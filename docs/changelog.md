@@ -1,5 +1,10 @@
 # Changelog — KPulla6
 
+## 2026-11-21 — Responsive header nav no longer overlaps brand or controls
+
+- Sticky app header primary navigation scrolls horizontally at desktop widths so all seven links remain reachable without painting under the brand subtitle/data-note or portfolio/currency controls.
+- Brand copy stays constrained inside the brand column. Narrow stacked layouts keep the existing intentional nav scroll.
+
 ## 2026-11-20 — Folio navigation authorization and encoding
 
 - Asset Detail ignores superseded requests so late folio errors cannot overwrite the current authorization result. Added Assets URL, decoded-detail and API-client special-character folio coverage, alongside query-preservation tests (#34).
