@@ -452,7 +452,7 @@ def calculate_allocation_buckets(
         for item in stock_mf_holdings
         if item.get("asset_type") not in {"FIXED_DEPOSIT", "BANK_CASH"}
     }
-    fx_maps = load_fx_rate_maps(fx_pairs, today - timedelta(days=7), today)
+    fx_maps = load_fx_rate_maps(fx_pairs, today - timedelta(days=FX_LOOKBACK_DAYS), today)
     any_fx_filled = False
 
     for item in stock_mf_holdings:

@@ -1,5 +1,9 @@
 # Changelog — KPulla6
 
+## 2026-11-22 — FD/bank valuation consistency release evidence (#39)
+
+- Integrated HTTP acceptance covers multi-FD, opted-in/excluded/shared bank cash, dual portfolios, component-before-aggregate checks, headline/history parity, and native-equals-display controls for specification #35.
+
 ## 2026-11-22 — Preserve FX lookback at FD/bank history range openings (#38)
 
 - Value History for FD and opted-in bank cash preloads the seven-calendar-day FX window before the first emitted date, so bounded ranges keep opening values that ALL already had.

@@ -1059,8 +1059,6 @@ def _build_single_portfolio_summary(
         scope, disp_ccy=disp_ccy, cash_display_total=cash_total, user=user
     )
 
-    converted_timeseries = list(timeseries)
-
     return PortfolioSummaryResult(
         total_invested=_float(total_invested),
         current_value=_float(current_value),
@@ -1071,7 +1069,7 @@ def _build_single_portfolio_summary(
         base_currency=portfolio_base,
         display_currency=disp_ccy,
         fx_status=fx_status,
-        timeseries=converted_timeseries,
+        timeseries=timeseries,
         warnings=summary_warnings,
         cash_summary=cash_summary,
         allocation_buckets=allocation_buckets,
