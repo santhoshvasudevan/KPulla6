@@ -1,5 +1,10 @@
 # Changelog — KPulla6
 
+## 2026-11-22 — Preserve FX lookback at FD/bank history range openings (#38)
+
+- Value History for FD and opted-in bank cash preloads the seven-calendar-day FX window before the first emitted date, so bounded ranges keep opening values that ALL already had.
+- Future observations and rates older than seven days remain unavailable; non-terminal overlapping points agree between bounded ranges and ALL.
+
 ## 2026-11-22 — Consistent opted-in bank-cash FX valuation (#37)
 
 - Opted-in bank cash summary and holdings preload the seven-calendar-day cached FX lookback (same-day, prior-day, exact-seven, inverse-only; eight-day/future/absent stay unavailable).

@@ -681,6 +681,7 @@ Read paths use **cached DB data only** (same as summary/performance). Metrics ar
 Risk/drawdown/period stats still use TWROR-style daily returns from values and external flows.
 
 **All Portfolios value series:** `GET /portfolio/performance` with `portfolio_scope=all` and `metric=value` builds per-portfolio daily value series (each in its own portfolio base), converts each to `display_currency`, adds scope cash converted per day, then aggregates — matching `GET /portfolio/summary` all-scope aggregation. The last valid `metric=value` point should equal `current_value` when display currency is set.
+FD and opted-in bank-cash history conversion preloads cached FX from seven calendar days before the first emitted date through the series end, so a bounded range opening can use an eligible prior rate without reading future observations.
 
 When cash FX is partial, `metric=value` may return `{"points": [...], "warnings": ["FX unavailable for one or more cash balances; value history may be partial."]}` instead of a bare array.
 
