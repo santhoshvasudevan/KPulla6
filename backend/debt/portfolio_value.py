@@ -92,7 +92,8 @@ def calculate_bank_cash_for_scope(
     for account in eligible:
         if account.currency != disp_ccy:
             fx_pairs.add((account.currency, disp_ccy))
-    fx_maps = load_fx_rate_maps(fx_pairs, as_of, as_of) if fx_pairs else {}
+    fx_start = as_of - timedelta(days=FX_LOOKBACK_DAYS)
+    fx_maps = load_fx_rate_maps(fx_pairs, fx_start, as_of) if fx_pairs else {}
 
     total_invested = Decimal("0")
     current_value = Decimal("0")
@@ -158,7 +159,8 @@ def build_bank_cash_holding_rows(
     for account in eligible:
         if account.currency != disp_ccy:
             fx_pairs.add((account.currency, disp_ccy))
-    fx_maps = load_fx_rate_maps(fx_pairs, as_of, as_of) if fx_pairs else {}
+    fx_start = as_of - timedelta(days=FX_LOOKBACK_DAYS)
+    fx_maps = load_fx_rate_maps(fx_pairs, fx_start, as_of) if fx_pairs else {}
 
     rows: list[dict] = []
     for account in eligible:

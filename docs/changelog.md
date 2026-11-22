@@ -1,5 +1,10 @@
 # Changelog — KPulla6
 
+## 2026-11-22 — Consistent opted-in bank-cash FX valuation (#37)
+
+- Opted-in bank cash summary and holdings preload the seven-calendar-day cached FX lookback (same-day, prior-day, exact-seven, inverse-only; eight-day/future/absent stay unavailable).
+- Bank display amounts continue to be added after investment conversion so they are not converted twice; excluded/inactive/ambiguous accounts remain excluded and All Portfolios counts each eligible bank once.
+
 ## 2026-11-22 — Correct current FD valuation FX lookback and conversion (#36)
 
 - Current FD summary, holdings, and Debt allocation preload the seven-calendar-day cached FX lookback so eligible prior rates cover weekends and holidays.
