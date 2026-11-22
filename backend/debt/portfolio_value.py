@@ -15,6 +15,8 @@ from fx.lookup import convert_amount_with_fill_from_maps, load_fx_rate_maps
 from portfolios import dates as portfolio_dates
 from portfolios.scope import ResolvedPortfolioScope
 
+FX_LOOKBACK_DAYS = 7
+
 FD_BANK_FX_VALUE_HISTORY_WARNING = (
     "FX rates are missing for some fixed deposit or bank cash value history points."
 )
@@ -253,7 +255,7 @@ def calculate_fd_holdings_for_scope(
             fx_pairs.add((fd.currency, disp_ccy))
 
     today = as_of
-    fx_start = today
+    fx_start = today - timedelta(days=FX_LOOKBACK_DAYS)
     fx_maps = load_fx_rate_maps(fx_pairs, fx_start, today) if fx_pairs else {}
 
     for fd in fds:
@@ -335,7 +337,8 @@ def build_fd_holding_rows(
         if fd.currency != disp_ccy:
             fx_pairs.add((fd.currency, disp_ccy))
     today = as_of
-    fx_maps = load_fx_rate_maps(fx_pairs, today, today) if fx_pairs else {}
+    fx_start = today - timedelta(days=FX_LOOKBACK_DAYS)
+    fx_maps = load_fx_rate_maps(fx_pairs, fx_start, today) if fx_pairs else {}
 
     rows: list[dict] = []
     for fd in fds:

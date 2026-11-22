@@ -20,6 +20,12 @@ amounts. Allocation amounts may also appear much larger than the headline value.
 - **Confirmed allocation bug:** native stock/MF holding values were added to
   allocation buckets without conversion, then labelled as display currency.
   Headline totals could be correct while allocation values were wrong.
+- **Confirmed FD valuation bugs (#36):** current FD conversion preloaded only
+  same-day FX, so an eligible Friday rate was ignored on Sunday and FD principal
+  disappeared with a missing-FX warning. Separately, FD amounts already in
+  display currency could be merged with investment amounts still in portfolio
+  valuation currency and converted again (for example INR 100,000 FD + INR 100
+  stock at 0.01 → EUR 11 instead of EUR 1,001).
 
 ## Quick checks
 
@@ -57,10 +63,13 @@ A separate lifetime-purchases metric would be a distinct product requirement.
 
 ```bash
 cd backend
-DJANGO_TEST_USE_SQLITE=1 .venv/bin/python -m pytest tests/test_mutual_fund_summary_performance_api.py -q
+DJANGO_TEST_USE_SQLITE=1 .venv/bin/python -m pytest \
+  tests/test_mutual_fund_summary_performance_api.py \
+  tests/test_fd_valuation_fx_consistency.py -q
 ```
 
-**Expected:** tests pass, including INR-to-EUR allocation and missing-FX cases.
+**Expected:** tests pass, including INR-to-EUR allocation, missing-FX cases, and
+the FD weekend lookback / single-conversion oracle (EUR 1,001 / native INR 100,100).
 With complete positive-valued holdings and available FX, allocation values should
 reconcile with headline value within rounding for the same scope and currency.
 Headline and transaction values must remain unchanged by the allocation fix.

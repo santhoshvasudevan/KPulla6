@@ -1,5 +1,11 @@
 # Changelog — KPulla6
 
+## 2026-11-22 — Correct current FD valuation FX lookback and conversion (#36)
+
+- Current FD summary, holdings, and Debt allocation preload the seven-calendar-day cached FX lookback so eligible prior rates cover weekends and holidays.
+- Investment subtotals convert to display currency before FD display amounts are added, so already-converted FD principal is not converted again.
+- Synthetic oracle: INR 100,000 FD + INR 100 investment at INR→EUR 0.01 → EUR 1,001 (native INR 100,100) with same-day or Friday-only FX on Sunday.
+
 ## 2026-11-21 — Responsive header nav no longer overlaps brand or controls
 
 - Sticky app header primary navigation scrolls horizontally at desktop widths so all seven links remain reachable without painting under the brand subtitle/data-note or portfolio/currency controls.

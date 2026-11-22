@@ -885,6 +885,9 @@ def _build_single_portfolio_summary(
     stock_holdings = _calculate_holdings(by_symbol)
     portfolio_base = _portfolio_base_currency(all_txns)
     mf_holdings = _calculate_mf_holdings(by_mf, portfolio_base=portfolio_base)
+    investment_holdings = _merge_holdings_results(stock_holdings, mf_holdings)
+    # FD and opted-in bank cash are valued directly in display currency.
+    # Convert investment subtotals first, then add those display amounts once.
     fd_holdings = calculate_fd_holdings_for_scope(scope, display_currency=disp_ccy)
     bank_cash_holdings = (
         calculate_bank_cash_for_scope(user, scope, display_currency=disp_ccy)
@@ -899,16 +902,57 @@ def _build_single_portfolio_summary(
             warnings=[],
         )
     )
-    holdings_res = _merge_with_bank_cash(
-        _merge_with_fd(
-            _merge_holdings_results(stock_holdings, mf_holdings), fd_holdings
-        ),
-        bank_cash_holdings,
+
+    from portfolios.xirr_service import compute_scope_xirr_detail
+
+    xirr_result = compute_scope_xirr_detail(scope, display_currency=disp_ccy, user=user)
+    xirr: Optional[float] = xirr_result.value
+
+    needs_display_conv = portfolio_base != disp_ccy
+    fx_status = "fx_unavailable" if (
+        investment_holdings.any_fx_missing
+        or fd_holdings.any_fx_missing
+        or bank_cash_holdings.any_fx_missing
+    ) else "ok"
+
+    def _apply_fx_status(st: str) -> None:
+        nonlocal fx_status
+        if st == "fx_unavailable":
+            fx_status = "fx_unavailable"
+        elif st == "filled" and fx_status == "ok":
+            fx_status = "filled"
+
+    def _conv_monetary(v: Decimal, conv_date: date) -> Decimal:
+        nonlocal fx_status
+        if not needs_display_conv:
+            return v
+        cv, st = convert_amount_with_fill(v, portfolio_base, disp_ccy, conv_date)
+        _apply_fx_status(st)
+        if cv is None:
+            return v
+        return cv
+
+    today = portfolio_dates.current_date()
+    total_invested = (
+        _conv_monetary(investment_holdings.total_invested, today)
+        + fd_holdings.total_invested
+        + bank_cash_holdings.total_invested
     )
+    current_value = (
+        _conv_monetary(investment_holdings.current_value, today)
+        + fd_holdings.current_value
+        + bank_cash_holdings.current_value
+    )
+    realized_pl = (
+        _conv_monetary(investment_holdings.realized_pl, today)
+        + fd_holdings.realized_pl
+        + bank_cash_holdings.realized_pl
+    )
+    unrealized_pl = current_value - total_invested
+    total_pl = realized_pl + unrealized_pl
 
     timeseries: list[dict] = []
     if include_timeseries:
-        today = portfolio_dates.current_date()
         raw_ts = _build_portfolio_value_timeseries(all_txns, by_symbol, by_mf)
         fd_bank_start = (
             value_timeseries_inception_date(user, scope, today=today) if user else None
@@ -940,6 +984,20 @@ def _build_single_portfolio_summary(
                 start_date=loop_start,
                 end_date=today,
             )
+        # Convert investment/broker-cash series to display before adding FD/bank
+        # amounts that are already expressed in display currency.
+        converted_investment_ts: list[dict] = []
+        for p in timeseries:
+            pp = dict(p)
+            pt_date = date.fromisoformat(pp["date"])
+            if pp.get("portfolio_value") is not None:
+                pv = Decimal(str(pp["portfolio_value"]))
+                pp["portfolio_value"] = float(_conv_monetary(pv, pt_date))
+            if pp.get("invested_amount") is not None:
+                inv = Decimal(str(pp["invested_amount"]))
+                pp["invested_amount"] = float(_conv_monetary(inv, pt_date))
+            converted_investment_ts.append(pp)
+        timeseries = converted_investment_ts
         if user is not None and timeseries:
             ts_start = date.fromisoformat(timeseries[0]["date"])
             ts_end = date.fromisoformat(timeseries[-1]["date"])
@@ -963,38 +1021,6 @@ def _build_single_portfolio_summary(
                 end_date=loop_end,
             )
 
-    from portfolios.xirr_service import compute_scope_xirr_detail
-
-    xirr_result = compute_scope_xirr_detail(scope, display_currency=disp_ccy, user=user)
-    xirr: Optional[float] = xirr_result.value
-
-    needs_display_conv = portfolio_base != disp_ccy
-    fx_status = "fx_unavailable" if holdings_res.any_fx_missing else "ok"
-
-    def _apply_fx_status(st: str) -> None:
-        nonlocal fx_status
-        if st == "fx_unavailable":
-            fx_status = "fx_unavailable"
-        elif st == "filled" and fx_status == "ok":
-            fx_status = "filled"
-
-    def _conv_monetary(v: Decimal, conv_date: date) -> Decimal:
-        nonlocal fx_status
-        if not needs_display_conv:
-            return v
-        cv, st = convert_amount_with_fill(v, portfolio_base, disp_ccy, conv_date)
-        _apply_fx_status(st)
-        if cv is None:
-            return v
-        return cv
-
-    today = portfolio_dates.current_date()
-    total_invested = _conv_monetary(holdings_res.total_invested, today)
-    current_value = _conv_monetary(holdings_res.current_value, today)
-    realized_pl = _conv_monetary(holdings_res.realized_pl, today)
-    unrealized_pl = _conv_monetary(holdings_res.unrealized_pl, today)
-    total_pl = _conv_monetary(holdings_res.total_pl, today)
-
     cash_display = (
         build_cash_display_summary(scope, disp_ccy, as_of_date=today)
         if include_cash
@@ -1005,14 +1031,23 @@ def _build_single_portfolio_summary(
             Decimal(str(current_value)) + cash_display.total_display_value
         )
         fx_status = _combine_fx_status([fx_status, cash_display.fx_status])
-        summary_warnings = list(holdings_res.warnings) + list(cash_display.warnings)
+        summary_warnings = (
+            list(investment_holdings.warnings)
+            + list(fd_holdings.warnings)
+            + list(bank_cash_holdings.warnings)
+            + list(cash_display.warnings)
+        )
         cash_summary = (
             cash_summary_payload(cash_display)
             if cash_display.balances or cash_display.total_display_value
             else None
         )
     else:
-        summary_warnings = list(holdings_res.warnings)
+        summary_warnings = (
+            list(investment_holdings.warnings)
+            + list(fd_holdings.warnings)
+            + list(bank_cash_holdings.warnings)
+        )
         cash_summary = None
 
     summary_warnings = list(dict.fromkeys(summary_warnings + xirr_result.warnings))
@@ -1024,17 +1059,7 @@ def _build_single_portfolio_summary(
         scope, disp_ccy=disp_ccy, cash_display_total=cash_total, user=user
     )
 
-    converted_timeseries: list[dict] = []
-    for p in timeseries:
-        pp = dict(p)
-        pt_date = date.fromisoformat(pp["date"])
-        if pp.get("portfolio_value") is not None:
-            pv = Decimal(str(pp["portfolio_value"]))
-            pp["portfolio_value"] = float(_conv_monetary(pv, pt_date))
-        if pp.get("invested_amount") is not None:
-            inv = Decimal(str(pp["invested_amount"]))
-            pp["invested_amount"] = float(_conv_monetary(inv, pt_date))
-        converted_timeseries.append(pp)
+    converted_timeseries = list(timeseries)
 
     return PortfolioSummaryResult(
         total_invested=_float(total_invested),

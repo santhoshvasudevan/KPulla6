@@ -27,6 +27,7 @@ If ports are wrong: [Dev server and port issues](dev-server-ports.md)
 | CSV import asks for cash again after confirmation | [CSV cash funding import](csv-cash-funding-import.md) |
 | Dashboard slow | [Dashboard is slow](dashboard-slow.md) |
 | Dashboard totals differ from transaction payments | [Dashboard totals](dashboard-totals.md) |
+| Current Value drops on weekends or disagrees with Value History for FDs | [Dashboard totals](dashboard-totals.md) |
 | MF heatmap shows a large loss around a purchase | [Fund performance and timing diagnosis](../portfolio-finance/17-mf-nav-performance.md#timing-bug-diagnosis) |
 | Database safety concern | [Database safety problems](database-safety.md) |
 | Port in use / wrong URL | [Dev server and port issues](dev-server-ports.md) |
