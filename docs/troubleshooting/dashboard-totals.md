@@ -26,6 +26,9 @@ amounts. Allocation amounts may also appear much larger than the headline value.
   display currency could be merged with investment amounts still in portfolio
   valuation currency and converted again (for example INR 100,000 FD + INR 100
   stock at 0.01 → EUR 11 instead of EUR 1,001).
+- **Confirmed bank-cash FX gap (#37):** opted-in bank balances used the same
+  same-day-only FX preload, so weekend valuation could drop bank cash while
+  native INR reporting remained correct.
 
 ## Quick checks
 

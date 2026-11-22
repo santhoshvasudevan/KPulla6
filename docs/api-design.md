@@ -591,11 +591,13 @@ at cost, and stock/MF fees are excluded from FIFO basis under the existing rule.
 Dashboard KPI tooltips clarify this distinction. Allocation buckets convert native
 stock/MF holdings to the requested display currency with cached FX before summing;
 unconvertible amounts are excluded with `allocation_buckets.fx_status=fx_unavailable`,
-never relabelled as display-currency amounts. Fixed-deposit principal is converted
+never relabelled as display-currency amounts. Fixed-deposit principal and opted-in bank cash are converted
 directly to display currency with the same seven-calendar-day cached FX lookback
 used elsewhere; investment subtotals are converted to display currency first, then
 FD/bank display amounts are added once (never converted again). A missing same-day
 FX row is not a failure when an eligible prior cached rate exists within seven days.
+Bank inclusion remains opt-in and ledger-backed; single-portfolio scope keeps
+conservative association rules and All Portfolios counts each eligible bank once.
 
 **Portfolio `xirr` (Cash-6C.1):**
 
