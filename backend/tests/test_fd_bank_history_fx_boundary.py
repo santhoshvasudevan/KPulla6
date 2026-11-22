@@ -7,6 +7,7 @@ from decimal import Decimal
 import pytest
 
 from debt.bank_ledger_services import create_manual_cash_movement
+from debt.portfolio_value import FD_BANK_FX_VALUE_HISTORY_WARNING
 from debt.services import update_bank_account
 from fx.models import FXRate
 from portfolios.models import Portfolio
@@ -29,12 +30,18 @@ def _fx(day: date, rate="0.01", *, frm="INR", to="EUR") -> None:
     )
 
 
-def _perf(client, **params):
+def _perf_body(client, **params):
     query = {"metric": "value", "display_currency": "EUR", **params}
     response = client.get("/api/v1/portfolio/performance", query)
     assert response.status_code == 200, response.json()
     body = response.json()
-    return body["points"] if isinstance(body, dict) and "points" in body else body
+    if isinstance(body, dict) and "points" in body:
+        return body
+    return {"points": body, "warnings": []}
+
+
+def _perf(client, **params):
+    return _perf_body(client, **params)["points"]
 
 
 def _point_map(points):
@@ -79,8 +86,10 @@ def test_fd_history_uses_fx_before_bounded_range_start(
     range_start = date(2026, 11, 16)  # Monday
     _fx(date(2026, 11, 13), "0.01")  # Friday before range
 
-    all_points = _point_map(_perf(api_client, portfolio_id=portfolio.id, range="ALL"))
-    bounded = _point_map(_perf(api_client, portfolio_id=portfolio.id, range="7D"))
+    all_body = _perf_body(api_client, portfolio_id=portfolio.id, range="ALL")
+    bounded_body = _perf_body(api_client, portfolio_id=portfolio.id, range="7D")
+    all_points = _point_map(all_body["points"])
+    bounded = _point_map(bounded_body["points"])
     assert range_start.isoformat() in bounded
     assert bounded[range_start.isoformat()] == pytest.approx(1000.0, abs=0.01)
     assert all_points[range_start.isoformat()] == pytest.approx(
@@ -90,6 +99,14 @@ def test_fd_history_uses_fx_before_bounded_range_start(
     mid = date(2026, 11, 18).isoformat()
     assert bounded[mid] == pytest.approx(all_points[mid], abs=0.01)
     assert bounded[mid] == pytest.approx(1000.0, abs=0.01)
+    # Complete 7D coverage: rate on range opening keeps every day within lookback.
+    FXRate.objects.all().delete()
+    _fx(date(2026, 11, 15), "0.01")
+    covered = _perf_body(api_client, portfolio_id=portfolio.id, range="7D")
+    covered_points = _point_map(covered["points"])
+    assert covered_points[range_start.isoformat()] == pytest.approx(1000.0, abs=0.01)
+    assert covered_points[today.isoformat()] == pytest.approx(1000.0, abs=0.01)
+    assert FD_BANK_FX_VALUE_HISTORY_WARNING not in covered.get("warnings", [])
 
 
 @pytest.mark.django_db
@@ -115,24 +132,40 @@ def test_bank_cash_history_opening_lookback_and_boundaries(
     update_bank_account(test_user, bank.id, include_in_portfolio_value=True)
 
     range_start = date(2026, 11, 16)
+    opening = range_start.isoformat()
+
+    # Opening-day lookback: Friday before Monday remains usable for that day.
     _fx(date(2026, 11, 13), "0.01")
-    bounded = _point_map(_perf(api_client, portfolio_id=portfolio.id, range="7D"))
-    assert bounded[range_start.isoformat()] == pytest.approx(500.0, abs=0.01)
+    opening_body = _perf_body(api_client, portfolio_id=portfolio.id, range="7D")
+    opening_points = _point_map(opening_body["points"])
+    assert opening_points[opening] == pytest.approx(500.0, abs=0.01)
+
+    # Complete 7D coverage — no FD/bank FX history warning.
+    FXRate.objects.all().delete()
+    _fx(date(2026, 11, 15), "0.01")
+    covered_body = _perf_body(api_client, portfolio_id=portfolio.id, range="7D")
+    covered_points = _point_map(covered_body["points"])
+    assert covered_points[opening] == pytest.approx(500.0, abs=0.01)
+    assert covered_points[today.isoformat()] == pytest.approx(500.0, abs=0.01)
+    assert FD_BANK_FX_VALUE_HISTORY_WARNING not in covered_body.get("warnings", [])
 
     FXRate.objects.all().delete()
     _fx(range_start - timedelta(days=8), "0.01")
-    stale = _point_map(_perf(api_client, portfolio_id=portfolio.id, range="7D"))
-    opening = range_start.isoformat()
-    assert opening not in stale or stale[opening] in (None, 0.0) or stale[
-        opening
-    ] == pytest.approx(0.0, abs=0.01)
+    stale_body = _perf_body(api_client, portfolio_id=portfolio.id, range="7D")
+    stale = _point_map(stale_body["points"])
+    # Stale FX (>7d before opening): monetary opening must not use that rate.
+    opening_stale = stale.get(opening)
+    assert opening_stale is None or opening_stale == pytest.approx(0.0, abs=0.01)
+    assert FD_BANK_FX_VALUE_HISTORY_WARNING in stale_body.get("warnings", [])
 
     FXRate.objects.all().delete()
     _fx(range_start + timedelta(days=1), "0.01")  # future relative to opening day
     # Opening day must not use a later observation.
-    future_only = _point_map(_perf(api_client, portfolio_id=portfolio.id, range="7D"))
+    future_body = _perf_body(api_client, portfolio_id=portfolio.id, range="7D")
+    future_only = _point_map(future_body["points"])
     opening_val = future_only.get(opening)
-    assert opening_val in (None, 0.0) or opening_val == pytest.approx(0.0, abs=0.01)
+    assert opening_val is None or opening_val == pytest.approx(0.0, abs=0.01)
+    assert FD_BANK_FX_VALUE_HISTORY_WARNING in future_body.get("warnings", [])
 
 
 @pytest.mark.django_db

@@ -1,5 +1,12 @@
 # Changelog — KPulla6
 
+## 2026-11-22 — FD/bank valuation review corrections (#35)
+
+- Native-currency FD-only / bank-cash-only reporting no longer requires FX for a zero investment subtotal (avoids false `fx_unavailable` on INR→INR).
+- Headline `fx_status` is derived from current holdings conversion only; historical timeseries gap days no longer rewrite the headline status.
+- Value History terminal alignment with Current Value now requires the matched valuation date, so a settled/ended series is not overwritten by today's zero headline.
+- Integrated acceptance now seeds real dual valuation currencies via investment transactions, broker-cash ledger balances, FDs, and opted-in bank cash, with precise missing-FX monetary/status/warning assertions (compatibility fallback preserved).
+
 ## 2026-11-22 — FD/bank valuation consistency release evidence (#39)
 
 - Integrated HTTP acceptance covers multi-FD, opted-in/excluded/shared bank cash, dual portfolios, component-before-aggregate checks, headline/history parity, and native-equals-display controls for specification #35.

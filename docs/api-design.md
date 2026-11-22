@@ -596,8 +596,16 @@ directly to display currency with the same seven-calendar-day cached FX lookback
 used elsewhere; investment subtotals are converted to display currency first, then
 FD/bank display amounts are added once (never converted again). A missing same-day
 FX row is not a failure when an eligible prior cached rate exists within seven days.
-Bank inclusion remains opt-in and ledger-backed; single-portfolio scope keeps
-conservative association rules and All Portfolios counts each eligible bank once.
+A zero investment/broker subtotal does not require FX: native-currency FD-only or
+bank-cash-only reporting must not be marked `fx_unavailable` merely because an
+unused portfolio-base→display pair has no cached rate. Headline `fx_status` reflects
+current holdings conversion; historical timeseries gap days keep per-point status and
+must not rewrite the headline status. When a required nonzero conversion fails, the
+existing compatibility fallback is preserved (investment amounts keep the unconverted
+value and mark unavailable; FD/bank omit the unconvertible component with warnings)
+rather than inventing a new partial-value policy. Bank inclusion remains opt-in and
+ledger-backed; single-portfolio scope keeps conservative association rules and All
+Portfolios counts each eligible bank once.
 
 **Portfolio `xirr` (Cash-6C.1):**
 

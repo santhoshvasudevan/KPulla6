@@ -68,14 +68,20 @@ A separate lifetime-purchases metric would be a distinct product requirement.
 cd backend
 DJANGO_TEST_USE_SQLITE=1 .venv/bin/python -m pytest \
   tests/test_mutual_fund_summary_performance_api.py \
-  tests/test_fd_valuation_fx_consistency.py -q
+  tests/test_fd_valuation_fx_consistency.py \
+  tests/test_bank_cash_valuation_fx_consistency.py \
+  tests/test_fd_bank_history_fx_boundary.py \
+  tests/test_fd_bank_valuation_integration_35.py \
+  tests/test_native_fd_bank_zero_investment_fx.py -q
 ```
 
-**Expected:** tests pass, including INR-to-EUR allocation, missing-FX cases, and
-the FD weekend lookback / single-conversion oracle (EUR 1,001 / native INR 100,100).
-With complete positive-valued holdings and available FX, allocation values should
-reconcile with headline value within rounding for the same scope and currency.
-Headline and transaction values must remain unchanged by the allocation fix.
+**Expected:** tests pass, including INR-to-EUR allocation, missing-FX cases,
+FD weekend lookback / single-conversion oracle (EUR 1,001 / native INR 100,100),
+native FD/bank-only INR without false FX, and integrated dual-currency
+headline/history parity. With complete positive-valued holdings and available FX,
+allocation values should reconcile with headline value within rounding for the
+same scope and currency. Headline and transaction values must remain unchanged
+by the allocation fix.
 
 ## Related
 

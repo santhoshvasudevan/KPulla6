@@ -98,12 +98,17 @@ def _align_terminal_value_with_summary(
     )
     if summary.fx_status == "fx_unavailable":
         return
+    # Only align the matched valuation date. Overwriting the latest historical
+    # point when today is absent (e.g. settled FD series ending earlier) would
+    # destroy valid prior-day values once headline fx_status is correctly "ok".
     terminal_iso = today.isoformat()
     for point in reversed(timeseries_full):
-        if point["date"] <= terminal_iso:
+        if point["date"] == terminal_iso:
             if point.get("portfolio_value") is None:
                 return
             point["portfolio_value"] = float(summary.current_value)
+            return
+        if point["date"] < terminal_iso:
             return
 
 

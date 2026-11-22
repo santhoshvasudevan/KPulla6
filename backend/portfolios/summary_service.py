@@ -926,6 +926,10 @@ def _build_single_portfolio_summary(
         nonlocal fx_status
         if not needs_display_conv:
             return v
+        # A zero investment/broker subtotal needs no FX; requiring a rate here
+        # falsely marks native FD/bank-only INR reporting as fx_unavailable.
+        if v == 0:
+            return v
         cv, st = convert_amount_with_fill(v, portfolio_base, disp_ccy, conv_date)
         _apply_fx_status(st)
         if cv is None:
@@ -986,16 +990,28 @@ def _build_single_portfolio_summary(
             )
         # Convert investment/broker-cash series to display before adding FD/bank
         # amounts that are already expressed in display currency.
+        # Do not reuse _conv_monetary here: historical gap days must not rewrite
+        # the headline fx_status derived from current holdings conversion.
+        def _conv_ts_monetary(v: Decimal, conv_date: date) -> Decimal:
+            if not needs_display_conv:
+                return v
+            if v == 0:
+                return v
+            cv, _st = convert_amount_with_fill(v, portfolio_base, disp_ccy, conv_date)
+            if cv is None:
+                return v
+            return cv
+
         converted_investment_ts: list[dict] = []
         for p in timeseries:
             pp = dict(p)
             pt_date = date.fromisoformat(pp["date"])
             if pp.get("portfolio_value") is not None:
                 pv = Decimal(str(pp["portfolio_value"]))
-                pp["portfolio_value"] = float(_conv_monetary(pv, pt_date))
+                pp["portfolio_value"] = float(_conv_ts_monetary(pv, pt_date))
             if pp.get("invested_amount") is not None:
                 inv = Decimal(str(pp["invested_amount"]))
-                pp["invested_amount"] = float(_conv_monetary(inv, pt_date))
+                pp["invested_amount"] = float(_conv_ts_monetary(inv, pt_date))
             converted_investment_ts.append(pp)
         timeseries = converted_investment_ts
         if user is not None and timeseries:
