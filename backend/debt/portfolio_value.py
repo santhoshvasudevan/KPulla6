@@ -623,7 +623,8 @@ def build_fd_value_timeseries(
     for fd in fds:
         if fd.currency != disp_ccy:
             fx_pairs.add((fd.currency, disp_ccy))
-    fx_maps = load_fx_rate_maps(fx_pairs, start_date, end_date) if fx_pairs else {}
+    fx_start = start_date - timedelta(days=FX_LOOKBACK_DAYS)
+    fx_maps = load_fx_rate_maps(fx_pairs, fx_start, end_date) if fx_pairs else {}
 
     rows: list[dict] = []
     for as_of in _date_range_inclusive(start_date, end_date):
@@ -699,7 +700,8 @@ def build_bank_cash_value_timeseries(
     for account in eligible:
         if account.currency != disp_ccy:
             fx_pairs.add((account.currency, disp_ccy))
-    fx_maps = load_fx_rate_maps(fx_pairs, start_date, end_date) if fx_pairs else {}
+    fx_start = start_date - timedelta(days=FX_LOOKBACK_DAYS)
+    fx_maps = load_fx_rate_maps(fx_pairs, fx_start, end_date) if fx_pairs else {}
 
     rows: list[dict] = []
     for as_of in _date_range_inclusive(start_date, end_date):
