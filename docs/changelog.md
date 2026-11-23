@@ -1,5 +1,10 @@
 # Changelog — KPulla6
 
+## 2026-11-22 — Unify periodic FD interest entry (#42)
+
+- Shared actual-payment form for Fixed Deposits list row and detail schedule; forecast amounts stay display-only until Save.
+- `POST /fixed-deposits/{id}/interest-payments` accepts optional `client_request_id` for retry-safe posting (unique per user); replays return the existing payment and bank credit without duplicating.
+
 ## 2026-11-22 — Separate Current and History fixed deposit terms (#41)
 
 - Fixed Deposits page defaults to a **Current** list (`ACTIVE` / `MATURED`) and adds a **History** list for completed terms (`MATURED_SETTLED` / `CLOSED`), with a **Renewed** label and previous/next term links.

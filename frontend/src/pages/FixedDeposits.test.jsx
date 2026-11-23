@@ -699,7 +699,7 @@ describe('FixedDeposits page', () => {
 
     expect(screen.getByLabelText(/gross interest/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/tax withheld/i)).toBeInTheDocument();
-    expect(screen.getByText(/fd portfolio value stays principal-only/i)).toBeInTheDocument();
+    expect(screen.getByTestId('fd-interest-unscheduled')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/gross interest/i), { target: { value: '0' } });
     fireEvent.click(screen.getByRole('button', { name: /record payment/i }));
@@ -720,17 +720,21 @@ describe('FixedDeposits page', () => {
     renderPage();
     await waitFor(() => screen.getByRole('button', { name: /record interest/i }));
     fireEvent.click(screen.getByRole('button', { name: /record interest/i }));
-    fireEvent.change(screen.getByLabelText(/payment date/i), { target: { value: '2024-04-01' } });
+    fireEvent.change(screen.getByLabelText(/actual credited date/i), { target: { value: '2024-04-01' } });
     fireEvent.change(screen.getByLabelText(/gross interest/i), { target: { value: '1000' } });
     fireEvent.change(screen.getByLabelText(/tax withheld/i), { target: { value: '100' } });
     fireEvent.click(screen.getByRole('button', { name: /record payment/i }));
 
     await waitFor(() => {
-      expect(api.createFixedDepositInterestPayment).toHaveBeenCalledWith(1, {
-        payment_date: '2024-04-01',
-        gross_interest: '1000',
-        tax_withheld: '100',
-      });
+      expect(api.createFixedDepositInterestPayment).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({
+          payment_date: '2024-04-01',
+          gross_interest: '1000',
+          tax_withheld: '100',
+          client_request_id: expect.any(String),
+        })
+      );
       expect(screen.getByText(/interest payment recorded/i)).toBeInTheDocument();
     });
   });

@@ -564,6 +564,7 @@ class FixedDepositInterestPaymentSerializer(serializers.ModelSerializer):
             "currency",
             "cash_movement_id",
             "comment",
+            "client_request_id",
             "is_reversed",
             "reversed_at",
             "created_at",
@@ -584,6 +585,8 @@ class FixedDepositInterestPaymentSerializer(serializers.ModelSerializer):
         )
         if not data.get("comment"):
             data["comment"] = None
+        if not data.get("client_request_id"):
+            data["client_request_id"] = None
         return data
 
 
@@ -594,6 +597,9 @@ class FixedDepositInterestPaymentWriteSerializer(serializers.Serializer):
         max_digits=18, decimal_places=4, required=False, default=Decimal("0")
     )
     comment = serializers.CharField(required=False, allow_blank=True, default="")
+    client_request_id = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True, max_length=64, default=None
+    )
 
     def validate_gross_interest(self, value: Decimal) -> Decimal:
         if value <= 0:
@@ -604,6 +610,12 @@ class FixedDepositInterestPaymentWriteSerializer(serializers.Serializer):
         if value < 0:
             raise serializers.ValidationError("tax_withheld must be zero or positive.")
         return value
+
+    def validate_client_request_id(self, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
 
     def validate(self, attrs):
         gross = attrs.get("gross_interest")

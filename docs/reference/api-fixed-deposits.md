@@ -95,7 +95,7 @@ Updates metadata; after opening, principal/bank/currency/portfolio are locked. I
 |--------|------|-------|
 | `DELETE` | `/fixed-deposits/{id}` | Soft deactivate (legacy / no-ledger) |
 | `POST` | `/fixed-deposits/{id}/cancel` | Reverse opening debit |
-| `POST` | `/fixed-deposits/{id}/interest-payments` | Record interest |
+| `POST` | `/fixed-deposits/{id}/interest-payments` | Record interest (`client_request_id` optional for retry safety, #42) |
 | `POST` | `/fixed-deposits/{id}/settle` | Maturity settlement |
 
 ## Next

@@ -301,7 +301,10 @@ class FixedDepositInterestPaymentListCreateView(APIView):
         body = FixedDepositInterestPaymentSerializer(result.payment).data
         if result.warning:
             body["warning"] = result.warning
-        return Response(body, status=status.HTTP_201_CREATED)
+        return Response(
+            body,
+            status=status.HTTP_201_CREATED if result.created else status.HTTP_200_OK,
+        )
 
 
 class FixedDepositInterestPaymentDetailView(APIView):

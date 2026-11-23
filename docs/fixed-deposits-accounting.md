@@ -281,7 +281,8 @@ See **§ FD-ACC-8 performance/timeseries design** below for full detail.
 | **API** | `GET/POST /fixed-deposits/{id}/interest-payments`; `GET /fixed-deposit-interest-payments/{id}`; **405** update/delete |
 | **Validation** | `net = gross − tax`; tax ≤ gross; bank account from FD; **400** on `CLOSED` FD; COMPOUNDED → optional `warning` |
 | **Portfolio** | FD principal summary unchanged; interest not in portfolio value |
-| **UI** | Fixed Deposits page — Record interest modal + expandable payment list; Settings movements show `FD interest` |
+| **UI** | Shared actual-payment form from Fixed Deposits list row and FD detail schedule (#42); expandable payment list; Settings movements show `FD interest` |
+| **Retry** | Optional `client_request_id` on create — same key returns the existing payment/credit; different keys with identical amounts remain allowed |
 | **Deferred** | Maturity/closure/renewal (FD-ACC-5+) |
 
 ---

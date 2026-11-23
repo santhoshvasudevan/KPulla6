@@ -36,6 +36,10 @@ import {
 } from '../components/ui';
 import { fdPayoutLabel, fdStatusBadgeProps, fdStatusCounts, fdMaturityValueSourceBadgeProps, fdDisplayMaturityValue, fdDisplayTotalInterest, fdDisplayPeriodicInterest, fdDisplayMaturitySource, fdIsCompounded, fdIsPayout, fdIsHistoryTerm, FD_ESTIMATE_TYPE_COMPOUNDED, FD_ESTIMATE_TYPE_PAYOUT } from '../utils/fdDisplay';
 import FixedDepositInterestReport from '../components/FixedDepositInterestReport';
+import FixedDepositInterestPaymentForm, {
+  newInterestClientRequestId,
+} from '../components/FixedDepositInterestPaymentForm';
+import '../components/FixedDepositInterestPaymentForm.css';
 import './FixedDeposits.css';
 
 const FD_SECTION_NAV = [
@@ -315,6 +319,7 @@ export default function FixedDeposits() {
   const formErrorRef = useRef(null);
   const [interestFd, setInterestFd] = useState(null);
   const [interestForm, setInterestForm] = useState(emptyInterestForm);
+  const [interestClientRequestId, setInterestClientRequestId] = useState('');
   const [interestModalOpen, setInterestModalOpen] = useState(false);
   const [interestSubmitting, setInterestSubmitting] = useState(false);
   const [interestFormError, setInterestFormError] = useState('');
@@ -695,6 +700,7 @@ export default function FixedDeposits() {
   const openInterestModal = (fd) => {
     setInterestFd(fd);
     setInterestForm(emptyInterestForm());
+    setInterestClientRequestId(newInterestClientRequestId());
     setInterestFormError('');
     setInterestModalOpen(true);
   };
@@ -702,6 +708,7 @@ export default function FixedDeposits() {
   const closeInterestModal = () => {
     setInterestModalOpen(false);
     setInterestFd(null);
+    setInterestClientRequestId('');
     setInterestFormError('');
   };
 
@@ -758,6 +765,7 @@ export default function FixedDeposits() {
       payment_date: interestForm.payment_date,
       gross_interest: interestForm.gross_interest,
       tax_withheld: interestForm.tax_withheld || '0',
+      client_request_id: interestClientRequestId || newInterestClientRequestId(),
     };
     if (interestForm.comment.trim()) {
       payload.comment = interestForm.comment.trim();
@@ -788,11 +796,6 @@ export default function FixedDeposits() {
       setInterestSubmitting(false);
     }
   };
-
-  const displayNetInterest = computeDisplayNetInterest(
-    interestForm.gross_interest,
-    interestForm.tax_withheld
-  );
 
   const openInterestReverseModal = (fd, payment) => {
     setInterestReverseFd(fd);
@@ -2049,85 +2052,18 @@ export default function FixedDeposits() {
             aria-labelledby="fd-interest-modal-title"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="fd-interest-modal-title">Record interest payment</h2>
-            <p className="settings-hint fd-form__note">
-              Net interest is credited to {interestFd.bank_account_name}. FD portfolio value
-              stays principal-only.
-            </p>
-            {interestFormError ? <WarningBanner severity="error" message={interestFormError} /> : null}
-            <form onSubmit={handleInterestSubmit} className="fd-form" noValidate>
-              <div className="form-group">
-                <label htmlFor="fd-int-date">Payment date</label>
-                <input
-                  id="fd-int-date"
-                  type="date"
-                  value={interestForm.payment_date}
-                  onChange={(e) =>
-                    setInterestForm((p) => ({ ...p, payment_date: e.target.value }))
-                  }
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="fd-int-gross">Gross interest</label>
-                <input
-                  id="fd-int-gross"
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  value={interestForm.gross_interest}
-                  onChange={(e) =>
-                    setInterestForm((p) => ({ ...p, gross_interest: e.target.value }))
-                  }
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="fd-int-tax">Tax withheld (TDS)</label>
-                <input
-                  id="fd-int-tax"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={interestForm.tax_withheld}
-                  onChange={(e) =>
-                    setInterestForm((p) => ({ ...p, tax_withheld: e.target.value }))
-                  }
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="fd-int-net">Net interest (display only)</label>
-                <input
-                  id="fd-int-net"
-                  value={
-                    displayNetInterest == null
-                      ? ''
-                      : `${displayNetInterest} ${interestFd.currency}`
-                  }
-                  readOnly
-                  disabled
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="fd-int-comment">Comment (optional)</label>
-                <textarea
-                  id="fd-int-comment"
-                  value={interestForm.comment}
-                  onChange={(e) =>
-                    setInterestForm((p) => ({ ...p, comment: e.target.value }))
-                  }
-                  rows={2}
-                />
-              </div>
-              <div className="fd-form__actions">
-                <Button type="submit" variant="primary" disabled={interestSubmitting}>
-                  {interestSubmitting ? 'Saving…' : 'Record payment'}
-                </Button>
-                <Button type="button" variant="secondary" onClick={closeInterestModal}>
-                  Cancel
-                </Button>
-              </div>
-            </form>
+            <FixedDepositInterestPaymentForm
+              title="Record interest payment"
+              submitLabel="Record payment"
+              form={interestForm}
+              onChange={setInterestForm}
+              onSubmit={handleInterestSubmit}
+              onCancel={closeInterestModal}
+              submitting={interestSubmitting}
+              error={interestFormError}
+              currency={interestFd.currency}
+              bankAccountName={interestFd.bank_account_name}
+            />
           </div>
         </div>
       ) : null}

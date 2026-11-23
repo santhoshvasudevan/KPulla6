@@ -126,6 +126,7 @@ describe('FixedDepositDetail page', () => {
     fireEvent.click(screen.getByRole('button', { name: /record actual/i }));
 
     const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByTestId('fd-interest-forecast')).toBeInTheDocument();
     expect(within(dialog).getByLabelText(/actual credited date/i).value).toBe('2024-04-01');
     expect(within(dialog).getByLabelText(/gross interest/i).value).toBe('1750');
 
@@ -141,6 +142,7 @@ describe('FixedDepositDetail page', () => {
           payment_date: '2024-04-01',
           gross_interest: '1750',
           tax_withheld: '175',
+          client_request_id: expect.any(String),
         })
       );
     });

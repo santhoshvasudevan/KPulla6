@@ -389,3 +389,75 @@ def test_backend_uses_fd_bank_account_only(api_client, seeded, test_user):
     )
     assert response.status_code == 201
     assert response.json()["bank_account_id"] == bank.id
+
+
+@pytest.mark.django_db
+def test_interest_payment_client_request_id_is_retry_safe(api_client, seeded, test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    bank = _bank(test_user)
+    fd = _create_fd(test_user, portfolio.id, bank)
+    bank.refresh_from_db()
+    balance_before = bank.current_balance
+    payload = _interest_payload(client_request_id="retry-key-1")
+
+    first = api_client.post(
+        f"/api/v1/fixed-deposits/{fd.id}/interest-payments",
+        payload,
+        format="json",
+    )
+    assert first.status_code == 201
+    first_body = first.json()
+    assert first_body["client_request_id"] == "retry-key-1"
+
+    second = api_client.post(
+        f"/api/v1/fixed-deposits/{fd.id}/interest-payments",
+        payload,
+        format="json",
+    )
+    assert second.status_code == 200
+    second_body = second.json()
+    assert second_body["id"] == first_body["id"]
+    assert second_body["cash_movement_id"] == first_body["cash_movement_id"]
+
+    assert FixedDepositInterestPayment.objects.filter(fixed_deposit=fd).count() == 1
+    assert (
+        CashMovement.objects.filter(
+            linked_fixed_deposit=fd,
+            movement_type=CashMovementType.FD_INTEREST,
+        ).count()
+        == 1
+    )
+    bank.refresh_from_db()
+    assert bank.current_balance == balance_before + Decimal("900")
+
+
+@pytest.mark.django_db
+def test_separate_payouts_with_same_amount_allowed(api_client, seeded, test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    bank = _bank(test_user)
+    fd = _create_fd(test_user, portfolio.id, bank)
+
+    first = api_client.post(
+        f"/api/v1/fixed-deposits/{fd.id}/interest-payments",
+        _interest_payload(client_request_id="payout-a"),
+        format="json",
+    )
+    second = api_client.post(
+        f"/api/v1/fixed-deposits/{fd.id}/interest-payments",
+        _interest_payload(
+            payment_date=date(2024, 7, 1),
+            client_request_id="payout-b",
+        ),
+        format="json",
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["id"] != second.json()["id"]
+    assert FixedDepositInterestPayment.objects.filter(fixed_deposit=fd).count() == 2
+    assert (
+        CashMovement.objects.filter(
+            linked_fixed_deposit=fd,
+            movement_type=CashMovementType.FD_INTEREST,
+        ).count()
+        == 2
+    )

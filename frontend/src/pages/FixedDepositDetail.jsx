@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   createFixedDepositInterestPayment,
@@ -20,6 +20,9 @@ import {
   StatusBadge,
   WarningBanner,
 } from '../components/ui';
+import FixedDepositInterestPaymentForm, {
+  newInterestClientRequestId,
+} from '../components/FixedDepositInterestPaymentForm';
 import {
   fdDisplayMaturitySource,
   fdDisplayMaturityValue,
@@ -31,6 +34,7 @@ import {
   fdStatusBadgeProps,
 } from '../utils/fdDisplay';
 import { formatCurrency } from '../utils/formatters';
+import '../components/FixedDepositInterestPaymentForm.css';
 import './FixedDepositDetail.css';
 
 const SECTION_NAV = [
@@ -76,6 +80,7 @@ export default function FixedDepositDetail() {
   const [actualSaving, setActualSaving] = useState(false);
   const [editingPaymentId, setEditingPaymentId] = useState(null);
   const [scheduleContext, setScheduleContext] = useState(null);
+  const [actualClientRequestId, setActualClientRequestId] = useState('');
 
   const loadData = useCallback(() => {
     if (!fdId) return;
@@ -104,16 +109,10 @@ export default function FixedDepositDetail() {
   const calc = data?.detailed_calculation;
   const schedule = data?.expected_interest_schedule || [];
 
-  const netPreview = useMemo(() => {
-    const gross = parseFloat(actualForm.gross_interest || '0');
-    const tax = parseFloat(actualForm.tax_withheld || '0');
-    if (Number.isNaN(gross) || Number.isNaN(tax)) return null;
-    return gross - tax;
-  }, [actualForm.gross_interest, actualForm.tax_withheld]);
-
   const openRecordActual = (row) => {
     setEditingPaymentId(null);
     setScheduleContext(row);
+    setActualClientRequestId(newInterestClientRequestId());
     setActualForm({
       payment_date: row.expected_payout_date,
       gross_interest: String(row.expected_gross_interest ?? ''),
@@ -127,6 +126,7 @@ export default function FixedDepositDetail() {
   const openEditActual = (row, payment) => {
     setEditingPaymentId(payment.id);
     setScheduleContext(row);
+    setActualClientRequestId('');
     setActualForm({
       payment_date: payment.payment_date,
       gross_interest: String(payment.gross_interest ?? ''),
@@ -137,16 +137,16 @@ export default function FixedDepositDetail() {
     setActualModalOpen(true);
   };
 
-  const applyTenPercentTax = () => {
-    const gross = parseFloat(actualForm.gross_interest || '0');
-    if (Number.isNaN(gross) || gross <= 0) return;
-    setActualForm((prev) => ({
-      ...prev,
-      tax_withheld: (gross * 0.1).toFixed(2),
-    }));
+  const closeActualModal = () => {
+    setActualModalOpen(false);
+    setEditingPaymentId(null);
+    setScheduleContext(null);
+    setActualClientRequestId('');
+    setActualFormError('');
   };
 
-  const saveActual = async () => {
+  const saveActual = async (e) => {
+    if (e?.preventDefault) e.preventDefault();
     const gross = parseFloat(actualForm.gross_interest);
     const tax = parseFloat(actualForm.tax_withheld || '0');
     if (!actualForm.payment_date) {
@@ -174,6 +174,9 @@ export default function FixedDepositDetail() {
     if (actualForm.comment.trim()) {
       payload.comment = actualForm.comment.trim();
     }
+    if (!editingPaymentId) {
+      payload.client_request_id = actualClientRequestId || newInterestClientRequestId();
+    }
 
     setActualSaving(true);
     setActualFormError('');
@@ -183,12 +186,10 @@ export default function FixedDepositDetail() {
       } else {
         await createFixedDepositInterestPayment(fdId, payload);
       }
-      setActualModalOpen(false);
-      setEditingPaymentId(null);
-      setScheduleContext(null);
+      closeActualModal();
       loadData();
-    } catch (e) {
-      setActualFormError(e.message);
+    } catch (err) {
+      setActualFormError(err.message);
     } finally {
       setActualSaving(false);
     }
@@ -486,7 +487,7 @@ export default function FixedDepositDetail() {
       </section>
 
       {actualModalOpen ? (
-        <div className="fd-detail-modal-backdrop" role="presentation" onClick={() => setActualModalOpen(false)}>
+        <div className="fd-detail-modal-backdrop" role="presentation" onClick={closeActualModal}>
           <div
             className="fd-detail-modal"
             role="dialog"
@@ -494,78 +495,27 @@ export default function FixedDepositDetail() {
             aria-labelledby="fd-actual-modal-title"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 id="fd-actual-modal-title">
-              {editingPaymentId ? 'Edit actual interest credit' : 'Record actual interest credit'}
-            </h3>
-            {scheduleContext ? (
-              <p className="fd-detail__modal-hint">
-                Expected payout {scheduleContext.expected_payout_date} ·{' '}
-                {formatCurrency(scheduleContext.expected_gross_interest, currency)}
-              </p>
-            ) : null}
-            {actualFormError ? <WarningBanner severity="error" message={actualFormError} /> : null}
-            <div className="form-group">
-              <label htmlFor="fd-actual-date">Actual credited date</label>
-              <input
-                id="fd-actual-date"
-                type="date"
-                value={actualForm.payment_date}
-                onChange={(e) => setActualForm((p) => ({ ...p, payment_date: e.target.value }))}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="fd-actual-gross">Gross interest</label>
-              <input
-                id="fd-actual-gross"
-                type="number"
-                step="0.01"
-                min="0.01"
-                value={actualForm.gross_interest}
-                onChange={(e) => setActualForm((p) => ({ ...p, gross_interest: e.target.value }))}
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="fd-actual-tax">Tax withheld</label>
-              <div className="fd-detail__tax-row">
-                <input
-                  id="fd-actual-tax"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={actualForm.tax_withheld}
-                  onChange={(e) => setActualForm((p) => ({ ...p, tax_withheld: e.target.value }))}
-                />
-                <Button type="button" variant="secondary" size="sm" onClick={applyTenPercentTax}>
-                  Apply 10% tax
-                </Button>
-              </div>
-            </div>
-            <div className="form-group">
-              <label>Net credited</label>
-              <div className="fd-detail__net-readonly">
-                {netPreview != null ? formatCurrency(netPreview, currency) : '—'}
-              </div>
-            </div>
-            <div className="form-group">
-              <label htmlFor="fd-actual-note">Note</label>
-              <textarea
-                id="fd-actual-note"
-                rows={2}
-                value={actualForm.comment}
-                onChange={(e) => setActualForm((p) => ({ ...p, comment: e.target.value }))}
-              />
-            </div>
-            <p className="fd-detail__modal-hint">
-              Credited to {fd.bank_account_name} (FD funding bank account).
-            </p>
-            <div className="fd-detail-modal__actions">
-              <Button type="button" variant="secondary" onClick={() => setActualModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="button" onClick={saveActual} disabled={actualSaving}>
-                {actualSaving ? 'Saving…' : 'Save'}
-              </Button>
-            </div>
+            <FixedDepositInterestPaymentForm
+              title={
+                editingPaymentId ? 'Edit actual interest credit' : 'Record actual interest credit'
+              }
+              form={actualForm}
+              onChange={setActualForm}
+              onSubmit={saveActual}
+              onCancel={closeActualModal}
+              submitting={actualSaving}
+              error={actualFormError}
+              currency={currency}
+              bankAccountName={fd.bank_account_name}
+              suggested={
+                scheduleContext
+                  ? {
+                      expected_payout_date: scheduleContext.expected_payout_date,
+                      expected_gross_interest: scheduleContext.expected_gross_interest,
+                    }
+                  : null
+              }
+            />
           </div>
         </div>
       ) : null}

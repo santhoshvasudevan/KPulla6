@@ -487,6 +487,8 @@ class FixedDepositInterestPayment(models.Model):
         related_name="fixed_deposit_interest_payment",
     )
     comment = models.TextField(blank=True, default="")
+    # Stable client request identity for retry-safe create (#42). Null = legacy / no key.
+    client_request_id = models.CharField(max_length=64, null=True, blank=True)
     is_reversed = models.BooleanField(default=False)
     reversed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -511,6 +513,11 @@ class FixedDepositInterestPayment(models.Model):
             models.CheckConstraint(
                 condition=models.Q(net_interest__gte=0),
                 name="fd_interest_payments_net_non_negative",
+            ),
+            models.UniqueConstraint(
+                fields=["user", "client_request_id"],
+                condition=models.Q(client_request_id__isnull=False),
+                name="fd_interest_payments_user_client_request_id_uniq",
             ),
         ]
 
