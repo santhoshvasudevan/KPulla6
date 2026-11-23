@@ -463,6 +463,34 @@ describe('API Service', () => {
     );
   });
 
+  it('fetchFixedDepositPendingPayouts sends portfolio scope and status', async () => {
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => [] });
+    await api.fetchFixedDepositPendingPayouts({ portfolio_id: 3, status: 'all' });
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/fixed-deposit-pending-payouts?portfolio_id=3&status=all',
+      expect.objectContaining(defaultFetchOptions)
+    );
+  });
+
+  it('confirmFixedDepositPendingPayout posts to confirm endpoint', async () => {
+    const payload = {
+      payment_date: '2026-01-12',
+      gross_interest: '15000',
+      tax_withheld: '1500',
+      client_request_id: 'req-1',
+    };
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 4 }) });
+    await api.confirmFixedDepositPendingPayout(4, payload);
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/fixed-deposit-pending-payouts/4/confirm',
+      expect.objectContaining({
+        ...defaultFetchOptions,
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+    );
+  });
+
   it('cancelFixedDeposit posts to cancel endpoint', async () => {
     global.fetch.mockResolvedValueOnce({
       ok: true,

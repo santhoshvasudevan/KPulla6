@@ -96,7 +96,10 @@ Updates metadata; after opening, principal/bank/currency/portfolio are locked. I
 | `DELETE` | `/fixed-deposits/{id}` | Soft deactivate (legacy / no-ledger) |
 | `POST` | `/fixed-deposits/{id}/cancel` | Reverse opening debit |
 | `POST` | `/fixed-deposits/{id}/interest-payments` | Record interest (`client_request_id` optional for retry safety, #42) |
-| `POST` | `/fixed-deposits/{id}/settle` | Maturity settlement |
+| `POST` | `/fixed-deposits/{id}/settle` | Maturity settlement (`final_interest_pending` / `pending_expected_date` optional, #45) |
+| `POST` | `/fixed-deposits/{id}/renew` | Renewal (`final_interest_pending` / `pending_expected_date` optional, #45) |
+| `GET` | `/fixed-deposit-pending-payouts` | Scoped pending (or `status=confirmed\|all`) final payouts with originating term (#45) |
+| `POST` | `/fixed-deposit-pending-payouts/{id}/confirm` | Record actual payout; one linked bank credit; `client_request_id` for retry safety (#45) |
 
 ## Next
 

@@ -188,7 +188,7 @@ def _fixed_deposits_queryset(
     )
 
     qs = FixedDeposit.objects.filter(user=user).select_related(
-        "portfolio", "bank_account", "renewal_of"
+        "portfolio", "bank_account", "renewal_of", "pending_payout"
     )
     if active_only:
         qs = qs.filter(is_active=True)
@@ -235,7 +235,7 @@ def get_fixed_deposit(user: AbstractBaseUser, fd_id: int) -> FixedDeposit:
     successor = FixedDeposit.objects.filter(renewal_of_id=OuterRef("pk")).order_by("id")
     fd = (
         FixedDeposit.objects.filter(user=user, pk=fd_id)
-        .select_related("portfolio", "bank_account", "renewal_of")
+        .select_related("portfolio", "bank_account", "renewal_of", "pending_payout")
         .annotate(
             _has_renewal=Exists(successor),
             _next_term_id=Subquery(successor.values("id")[:1]),

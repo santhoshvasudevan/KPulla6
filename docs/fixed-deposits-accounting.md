@@ -45,7 +45,7 @@
 | Item | FD-TAX-1 outcome |
 |------|------------------|
 | **API** | `GET /api/v1/reports/fixed-deposit-interest` |
-| **Sources** | Interest payments (`is_reversed=false`); settlement final interest (non-zero; excludes renewal-linked settlement); renewal group interest (non-zero) |
+| **Sources** | Interest payments (`is_reversed=false`); settlement final interest (non-zero; excludes renewal-linked settlement); renewal group interest (non-zero); confirmed pending payouts (`PENDING_PAYOUT`, #45) |
 | **Exclusions** | Reversed payments; zero-interest settlement/renewal; `CANCELLED` FD rows |
 | **Semantics** | `gross_interest`, `tax_withheld`, `net_interest` as stored at source; optional `display_currency` conversion with date-aware FX + fill |
 | **Scope** | User-scoped; portfolio filter via existing scope params |
@@ -236,6 +236,7 @@ See **§ FD-ACC-8 performance/timeseries design** below for full detail.
 | **Model** | `FixedDepositRenewalGroup` — old/new FD, settlement, direct reinvest vs cash payout breakdown |
 | **Renew** | `POST /fixed-deposits/{id}/renew` — atomically settles old FD (`MATURED_SETTLED`), creates renewed FD (`renewal_of`, `ACTIVE`). **#43:** `old principal + net interest = new principal + cash payout`; bank credits only the cash payout (split into interest then principal legs). |
 | **Direct rollover** | Reinvested principal **does not** create bank movement; renewed FD **does not** create `FD_OPENING` debit |
+| **Pending final interest (#45)** | `final_interest_pending=true` on settle/renew records interest as a `FixedDepositPendingPayout` estimate on the completed term: settlement/renewal interest = 0, no interest bank credit, renew allocation `old principal = new principal + cash payout`. `POST /fixed-deposit-pending-payouts/{id}/confirm` atomically records actuals and posts one `FD_MATURITY_INTEREST` / `FD_CLOSURE_INTEREST` CREDIT (net > 0) on the actual date; retry-safe via `client_request_id`; mismatch stored as `discrepancy_status=OPEN` (resolve = #46) |
 | **Cash payout** | `cash_payout_amount` → `FD_MATURITY_PRINCIPAL` CREDIT; net final interest → `FD_MATURITY_INTEREST` CREDIT |
 | **Normal FD create** | `POST /fixed-deposits` still requires `FD_OPENING` bank debit (unchanged) |
 | **Portfolio** | Old settled FD excluded; new renewed FD principal included in Debt; bank cash still excluded |

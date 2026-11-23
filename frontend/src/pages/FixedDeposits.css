@@ -198,6 +198,10 @@
   margin-bottom: 0;
 }
 
+.fixed-deposits-page__pending-payouts {
+  margin-bottom: var(--space-3);
+}
+
 .fd-table__account {
   font-family: var(--font-metric);
   font-size: 0.8125rem;

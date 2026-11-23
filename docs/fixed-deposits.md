@@ -182,8 +182,10 @@ Use the action that matches the real-world event. These are **not** interchangea
 | View | Query | Includes | UI |
 |------|-------|----------|-----|
 | **Current** (default on Fixed Deposits page) | `lifecycle_view=current` | `ACTIVE` and `MATURED` (including matured awaiting settlement) | Edit / renew / settle / record interest |
-| **History** | `lifecycle_view=history` | `MATURED_SETTLED` and `CLOSED` | Read-only; **Renewed** label when a successor exists; previous/next term links |
+| **History** | `lifecycle_view=history` | `MATURED_SETTLED` and `CLOSED` | Read-only; **Renewed** label when a successor exists; previous/next term links; **Payout pending** badge + **Confirm payout** only when final interest is pending (#45) |
 | **Legacy (no filter)** | omit `lifecycle_view` | All soft-active rows (`is_active=true`) | Preserves existing API callers |
+
+**Pending final payouts (#45):** Settle and Renew have a **Final interest pending** checkbox with an optional expected date. Entered interest is stored as an estimate on the completed term — no bank credit, not realized interest, and excluded from renewal proceeds (`old principal = new principal + cash payout`). A **Pending maturity payouts** panel (both views, portfolio-scoped) lists open payouts with their originating term; **Confirm payout** records the actual date/gross/tax/net and posts one bank credit. A difference from the estimate is kept as an open discrepancy (review workflow: #46).
 
 Renewal does **not** clear `is_active` on the predecessor. Cancelled / soft-deactivated rows stay out of both views. Response fields: `lifecycle_view`, `is_renewed`, `next_term_id`, `renewal_of_id`. Value History still attributes each term’s principal through the day before settlement and the successor from its investment date.
 
@@ -204,7 +206,7 @@ Renewal does **not** clear `is_active` on the predecessor. Cancelled / soft-deac
 
 **Query:** `portfolio_scope` / `portfolio_id`, `start_date`, `end_date`, optional `display_currency`, `group_by` (`year`, `portfolio`, `bank`, `fd`, `source`, `none`) — JSON only; CSV ignores `group_by` (detail rows only).
 
-**Excludes:** reversed interest payments; zero-interest settlement/renewal rows; `CANCELLED` FD rows; renewal-linked settlement rows (renewal group used instead).
+**Excludes:** reversed interest payments; zero-interest settlement/renewal rows; `CANCELLED` FD rows; renewal-linked settlement rows (renewal group used instead); unconfirmed pending payout estimates. Confirmed pending payouts appear once as `PENDING_PAYOUT` rows on the originating term (#45).
 
 **UI (FD-TAX-1A / FD-TAX-2):** Fixed Deposits → **Interest & Tax** section — default date range = current calendar year; **Reset filters**; `group_by` includes **Bank account**; KPI cards (gross/tax/net/row count); grouped totals with readable labels; exclusion/disclaimer notes; FX and mixed-currency warnings near totals; improved empty state; **Export CSV** button (current filters; blob download).
 

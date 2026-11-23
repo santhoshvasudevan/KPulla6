@@ -22,6 +22,7 @@ export const SOURCE_LABELS = {
   INTEREST_PAYMENT: 'Interest payment',
   SETTLEMENT: 'Settlement',
   RENEWAL: 'Renewal',
+  PENDING_PAYOUT: 'Confirmed final payout',
 };
 
 export const GROUP_BY_OPTIONS = [

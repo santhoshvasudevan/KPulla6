@@ -12,6 +12,8 @@ from django.db.models import Q
 
 from debt.models import (
     FixedDepositInterestPayment,
+    FixedDepositPendingPayout,
+    FixedDepositPendingPayoutStatus,
     FixedDepositRenewalGroup,
     FixedDepositSettlement,
     FixedDepositStatus,
@@ -19,7 +21,7 @@ from debt.models import (
 from fx.lookup import convert_amount_with_fill
 from portfolios.scope import ResolvedPortfolioScope
 
-SourceType = Literal["INTEREST_PAYMENT", "SETTLEMENT", "RENEWAL"]
+SourceType = Literal["INTEREST_PAYMENT", "SETTLEMENT", "RENEWAL", "PENDING_PAYOUT"]
 GroupByCode = Literal["year", "portfolio", "bank", "fd", "source", "none"]
 
 FD_INTEREST_FX_WARNING = (
@@ -30,6 +32,7 @@ SOURCE_LABELS = {
     "INTEREST_PAYMENT": "Interest payment",
     "SETTLEMENT": "Settlement",
     "RENEWAL": "Renewal",
+    "PENDING_PAYOUT": "Confirmed final payout",
 }
 
 
@@ -286,7 +289,7 @@ def build_fixed_deposit_interest_report(
     display_currency: str | None = None,
     group_by: GroupByCode = "none",
 ) -> FixedDepositInterestReportResult:
-    """Aggregate FD interest/tax rows from payments, settlements, and renewals."""
+    """Aggregate FD interest/tax rows from payments, settlements, renewals, and confirmed payouts."""
     rows: list[dict] = []
 
     payment_qs = (
@@ -410,6 +413,42 @@ def build_fixed_deposit_interest_report(
         )
         row["reinvested_interest_amount"] = (
             float(reinvested_interest) if reinvested_interest is not None else None
+        )
+        rows.append(row)
+
+    # Pending estimates are not realized; only confirmed actuals report, once, on the
+    # originating term (settle/renew recorded zero interest for these terms).
+    payout_qs = (
+        FixedDepositPendingPayout.objects.filter(
+            user=user, status=FixedDepositPendingPayoutStatus.CONFIRMED
+        )
+        .select_related("fixed_deposit", "fixed_deposit__portfolio", "bank_account")
+        .filter(_exclude_cancelled())
+        .filter(_portfolio_filter(scope, "fixed_deposit"))
+    )
+    if start_date:
+        payout_qs = payout_qs.filter(payment_date__gte=start_date)
+    if end_date:
+        payout_qs = payout_qs.filter(payment_date__lte=end_date)
+
+    for payout in payout_qs.order_by("payment_date", "id"):
+        row = _row_base(
+            source_type="PENDING_PAYOUT",
+            source_id=payout.id,
+            row_date=payout.payment_date,
+            fd=payout.fixed_deposit,
+            bank=payout.bank_account,
+            currency=payout.currency,
+            gross=payout.gross_interest,
+            tax=payout.tax_withheld,
+            net=payout.net_interest,
+            comment=payout.comment,
+        )
+        row["discrepancy_status"] = payout.discrepancy_status
+        row["discrepancy_amount"] = (
+            float(payout.discrepancy_amount)
+            if payout.discrepancy_amount is not None
+            else None
         )
         rows.append(row)
 

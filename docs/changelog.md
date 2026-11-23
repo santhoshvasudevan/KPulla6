@@ -1,5 +1,13 @@
 # Changelog — KPulla6
 
+## 2026-11-22 — Pending FD maturity payouts (#45)
+
+- Settle and Renew accept **Final interest pending** (`final_interest_pending`, optional `pending_expected_date`). Entered interest becomes a suggestion on a new `FixedDepositPendingPayout` for the completed term: no bank credit, no realized interest, and excluded from renewal proceeds (`old principal = new principal + cash payout`).
+- New `GET /fixed-deposit-pending-payouts` (portfolio-scoped, with originating term) and `POST /fixed-deposit-pending-payouts/{id}/confirm`. Confirmation is atomic, posts exactly one linked maturity/closure interest credit on the actual date (net > 0), and is retry-safe via `client_request_id`; a second confirm returns **409**.
+- Mismatches never block confirmation; suggested and actual amounts are kept with `discrepancy_status=OPEN` and a signed `discrepancy_amount` (resolve workflow deferred to #46).
+- FD list/detail expose `pending_payout`; detail term/FY totals and the interest report count confirmed actuals once on the originating term (`PENDING_PAYOUT` source) and exclude pending estimates.
+- Fixed Deposits page: pending checkbox + expected date in Settle/Renew modals, a scoped **Pending maturity payouts** panel, and a **Payout pending** badge with **Confirm payout** on History terms (other History actions stay read-only). Migration `debt.0015_fd_pending_payout`.
+
 ## 2026-11-22 — Direct FD rollover allocation and maturity payouts (#43)
 
 - Direct renewal requires `old principal + final net interest = new principal + cash payout`. Bank cash is posted only for the cash payout (interest attributed first, then principal).

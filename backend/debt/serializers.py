@@ -9,6 +9,7 @@ from debt.models import (
     FixedDeposit,
     FixedDepositStatus,
     FixedDepositInterestPayment,
+    FixedDepositPendingPayout,
     FixedDepositSettlement,
     FixedDepositSettlementType,
     FixedDepositStatus,
@@ -26,6 +27,44 @@ from debt.bank_ledger_services import (
     movement_has_been_reversed,
 )
 from finance.fixed_deposits import COMPOUNDED_MATURITY
+
+
+def _optional_float(value):
+    return float(value) if value is not None else None
+
+
+def _optional_iso(value):
+    return value.isoformat() if value is not None else None
+
+
+def pending_payout_summary(pending: FixedDepositPendingPayout) -> dict:
+    """Compact pending/confirmed final payout block (#45); suggestions are estimates only."""
+    return {
+        "id": pending.id,
+        "fixed_deposit_id": pending.fixed_deposit_id,
+        "origin": pending.origin,
+        "status": pending.status,
+        "currency": pending.currency,
+        "expected_payout_date": _optional_iso(pending.expected_payout_date),
+        "suggested_gross_interest": _optional_float(pending.suggested_gross_interest),
+        "suggested_tax_withheld": _optional_float(pending.suggested_tax_withheld),
+        "suggested_net_interest": _optional_float(pending.suggested_net_interest),
+        "payment_date": _optional_iso(pending.payment_date),
+        "gross_interest": _optional_float(pending.gross_interest),
+        "tax_withheld": _optional_float(pending.tax_withheld),
+        "net_interest": _optional_float(pending.net_interest),
+        "cash_movement_id": pending.cash_movement_id,
+        "discrepancy_status": pending.discrepancy_status,
+        "discrepancy_amount": _optional_float(pending.discrepancy_amount),
+        "confirmed_at": _optional_iso(pending.confirmed_at),
+    }
+
+
+def fixed_deposit_pending_payout_or_none(fd: FixedDeposit) -> FixedDepositPendingPayout | None:
+    try:
+        return fd.pending_payout
+    except FixedDepositPendingPayout.DoesNotExist:
+        return None
 
 
 class BankAccountSerializer(serializers.ModelSerializer):
@@ -153,6 +192,7 @@ class FixedDepositSerializer(serializers.ModelSerializer):
     estimated_total_interest = serializers.SerializerMethodField()
     estimated_periodic_interest = serializers.SerializerMethodField()
     estimate_message = serializers.SerializerMethodField()
+    pending_payout = serializers.SerializerMethodField()
 
     class Meta:
         model = FixedDeposit
@@ -194,11 +234,16 @@ class FixedDepositSerializer(serializers.ModelSerializer):
             "has_opening_cash_movement",
             "opening_cash_movement_id",
             "portfolio_mismatch_warning",
+            "pending_payout",
             "is_active",
             "created_at",
             "updated_at",
         )
         read_only_fields = ("id", "is_active", "created_at", "updated_at")
+
+    def get_pending_payout(self, obj: FixedDeposit) -> dict | None:
+        pending = fixed_deposit_pending_payout_or_none(obj)
+        return pending_payout_summary(pending) if pending is not None else None
 
     def get_has_opening_cash_movement(self, obj: FixedDeposit) -> bool:
         return fixed_deposit_has_opening_cash_movement(obj.id)
@@ -745,6 +790,8 @@ class FixedDepositSettlementWriteSerializer(serializers.Serializer):
         max_digits=18, decimal_places=4, required=False, default=Decimal("0")
     )
     comment = serializers.CharField(required=False, allow_blank=True, default="")
+    final_interest_pending = serializers.BooleanField(required=False, default=False)
+    pending_expected_date = serializers.DateField(required=False, allow_null=True, default=None)
 
     def validate_principal_returned(self, value: Decimal | None) -> Decimal | None:
         if value is not None and value < 0:
@@ -769,6 +816,9 @@ class FixedDepositSettlementWriteSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"tax_withheld": "tax_withheld cannot exceed gross_interest."}
             )
+        _validate_pending_flags(attrs)
+        if attrs.get("final_interest_pending"):
+            return attrs
         net = gross - tax
         resolved_principal = principal if principal is not None else Decimal("0")
         if resolved_principal + net <= 0 and principal is not None:
@@ -776,6 +826,13 @@ class FixedDepositSettlementWriteSerializer(serializers.Serializer):
                 "At least one of principal_returned or net_interest must be greater than zero."
             )
         return attrs
+
+
+def _validate_pending_flags(attrs: dict) -> None:
+    if attrs.get("pending_expected_date") and not attrs.get("final_interest_pending"):
+        raise serializers.ValidationError(
+            {"pending_expected_date": "pending_expected_date requires final_interest_pending."}
+        )
 
 
 class FixedDepositCancelWriteSerializer(serializers.Serializer):
@@ -807,6 +864,8 @@ class FixedDepositRenewalWriteSerializer(serializers.Serializer):
     direct_reinvest_amount = serializers.DecimalField(
         max_digits=18, decimal_places=4, required=False, allow_null=True
     )
+    final_interest_pending = serializers.BooleanField(required=False, default=False)
+    pending_expected_date = serializers.DateField(required=False, allow_null=True, default=None)
 
     def validate_new_principal_amount(self, value: Decimal) -> Decimal:
         if value <= 0:
@@ -849,6 +908,7 @@ class FixedDepositRenewalWriteSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"tax_withheld": "tax_withheld cannot exceed gross_interest."}
             )
+        _validate_pending_flags(attrs)
         new_principal = attrs["new_principal_amount"]
         direct = attrs.get("direct_reinvest_amount")
         if direct is not None and direct != new_principal:
@@ -865,5 +925,65 @@ class FixedDepositRenewalWriteSerializer(serializers.Serializer):
         if attrs["new_maturity_date"] <= investment_date:
             raise serializers.ValidationError(
                 {"new_maturity_date": "new_maturity_date must be after new_investment_date."}
+            )
+        return attrs
+
+
+def fixed_deposit_pending_payout_payload(pending: FixedDepositPendingPayout) -> dict:
+    """Pending payout with originating term context for scoped lists (#45)."""
+    fd = pending.fixed_deposit
+    body = pending_payout_summary(pending)
+    body.update(
+        {
+            "portfolio_id": fd.portfolio_id,
+            "portfolio_name": fd.portfolio.name,
+            "bank_account_id": pending.bank_account_id,
+            "bank_account_name": pending.bank_account.name,
+            "institution_name": fd.institution_name,
+            "deposit_account_number": fd.deposit_account_number,
+            "fixed_deposit_status": fd.status,
+            "maturity_date": fd.maturity_date.isoformat(),
+            "principal_amount": float(fd.principal_amount),
+            "client_request_id": pending.client_request_id or None,
+            "comment": pending.comment or None,
+            "resolution_comment": pending.resolution_comment or None,
+            "resolved_at": _optional_iso(pending.resolved_at),
+            "created_at": pending.created_at.isoformat(),
+            "updated_at": pending.updated_at.isoformat(),
+        }
+    )
+    return body
+
+
+class FixedDepositPendingPayoutConfirmSerializer(serializers.Serializer):
+    payment_date = serializers.DateField()
+    gross_interest = serializers.DecimalField(max_digits=18, decimal_places=4)
+    tax_withheld = serializers.DecimalField(
+        max_digits=18, decimal_places=4, required=False, default=Decimal("0")
+    )
+    comment = serializers.CharField(required=False, allow_blank=True, default="")
+    client_request_id = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True, max_length=64, default=None
+    )
+
+    def validate_gross_interest(self, value: Decimal) -> Decimal:
+        if value <= 0:
+            raise serializers.ValidationError("gross_interest must be greater than zero.")
+        return value
+
+    def validate_tax_withheld(self, value: Decimal) -> Decimal:
+        if value < 0:
+            raise serializers.ValidationError("tax_withheld must be zero or positive.")
+        return value
+
+    def validate_client_request_id(self, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+    def validate(self, attrs):
+        if attrs.get("tax_withheld", Decimal("0")) > attrs["gross_interest"]:
+            raise serializers.ValidationError(
+                {"tax_withheld": "tax_withheld cannot exceed gross_interest."}
             )
         return attrs

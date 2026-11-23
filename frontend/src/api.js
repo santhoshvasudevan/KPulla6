@@ -1021,6 +1021,25 @@ export async function fetchFixedDepositSettlements(fdId) {
   return fetchWithHandling(`/fixed-deposits/${fdId}/settlements`);
 }
 
+/** GET /api/v1/fixed-deposit-pending-payouts — scoped pending final payouts (#45).
+ * Optional scopeParams.status: 'pending' (default) | 'confirmed' | 'all'.
+ */
+export async function fetchFixedDepositPendingPayouts(scopeParams = null) {
+  const params = withFdScopeParams({}, scopeParams);
+  if (scopeParams?.status) {
+    params.set('status', String(scopeParams.status));
+  }
+  return fetchWithHandling(`/fixed-deposit-pending-payouts?${params.toString()}`);
+}
+
+/** POST /api/v1/fixed-deposit-pending-payouts/{id}/confirm — records actual payout */
+export async function confirmFixedDepositPendingPayout(pendingId, payload) {
+  return fetchWithHandling(`/fixed-deposit-pending-payouts/${pendingId}/confirm`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 /** Build query params for FD interest report JSON/CSV endpoints. */
 export function buildFixedDepositInterestReportParams(query = {}) {
   const params = new URLSearchParams();

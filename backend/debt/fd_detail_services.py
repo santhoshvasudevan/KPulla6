@@ -11,7 +11,13 @@ from django.contrib.auth.models import AbstractBaseUser
 
 from debt.fd_maturity_services import resolve_maturity_display
 from debt.interest_payment_services import list_fixed_deposit_interest_payments
-from debt.models import FixedDeposit, FixedDepositInterestPayment
+from debt.models import (
+    FixedDeposit,
+    FixedDepositInterestPayment,
+    FixedDepositPendingPayout,
+    FixedDepositPendingPayoutStatus,
+)
+from debt.serializers import pending_payout_summary
 from debt.services import get_fixed_deposit
 from finance.fd_interest_schedule import (
     ExpectedScheduleRow,
@@ -68,11 +74,18 @@ def _decimal_to_json(value: Decimal) -> float:
     return float(value)
 
 
-def _payment_summary(payments: list[FixedDepositInterestPayment]) -> dict[str, Decimal]:
+def _payment_summary(
+    payments: list[FixedDepositInterestPayment],
+    confirmed_payout: FixedDepositPendingPayout | None = None,
+) -> dict[str, Decimal]:
     active = [p for p in payments if not p.is_reversed]
     gross = _decimal_sum([p.gross_interest for p in active])
     tax = _decimal_sum([p.tax_withheld for p in active])
     net = _decimal_sum([p.net_interest for p in active])
+    if confirmed_payout is not None:
+        gross += confirmed_payout.gross_interest
+        tax += confirmed_payout.tax_withheld
+        net += confirmed_payout.net_interest
     return {
         "actual_gross_interest": gross,
         "tax_withheld": tax,
@@ -93,6 +106,7 @@ def _fy_summary(
     schedule_rows: list[ExpectedScheduleRow],
     payments: list[FixedDepositInterestPayment],
     fy_filter: FinancialYearFilter,
+    confirmed_payout: FixedDepositPendingPayout | None = None,
 ) -> dict[str, Any] | None:
     if fy_filter.fy_start is None or fy_filter.fy_end is None:
         return None
@@ -113,6 +127,12 @@ def _fy_summary(
     gross_fy = _decimal_sum([p.gross_interest for p in actual_fy_payments])
     tax_fy = _decimal_sum([p.tax_withheld for p in actual_fy_payments])
     net_fy = _decimal_sum([p.net_interest for p in actual_fy_payments])
+    if confirmed_payout is not None and date_in_range(
+        confirmed_payout.payment_date, fy_filter.fy_start, fy_filter.fy_end
+    ):
+        gross_fy += confirmed_payout.gross_interest
+        tax_fy += confirmed_payout.tax_withheld
+        net_fy += confirmed_payout.net_interest
 
     return {
         "financial_year": fy_filter.label,
@@ -171,6 +191,10 @@ def _serialize_schedule_row(
     else:
         payload["matched_payment"] = None
     return payload
+
+
+def _pending_payout_for(fd: FixedDeposit) -> FixedDepositPendingPayout | None:
+    return FixedDepositPendingPayout.objects.filter(fixed_deposit=fd).first()
 
 
 def _serialize_detailed_calculation(fd: FixedDeposit) -> dict[str, Any]:
@@ -235,7 +259,15 @@ def build_fixed_deposit_detail(
 
     estimate = resolve_maturity_display(fd)
     term_schedule = _schedule_summary(schedule_rows)
-    term_actual = _payment_summary(payments)
+    pending_payout = _pending_payout_for(fd)
+    confirmed_payout = (
+        pending_payout
+        if pending_payout is not None
+        and pending_payout.status == FixedDepositPendingPayoutStatus.CONFIRMED
+        else None
+    )
+    # Pending estimates stay outside actual totals; confirmed actuals count once here.
+    term_actual = _payment_summary(payments, confirmed_payout)
     warnings: list[str] = []
     if estimate.get("maturity_value_warning"):
         warnings.append(estimate["maturity_value_warning"])
@@ -267,6 +299,10 @@ def build_fixed_deposit_detail(
             schedule_rows=schedule_rows,
             payments=payments,
             fy_filter=fy_filter,
+            confirmed_payout=confirmed_payout,
+        ),
+        "pending_payout": (
+            pending_payout_summary(pending_payout) if pending_payout is not None else None
         ),
         "term_totals": {
             "expected_gross_interest": _decimal_to_json(term_schedule["expected_gross_interest"]),

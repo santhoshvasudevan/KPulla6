@@ -13,12 +13,19 @@ from django.db import transaction as db_transaction
 from debt.bank_ledger_services import create_fd_settlement_cash_movement
 from debt.models import (
     FixedDeposit,
+    FixedDepositPendingPayout,
+    FixedDepositPendingPayoutOrigin,
     FixedDepositRenewalGroup,
     FixedDepositSettlement,
     FixedDepositSettlementType,
     FixedDepositStatus,
     SETTLEMENT_BLOCKED_FD_STATUSES,
     SETTLEMENT_ELIGIBLE_FD_STATUSES,
+)
+from debt.pending_payout_services import (
+    PendingPayoutValidationError,
+    create_pending_payout,
+    resolve_suggested_payout,
 )
 from debt.services import FixedDepositNotFoundError, create_fixed_deposit, get_fixed_deposit
 from finance.fd_renewal_allocation import RenewalAllocation, allocate_renewal_proceeds
@@ -36,6 +43,7 @@ class RenewalResult:
     settlement: FixedDepositSettlement
     cash_movement_ids: list[int]
     allocation: RenewalAllocation
+    pending_payout: FixedDepositPendingPayout | None = None
 
 
 def _validate_fd_for_renewal(fd: FixedDeposit) -> None:
@@ -88,9 +96,13 @@ def renew_fixed_deposit(
     tax_withheld: Decimal = Decimal("0"),
     cash_payout_amount: Decimal = Decimal("0"),
     direct_reinvest_amount: Decimal | None = None,
+    final_interest_pending: bool = False,
+    pending_expected_date: date | None = None,
 ) -> RenewalResult:
     old_fd = get_fixed_deposit(user, fd_id)
     _validate_fd_for_renewal(old_fd)
+    if pending_expected_date is not None and not final_interest_pending:
+        raise RenewalValidationError("pending_expected_date requires final_interest_pending.")
 
     if new_maturity_date <= new_investment_date:
         raise RenewalValidationError("new_maturity_date must be after new_investment_date.")
@@ -108,6 +120,15 @@ def renew_fixed_deposit(
         )
 
     old_principal = old_fd.principal_amount
+    suggestion = None
+    if final_interest_pending:
+        # Pending interest is excluded from proceeds: old principal = new principal + payout.
+        try:
+            suggestion = resolve_suggested_payout(gross_interest, tax_withheld)
+        except PendingPayoutValidationError as exc:
+            raise RenewalValidationError(str(exc)) from exc
+        gross_interest = Decimal("0")
+        tax_withheld = Decimal("0")
     net_interest = _validate_interest_inputs(
         gross_interest=gross_interest,
         tax_withheld=tax_withheld,
@@ -226,6 +247,20 @@ def renew_fixed_deposit(
             exc.messages[0] if exc.messages else str(exc)
         ) from exc
 
+    pending_payout = None
+    if final_interest_pending:
+        try:
+            pending_payout = create_pending_payout(
+                user,
+                old_fd,
+                origin=FixedDepositPendingPayoutOrigin.RENEWAL,
+                expected_payout_date=pending_expected_date,
+                suggestion=suggestion,
+                comment=note,
+            )
+        except PendingPayoutValidationError as exc:
+            raise RenewalValidationError(str(exc)) from exc
+
     return RenewalResult(
         renewal_group=renewal_group,
         old_fixed_deposit=old_fd,
@@ -233,4 +268,5 @@ def renew_fixed_deposit(
         settlement=settlement,
         cash_movement_ids=cash_movement_ids,
         allocation=allocation,
+        pending_payout=pending_payout,
     )

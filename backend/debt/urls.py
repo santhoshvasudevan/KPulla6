@@ -17,6 +17,9 @@ from debt.views import (
     FixedDepositListCreateView,
     FixedDepositMaturityEstimateView,
     FixedDepositMarkMaturedView,
+    FixedDepositPendingPayoutConfirmView,
+    FixedDepositPendingPayoutDetailView,
+    FixedDepositPendingPayoutListView,
     FixedDepositSettleView,
     FixedDepositRenewView,
     FixedDepositCancelView,
@@ -117,5 +120,20 @@ urlpatterns = [
         "fixed-deposit-settlements/<int:settlement_id>",
         FixedDepositSettlementDetailView.as_view(),
         name="fixed-deposit-settlement-detail",
+    ),
+    path(
+        "fixed-deposit-pending-payouts",
+        FixedDepositPendingPayoutListView.as_view(),
+        name="fixed-deposit-pending-payout-list",
+    ),
+    path(
+        "fixed-deposit-pending-payouts/<int:pending_id>",
+        FixedDepositPendingPayoutDetailView.as_view(),
+        name="fixed-deposit-pending-payout-detail",
+    ),
+    path(
+        "fixed-deposit-pending-payouts/<int:pending_id>/confirm",
+        FixedDepositPendingPayoutConfirmView.as_view(),
+        name="fixed-deposit-pending-payout-confirm",
     ),
 ]
