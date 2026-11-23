@@ -1069,21 +1069,6 @@ export default function FixedDeposits() {
       setRenewalFormError('Cash payout amount must be zero or positive.');
       return;
     }
-    const renewalPending = renewalForm.final_interest_pending;
-    const oldPrincipal = parseFloat(renewalFd?.principal_amount);
-    const net = renewalPending ? 0 : gross - tax;
-    if (
-      Number.isFinite(oldPrincipal) &&
-      Number.isFinite(net) &&
-      Math.abs(oldPrincipal + net - (principal + payout)) > 0.005
-    ) {
-      setRenewalFormError(
-        renewalPending
-          ? `Inconsistent allocation: pending interest cannot be reinvested or paid out now. Old principal (${oldPrincipal}) must equal new principal (${principal}) + cash payout (${payout}).`
-          : `Inconsistent allocation: old principal (${oldPrincipal}) + net interest (${net}) must equal new principal (${principal}) + cash payout (${payout}).`
-      );
-      return;
-    }
     if (!renewalForm.renewal_date) {
       setRenewalFormError('Renewal date is required.');
       return;
@@ -1110,7 +1095,7 @@ export default function FixedDeposits() {
       tax_withheld: renewalForm.tax_withheld || '0',
       cash_payout_amount: renewalForm.cash_payout_amount || '0',
     };
-    if (renewalPending) {
+    if (renewalForm.final_interest_pending) {
       payload.final_interest_pending = true;
       payload.pending_expected_date = renewalForm.pending_expected_date || null;
     }

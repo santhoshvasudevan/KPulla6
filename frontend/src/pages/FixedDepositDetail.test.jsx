@@ -108,7 +108,63 @@ describe('FixedDepositDetail page', () => {
     expect(screen.getAllByText('HDFC').length).toBeGreaterThan(0);
     expect(screen.getAllByText('FD-001').length).toBeGreaterThan(0);
     expect(screen.getAllByText(/expected total interest/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/net interest received/i)).toBeInTheDocument();
+    expect(screen.getByText(/total net interest/i)).toBeInTheDocument();
+  });
+
+  it('shows interest paid to bank and reinvested from term totals', async () => {
+    api.fetchFixedDepositDetail.mockResolvedValue({
+      ...detailPayload,
+      term_totals: {
+        ...detailPayload.term_totals,
+        actual_gross_interest: 5000,
+        tax_withheld: 500,
+        actual_net_interest: 4500,
+        interest_cash_amount: 2500,
+        reinvested_interest_amount: 2000,
+      },
+    });
+    renderDetail();
+    const paid = await screen.findByTestId('fd-detail-interest-paid');
+    const reinvested = screen.getByTestId('fd-detail-interest-reinvested');
+    expect(within(paid).getByText(/2,500/)).toBeInTheDocument();
+    expect(within(reinvested).getByText(/2,000/)).toBeInTheDocument();
+    expect(screen.queryByTestId('fd-detail-interest-paid-unavailable')).not.toBeInTheDocument();
+  });
+
+  it('shows Unavailable for unknown legacy renewal split, distinct from zero', async () => {
+    api.fetchFixedDepositDetail.mockResolvedValue({
+      ...detailPayload,
+      term_totals: {
+        ...detailPayload.term_totals,
+        actual_net_interest: 4500,
+        interest_cash_amount: null,
+        reinvested_interest_amount: null,
+      },
+    });
+    renderDetail();
+    expect(await screen.findByTestId('fd-detail-interest-paid-unavailable')).toHaveTextContent(
+      'Unavailable'
+    );
+    expect(screen.getByTestId('fd-detail-interest-reinvested-unavailable')).toHaveTextContent(
+      'Unavailable'
+    );
+  });
+
+  it('shows confirmed zero bank payout for full rollover', async () => {
+    api.fetchFixedDepositDetail.mockResolvedValue({
+      ...detailPayload,
+      term_totals: {
+        ...detailPayload.term_totals,
+        actual_net_interest: 4500,
+        interest_cash_amount: 0,
+        reinvested_interest_amount: 4500,
+      },
+    });
+    renderDetail();
+    const paid = await screen.findByTestId('fd-detail-interest-paid');
+    expect(screen.queryByTestId('fd-detail-interest-paid-unavailable')).not.toBeInTheDocument();
+    expect(within(paid).getByText(/0/)).toBeInTheDocument();
+    expect(within(screen.getByTestId('fd-detail-interest-reinvested')).getByText(/4,500/)).toBeInTheDocument();
   });
 
   it('renders FY filter and schedule table', async () => {
@@ -247,5 +303,26 @@ describe('FixedDepositDetail page', () => {
         financial_year: '2024-25',
       });
     });
+  });
+
+  it('FY summary shows paid and reinvested split amounts', async () => {
+    api.fetchFixedDepositDetail.mockResolvedValue({
+      ...detailPayload,
+      financial_year_summary: {
+        financial_year: '2025-26',
+        expected_gross_interest_fy: 0,
+        actual_gross_interest_fy: 5000,
+        tax_withheld_fy: 500,
+        actual_net_interest_fy: 4500,
+        interest_cash_amount_fy: 2500,
+        reinvested_interest_amount_fy: 2000,
+      },
+    });
+    renderDetail();
+    const fy = await screen.findByTestId('fd-detail-fy-summary');
+    expect(fy).toHaveTextContent(/paid to bank/i);
+    expect(fy).toHaveTextContent(/2,500/);
+    expect(fy).toHaveTextContent(/reinvested/i);
+    expect(fy).toHaveTextContent(/2,000/);
   });
 });

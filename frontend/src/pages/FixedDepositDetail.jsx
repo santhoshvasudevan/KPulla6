@@ -281,9 +281,44 @@ export default function FixedDepositDetail() {
           value={<CurrencyValue value={termTotals.tax_withheld ?? 0} currency={currency} />}
         />
         <KpiCard
-          label="Net interest received"
+          label="Total net interest"
           value={<CurrencyValue value={termTotals.actual_net_interest ?? 0} currency={currency} />}
+          helperText="Confirmed interest for this term (cash + reinvested)"
         />
+        <div data-testid="fd-detail-interest-paid">
+          <KpiCard
+            label="Interest paid to bank"
+            value={
+              termTotals.interest_cash_amount == null ? (
+                <span data-testid="fd-detail-interest-paid-unavailable">Unavailable</span>
+              ) : (
+                <CurrencyValue value={termTotals.interest_cash_amount} currency={currency} />
+              )
+            }
+            helperText={
+              termTotals.interest_cash_amount == null
+                ? 'Legacy renewal split unknown'
+                : 'Cash credited to the linked bank account'
+            }
+          />
+        </div>
+        <div data-testid="fd-detail-interest-reinvested">
+          <KpiCard
+            label="Interest reinvested"
+            value={
+              termTotals.reinvested_interest_amount == null ? (
+                <span data-testid="fd-detail-interest-reinvested-unavailable">Unavailable</span>
+              ) : (
+                <CurrencyValue value={termTotals.reinvested_interest_amount} currency={currency} />
+              )
+            }
+            helperText={
+              termTotals.reinvested_interest_amount == null
+                ? 'Legacy renewal split unknown'
+                : 'Retained in a renewed principal'
+            }
+          />
+        </div>
         <KpiCard
           label={compounded ? 'Expected maturity value' : 'Principal at maturity'}
           value={
@@ -352,13 +387,21 @@ export default function FixedDepositDetail() {
           </select>
         </div>
         {fySummary ? (
-          <div className="fd-detail__fy-summary">
+          <div className="fd-detail__fy-summary" data-testid="fd-detail-fy-summary">
             <p>
               FY {fySummary.financial_year}: expected{' '}
               {formatCurrency(fySummary.expected_gross_interest_fy, currency)} · actual{' '}
               {formatCurrency(fySummary.actual_gross_interest_fy, currency)} · tax{' '}
               {formatCurrency(fySummary.tax_withheld_fy, currency)} · net{' '}
               {formatCurrency(fySummary.actual_net_interest_fy, currency)}
+              {' · paid to bank '}
+              {fySummary.interest_cash_amount_fy == null
+                ? 'Unavailable'
+                : formatCurrency(fySummary.interest_cash_amount_fy, currency)}
+              {' · reinvested '}
+              {fySummary.reinvested_interest_amount_fy == null
+                ? 'Unavailable'
+                : formatCurrency(fySummary.reinvested_interest_amount_fy, currency)}
             </p>
           </div>
         ) : null}

@@ -230,7 +230,7 @@ Related: [frontend-design.md](./frontend-design.md) (tokens, components, color s
 | Section | Layout |
 |---------|--------|
 | **Holdings table** | Clickable data row → detail page; action strip below (stopPropagation) |
-| **Detail page** | Breadcrumb, KPI strip, FD details card, FY filter, expected schedule table, detailed calculation, Record/Edit actual modal with 10% tax shortcut |
+| **Detail page** | Breadcrumb, KPI strip (including total net / paid to bank / reinvested), FD details card, FY filter, expected schedule table, detailed calculation, Record/Edit actual modal with 10% tax shortcut |
 
 | Section | Layout |
 |---------|--------|

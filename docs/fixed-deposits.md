@@ -123,6 +123,8 @@ Approved decisions (FD-ACC-0.1): see accounting doc § Approved product decision
 | **Actual credits** | Shared form from list row or schedule (#42); user-recorded `FixedDepositInterestPayment`; creates bank `FD_INTEREST` CREDIT for net amount when positive; optional `client_request_id` makes retries idempotent |
 | **Tax withheld** | Per payment; net credited = gross − tax |
 | **Indian FY filter** | April–March; `financial_year=2025-26` or `fy_start`/`fy_end` |
+| **Maturity interest** | Confirmed settlement / renewal interest (and confirmed delayed payouts) counted once on the originating term; pending estimates excluded from actuals |
+| **Paid vs reinvested** | Detail KPIs and interest report show `interest_cash_amount` / `reinvested_interest_amount` (Unavailable when null; distinct from confirmed zero) |
 | **Edit actual** | `PATCH /fixed-deposit-interest-payments/{id}` updates payment + linked cash movement |
 | **Estimates** | Not settlement, not tax advice, not auto interest accrual |
 

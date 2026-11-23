@@ -1008,7 +1008,7 @@ describe('FixedDeposits page', () => {
     });
   });
 
-  it('renewal with final interest pending excludes estimate from allocation', async () => {
+  it('renewal with final interest pending submits decimal strings to backend', async () => {
     api.renewFixedDeposit.mockResolvedValueOnce({
       renewal_id: 3,
       old_fixed_deposit: { id: 1, status: 'MATURED_SETTLED' },
@@ -1027,14 +1027,6 @@ describe('FixedDeposits page', () => {
     fireEvent.change(screen.getByLabelText(/gross interest/i), { target: { value: '5000' } });
     fireEvent.change(screen.getByLabelText(/tax withheld/i), { target: { value: '500' } });
     fireEvent.click(screen.getByLabelText(/final interest pending/i));
-
-    fireEvent.change(screen.getByLabelText(/new principal amount/i), {
-      target: { value: '104500' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /record renewal/i }));
-    expect(screen.getByText(/pending interest cannot be reinvested or paid out now/i)).toBeInTheDocument();
-    expect(api.renewFixedDeposit).not.toHaveBeenCalled();
-
     fireEvent.change(screen.getByLabelText(/new principal amount/i), {
       target: { value: '100000' },
     });
@@ -1050,6 +1042,34 @@ describe('FixedDeposits page', () => {
         })
       );
     });
+  });
+
+  it('surfaces backend allocation error without closing the renewal form', async () => {
+    api.renewFixedDeposit.mockRejectedValueOnce(
+      new api.FixedDepositApiError(
+        'Inconsistent renewal allocation: old principal (100000) + net interest (4500) = 104500, but new principal (100000) + cash payout (0) = 100000.'
+      )
+    );
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /^renew$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^renew$/i }));
+    fireEvent.change(screen.getByLabelText(/new deposit account number/i), {
+      target: { value: 'FD-RENEW-BAD' },
+    });
+    fireEvent.change(screen.getByLabelText(/new maturity date/i), {
+      target: { value: '2028-01-01' },
+    });
+    fireEvent.change(screen.getByLabelText(/gross interest/i), { target: { value: '5000' } });
+    fireEvent.change(screen.getByLabelText(/tax withheld/i), { target: { value: '500' } });
+    fireEvent.change(screen.getByLabelText(/cash payout amount/i), { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: /record renewal/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Inconsistent renewal allocation/i)).toBeInTheDocument();
+    });
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByLabelText(/gross interest/i).value).toBe('5000');
+    expect(screen.getByLabelText(/new deposit account number/i).value).toBe('FD-RENEW-BAD');
   });
 
   it('history term with pending payout shows badge and confirm entry point', async () => {

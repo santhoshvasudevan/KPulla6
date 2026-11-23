@@ -269,6 +269,11 @@ describe('FixedDepositInterestReport', () => {
           source_type: 'RENEWAL',
           source_id: 3,
           date: '2024-09-01',
+          interest_cash_amount: 2500,
+          reinvested_interest_amount: 2000,
+          net_interest: 4500,
+          gross_interest: 5000,
+          tax_withheld: 500,
         },
       ],
       totals: {
@@ -290,6 +295,70 @@ describe('FixedDepositInterestReport', () => {
     expect(screen.getByText('Row count')).toBeInTheDocument();
     expect(screen.getByText('Bank / Institution')).toBeInTheDocument();
     expect(screen.getByText('FD account')).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /paid to bank/i })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /reinvested/i })).toBeInTheDocument();
+  });
+
+  it('shows paid/reinvested split for renewals and Unavailable for legacy unknown', async () => {
+    api.fetchFixedDepositInterestReport.mockResolvedValueOnce({
+      rows: [
+        {
+          ...sampleRow,
+          source_type: 'RENEWAL',
+          source_id: 10,
+          deposit_account_number: 'FD-PARTIAL',
+          gross_interest: 5000,
+          tax_withheld: 500,
+          net_interest: 4500,
+          interest_cash_amount: 2500,
+          reinvested_interest_amount: 2000,
+        },
+        {
+          ...sampleRow,
+          source_type: 'RENEWAL',
+          source_id: 11,
+          deposit_account_number: 'FD-FULL',
+          gross_interest: 5000,
+          tax_withheld: 500,
+          net_interest: 4500,
+          interest_cash_amount: 0,
+          reinvested_interest_amount: 4500,
+        },
+        {
+          ...sampleRow,
+          source_type: 'RENEWAL',
+          source_id: 12,
+          deposit_account_number: 'FD-LEGACY',
+          gross_interest: 5000,
+          tax_withheld: 500,
+          net_interest: 4500,
+          interest_cash_amount: null,
+          reinvested_interest_amount: null,
+        },
+      ],
+      totals: {
+        gross_interest: 15000,
+        tax_withheld: 1500,
+        net_interest: 13500,
+        currency: 'INR',
+        display_currency: 'INR',
+        row_count: 3,
+        fx_status: 'ok',
+      },
+      grouped_totals: [],
+      warnings: [],
+    });
+    renderReport();
+    expect(await screen.findByText('FD-PARTIAL')).toBeInTheDocument();
+    expect(screen.getByText(/2,500/)).toBeInTheDocument();
+    expect(screen.getByText(/2,000/)).toBeInTheDocument();
+    // Legacy unknown split → Unavailable (distinct from full-rollover confirmed ₹0)
+    expect(screen.getByTestId('fd-split-unavailable-interest_cash_amount')).toBeInTheDocument();
+    expect(screen.getByTestId('fd-split-unavailable-reinvested_interest_amount')).toBeInTheDocument();
+    const table = screen.getByRole('table');
+    expect(within(table).getAllByText('Unavailable').length).toBe(2);
+    // Full rollover row keeps numeric zero bank payout (not Unavailable)
+    expect(within(table).getByText('FD-FULL')).toBeInTheDocument();
   });
 
   it('renders Export CSV button and helper text', async () => {

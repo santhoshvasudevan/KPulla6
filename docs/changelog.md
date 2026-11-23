@@ -1,5 +1,11 @@
 # Changelog — KPulla6
 
+## 2026-11-23 — FD detail maturity interest and renewal split reporting (#43 review)
+
+- `GET /fixed-deposits/{id}/detail` term totals and financial-year summary include confirmed maturity settlement / renewal interest on the originating term once (event date drives FY attribution). Pending estimates stay out of actuals; confirmed delayed payouts remain once-only.
+- Detail and interest-report UIs show **Interest paid to bank** and **Interest reinvested** from backend `interest_cash_amount` / `reinvested_interest_amount` (null → Unavailable, distinct from confirmed zero). Total net interest remains cash + reinvested.
+- Renewal form no longer client-checks allocation with floating-point tolerance; submits decimal strings and surfaces the backend allocation error without closing the form.
+
 ## 2026-11-22 — Read-only FD renewal audit (#44)
 
 - New `python manage.py audit_fd_renewals [--user-id N] [--json]` and `GET /api/v1/reports/fixed-deposit-renewal-audit` (owner-scoped, `portfolio_id` / `portfolio_scope`, optional `start_date` / `end_date`). Each recorded renewal is `CONSISTENT`, `INCONSISTENT` (recorded data contradicts the #43 allocation rules, settlement, or linked bank credits), or `INCOMPLETE` (missing or ambiguous evidence such as pending final interest, an unreviewed payout discrepancy, or a payout with no linked credit), with a reason per finding, reviewable totals, and term references.
