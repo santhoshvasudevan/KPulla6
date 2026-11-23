@@ -117,7 +117,7 @@ def test_renewal_does_not_double_count_on_renewal_date(api_client, seeded, test_
     portfolio = ensure_default_portfolio(test_user)
     bank = _bank(test_user)
     fd = _create_fd(test_user, portfolio.id, bank.id)
-    api_client.post(
+    renew = api_client.post(
         f"/api/v1/fixed-deposits/{fd.id}/renew",
         {
             "renewal_date": "2026-01-01",
@@ -127,9 +127,13 @@ def test_renewal_does_not_double_count_on_renewal_date(api_client, seeded, test_
             "new_interest_payout_frequency": "QUARTERLY",
             "new_investment_date": "2026-01-01",
             "new_maturity_date": "2028-01-01",
+            "gross_interest": 20000,
+            "tax_withheld": 0,
+            "cash_payout_amount": 0,
         },
         format="json",
     )
+    assert renew.status_code == 201
     values = _perf_map(api_client)
     assert values.get("2025-12-31") == pytest.approx(100000.0, rel=1e-6)
     assert values.get("2026-01-01") == pytest.approx(120000.0, rel=1e-6)

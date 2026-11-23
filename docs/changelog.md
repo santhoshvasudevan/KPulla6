@@ -1,5 +1,11 @@
 # Changelog — KPulla6
 
+## 2026-11-22 — Direct FD rollover allocation and maturity payouts (#43)
+
+- Direct renewal requires `old principal + final net interest = new principal + cash payout`. Bank cash is posted only for the cash payout (interest attributed first, then principal).
+- Full rollover reinvests interest with no bank credit; principal-only rollover plus interest payout posts the interest credit once. Inconsistent allocations fail atomically.
+- Renewal API/report responses expose `interest_cash_amount` and `reinvested_interest_amount`.
+
 ## 2026-11-22 — Unify periodic FD interest entry (#42)
 
 - Shared actual-payment form for Fixed Deposits list row and detail schedule; forecast amounts stay display-only until Save.

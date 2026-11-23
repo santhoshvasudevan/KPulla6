@@ -378,20 +378,40 @@ def build_fixed_deposit_interest_report(
 
     for renewal in renewal_qs.order_by("renewal_date", "id"):
         fd = renewal.old_fixed_deposit
-        rows.append(
-            _row_base(
-                source_type="RENEWAL",
-                source_id=renewal.id,
-                row_date=renewal.renewal_date,
-                fd=fd,
-                bank=fd.bank_account,
-                currency=renewal.currency,
-                gross=renewal.gross_interest,
-                tax=renewal.tax_withheld,
-                net=renewal.net_interest,
-                comment=renewal.comment,
+        from finance.fd_renewal_allocation import allocate_renewal_proceeds
+
+        try:
+            allocation = allocate_renewal_proceeds(
+                old_principal=renewal.old_principal,
+                net_interest=renewal.net_interest,
+                new_principal=renewal.direct_reinvest_amount,
+                cash_payout_amount=renewal.cash_payout_amount,
             )
+            interest_cash = allocation.interest_cash_amount
+            reinvested_interest = allocation.reinvested_interest_amount
+        except ValueError:
+            # Legacy inconsistent rows: still report net once without disposition split.
+            interest_cash = None
+            reinvested_interest = None
+        row = _row_base(
+            source_type="RENEWAL",
+            source_id=renewal.id,
+            row_date=renewal.renewal_date,
+            fd=fd,
+            bank=fd.bank_account,
+            currency=renewal.currency,
+            gross=renewal.gross_interest,
+            tax=renewal.tax_withheld,
+            net=renewal.net_interest,
+            comment=renewal.comment,
         )
+        row["interest_cash_amount"] = (
+            float(interest_cash) if interest_cash is not None else None
+        )
+        row["reinvested_interest_amount"] = (
+            float(reinvested_interest) if reinvested_interest is not None else None
+        )
+        rows.append(row)
 
     rows.sort(key=lambda r: (r["date"], r["source_type"], r["source_id"]))
 

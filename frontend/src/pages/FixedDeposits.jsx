@@ -995,6 +995,18 @@ export default function FixedDeposits() {
       setRenewalFormError('Cash payout amount must be zero or positive.');
       return;
     }
+    const oldPrincipal = parseFloat(renewalFd?.principal_amount);
+    const net = gross - tax;
+    if (
+      Number.isFinite(oldPrincipal) &&
+      Number.isFinite(net) &&
+      Math.abs(oldPrincipal + net - (principal + payout)) > 0.005
+    ) {
+      setRenewalFormError(
+        `Inconsistent allocation: old principal (${oldPrincipal}) + net interest (${net}) must equal new principal (${principal}) + cash payout (${payout}).`
+      );
+      return;
+    }
     if (!renewalForm.renewal_date) {
       setRenewalFormError('Renewal date is required.');
       return;
@@ -2282,6 +2294,11 @@ export default function FixedDeposits() {
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id="fd-renewal-modal-title">Renew fixed deposit</h2>
+            <p className="settings-hint fd-form__note">
+              Direct rollover: old principal + final net interest must equal new principal + cash
+              payout. Bank cash is credited only for the cash payout. Reinvested interest stays in
+              the new term and is not double-counted.
+            </p>
             <p className="settings-hint fd-form__note">
               Directly renewed principal will not pass through the bank account. Only cash
               payout/net received amounts are credited to bank cash.

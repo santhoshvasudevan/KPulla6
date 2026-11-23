@@ -21,6 +21,7 @@ from debt.models import (
     SETTLEMENT_ELIGIBLE_FD_STATUSES,
 )
 from debt.services import FixedDepositNotFoundError, create_fixed_deposit, get_fixed_deposit
+from finance.fd_renewal_allocation import RenewalAllocation, allocate_renewal_proceeds
 
 
 class RenewalValidationError(Exception):
@@ -34,6 +35,7 @@ class RenewalResult:
     new_fixed_deposit: FixedDeposit
     settlement: FixedDepositSettlement
     cash_movement_ids: list[int]
+    allocation: RenewalAllocation
 
 
 def _validate_fd_for_renewal(fd: FixedDeposit) -> None:
@@ -53,32 +55,18 @@ def _validate_fd_for_renewal(fd: FixedDeposit) -> None:
         raise RenewalValidationError("This fixed deposit has already been renewed.")
 
 
-def _validate_renewal_amounts(
+def _validate_interest_inputs(
     *,
-    old_principal: Decimal,
-    new_principal_amount: Decimal,
-    direct_reinvest_amount: Decimal,
-    cash_payout_amount: Decimal,
     gross_interest: Decimal,
     tax_withheld: Decimal,
-) -> tuple[Decimal, Decimal]:
-    if new_principal_amount <= 0:
-        raise RenewalValidationError("new_principal_amount must be greater than zero.")
-    if direct_reinvest_amount <= 0:
-        raise RenewalValidationError("direct_reinvest_amount must be greater than zero.")
-    if cash_payout_amount < 0:
-        raise RenewalValidationError("cash_payout_amount must be zero or positive.")
+) -> Decimal:
     if gross_interest < 0:
         raise RenewalValidationError("gross_interest must be zero or positive.")
     if tax_withheld < 0:
         raise RenewalValidationError("tax_withheld must be zero or positive.")
     if tax_withheld > gross_interest:
         raise RenewalValidationError("tax_withheld cannot exceed gross_interest.")
-    net_interest = gross_interest - tax_withheld
-    total_maturity_value = old_principal + net_interest
-    if total_maturity_value <= 0:
-        raise RenewalValidationError("Total maturity value must be greater than zero.")
-    return net_interest, total_maturity_value
+    return gross_interest - tax_withheld
 
 
 @db_transaction.atomic
@@ -106,6 +94,10 @@ def renew_fixed_deposit(
 
     if new_maturity_date <= new_investment_date:
         raise RenewalValidationError("new_maturity_date must be after new_investment_date.")
+    if new_principal_amount <= 0:
+        raise RenewalValidationError("new_principal_amount must be greater than zero.")
+    if cash_payout_amount < 0:
+        raise RenewalValidationError("cash_payout_amount must be zero or positive.")
 
     resolved_direct_reinvest = (
         new_principal_amount if direct_reinvest_amount is None else direct_reinvest_amount
@@ -116,25 +108,30 @@ def renew_fixed_deposit(
         )
 
     old_principal = old_fd.principal_amount
-    net_interest, total_maturity_value = _validate_renewal_amounts(
-        old_principal=old_principal,
-        new_principal_amount=new_principal_amount,
-        direct_reinvest_amount=resolved_direct_reinvest,
-        cash_payout_amount=cash_payout_amount,
+    net_interest = _validate_interest_inputs(
         gross_interest=gross_interest,
         tax_withheld=tax_withheld,
     )
+    try:
+        allocation = allocate_renewal_proceeds(
+            old_principal=old_principal,
+            net_interest=net_interest,
+            new_principal=new_principal_amount,
+            cash_payout_amount=cash_payout_amount,
+        )
+    except ValueError as exc:
+        raise RenewalValidationError(str(exc)) from exc
 
     note = (comment or "").strip()
     cash_movement_ids: list[int] = []
 
     principal_movement = None
-    if cash_payout_amount > 0:
+    if allocation.principal_cash_amount > 0:
         principal_movement = create_fd_settlement_cash_movement(
             user,
             old_fd,
             settlement_type=FixedDepositSettlementType.MATURITY,
-            amount=cash_payout_amount,
+            amount=allocation.principal_cash_amount,
             movement_date=renewal_date,
             leg="principal",
             description=note or f"FD renewal cash payout: {old_fd.deposit_account_number}",
@@ -142,19 +139,20 @@ def renew_fixed_deposit(
         cash_movement_ids.append(principal_movement.id)
 
     interest_movement = None
-    if net_interest > 0:
+    if allocation.interest_cash_amount > 0:
         interest_movement = create_fd_settlement_cash_movement(
             user,
             old_fd,
             settlement_type=FixedDepositSettlementType.MATURITY,
-            amount=net_interest,
+            amount=allocation.interest_cash_amount,
             movement_date=renewal_date,
             leg="interest",
-            description=note or f"FD renewal final interest: {old_fd.deposit_account_number}",
+            description=note
+            or f"FD renewal final interest: {old_fd.deposit_account_number}",
         )
         cash_movement_ids.append(interest_movement.id)
 
-    total_net_proceeds = old_principal + net_interest
+    total_net_proceeds = allocation.total_available
     settlement = FixedDepositSettlement(
         user=user,
         fixed_deposit=old_fd,
@@ -181,14 +179,9 @@ def renew_fixed_deposit(
     old_fd.status = FixedDepositStatus.MATURED_SETTLED
     old_fd.save(update_fields=["status", "updated_at"])
 
-    institution = (
-        (new_institution_name or "").strip()
-        or old_fd.institution_name
-    )
+    institution = (new_institution_name or "").strip() or old_fd.institution_name
     resolved_nominee = (
-        (nominee_name or "").strip()
-        if nominee_name is not None
-        else old_fd.nominee_name
+        (nominee_name or "").strip() if nominee_name is not None else old_fd.nominee_name
     )
 
     new_fd = create_fixed_deposit(
@@ -222,7 +215,7 @@ def renew_fixed_deposit(
         gross_interest=gross_interest,
         tax_withheld=tax_withheld,
         net_interest=net_interest,
-        total_maturity_value=total_maturity_value,
+        total_maturity_value=allocation.total_available,
         currency=old_fd.currency,
         comment=note,
     )
@@ -239,4 +232,5 @@ def renew_fixed_deposit(
         new_fixed_deposit=new_fd,
         settlement=settlement,
         cash_movement_ids=cash_movement_ids,
+        allocation=allocation,
     )

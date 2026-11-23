@@ -456,6 +456,7 @@ class FixedDepositRenewView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
         except RenewalValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        allocation = result.allocation
         return Response(
             {
                 "renewal_id": result.renewal_group.id,
@@ -473,6 +474,9 @@ class FixedDepositRenewView(APIView):
                 "gross_interest": float(result.renewal_group.gross_interest),
                 "tax_withheld": float(result.renewal_group.tax_withheld),
                 "net_interest": float(result.renewal_group.net_interest),
+                "interest_cash_amount": float(allocation.interest_cash_amount),
+                "reinvested_interest_amount": float(allocation.reinvested_interest_amount),
+                "principal_cash_amount": float(allocation.principal_cash_amount),
                 "cash_movement_ids": result.cash_movement_ids,
                 "currency": result.renewal_group.currency,
             },

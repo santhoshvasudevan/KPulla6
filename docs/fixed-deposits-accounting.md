@@ -234,7 +234,7 @@ See **§ FD-ACC-8 performance/timeseries design** below for full detail.
 | Item | Implemented behavior |
 |------|----------------------|
 | **Model** | `FixedDepositRenewalGroup` — old/new FD, settlement, direct reinvest vs cash payout breakdown |
-| **Renew** | `POST /fixed-deposits/{id}/renew` — atomically settles old FD (`MATURED_SETTLED`), creates renewed FD (`renewal_of`, `ACTIVE`) |
+| **Renew** | `POST /fixed-deposits/{id}/renew` — atomically settles old FD (`MATURED_SETTLED`), creates renewed FD (`renewal_of`, `ACTIVE`). **#43:** `old principal + net interest = new principal + cash payout`; bank credits only the cash payout (split into interest then principal legs). |
 | **Direct rollover** | Reinvested principal **does not** create bank movement; renewed FD **does not** create `FD_OPENING` debit |
 | **Cash payout** | `cash_payout_amount` → `FD_MATURITY_PRINCIPAL` CREDIT; net final interest → `FD_MATURITY_INTEREST` CREDIT |
 | **Normal FD create** | `POST /fixed-deposits` still requires `FD_OPENING` bank debit (unchanged) |
