@@ -160,17 +160,11 @@ export default function FixedDepositInterestReport() {
   };
 
   /** Null means legacy/unknown split — distinct from confirmed zero. */
-  const splitAmountCell = (row, field) => {
-    const amount = valueFor(row, field);
+  const splitAmountCell = (row, field, amount) => {
     if (amount == null) {
       return <span data-testid={`fd-split-unavailable-${field}`}>Unavailable</span>;
     }
-    return (
-      <CurrencyValue
-        value={amount}
-        currency={row.display_currency || row.currency}
-      />
-    );
+    return <CurrencyValue value={amount} currency={row.currency} />;
   };
 
   const totalsWarnings = useMemo(() => {
@@ -444,24 +438,22 @@ export default function FixedDepositInterestReport() {
                         />
                       </AppTableCell>
                       <AppTableCell numeric>
-                        {row.source_type === 'RENEWAL' || row.interest_cash_amount != null
-                          ? splitAmountCell(row, 'interest_cash_amount')
-                          : (
-                            <CurrencyValue
-                              value={valueFor(row, 'net_interest')}
-                              currency={row.display_currency || row.currency}
-                            />
-                          )}
+                        {splitAmountCell(
+                          row,
+                          'interest_cash_amount',
+                          row.source_type === 'RENEWAL'
+                            ? row.interest_cash_amount
+                            : row.interest_cash_amount ?? row.net_interest,
+                        )}
                       </AppTableCell>
                       <AppTableCell numeric>
-                        {row.source_type === 'RENEWAL' || row.reinvested_interest_amount != null
-                          ? splitAmountCell(row, 'reinvested_interest_amount')
-                          : (
-                            <CurrencyValue
-                              value={0}
-                              currency={row.display_currency || row.currency}
-                            />
-                          )}
+                        {splitAmountCell(
+                          row,
+                          'reinvested_interest_amount',
+                          row.source_type === 'RENEWAL'
+                            ? row.reinvested_interest_amount
+                            : row.reinvested_interest_amount ?? 0,
+                        )}
                       </AppTableCell>
                       <AppTableCell>{row.currency}</AppTableCell>
                       {showDisplayCurrencyColumn ? (

@@ -361,6 +361,37 @@ describe('FixedDepositInterestReport', () => {
     expect(within(table).getByText('FD-FULL')).toBeInTheDocument();
   });
 
+  it('shows rollover splits in deposit currency when report totals are converted', async () => {
+    api.fetchFixedDepositInterestReport.mockResolvedValueOnce({
+      rows: [{
+        ...sampleRow,
+        source_type: 'RENEWAL',
+        deposit_account_number: 'FD-INR-EUR',
+        net_interest: 4500,
+        net_interest_display: 45,
+        display_currency: 'EUR',
+        interest_cash_amount: 2500,
+        reinvested_interest_amount: 2000,
+      }],
+      totals: {
+        gross_interest: 50,
+        tax_withheld: 5,
+        net_interest: 45,
+        currency: 'EUR',
+        display_currency: 'EUR',
+        row_count: 1,
+        fx_status: 'ok',
+      },
+      grouped_totals: [],
+      warnings: [],
+    });
+    renderReport();
+    const row = (await screen.findByText('FD-INR-EUR')).closest('tr');
+    expect(within(row).getByText('€45.00')).toBeInTheDocument();
+    expect(within(row).getByText('₹2,500.00')).toBeInTheDocument();
+    expect(within(row).getByText('₹2,000.00')).toBeInTheDocument();
+  });
+
   it('renders Export CSV button and helper text', async () => {
     renderReport();
     expect(await screen.findByRole('button', { name: 'Export CSV' })).toBeInTheDocument();

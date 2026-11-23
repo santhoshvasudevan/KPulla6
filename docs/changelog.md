@@ -4,6 +4,7 @@
 
 - `GET /fixed-deposits/{id}/detail` term totals and financial-year summary include confirmed maturity settlement / renewal interest on the originating term once (event date drives FY attribution). Pending estimates stay out of actuals; confirmed delayed payouts remain once-only.
 - Detail and interest-report UIs show **Interest paid to bank** and **Interest reinvested** from backend `interest_cash_amount` / `reinvested_interest_amount` (null → Unavailable, distinct from confirmed zero). Total net interest remains cash + reinvested.
+- Interest report payout and reinvestment amounts use each deposit’s native currency, including when the report totals use a different display currency.
 - Renewal form no longer client-checks allocation with floating-point tolerance; submits decimal strings and surfaces the backend allocation error without closing the form.
 
 ## 2026-11-22 — Read-only FD renewal audit (#44)
