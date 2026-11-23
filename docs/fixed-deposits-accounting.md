@@ -239,7 +239,7 @@ See **§ FD-ACC-8 performance/timeseries design** below for full detail.
 | **Cash payout** | `cash_payout_amount` → `FD_MATURITY_PRINCIPAL` CREDIT; net final interest → `FD_MATURITY_INTEREST` CREDIT |
 | **Normal FD create** | `POST /fixed-deposits` still requires `FD_OPENING` bank debit (unchanged) |
 | **Portfolio** | Old settled FD excluded; new renewed FD principal included in Debt; bank cash still excluded |
-| **UI** | Fixed Deposits page — Renew modal for `ACTIVE`/`MATURED` (hidden when settled or `has_renewal`) |
+| **UI** | Fixed Deposits page — Renew modal for `ACTIVE`/`MATURED` on the **Current** view (hidden when settled or `has_renewal`); renewed predecessors appear in **History** with term links (#41) |
 | **Deferred** | Bank cash in portfolio value (FD-ACC-7), performance/XIRR, reversals |
 
 ## FD-ACC-1 implementation notes (2026-06-14)

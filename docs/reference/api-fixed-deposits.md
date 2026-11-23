@@ -23,6 +23,7 @@ Fixed deposit CRUD, maturity estimates, and lifecycle actions. Deep spec: [api-d
 |-------|-------|
 | `portfolio_scope` | `all` (default) |
 | `portfolio_id` | Single portfolio |
+| `lifecycle_view` | Optional. `current` = outstanding (`ACTIVE`/`MATURED`); `history` = completed (`MATURED_SETTLED`/`CLOSED`). Omit to return all soft-active rows (legacy callers). |
 
 ### Example request
 
@@ -48,7 +49,7 @@ curl -s -b cookies.txt \
 ]
 ```
 
-List responses include `resolve_maturity_display()` fields for legacy rows. See [fixed-deposits-accounting.md](../fixed-deposits-accounting.md).
+List responses include `resolve_maturity_display()` fields for legacy rows, plus lifecycle fields `lifecycle_view`, `is_renewed`, `next_term_id`, and `renewal_of_id` (#41). See [fixed-deposits.md](../fixed-deposits.md) § Current vs History and [fixed-deposits-accounting.md](../fixed-deposits-accounting.md).
 
 ---
 

@@ -159,7 +159,7 @@ Base: `/api/v1` · Session auth required.
 
 | Method | Path | Behavior |
 |--------|------|----------|
-| GET | `/fixed-deposits` | List active FDs; `portfolio_scope=all` or `portfolio_id` |
+| GET | `/fixed-deposits` | List soft-active FDs; `portfolio_scope=all` or `portfolio_id`; optional `lifecycle_view=current\|history` (#41) |
 | POST | `/fixed-deposits` | Create with validation |
 | GET | `/fixed-deposits/{id}` | Detail |
 | PUT | `/fixed-deposits/{id}` | Update active FD. After `FD_OPENING`: **locked** — principal, bank account, currency, portfolio; **editable** — investment date (syncs opening debit date), maturity date, rate, payout, nominee, metadata; maturity estimate recalculates |
@@ -176,6 +176,16 @@ Use the action that matches the real-world event. These are **not** interchangea
 | **Deactivate** | `DELETE .../{id}` | Legacy FD **without** unreversed `FD_OPENING` | None | FD principal removed (`is_active=false`) | **Yes** |
 | **Settle / Close** | `POST .../settle` | Real maturity or early closure at institution | `FD_MATURITY_*` / `FD_CLOSURE_*` CREDITs | Principal removed after settlement; bank credited per settlement | **Yes** — `MATURED_SETTLED` or `CLOSED` |
 | **Renew** | `POST .../renew` | Real rollover at institution | Settlement + optional payout movements; renewed FD may skip `FD_OPENING` on direct rollover | Old FD settled; new FD principal included | **Yes** — old + new FD rows |
+
+### Current vs History list (#41)
+
+| View | Query | Includes | UI |
+|------|-------|----------|-----|
+| **Current** (default on Fixed Deposits page) | `lifecycle_view=current` | `ACTIVE` and `MATURED` (including matured awaiting settlement) | Edit / renew / settle / record interest |
+| **History** | `lifecycle_view=history` | `MATURED_SETTLED` and `CLOSED` | Read-only; **Renewed** label when a successor exists; previous/next term links |
+| **Legacy (no filter)** | omit `lifecycle_view` | All soft-active rows (`is_active=true`) | Preserves existing API callers |
+
+Renewal does **not** clear `is_active` on the predecessor. Cancelled / soft-deactivated rows stay out of both views. Response fields: `lifecycle_view`, `is_renewed`, `next_term_id`, `renewal_of_id`. Value History still attributes each term’s principal through the day before settlement and the successor from its investment date.
 
 **Blocked:** `DELETE` on ledger-backed FD with unreversed `FD_OPENING` → **409** (“Use Cancel FD”). Cancel rejected when interest payments, settlement, or renewal exist.
 

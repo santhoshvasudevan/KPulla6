@@ -175,7 +175,18 @@ def _fixed_deposits_queryset(
     *,
     portfolio_ids: list[int] | None = None,
     active_only: bool = True,
+    lifecycle_view: str | None = None,
 ) -> QuerySet[FixedDeposit]:
+    from django.db.models import Exists, OuterRef, Subquery
+
+    from finance.fixed_deposits import (
+        LIFECYCLE_CURRENT_STATUSES,
+        LIFECYCLE_HISTORY_STATUSES,
+        LIFECYCLE_VIEW_CURRENT,
+        LIFECYCLE_VIEW_HISTORY,
+        VALID_LIFECYCLE_VIEWS,
+    )
+
     qs = FixedDeposit.objects.filter(user=user).select_related(
         "portfolio", "bank_account", "renewal_of"
     )
@@ -183,6 +194,23 @@ def _fixed_deposits_queryset(
         qs = qs.filter(is_active=True)
     if portfolio_ids is not None:
         qs = qs.filter(portfolio_id__in=portfolio_ids)
+
+    if lifecycle_view is not None:
+        if lifecycle_view not in VALID_LIFECYCLE_VIEWS:
+            raise FixedDepositValidationError(
+                f"Invalid lifecycle_view: {lifecycle_view}. "
+                f"Use '{LIFECYCLE_VIEW_CURRENT}' or '{LIFECYCLE_VIEW_HISTORY}'."
+            )
+        if lifecycle_view == LIFECYCLE_VIEW_CURRENT:
+            qs = qs.filter(status__in=LIFECYCLE_CURRENT_STATUSES)
+        else:
+            qs = qs.filter(status__in=LIFECYCLE_HISTORY_STATUSES)
+
+    successor = FixedDeposit.objects.filter(renewal_of_id=OuterRef("pk")).order_by("id")
+    qs = qs.annotate(
+        _has_renewal=Exists(successor),
+        _next_term_id=Subquery(successor.values("id")[:1]),
+    )
     return qs.order_by("-investment_date", "-id")
 
 
@@ -190,14 +218,28 @@ def list_fixed_deposits(
     user: AbstractBaseUser,
     *,
     portfolio_ids: list[int] | None = None,
+    lifecycle_view: str | None = None,
 ) -> list[FixedDeposit]:
-    return list(_fixed_deposits_queryset(user, portfolio_ids=portfolio_ids))
+    return list(
+        _fixed_deposits_queryset(
+            user,
+            portfolio_ids=portfolio_ids,
+            lifecycle_view=lifecycle_view,
+        )
+    )
 
 
 def get_fixed_deposit(user: AbstractBaseUser, fd_id: int) -> FixedDeposit:
+    from django.db.models import Exists, OuterRef, Subquery
+
+    successor = FixedDeposit.objects.filter(renewal_of_id=OuterRef("pk")).order_by("id")
     fd = (
         FixedDeposit.objects.filter(user=user, pk=fd_id)
         .select_related("portfolio", "bank_account", "renewal_of")
+        .annotate(
+            _has_renewal=Exists(successor),
+            _next_term_id=Subquery(successor.values("id")[:1]),
+        )
         .first()
     )
     if not fd:

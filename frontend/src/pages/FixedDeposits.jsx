@@ -34,7 +34,7 @@ import {
   CurrencyValue,
   StatusBadge,
 } from '../components/ui';
-import { fdPayoutLabel, fdStatusBadgeProps, fdStatusCounts, fdMaturityValueSourceBadgeProps, fdDisplayMaturityValue, fdDisplayTotalInterest, fdDisplayPeriodicInterest, fdDisplayMaturitySource, fdIsCompounded, fdIsPayout, FD_ESTIMATE_TYPE_COMPOUNDED, FD_ESTIMATE_TYPE_PAYOUT } from '../utils/fdDisplay';
+import { fdPayoutLabel, fdStatusBadgeProps, fdStatusCounts, fdMaturityValueSourceBadgeProps, fdDisplayMaturityValue, fdDisplayTotalInterest, fdDisplayPeriodicInterest, fdDisplayMaturitySource, fdIsCompounded, fdIsPayout, fdIsHistoryTerm, FD_ESTIMATE_TYPE_COMPOUNDED, FD_ESTIMATE_TYPE_PAYOUT } from '../utils/fdDisplay';
 import FixedDepositInterestReport from '../components/FixedDepositInterestReport';
 import './FixedDeposits.css';
 
@@ -341,8 +341,10 @@ export default function FixedDeposits() {
   const [renewalSubmitting, setRenewalSubmitting] = useState(false);
   const [renewalFormError, setRenewalFormError] = useState('');
   const [markingMaturedId, setMarkingMaturedId] = useState(null);
+  const [lifecycleView, setLifecycleView] = useState('current');
 
   const statusCounts = useMemo(() => fdStatusCounts(items), [items]);
+  const isHistoryView = lifecycleView === 'history';
 
   const loadData = useCallback(async () => {
     if (!settingsLoaded || !apiQuery) return;
@@ -350,7 +352,7 @@ export default function FixedDeposits() {
     setError('');
     try {
       const [fdData, portfolioData, bankData] = await Promise.all([
-        fetchFixedDeposits(apiQuery),
+        fetchFixedDeposits({ ...apiQuery, lifecycle_view: lifecycleView }),
         fetchPortfolios(),
         fetchBankAccounts(),
       ]);
@@ -362,7 +364,7 @@ export default function FixedDeposits() {
     } finally {
       setLoading(false);
     }
-  }, [apiQuery, settingsLoaded]);
+  }, [apiQuery, settingsLoaded, lifecycleView]);
 
   useEffect(() => {
     loadData();
@@ -1121,14 +1123,54 @@ export default function FixedDeposits() {
       </nav>
 
       <div id="fd-deposits" className="fixed-deposits-page__deposits">
+      <div
+        className="fd-lifecycle-toggle"
+        role="tablist"
+        aria-label="Fixed deposit lifecycle view"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={lifecycleView === 'current'}
+          className={
+            lifecycleView === 'current'
+              ? 'fd-lifecycle-toggle__btn fd-lifecycle-toggle__btn--active'
+              : 'fd-lifecycle-toggle__btn'
+          }
+          onClick={() => setLifecycleView('current')}
+        >
+          Current
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={lifecycleView === 'history'}
+          className={
+            lifecycleView === 'history'
+              ? 'fd-lifecycle-toggle__btn fd-lifecycle-toggle__btn--active'
+              : 'fd-lifecycle-toggle__btn'
+          }
+          onClick={() => setLifecycleView('history')}
+        >
+          History
+        </button>
+      </div>
       <DataTableShell
         className="fixed-deposits-page__table"
-        title="Fixed deposit holdings"
-        subtitle="Lifecycle actions and interest history per deposit"
+        title={isHistoryView ? 'Fixed deposit history' : 'Fixed deposit holdings'}
+        subtitle={
+          isHistoryView
+            ? 'Completed terms with renewal links and recorded payouts'
+            : 'Outstanding terms — lifecycle actions and interest per deposit'
+        }
         dense
         empty={items.length === 0}
-        emptyTitle="No active fixed deposits"
-        emptyDescription="No active fixed deposits for the current portfolio view."
+        emptyTitle={isHistoryView ? 'No historical fixed deposits' : 'No current fixed deposits'}
+        emptyDescription={
+          isHistoryView
+            ? 'No completed terms for the current portfolio view.'
+            : 'No outstanding fixed deposits for the current portfolio view.'
+        }
       >
         {items.length > 0 ? (
           <AppTable compact className="fd-table">
@@ -1151,7 +1193,8 @@ export default function FixedDeposits() {
             </thead>
             <tbody>
               {items.map((fd) => {
-                const badge = fdStatusBadgeProps(fd.status);
+                const historyTerm = isHistoryView || fdIsHistoryTerm(fd);
+                const badge = fdStatusBadgeProps(fd.status, fd);
                 const displayMaturityValue = fdDisplayMaturityValue(fd);
                 const displayTotalInterest = fdDisplayTotalInterest(fd);
                 const displayPeriodicInterest = fdDisplayPeriodicInterest(fd);
@@ -1175,7 +1218,31 @@ export default function FixedDeposits() {
                     >
                       <AppTableCell>{fd.portfolio_name}</AppTableCell>
                       <AppTableCell>{fd.institution_name}</AppTableCell>
-                      <AppTableCell className="fd-table__account">{fd.deposit_account_number}</AppTableCell>
+                      <AppTableCell className="fd-table__account">
+                        {fd.deposit_account_number}
+                        {(fd.renewal_of_id || fd.next_term_id) ? (
+                          <div className="fd-table__term-links" onClick={(e) => e.stopPropagation()}>
+                            {fd.renewal_of_id ? (
+                              <button
+                                type="button"
+                                className="fd-term-link"
+                                onClick={() => navigate(`/fixed-deposits/${fd.renewal_of_id}`)}
+                              >
+                                Previous term
+                              </button>
+                            ) : null}
+                            {fd.next_term_id ? (
+                              <button
+                                type="button"
+                                className="fd-term-link"
+                                onClick={() => navigate(`/fixed-deposits/${fd.next_term_id}`)}
+                              >
+                                Next term
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </AppTableCell>
                       <AppTableCell>{fd.bank_account_name}</AppTableCell>
                       <AppTableCell numeric>
                         <CurrencyValue value={fd.principal_amount} currency={fd.currency} />
@@ -1247,7 +1314,7 @@ export default function FixedDeposits() {
                       <td colSpan={13}>
                         <div className="fd-action-strip" data-testid={`fd-action-strip-${fd.id}`}>
                           <div className="fd-action-strip__group" aria-label="Common actions">
-                            {!isSettledFd(fd) ? (
+                            {!historyTerm && !isSettledFd(fd) ? (
                               <Button
                                 variant="primary"
                                 type="button"
@@ -1264,51 +1331,61 @@ export default function FixedDeposits() {
                               {expandedFdId === fd.id ? 'Hide payments' : 'Interest payments'}
                             </Button>
                           </div>
-                          <div className="fd-action-strip__group" aria-label="Lifecycle actions">
-                            {canMarkMatured(fd) ? (
-                              <Button
-                                variant="secondary"
-                                type="button"
-                                onClick={() => handleMarkMatured(fd)}
-                                disabled={markingMaturedId === fd.id}
-                              >
-                                {markingMaturedId === fd.id ? 'Marking…' : 'Mark matured'}
+                          {!historyTerm ? (
+                            <div className="fd-action-strip__group" aria-label="Lifecycle actions">
+                              {canMarkMatured(fd) ? (
+                                <Button
+                                  variant="secondary"
+                                  type="button"
+                                  onClick={() => handleMarkMatured(fd)}
+                                  disabled={markingMaturedId === fd.id}
+                                >
+                                  {markingMaturedId === fd.id ? 'Marking…' : 'Mark matured'}
+                                </Button>
+                              ) : null}
+                              {canSettle(fd) ? (
+                                <Button
+                                  variant="secondary"
+                                  type="button"
+                                  onClick={() => openSettlementModal(fd)}
+                                >
+                                  {fd.status === 'MATURED' ? 'Settle' : 'Settle / Close'}
+                                </Button>
+                              ) : null}
+                              {canRenew(fd) ? (
+                                <Button
+                                  variant="secondary"
+                                  type="button"
+                                  onClick={() => openRenewalModal(fd)}
+                                >
+                                  Renew
+                                </Button>
+                              ) : null}
+                            </div>
+                          ) : null}
+                          {!historyTerm ? (
+                            <div className="fd-action-strip__group" aria-label="Maintenance actions">
+                              <Button variant="secondary" type="button" onClick={() => openEdit(fd)}>
+                                Edit
                               </Button>
-                            ) : null}
-                            {canSettle(fd) ? (
-                              <Button
-                                variant="secondary"
-                                type="button"
-                                onClick={() => openSettlementModal(fd)}
-                              >
-                                {fd.status === 'MATURED' ? 'Settle' : 'Settle / Close'}
-                              </Button>
-                            ) : null}
-                            {canRenew(fd) ? (
-                              <Button
-                                variant="secondary"
-                                type="button"
-                                onClick={() => openRenewalModal(fd)}
-                              >
-                                Renew
-                              </Button>
-                            ) : null}
-                          </div>
-                          <div className="fd-action-strip__group" aria-label="Maintenance actions">
-                            <Button variant="secondary" type="button" onClick={() => openEdit(fd)}>
-                              Edit
-                            </Button>
-                            {canCancel(fd) ? (
-                              <Button variant="danger" type="button" onClick={() => handleCancel(fd)}>
-                                Cancel FD
-                              </Button>
-                            ) : null}
-                            {canDeactivate(fd) ? (
-                              <Button variant="secondary" type="button" onClick={() => handleDeactivate(fd)}>
-                                Deactivate
-                              </Button>
-                            ) : null}
-                          </div>
+                              {canCancel(fd) ? (
+                                <Button variant="danger" type="button" onClick={() => handleCancel(fd)}>
+                                  Cancel FD
+                                </Button>
+                              ) : null}
+                              {canDeactivate(fd) ? (
+                                <Button variant="secondary" type="button" onClick={() => handleDeactivate(fd)}>
+                                  Deactivate
+                                </Button>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <div className="fd-action-strip__group" aria-label="History actions">
+                              <span className="fd-history-readonly-hint">
+                                Read-only completed term
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>

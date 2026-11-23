@@ -141,6 +141,9 @@ class FixedDepositSerializer(serializers.ModelSerializer):
     has_opening_cash_movement = serializers.SerializerMethodField()
     opening_cash_movement_id = serializers.SerializerMethodField()
     has_renewal = serializers.SerializerMethodField()
+    next_term_id = serializers.SerializerMethodField()
+    lifecycle_view = serializers.SerializerMethodField()
+    is_renewed = serializers.SerializerMethodField()
     portfolio_mismatch_warning = serializers.SerializerMethodField()
     estimated_interest = serializers.SerializerMethodField()
     expected_interest = serializers.SerializerMethodField()
@@ -185,6 +188,9 @@ class FixedDepositSerializer(serializers.ModelSerializer):
             "status",
             "renewal_of_id",
             "has_renewal",
+            "next_term_id",
+            "lifecycle_view",
+            "is_renewed",
             "has_opening_cash_movement",
             "opening_cash_movement_id",
             "portfolio_mismatch_warning",
@@ -204,6 +210,21 @@ class FixedDepositSerializer(serializers.ModelSerializer):
         if hasattr(obj, "_has_renewal"):
             return bool(obj._has_renewal)
         return obj.renewals.exists()
+
+    def get_next_term_id(self, obj: FixedDeposit) -> int | None:
+        if hasattr(obj, "_next_term_id"):
+            return obj._next_term_id
+        successor = obj.renewals.order_by("id").first()
+        return successor.id if successor else None
+
+    def get_lifecycle_view(self, obj: FixedDeposit) -> str | None:
+        from finance.fixed_deposits import fixed_deposit_lifecycle_view
+
+        return fixed_deposit_lifecycle_view(obj.status)
+
+    def get_is_renewed(self, obj: FixedDeposit) -> bool:
+        """True when this term has a successor (renewed predecessor in History)."""
+        return self.get_has_renewal(obj)
 
     def get_portfolio_mismatch_warning(self, obj: FixedDeposit) -> str | None:
         return fixed_deposit_portfolio_mismatch_warning(obj)

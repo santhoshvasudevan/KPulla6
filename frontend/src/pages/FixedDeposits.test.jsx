@@ -185,6 +185,47 @@ describe('FixedDeposits page', () => {
     });
   });
 
+  it('defaults to Current lifecycle view and switches to History', async () => {
+    const historyFd = {
+      ...sampleFd,
+      id: 9,
+      status: 'MATURED_SETTLED',
+      lifecycle_view: 'history',
+      is_renewed: true,
+      has_renewal: true,
+      next_term_id: 10,
+      renewal_of_id: null,
+      deposit_account_number: 'FD-OLD',
+    };
+    api.fetchFixedDeposits.mockImplementation(async (params) => {
+      if (params?.lifecycle_view === 'history') return [historyFd];
+      return [{ ...sampleFd, lifecycle_view: 'current', is_renewed: false, has_renewal: false }];
+    });
+
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: /^current$/i })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByText('FD-001')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /record interest/i })).toBeInTheDocument();
+    });
+    expect(api.fetchFixedDeposits).toHaveBeenCalledWith(
+      expect.objectContaining({ lifecycle_view: 'current' })
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: /^history$/i }));
+    await waitFor(() => {
+      expect(screen.getByText('FD-OLD')).toBeInTheDocument();
+      expect(screen.getByText('Renewed')).toBeInTheDocument();
+      expect(screen.getByText(/read-only completed term/i)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /record interest/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /next term/i })).toBeInTheDocument();
+    });
+    expect(api.fetchFixedDeposits).toHaveBeenCalledWith(
+      expect.objectContaining({ lifecycle_view: 'history' })
+    );
+  });
+
   it('renders overview KPI cards and section navigation', async () => {
     renderPage();
     await waitFor(() => {

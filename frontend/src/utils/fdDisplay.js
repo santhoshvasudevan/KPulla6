@@ -18,7 +18,10 @@ export const FD_ESTIMATE_TYPE_COMPOUNDED = 'COMPOUNDED_MATURITY';
 export const FD_ESTIMATE_TYPE_PAYOUT = 'PAYOUT_INTEREST';
 
 /** Display-only status badge mapping from backend FD status. */
-export function fdStatusBadgeProps(status) {
+export function fdStatusBadgeProps(status, fd = null) {
+  if (fd?.is_renewed || (fd?.has_renewal && (status === 'MATURED_SETTLED' || status === 'CLOSED'))) {
+    return { status: 'info', label: 'Renewed' };
+  }
   switch (status) {
     case 'ACTIVE':
       return { status: 'ok', label: STATUS_LABELS.ACTIVE };
@@ -33,6 +36,16 @@ export function fdStatusBadgeProps(status) {
     default:
       return { status: 'neutral', label: status || '—' };
   }
+}
+
+/** True when the term belongs in the History lifecycle list (#41). */
+export function fdIsHistoryTerm(fd) {
+  return fd?.lifecycle_view === 'history' || fd?.status === 'MATURED_SETTLED' || fd?.status === 'CLOSED';
+}
+
+/** True when the term is an outstanding Current holding (#41). */
+export function fdIsCurrentTerm(fd) {
+  return fd?.lifecycle_view === 'current' || fd?.status === 'ACTIVE' || fd?.status === 'MATURED';
 }
 
 export function fdPayoutLabel(frequency) {

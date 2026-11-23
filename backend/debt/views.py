@@ -185,9 +185,17 @@ class FixedDepositListCreateView(APIView):
         except PortfolioNotFoundError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
 
-        fds = list_fixed_deposits(
-            request.user, portfolio_ids=scope.portfolio_ids
-        )
+        lifecycle_view = request.query_params.get("lifecycle_view")
+        if lifecycle_view is not None:
+            lifecycle_view = str(lifecycle_view).strip().lower() or None
+        try:
+            fds = list_fixed_deposits(
+                request.user,
+                portfolio_ids=scope.portfolio_ids,
+                lifecycle_view=lifecycle_view,
+            )
+        except FixedDepositValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(FixedDepositSerializer(fds, many=True).data)
 
     def post(self, request):

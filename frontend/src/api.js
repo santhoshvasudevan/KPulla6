@@ -884,9 +884,15 @@ function withFdScopeParams(params, scopeParams) {
   return out;
 }
 
-/** GET /api/v1/fixed-deposits */
+/** GET /api/v1/fixed-deposits
+ * Optional scopeParams.lifecycle_view: 'current' | 'history' (#41).
+ * Omitting lifecycle_view preserves the legacy all-active list for callers.
+ */
 export async function fetchFixedDeposits(scopeParams = null) {
   const params = withFdScopeParams({}, scopeParams);
+  if (scopeParams?.lifecycle_view) {
+    params.set('lifecycle_view', String(scopeParams.lifecycle_view));
+  }
   return fetchWithHandling(`/fixed-deposits?${params.toString()}`);
 }
 

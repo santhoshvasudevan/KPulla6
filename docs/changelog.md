@@ -1,5 +1,11 @@
 # Changelog — KPulla6
 
+## 2026-11-22 — Separate Current and History fixed deposit terms (#41)
+
+- Fixed Deposits page defaults to a **Current** list (`ACTIVE` / `MATURED`) and adds a **History** list for completed terms (`MATURED_SETTLED` / `CLOSED`), with a **Renewed** label and previous/next term links.
+- `GET /fixed-deposits` accepts optional `lifecycle_view=current|history`; omitting it keeps the legacy all soft-active list. Additive response fields: `lifecycle_view`, `is_renewed`, `next_term_id`.
+- Renewal does not clear `is_active` on the predecessor; Value History boundaries remain settlement-exclusive / investment-inclusive.
+
 ## 2026-11-22 — FD/bank valuation review corrections (#35)
 
 - Native-currency FD-only / bank-cash-only reporting no longer requires FX for a zero investment subtotal (avoids false `fx_unavailable` on INR→INR).
