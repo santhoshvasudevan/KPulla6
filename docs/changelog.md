@@ -1,5 +1,12 @@
 # Changelog — KPulla6
 
+## 2026-11-22 — Read-only FD renewal audit (#44)
+
+- New `python manage.py audit_fd_renewals [--user-id N] [--json]` and `GET /api/v1/reports/fixed-deposit-renewal-audit` (owner-scoped, `portfolio_id` / `portfolio_scope`, optional `start_date` / `end_date`). Each recorded renewal is `CONSISTENT`, `INCONSISTENT` (recorded data contradicts the #43 allocation rules, settlement, or linked bank credits), or `INCOMPLETE` (missing or ambiguous evidence such as pending final interest, an unreviewed payout discrepancy, or a payout with no linked credit), with a reason per finding, reviewable totals, and term references.
+- Pending interest estimates are excluded from settled proceeds. The audit only reads: no repair, ledger backfill, or bank movement; the command runs in an always-rolled-back transaction.
+- Added an integrated #40 acceptance test: renew with pending interest, Current/History split, delayed ₹1,850 payout against a ₹2,000 estimate, resolve, and value history across the renewal boundary.
+- Guide: [Audit FD renewals](how-to/audit-fd-renewals.md).
+
 ## 2026-11-22 — Review and resolve FD maturity payout discrepancies (#46)
 
 - New `POST /fixed-deposit-pending-payouts/{id}/resolve-discrepancy` (`{ comment }`, required, ≤ 1000 chars). Only an `OPEN` discrepancy moves to `RESOLVED`, recording `resolution_comment` and `resolved_at`. Confirmed amounts, payment date, the bank credit, interest report totals, and the completed term are unchanged. **409** when there is no open discrepancy (none, still pending, or already resolved); **404** for another user's payout.

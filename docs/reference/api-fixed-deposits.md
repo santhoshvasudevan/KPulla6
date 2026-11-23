@@ -101,6 +101,7 @@ Updates metadata; after opening, principal/bank/currency/portfolio are locked. I
 | `GET` | `/fixed-deposit-pending-payouts` | Scoped pending (or `status=confirmed\|all`) final payouts with originating term (#45); optional `discrepancy_status=none\|open\|resolved` (#46) |
 | `POST` | `/fixed-deposit-pending-payouts/{id}/confirm` | Record actual payout; one linked bank credit; `client_request_id` for retry safety (#45) |
 | `POST` | `/fixed-deposit-pending-payouts/{id}/resolve-discrepancy` | Mark an `OPEN` payout discrepancy `RESOLVED` with a required `comment`; review metadata only (#46) |
+| `GET` | `/reports/fixed-deposit-renewal-audit` | Read-only renewal audit: `CONSISTENT` / `INCONSISTENT` / `INCOMPLETE` with reasons and totals (#44); see [Audit FD renewals](../how-to/audit-fd-renewals.md) |
 
 ## Next
 

@@ -1351,12 +1351,15 @@ Settle and renew accept optional `final_interest_pending` (bool, default `false`
 |--------|------|--------|
 | GET | `/api/v1/reports/fixed-deposit-interest` | **Done** — read-only gross/tax/net report; no accounting side effects |
 | GET | `/api/v1/reports/fixed-deposit-interest/export.csv` | **Done** — read-only CSV export; same filters/exclusions; detail rows only |
+| GET | `/api/v1/reports/fixed-deposit-renewal-audit` | **Done (#44)** — read-only renewal audit; `portfolio_scope`/`portfolio_id`, optional `start_date`/`end_date` on `renewal_date`; native currency only |
 
 **Query:** `portfolio_scope=all` or `portfolio_id`, optional `start_date`, `end_date`, `display_currency`, `group_by` (`year`, `portfolio`, `bank`, `fd`, `source`, `none`) — JSON only; CSV export ignores `group_by`.
 
 **Sources:** non-reversed interest payments; settlement final interest (excludes renewal-linked settlements to avoid double count); renewal group interest; **confirmed** pending payouts (`source_type=PENDING_PAYOUT`, dated `payment_date`, with `discrepancy_status` / `discrepancy_amount`, #45). Excludes zero-interest rows, unconfirmed pending estimates, and `CANCELLED` FD rows.
 
 **Response:** `rows`, `totals` (gross/tax/net, `row_count`, `fx_status`), optional `grouped_totals`, `warnings` (FX partial / mixed currency).
+
+**Renewal audit (#44):** `{ read_only: true, summary, results }`. `summary` has `renewal_count`, `status_counts` (`CONSISTENT` / `INCONSISTENT` / `INCOMPLETE`), `finding_counts` by code, and `totals_by_currency`. Each result has `renewal_id`, `renewal_date`, `currency`, `status`, `old_term` / `new_term` references, `settlement_id`, `settlement_movement_ids`, `unlinked_movement_ids`, `pending_payout_id`, `totals` (available vs allocated amounts, linked bank credits by leg, pending estimate excluded from proceeds, confirmed later payout), and `findings` (`code`, `kind`, `message`). Issues only read queries. Finding codes: [Audit FD renewals](how-to/audit-fd-renewals.md).
 
 **CSV export (FD-TAX-2):** `Content-Type: text/csv`; `Content-Disposition: attachment; filename="fd-interest-tax-{start}-to-{end}.csv"` (variants when dates partial). Columns: Date, Source Type, Source Label, Portfolio, Bank / Institution, Bank Account, FD Account, Currency, Gross Interest, Tax Withheld, Net Interest, Display Currency, Gross/Tax/Net Interest Display, Comment. Rows-only (no footer totals or warnings in file); header row when empty.
 

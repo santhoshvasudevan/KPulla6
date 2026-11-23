@@ -23,6 +23,7 @@ from transactions.views import (
 from debt.report_views import (
     FixedDepositInterestReportExportView,
     FixedDepositInterestReportView,
+    FixedDepositRenewalAuditReportView,
 )
 
 urlpatterns = [
@@ -93,5 +94,10 @@ urlpatterns = [
         "reports/fixed-deposit-interest/export.csv",
         FixedDepositInterestReportExportView.as_view(),
         name="fixed-deposit-interest-report-export",
+    ),
+    path(
+        "reports/fixed-deposit-renewal-audit",
+        FixedDepositRenewalAuditReportView.as_view(),
+        name="fixed-deposit-renewal-audit-report",
     ),
 ]

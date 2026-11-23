@@ -16,6 +16,10 @@ from debt.interest_report_csv import (
     interest_report_csv_filename,
 )
 from debt.interest_report_service import GroupByCode, build_fixed_deposit_interest_report
+from debt.renewal_audit_services import (
+    audit_fixed_deposit_renewals,
+    renewal_audit_report_to_dict,
+)
 from portfolios.holdings_service import HoldingsValidationError, validate_display_currency
 from portfolios.scope import PortfolioScopeError, ResolvedPortfolioScope, resolve_portfolio_scope
 from portfolios.services import PortfolioNotFoundError
@@ -181,3 +185,20 @@ class FixedDepositInterestReportExportView(APIView):
         response = HttpResponse(csv_text, content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
+
+
+class FixedDepositRenewalAuditReportView(APIView):
+    """GET /api/v1/reports/fixed-deposit-renewal-audit — read-only renewal audit (#44)."""
+
+    def get(self, request):
+        parsed, error = parse_report_query(request)
+        if error is not None:
+            return error
+
+        report = audit_fixed_deposit_renewals(
+            user_id=request.user.id,
+            portfolio_ids=parsed.scope.portfolio_ids if parsed.scope.kind == "single" else None,
+            start_date=parsed.start_date,
+            end_date=parsed.end_date,
+        )
+        return Response(renewal_audit_report_to_dict(report))

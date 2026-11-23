@@ -98,6 +98,7 @@ nav:
     - Configure Google OAuth: how-to/configure-google-oauth.md
     - Refresh prices, FX, benchmarks, and NAVs: how-to/refresh-market-cache.md
     - Back up and restore the database: how-to/backup-restore-database.md
+    - Audit fixed deposit renewals: how-to/audit-fd-renewals.md
     - Add a backend API endpoint: how-to/add-backend-api-endpoint.md
     - Add a frontend page: how-to/add-frontend-page.md
     - Investigate dashboard performance: how-to/investigate-dashboard-performance.md
