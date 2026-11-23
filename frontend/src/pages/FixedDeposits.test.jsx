@@ -26,6 +26,7 @@ vi.mock('../api', () => ({
   settleFixedDeposit: vi.fn(),
   fetchFixedDepositPendingPayouts: vi.fn(),
   confirmFixedDepositPendingPayout: vi.fn(),
+  resolveFixedDepositPendingPayoutDiscrepancy: vi.fn(),
   fetchFixedDepositInterestReport: vi.fn(),
   exportFixedDepositInterestReportCsv: vi.fn(),
   downloadBlobFile: vi.fn(),
@@ -1147,6 +1148,120 @@ describe('FixedDeposits page', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: /confirm payout/i }));
     expect(within(dialog).getByText(/gross interest must be greater than zero/i)).toBeInTheDocument();
     expect(api.confirmFixedDepositPendingPayout).not.toHaveBeenCalled();
+  });
+
+  it('lists open payout discrepancies and resolves with a comment', async () => {
+    const openItem = {
+      id: 41,
+      fixed_deposit_id: 9,
+      portfolio_name: 'Default Portfolio',
+      institution_name: 'SBI',
+      deposit_account_number: 'FD-OLD',
+      bank_account_name: 'Savings',
+      origin: 'SETTLEMENT',
+      status: 'CONFIRMED',
+      currency: 'INR',
+      payment_date: '2026-01-12',
+      suggested_net_interest: 2000,
+      net_interest: 1850,
+      discrepancy_status: 'OPEN',
+      discrepancy_amount: -150,
+    };
+    let resolved = false;
+    api.fetchFixedDepositPendingPayouts.mockImplementation(async (params) =>
+      params?.discrepancy_status === 'open' && !resolved ? [openItem] : []
+    );
+    api.resolveFixedDepositPendingPayoutDiscrepancy.mockImplementation(async () => {
+      resolved = true;
+      return { ...openItem, discrepancy_status: 'RESOLVED' };
+    });
+
+    renderPage();
+    const table = await screen.findByTestId('fd-payout-discrepancies');
+    const fdScope = { ...api.fetchFixedDeposits.mock.calls[0][0] };
+    delete fdScope.lifecycle_view;
+    expect(api.fetchFixedDepositPendingPayouts).toHaveBeenCalledWith({
+      ...fdScope,
+      status: 'confirmed',
+      discrepancy_status: 'open',
+    });
+    expect(within(table).getByText('SBI / FD-OLD')).toBeInTheDocument();
+    expect(within(table).getByText(/shortfall/)).toHaveTextContent('150');
+
+    fireEvent.click(within(table).getByRole('button', { name: /^resolve$/i }));
+    const dialog = screen.getByRole('dialog', { name: /resolve payout discrepancy/i });
+    expect(within(dialog).getByText('Discrepancy open')).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: /mark resolved/i }));
+    expect(within(dialog).getByText(/comment is required/i)).toBeInTheDocument();
+    expect(api.resolveFixedDepositPendingPayoutDiscrepancy).not.toHaveBeenCalled();
+
+    fireEvent.change(within(dialog).getByLabelText(/resolution comment/i), {
+      target: { value: 'Accepted bank figure.' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: /mark resolved/i }));
+
+    await waitFor(() => {
+      expect(api.resolveFixedDepositPendingPayoutDiscrepancy).toHaveBeenCalledWith(
+        41,
+        'Accepted bank figure.'
+      );
+    });
+    await waitFor(() =>
+      expect(screen.getByText(/discrepancy marked resolved/i)).toBeInTheDocument()
+    );
+    expect(screen.queryByTestId('fd-payout-discrepancies')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(api.confirmFixedDepositPendingPayout).not.toHaveBeenCalled();
+  });
+
+  it('history terms show discrepancy review state and resolve entry point', async () => {
+    const openTerm = {
+      ...sampleFd,
+      id: 9,
+      status: 'MATURED_SETTLED',
+      lifecycle_view: 'history',
+      deposit_account_number: 'FD-OPEN',
+      pending_payout: {
+        id: 41,
+        fixed_deposit_id: 9,
+        status: 'CONFIRMED',
+        currency: 'INR',
+        suggested_net_interest: 2000,
+        net_interest: 1850,
+        discrepancy_status: 'OPEN',
+        discrepancy_amount: -150,
+      },
+    };
+    const resolvedTerm = {
+      ...openTerm,
+      id: 10,
+      deposit_account_number: 'FD-DONE',
+      pending_payout: {
+        ...openTerm.pending_payout,
+        id: 42,
+        fixed_deposit_id: 10,
+        discrepancy_status: 'RESOLVED',
+        resolution_comment: 'Checked.',
+      },
+    };
+    api.fetchFixedDeposits.mockImplementation(async (params) => {
+      if (params?.lifecycle_view === 'history') return [openTerm, resolvedTerm];
+      return [sampleFd];
+    });
+
+    renderPage();
+    await waitFor(() => screen.getByText('FD-001'));
+    fireEvent.click(screen.getByRole('tab', { name: /^history$/i }));
+    await waitFor(() => screen.getByText('FD-OPEN'));
+
+    expect(screen.getByText('Discrepancy open')).toBeInTheDocument();
+    expect(screen.getByText('Discrepancy resolved')).toBeInTheDocument();
+    const resolveButtons = screen.getAllByRole('button', { name: /resolve discrepancy/i });
+    expect(resolveButtons).toHaveLength(1);
+
+    fireEvent.click(resolveButtons[0]);
+    const dialog = screen.getByRole('dialog', { name: /resolve payout discrepancy/i });
+    expect(within(dialog).getByText(/FD-OPEN/)).toBeInTheDocument();
   });
 
   it('shows Cancel FD for ledger-backed active FD', async () => {

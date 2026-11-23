@@ -21,6 +21,7 @@ from debt.serializers import (
     FixedDepositCancelWriteSerializer,
     FixedDepositMaturityEstimateQuerySerializer,
     FixedDepositPendingPayoutConfirmSerializer,
+    FixedDepositPendingPayoutResolveSerializer,
     FixedDepositUpdateSerializer,
     FixedDepositWriteSerializer,
     fixed_deposit_pending_payout_payload,
@@ -88,6 +89,7 @@ from debt.pending_payout_services import (
     confirm_fixed_deposit_pending_payout,
     get_fixed_deposit_pending_payout,
     list_fixed_deposit_pending_payouts,
+    resolve_pending_payout_discrepancy,
 )
 from debt.renewal_services import RenewalValidationError, renew_fixed_deposit
 from debt.settlement_services import (
@@ -525,11 +527,15 @@ class FixedDepositPendingPayoutListView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
 
         status_filter = (request.query_params.get("status") or "pending").strip().lower()
+        discrepancy_filter = (
+            request.query_params.get("discrepancy_status") or ""
+        ).strip().lower() or None
         try:
             items = list_fixed_deposit_pending_payouts(
                 request.user,
                 portfolio_ids=scope.portfolio_ids,
                 status=status_filter,
+                discrepancy_status=discrepancy_filter,
             )
         except PendingPayoutValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
@@ -566,6 +572,26 @@ class FixedDepositPendingPayoutConfirmView(APIView):
             fixed_deposit_pending_payout_payload(result.pending_payout),
             status=status.HTTP_201_CREATED if result.created else status.HTTP_200_OK,
         )
+
+
+class FixedDepositPendingPayoutResolveDiscrepancyView(APIView):
+    def post(self, request, pending_id: int):
+        serializer = FixedDepositPendingPayoutResolveSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            pending = resolve_pending_payout_discrepancy(
+                request.user,
+                pending_id,
+                serializer.validated_data["comment"],
+            )
+        except PendingPayoutNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except PendingPayoutConflictError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        except PendingPayoutValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(fixed_deposit_pending_payout_payload(pending))
 
 
 class FixedDepositSettlementDetailView(APIView):

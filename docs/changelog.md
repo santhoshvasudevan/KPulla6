@@ -1,5 +1,13 @@
 # Changelog — KPulla6
 
+## 2026-11-22 — Review and resolve FD maturity payout discrepancies (#46)
+
+- New `POST /fixed-deposit-pending-payouts/{id}/resolve-discrepancy` (`{ comment }`, required, ≤ 1000 chars). Only an `OPEN` discrepancy moves to `RESOLVED`, recording `resolution_comment` and `resolved_at`. Confirmed amounts, payment date, the bank credit, interest report totals, and the completed term are unchanged. **409** when there is no open discrepancy (none, still pending, or already resolved); **404** for another user's payout.
+- Discrepancy detection stays net vs net: flagged only when both a suggested and an actual net exist and differ (a different gross/tax split with the same net is not flagged).
+- `GET /fixed-deposit-pending-payouts` accepts optional `discrepancy_status=none|open|resolved`. The FD list/detail `pending_payout` summary now includes `resolution_comment` and `resolved_at`.
+- Fixed Deposits page: **Payout discrepancies to review** panel (estimated net, actual net, shortfall/excess) with **Resolve**, plus **Discrepancy open / resolved** badges and **Resolve discrepancy** on History terms. FD detail adds a **Final maturity payout** card with the same review state and resolve flow.
+- Test fix: `test_cannot_cancel_renewed_fd` now renews at the matured principal so it satisfies the #43 direct-rollover allocation.
+
 ## 2026-11-22 — Pending FD maturity payouts (#45)
 
 - Settle and Renew accept **Final interest pending** (`final_interest_pending`, optional `pending_expected_date`). Entered interest becomes a suggestion on a new `FixedDepositPendingPayout` for the completed term: no bank credit, no realized interest, and excluded from renewal proceeds (`old principal = new principal + cash payout`).

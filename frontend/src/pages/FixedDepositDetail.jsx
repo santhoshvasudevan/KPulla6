@@ -24,6 +24,10 @@ import FixedDepositInterestPaymentForm, {
   newInterestClientRequestId,
 } from '../components/FixedDepositInterestPaymentForm';
 import {
+  FixedDepositPayoutResolveModal,
+  FixedDepositPayoutReviewSummary,
+} from '../components/FixedDepositPayoutReview';
+import {
   fdDisplayMaturitySource,
   fdDisplayMaturityValue,
   fdDisplayTotalInterest,
@@ -42,6 +46,7 @@ const SECTION_NAV = [
   { href: '#fd-detail-schedule', label: 'Interest schedule' },
   { href: '#fd-detail-calculation', label: 'Calculation' },
 ];
+const PAYOUT_NAV_ITEM = { href: '#fd-detail-final-payout', label: 'Final payout' };
 
 function DetailRow({ label, children }) {
   return (
@@ -81,6 +86,8 @@ export default function FixedDepositDetail() {
   const [editingPaymentId, setEditingPaymentId] = useState(null);
   const [scheduleContext, setScheduleContext] = useState(null);
   const [actualClientRequestId, setActualClientRequestId] = useState('');
+  const [resolveTarget, setResolveTarget] = useState(null);
+  const [status, setStatus] = useState('');
 
   const loadData = useCallback(() => {
     if (!fdId) return;
@@ -108,6 +115,14 @@ export default function FixedDepositDetail() {
   const fySummary = data?.financial_year_summary;
   const calc = data?.detailed_calculation;
   const schedule = data?.expected_interest_schedule || [];
+  const finalPayout = data?.pending_payout || null;
+  const sectionNav = finalPayout ? [...SECTION_NAV, PAYOUT_NAV_ITEM] : SECTION_NAV;
+
+  const handleDiscrepancyResolved = () => {
+    setResolveTarget(null);
+    setStatus('Payout discrepancy marked resolved.');
+    loadData();
+  };
 
   const openRecordActual = (row) => {
     setEditingPaymentId(null);
@@ -235,9 +250,10 @@ export default function FixedDepositDetail() {
           ))}
         </div>
       ) : null}
+      {status ? <WarningBanner severity="success" message={status} /> : null}
 
       <nav className="fd-detail-section-nav" aria-label="Fixed deposit detail sections">
-        {SECTION_NAV.map((item) => (
+        {sectionNav.map((item) => (
           <a key={item.href} href={item.href} className="fd-detail-section-nav__link">
             {item.label}
           </a>
@@ -485,6 +501,25 @@ export default function FixedDepositDetail() {
           <p className="fd-detail__approx-note">{calc?.approximation_note}</p>
         </AppCard>
       </section>
+
+      {finalPayout ? (
+        <section id="fd-detail-final-payout">
+          <AppCard title="Final maturity payout" className="fd-detail-card">
+            <FixedDepositPayoutReviewSummary payout={finalPayout} onResolve={setResolveTarget} />
+          </AppCard>
+        </section>
+      ) : null}
+
+      {resolveTarget ? (
+        <FixedDepositPayoutResolveModal
+          payout={resolveTarget}
+          termLabel={`${fd.institution_name} / ${fd.deposit_account_number}`}
+          onClose={() => setResolveTarget(null)}
+          onResolved={handleDiscrepancyResolved}
+          backdropClassName="fd-detail-modal-backdrop"
+          modalClassName="fd-detail-modal"
+        />
+      ) : null}
 
       {actualModalOpen ? (
         <div className="fd-detail-modal-backdrop" role="presentation" onClick={closeActualModal}>

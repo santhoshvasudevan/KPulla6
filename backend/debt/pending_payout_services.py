@@ -17,6 +17,7 @@ from debt.bank_ledger_services import (
 )
 from debt.models import (
     FixedDeposit,
+    FixedDepositPayoutDiscrepancyStatus,
     FixedDepositPendingPayout,
     FixedDepositPendingPayoutStatus,
     FixedDepositSettlement,
@@ -30,6 +31,8 @@ from finance.fd_pending_payout import (
 )
 
 PENDING_PAYOUT_STATUS_FILTERS = ("pending", "confirmed", "all")
+DISCREPANCY_STATUS_FILTERS = ("none", "open", "resolved")
+RESOLUTION_COMMENT_MAX_LENGTH = 1000
 
 
 class PendingPayoutNotFoundError(Exception):
@@ -115,10 +118,15 @@ def list_fixed_deposit_pending_payouts(
     *,
     portfolio_ids: list[int] | None = None,
     status: str = "pending",
+    discrepancy_status: str | None = None,
 ) -> list[FixedDepositPendingPayout]:
     if status not in PENDING_PAYOUT_STATUS_FILTERS:
         raise PendingPayoutValidationError(
             "status must be one of: pending, confirmed, all."
+        )
+    if discrepancy_status is not None and discrepancy_status not in DISCREPANCY_STATUS_FILTERS:
+        raise PendingPayoutValidationError(
+            "discrepancy_status must be one of: none, open, resolved."
         )
     qs = _pending_queryset(user).exclude(
         fixed_deposit__status=FixedDepositStatus.CANCELLED
@@ -129,6 +137,8 @@ def list_fixed_deposit_pending_payouts(
         qs = qs.filter(status=FixedDepositPendingPayoutStatus.PENDING)
     elif status == "confirmed":
         qs = qs.filter(status=FixedDepositPendingPayoutStatus.CONFIRMED)
+    if discrepancy_status is not None:
+        qs = qs.filter(discrepancy_status=discrepancy_status.upper())
     return list(qs.order_by("expected_payout_date", "created_at", "id"))
 
 
@@ -307,3 +317,49 @@ def confirm_fixed_deposit_pending_payout(
         pending_payout=get_fixed_deposit_pending_payout(user, pending_id),
         created=True,
     )
+
+
+def resolve_pending_payout_discrepancy(
+    user: AbstractBaseUser,
+    pending_id: int,
+    comment: str,
+) -> FixedDepositPendingPayout:
+    """Mark an OPEN payout discrepancy RESOLVED with a review comment (#46).
+
+    Only review metadata changes: confirmed amounts, payment date, bank movement,
+    and interest report figures stay exactly as recorded.
+    """
+    note = (comment or "").strip()
+    if not note:
+        raise PendingPayoutValidationError("comment is required to resolve a discrepancy.")
+    if len(note) > RESOLUTION_COMMENT_MAX_LENGTH:
+        raise PendingPayoutValidationError(
+            f"comment must be at most {RESOLUTION_COMMENT_MAX_LENGTH} characters."
+        )
+
+    now = timezone.now()
+    with db_transaction.atomic():
+        updated = (
+            FixedDepositPendingPayout.objects.filter(
+                user=user,
+                pk=pending_id,
+                discrepancy_status=FixedDepositPayoutDiscrepancyStatus.OPEN,
+            )
+            .exclude(fixed_deposit__status=FixedDepositStatus.CANCELLED)
+            .update(
+                discrepancy_status=FixedDepositPayoutDiscrepancyStatus.RESOLVED,
+                resolution_comment=note,
+                resolved_at=now,
+                updated_at=now,
+            )
+        )
+    if updated != 1:
+        pending = get_fixed_deposit_pending_payout(user, pending_id)
+        if pending.discrepancy_status == FixedDepositPayoutDiscrepancyStatus.RESOLVED:
+            raise PendingPayoutConflictError("This payout discrepancy is already resolved.")
+        if pending.discrepancy_status == FixedDepositPayoutDiscrepancyStatus.NONE:
+            raise PendingPayoutConflictError("This payout has no open discrepancy to resolve.")
+        raise PendingPayoutValidationError(
+            "Cannot resolve a payout discrepancy on a cancelled fixed deposit."
+        )
+    return get_fixed_deposit_pending_payout(user, pending_id)

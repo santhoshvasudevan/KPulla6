@@ -56,6 +56,8 @@ def pending_payout_summary(pending: FixedDepositPendingPayout) -> dict:
         "cash_movement_id": pending.cash_movement_id,
         "discrepancy_status": pending.discrepancy_status,
         "discrepancy_amount": _optional_float(pending.discrepancy_amount),
+        "resolution_comment": pending.resolution_comment or None,
+        "resolved_at": _optional_iso(pending.resolved_at),
         "confirmed_at": _optional_iso(pending.confirmed_at),
     }
 
@@ -946,8 +948,6 @@ def fixed_deposit_pending_payout_payload(pending: FixedDepositPendingPayout) -> 
             "principal_amount": float(fd.principal_amount),
             "client_request_id": pending.client_request_id or None,
             "comment": pending.comment or None,
-            "resolution_comment": pending.resolution_comment or None,
-            "resolved_at": _optional_iso(pending.resolved_at),
             "created_at": pending.created_at.isoformat(),
             "updated_at": pending.updated_at.isoformat(),
         }
@@ -987,3 +987,7 @@ class FixedDepositPendingPayoutConfirmSerializer(serializers.Serializer):
                 {"tax_withheld": "tax_withheld cannot exceed gross_interest."}
             )
         return attrs
+
+
+class FixedDepositPendingPayoutResolveSerializer(serializers.Serializer):
+    comment = serializers.CharField(max_length=1000, trim_whitespace=True)

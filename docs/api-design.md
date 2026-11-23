@@ -1334,11 +1334,14 @@ Settle and renew accept optional `final_interest_pending` (bool, default `false`
 
 | Method | Path | Notes |
 |--------|------|--------|
-| GET | `/api/v1/fixed-deposit-pending-payouts` | `portfolio_scope=all` or `portfolio_id`; optional `status=pending` (default) \| `confirmed` \| `all`. Each row includes the originating term (`fixed_deposit_id`, institution, deposit account, portfolio, bank, status, maturity date). Cancelled FDs excluded |
+| GET | `/api/v1/fixed-deposit-pending-payouts` | `portfolio_scope=all` or `portfolio_id`; optional `status=pending` (default) \| `confirmed` \| `all`; optional `discrepancy_status=none` \| `open` \| `resolved` (#46, **400** otherwise). Each row includes the originating term (`fixed_deposit_id`, institution, deposit account, portfolio, bank, status, maturity date). Cancelled FDs excluded |
 | GET | `/api/v1/fixed-deposit-pending-payouts/{id}` | Owner-scoped (**404** otherwise) |
 | POST | `/api/v1/fixed-deposit-pending-payouts/{id}/confirm` | `{ payment_date, gross_interest, tax_withheld?, comment?, client_request_id? }` |
+| POST | `/api/v1/fixed-deposit-pending-payouts/{id}/resolve-discrepancy` | `{ comment }` (required, trimmed, ≤ 1000 chars) — #46 |
 
-**Confirm:** atomic; records actual date/gross/tax/net and posts exactly one `FD_MATURITY_INTEREST` (or `FD_CLOSURE_INTEREST` for closures) CREDIT linked to the originating FD on `payment_date` when net > 0. A mismatch with the suggestion never blocks: `discrepancy_status=OPEN`, `discrepancy_amount = actual net − suggested net`; equal or no suggestion → `NONE`. **201** on first confirm; **200** replay with the same `client_request_id` (unique per user); **409** when already confirmed without a matching key; **400** when a key was used for a different payout. `resolution_comment` / `resolved_at` are reserved for #46 (no resolve endpoint yet).
+**Confirm:** atomic; records actual date/gross/tax/net and posts exactly one `FD_MATURITY_INTEREST` (or `FD_CLOSURE_INTEREST` for closures) CREDIT linked to the originating FD on `payment_date` when net > 0. A mismatch with the suggestion never blocks: `discrepancy_status=OPEN`, `discrepancy_amount = actual net − suggested net`; equal or no suggestion → `NONE`. **201** on first confirm; **200** replay with the same `client_request_id` (unique per user); **409** when already confirmed without a matching key; **400** when a key was used for a different payout.
+
+**Resolve discrepancy (#46):** moves `discrepancy_status` `OPEN` → `RESOLVED` and sets `resolution_comment` + `resolved_at`; returns **200** with the full payout row. Review metadata only — suggested/actual amounts, `payment_date`, `discrepancy_amount`, the linked bank credit, interest report rows/totals, and the completed term are unchanged. **400** blank/missing comment; **409** when `discrepancy_status` is `NONE` (no comparable estimate, equal nets, or still `PENDING`) or already `RESOLVED`; **404** for another user's payout. Summary blocks (`pending_payout` on FD list/detail) include `discrepancy_status`, `discrepancy_amount`, `resolution_comment`, and `resolved_at`.
 
 **FD list / detail:** `FixedDeposit` responses add `pending_payout` (summary or `null`). `GET /fixed-deposits/{id}/detail` adds `pending_payout`; `term_totals` / FY summary include a **confirmed** payout once and never a pending estimate.
 

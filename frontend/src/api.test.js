@@ -491,6 +491,35 @@ describe('API Service', () => {
     );
   });
 
+  it('fetchFixedDepositPendingPayouts sends discrepancy_status filter', async () => {
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => [] });
+    await api.fetchFixedDepositPendingPayouts({
+      portfolio_scope: 'all',
+      status: 'confirmed',
+      discrepancy_status: 'open',
+    });
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/fixed-deposit-pending-payouts?portfolio_scope=all&status=confirmed&discrepancy_status=open',
+      expect.objectContaining(defaultFetchOptions)
+    );
+  });
+
+  it('resolveFixedDepositPendingPayoutDiscrepancy posts comment', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ id: 4, discrepancy_status: 'RESOLVED' }),
+    });
+    await api.resolveFixedDepositPendingPayoutDiscrepancy(4, 'Bank deducted extra TDS.');
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/fixed-deposit-pending-payouts/4/resolve-discrepancy',
+      expect.objectContaining({
+        ...defaultFetchOptions,
+        method: 'POST',
+        body: JSON.stringify({ comment: 'Bank deducted extra TDS.' }),
+      })
+    );
+  });
+
   it('cancelFixedDeposit posts to cancel endpoint', async () => {
     global.fetch.mockResolvedValueOnce({
       ok: true,

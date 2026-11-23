@@ -41,6 +41,11 @@ import FixedDepositInterestReport from '../components/FixedDepositInterestReport
 import FixedDepositInterestPaymentForm, {
   newInterestClientRequestId,
 } from '../components/FixedDepositInterestPaymentForm';
+import {
+  FixedDepositPayoutResolveModal,
+  PayoutDifferenceValue,
+  payoutDiscrepancyBadgeProps,
+} from '../components/FixedDepositPayoutReview';
 import '../components/FixedDepositInterestPaymentForm.css';
 import './FixedDeposits.css';
 
@@ -379,6 +384,8 @@ export default function FixedDeposits() {
   const [pendingConfirmRequestId, setPendingConfirmRequestId] = useState('');
   const [pendingConfirmSubmitting, setPendingConfirmSubmitting] = useState(false);
   const [pendingConfirmError, setPendingConfirmError] = useState('');
+  const [payoutDiscrepancies, setPayoutDiscrepancies] = useState([]);
+  const [resolveTarget, setResolveTarget] = useState(null);
 
   const statusCounts = useMemo(() => fdStatusCounts(items), [items]);
   const isHistoryView = lifecycleView === 'history';
@@ -406,6 +413,20 @@ export default function FixedDeposits() {
       setPendingPayouts(Array.isArray(pendingData) ? pendingData : []);
     } catch {
       setPendingPayouts([]);
+    }
+    try {
+      const discrepancyData = await fetchFixedDepositPendingPayouts({
+        ...apiQuery,
+        status: 'confirmed',
+        discrepancy_status: 'open',
+      });
+      setPayoutDiscrepancies(
+        Array.isArray(discrepancyData)
+          ? discrepancyData.filter((p) => p.discrepancy_status === 'OPEN')
+          : []
+      );
+    } catch {
+      setPayoutDiscrepancies([]);
     }
   }, [apiQuery, settingsLoaded, lifecycleView]);
 
@@ -1179,6 +1200,12 @@ export default function FixedDeposits() {
     }
   };
 
+  const handleDiscrepancyResolved = async () => {
+    setResolveTarget(null);
+    setStatus('Payout discrepancy marked resolved. Posted amounts are unchanged.');
+    await loadData();
+  };
+
   if (!settingsLoaded || loading) {
     return <LoadingState message="Loading fixed deposits…" />;
   }
@@ -1344,6 +1371,63 @@ export default function FixedDeposits() {
           </AppTable>
         </DataTableShell>
       ) : null}
+      {payoutDiscrepancies.length > 0 ? (
+        <DataTableShell
+          className="fixed-deposits-page__payout-discrepancies"
+          title="Payout discrepancies to review"
+          subtitle="Confirmed final payouts that differ from the estimate — the actual amount is already posted to bank cash"
+          dense
+        >
+          <AppTable
+            compact
+            className="fd-payout-discrepancies-table"
+            data-testid="fd-payout-discrepancies"
+          >
+            <thead>
+              <tr>
+                <AppTableHeaderCell>Portfolio</AppTableHeaderCell>
+                <AppTableHeaderCell>Originating term</AppTableHeaderCell>
+                <AppTableHeaderCell>Paid on</AppTableHeaderCell>
+                <AppTableHeaderCell numeric>Estimated net</AppTableHeaderCell>
+                <AppTableHeaderCell numeric>Actual net</AppTableHeaderCell>
+                <AppTableHeaderCell numeric>Difference</AppTableHeaderCell>
+                <AppTableHeaderCell>Actions</AppTableHeaderCell>
+              </tr>
+            </thead>
+            <tbody>
+              {payoutDiscrepancies.map((p) => (
+                <tr key={p.id}>
+                  <AppTableCell>{p.portfolio_name}</AppTableCell>
+                  <AppTableCell>
+                    <button
+                      type="button"
+                      className="fd-term-link"
+                      onClick={() => navigate(`/fixed-deposits/${p.fixed_deposit_id}`)}
+                    >
+                      {p.institution_name} / {p.deposit_account_number}
+                    </button>
+                  </AppTableCell>
+                  <AppTableCell>{p.payment_date || '—'}</AppTableCell>
+                  <AppTableCell numeric>
+                    <CurrencyValue value={p.suggested_net_interest} currency={p.currency} />
+                  </AppTableCell>
+                  <AppTableCell numeric>
+                    <CurrencyValue value={p.net_interest} currency={p.currency} />
+                  </AppTableCell>
+                  <AppTableCell numeric>
+                    <PayoutDifferenceValue amount={p.discrepancy_amount} currency={p.currency} />
+                  </AppTableCell>
+                  <AppTableCell>
+                    <Button variant="primary" type="button" onClick={() => setResolveTarget(p)}>
+                      Resolve
+                    </Button>
+                  </AppTableCell>
+                </tr>
+              ))}
+            </tbody>
+          </AppTable>
+        </DataTableShell>
+      ) : null}
       <DataTableShell
         className="fixed-deposits-page__table"
         title={isHistoryView ? 'Fixed deposit history' : 'Fixed deposit holdings'}
@@ -1497,6 +1581,11 @@ export default function FixedDeposits() {
                         {fd.pending_payout?.status === 'PENDING' ? (
                           <StatusBadge status="warning" label="Payout pending" />
                         ) : null}
+                        {payoutDiscrepancyBadgeProps(fd.pending_payout?.discrepancy_status) ? (
+                          <StatusBadge
+                            {...payoutDiscrepancyBadgeProps(fd.pending_payout.discrepancy_status)}
+                          />
+                        ) : null}
                       </AppTableCell>
                     </tr>
                     <tr
@@ -1591,6 +1680,22 @@ export default function FixedDeposits() {
                                     }
                                   >
                                     Confirm payout
+                                  </Button>
+                                </div>
+                              ) : null}
+                              {fd.pending_payout?.discrepancy_status === 'OPEN' ? (
+                                <div
+                                  className="fd-action-strip__group"
+                                  aria-label="Payout discrepancy actions"
+                                >
+                                  <Button
+                                    variant="primary"
+                                    type="button"
+                                    onClick={() =>
+                                      setResolveTarget(pendingPayoutConfirmTarget(fd))
+                                    }
+                                  >
+                                    Resolve discrepancy
                                   </Button>
                                 </div>
                               ) : null}
@@ -2314,6 +2419,15 @@ export default function FixedDeposits() {
             />
           </div>
         </div>
+      ) : null}
+
+      {resolveTarget ? (
+        <FixedDepositPayoutResolveModal
+          payout={resolveTarget}
+          termLabel={`${resolveTarget.institution_name} / ${resolveTarget.deposit_account_number}`}
+          onClose={() => setResolveTarget(null)}
+          onResolved={handleDiscrepancyResolved}
+        />
       ) : null}
 
       {interestReverseModalOpen && interestReverseTarget && interestReverseFd ? (

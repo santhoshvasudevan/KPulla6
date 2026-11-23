@@ -155,6 +155,87 @@ describe('FixedDepositDetail page', () => {
     expect(screen.getByText(/this is an estimate/i)).toBeInTheDocument();
   });
 
+  it('shows final payout review and resolves an open discrepancy', async () => {
+    const openPayout = {
+      id: 41,
+      fixed_deposit_id: 1,
+      status: 'CONFIRMED',
+      currency: 'INR',
+      suggested_net_interest: 2000,
+      payment_date: '2026-01-12',
+      net_interest: 1850,
+      discrepancy_status: 'OPEN',
+      discrepancy_amount: -150,
+      resolution_comment: null,
+      resolved_at: null,
+    };
+    const resolvedPayout = {
+      ...openPayout,
+      discrepancy_status: 'RESOLVED',
+      resolution_comment: 'Bank deducted extra TDS.',
+      resolved_at: '2026-01-20T10:00:00+00:00',
+    };
+    api.fetchFixedDepositDetail
+      .mockResolvedValueOnce({ ...detailPayload, pending_payout: openPayout })
+      .mockResolvedValue({ ...detailPayload, pending_payout: resolvedPayout });
+    api.resolveFixedDepositPendingPayoutDiscrepancy.mockResolvedValue(resolvedPayout);
+
+    renderDetail();
+    const review = await screen.findByTestId('fd-payout-review');
+    expect(within(review).getByText(/2,000/)).toBeInTheDocument();
+    expect(within(review).getByText(/1,850/)).toBeInTheDocument();
+    expect(within(review).getByText(/shortfall/)).toHaveTextContent('150');
+    expect(within(review).getByText('Discrepancy open')).toBeInTheDocument();
+
+    fireEvent.click(within(review).getByRole('button', { name: /resolve discrepancy/i }));
+    const dialog = screen.getByRole('dialog', { name: /resolve payout discrepancy/i });
+    fireEvent.click(within(dialog).getByRole('button', { name: /mark resolved/i }));
+    expect(within(dialog).getByText(/comment is required/i)).toBeInTheDocument();
+    expect(api.resolveFixedDepositPendingPayoutDiscrepancy).not.toHaveBeenCalled();
+
+    fireEvent.change(within(dialog).getByLabelText(/resolution comment/i), {
+      target: { value: '  Bank deducted extra TDS. ' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: /mark resolved/i }));
+
+    await waitFor(() => {
+      expect(api.resolveFixedDepositPendingPayoutDiscrepancy).toHaveBeenCalledWith(
+        41,
+        'Bank deducted extra TDS.'
+      );
+    });
+    const reloaded = await screen.findByTestId('fd-payout-review');
+    await waitFor(() =>
+      expect(within(reloaded).getByText('Discrepancy resolved')).toBeInTheDocument()
+    );
+    expect(within(reloaded).getByText(/bank deducted extra tds/i)).toBeInTheDocument();
+    expect(within(reloaded).getByText(/1,850/)).toBeInTheDocument();
+    expect(
+      within(reloaded).queryByRole('button', { name: /resolve discrepancy/i })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('pending final payout shows estimate without a difference', async () => {
+    api.fetchFixedDepositDetail.mockResolvedValue({
+      ...detailPayload,
+      pending_payout: {
+        id: 42,
+        status: 'PENDING',
+        currency: 'INR',
+        suggested_net_interest: 2000,
+        net_interest: null,
+        discrepancy_status: 'NONE',
+        discrepancy_amount: null,
+      },
+    });
+    renderDetail();
+    const review = await screen.findByTestId('fd-payout-review');
+    expect(within(review).getByText(/awaiting bank credit/i)).toBeInTheDocument();
+    expect(within(review).getByText(/pending confirmation/i)).toBeInTheDocument();
+    expect(within(review).queryByRole('button')).not.toBeInTheDocument();
+  });
+
   it('reloads with financial year filter', async () => {
     renderDetail();
     await waitFor(() => screen.getByLabelText(/indian financial year/i));

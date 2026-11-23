@@ -1023,11 +1023,15 @@ export async function fetchFixedDepositSettlements(fdId) {
 
 /** GET /api/v1/fixed-deposit-pending-payouts — scoped pending final payouts (#45).
  * Optional scopeParams.status: 'pending' (default) | 'confirmed' | 'all'.
+ * Optional scopeParams.discrepancy_status: 'none' | 'open' | 'resolved' (#46).
  */
 export async function fetchFixedDepositPendingPayouts(scopeParams = null) {
   const params = withFdScopeParams({}, scopeParams);
   if (scopeParams?.status) {
     params.set('status', String(scopeParams.status));
+  }
+  if (scopeParams?.discrepancy_status) {
+    params.set('discrepancy_status', String(scopeParams.discrepancy_status));
   }
   return fetchWithHandling(`/fixed-deposit-pending-payouts?${params.toString()}`);
 }
@@ -1038,6 +1042,17 @@ export async function confirmFixedDepositPendingPayout(pendingId, payload) {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+/** POST /api/v1/fixed-deposit-pending-payouts/{id}/resolve-discrepancy — review metadata only (#46) */
+export async function resolveFixedDepositPendingPayoutDiscrepancy(pendingId, comment) {
+  return fetchWithHandling(
+    `/fixed-deposit-pending-payouts/${pendingId}/resolve-discrepancy`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ comment }),
+    }
+  );
 }
 
 /** Build query params for FD interest report JSON/CSV endpoints. */

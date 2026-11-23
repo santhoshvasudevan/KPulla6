@@ -20,6 +20,7 @@ from debt.views import (
     FixedDepositPendingPayoutConfirmView,
     FixedDepositPendingPayoutDetailView,
     FixedDepositPendingPayoutListView,
+    FixedDepositPendingPayoutResolveDiscrepancyView,
     FixedDepositSettleView,
     FixedDepositRenewView,
     FixedDepositCancelView,
@@ -135,5 +136,10 @@ urlpatterns = [
         "fixed-deposit-pending-payouts/<int:pending_id>/confirm",
         FixedDepositPendingPayoutConfirmView.as_view(),
         name="fixed-deposit-pending-payout-confirm",
+    ),
+    path(
+        "fixed-deposit-pending-payouts/<int:pending_id>/resolve-discrepancy",
+        FixedDepositPendingPayoutResolveDiscrepancyView.as_view(),
+        name="fixed-deposit-pending-payout-resolve-discrepancy",
     ),
 ]

@@ -182,10 +182,17 @@ Use the action that matches the real-world event. These are **not** interchangea
 | View | Query | Includes | UI |
 |------|-------|----------|-----|
 | **Current** (default on Fixed Deposits page) | `lifecycle_view=current` | `ACTIVE` and `MATURED` (including matured awaiting settlement) | Edit / renew / settle / record interest |
-| **History** | `lifecycle_view=history` | `MATURED_SETTLED` and `CLOSED` | Read-only; **Renewed** label when a successor exists; previous/next term links; **Payout pending** badge + **Confirm payout** only when final interest is pending (#45) |
+| **History** | `lifecycle_view=history` | `MATURED_SETTLED` and `CLOSED` | Read-only; **Renewed** label when a successor exists; previous/next term links; **Payout pending** badge + **Confirm payout** only when final interest is pending (#45); **Discrepancy open / resolved** badge + **Resolve discrepancy** for an open payout discrepancy (#46) |
 | **Legacy (no filter)** | omit `lifecycle_view` | All soft-active rows (`is_active=true`) | Preserves existing API callers |
 
-**Pending final payouts (#45):** Settle and Renew have a **Final interest pending** checkbox with an optional expected date. Entered interest is stored as an estimate on the completed term — no bank credit, not realized interest, and excluded from renewal proceeds (`old principal = new principal + cash payout`). A **Pending maturity payouts** panel (both views, portfolio-scoped) lists open payouts with their originating term; **Confirm payout** records the actual date/gross/tax/net and posts one bank credit. A difference from the estimate is kept as an open discrepancy (review workflow: #46).
+**Pending final payouts (#45):** Settle and Renew have a **Final interest pending** checkbox with an optional expected date. Entered interest is stored as an estimate on the completed term — no bank credit, not realized interest, and excluded from renewal proceeds (`old principal = new principal + cash payout`). A **Pending maturity payouts** panel (both views, portfolio-scoped) lists open payouts with their originating term; **Confirm payout** records the actual date/gross/tax/net and posts one bank credit. A difference from the estimate is kept as an open discrepancy.
+
+**Payout discrepancy review (#46):**
+
+1. **Detection** — on confirm, the actual net is compared with the suggested net (same basis). It is flagged `OPEN` only when both exist and differ; no estimate, or an equal net with a different gross/tax split, stays `NONE`. Example: estimated net ₹2,000, actual net ₹1,850 → ₹150 shortfall, and ₹1,850 is what the bank credit posts.
+2. **Review** — open items appear in the **Payout discrepancies to review** panel (portfolio-scoped: estimated net, actual net, shortfall/excess). The originating term shows the same state: History row badge, and the FD detail **Final maturity payout** card (estimate, actual posted, difference, review state).
+3. **Resolve** — **Resolve** / **Resolve discrepancy** opens a modal that requires a comment. Saving calls `POST /fixed-deposit-pending-payouts/{id}/resolve-discrepancy`; the item leaves the panel and the term shows **Discrepancy resolved** with the comment and date after reload.
+4. **No ledger effect** — resolving never edits the confirmed amounts or date, the bank credit, interest report totals, or the completed term.
 
 Renewal does **not** clear `is_active` on the predecessor. Cancelled / soft-deactivated rows stay out of both views. Response fields: `lifecycle_view`, `is_renewed`, `next_term_id`, `renewal_of_id`. Value History still attributes each term’s principal through the day before settlement and the successor from its investment date.
 
