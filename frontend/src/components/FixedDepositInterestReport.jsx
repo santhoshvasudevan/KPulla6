@@ -22,6 +22,7 @@ export const SOURCE_LABELS = {
   INTEREST_PAYMENT: 'Interest payment',
   SETTLEMENT: 'Settlement',
   RENEWAL: 'Renewal',
+  PENDING_PAYOUT: 'Confirmed final payout',
 };
 
 export const GROUP_BY_OPTIONS = [
@@ -72,7 +73,7 @@ function emptyReport() {
   };
 }
 
-export default function FixedDepositInterestReport() {
+export default function FixedDepositInterestReport({ refreshRevision = 0 }) {
   const defaults = defaultReportFilters();
   const { apiQuery, selectedDisplayCurrency } = usePortfolio();
   const [startDate, setStartDate] = useState(defaults.startDate);
@@ -124,7 +125,7 @@ export default function FixedDepositInterestReport() {
 
   useEffect(() => {
     loadReport();
-  }, [loadReport]);
+  }, [loadReport, refreshRevision]);
 
   const resetFilters = () => {
     const next = defaultReportFilters();
@@ -156,6 +157,14 @@ export default function FixedDepositInterestReport() {
     const displayField = `${field}_display`;
     if (row[displayField] != null) return row[displayField];
     return row[field];
+  };
+
+  /** Null means legacy/unknown split — distinct from confirmed zero. */
+  const splitAmountCell = (row, field, amount) => {
+    if (amount == null) {
+      return <span data-testid={`fd-split-unavailable-${field}`}>Unavailable</span>;
+    }
+    return <CurrencyValue value={amount} currency={row.currency} />;
   };
 
   const totalsWarnings = useMemo(() => {
@@ -388,6 +397,8 @@ export default function FixedDepositInterestReport() {
                     <AppTableHeaderCell numeric>Gross interest</AppTableHeaderCell>
                     <AppTableHeaderCell numeric>Tax withheld</AppTableHeaderCell>
                     <AppTableHeaderCell numeric>Net interest</AppTableHeaderCell>
+                    <AppTableHeaderCell numeric>Paid to bank</AppTableHeaderCell>
+                    <AppTableHeaderCell numeric>Reinvested</AppTableHeaderCell>
                     <AppTableHeaderCell>Currency</AppTableHeaderCell>
                     {showDisplayCurrencyColumn ? (
                       <AppTableHeaderCell>Display currency</AppTableHeaderCell>
@@ -425,6 +436,24 @@ export default function FixedDepositInterestReport() {
                           value={valueFor(row, 'net_interest')}
                           currency={row.display_currency || row.currency}
                         />
+                      </AppTableCell>
+                      <AppTableCell numeric>
+                        {splitAmountCell(
+                          row,
+                          'interest_cash_amount',
+                          row.source_type === 'RENEWAL'
+                            ? row.interest_cash_amount
+                            : row.interest_cash_amount ?? row.net_interest,
+                        )}
+                      </AppTableCell>
+                      <AppTableCell numeric>
+                        {splitAmountCell(
+                          row,
+                          'reinvested_interest_amount',
+                          row.source_type === 'RENEWAL'
+                            ? row.reinvested_interest_amount
+                            : row.reinvested_interest_amount ?? 0,
+                        )}
                       </AppTableCell>
                       <AppTableCell>{row.currency}</AppTableCell>
                       {showDisplayCurrencyColumn ? (

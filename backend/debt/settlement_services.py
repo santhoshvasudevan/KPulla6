@@ -13,11 +13,18 @@ from django.db import transaction as db_transaction
 from debt.bank_ledger_services import create_fd_settlement_cash_movement
 from debt.models import (
     FixedDeposit,
+    FixedDepositPendingPayout,
+    FixedDepositPendingPayoutOrigin,
     FixedDepositSettlement,
     FixedDepositSettlementType,
     FixedDepositStatus,
     SETTLEMENT_BLOCKED_FD_STATUSES,
     SETTLEMENT_ELIGIBLE_FD_STATUSES,
+)
+from debt.pending_payout_services import (
+    PendingPayoutValidationError,
+    create_pending_payout,
+    resolve_suggested_payout,
 )
 from debt.services import FixedDepositNotFoundError, get_fixed_deposit
 
@@ -34,6 +41,7 @@ class SettlementValidationError(Exception):
 class SettlementCreateResult:
     settlement: FixedDepositSettlement
     fixed_deposit: FixedDeposit
+    pending_payout: FixedDepositPendingPayout | None = None
 
 
 def _validate_settlement_amounts(
@@ -104,16 +112,35 @@ def create_fixed_deposit_settlement(
     gross_interest: Decimal = Decimal("0"),
     tax_withheld: Decimal = Decimal("0"),
     comment: str = "",
+    final_interest_pending: bool = False,
+    pending_expected_date: date | None = None,
 ) -> SettlementCreateResult:
     fd = get_fixed_deposit(user, fd_id)
     _validate_fd_for_settlement(fd)
 
     if settlement_type not in FixedDepositSettlementType.values:
         raise SettlementValidationError("settlement_type must be MATURITY or CLOSURE.")
+    if pending_expected_date is not None and not final_interest_pending:
+        raise SettlementValidationError(
+            "pending_expected_date requires final_interest_pending."
+        )
 
     resolved_principal = (
         fd.principal_amount if principal_returned is None else principal_returned
     )
+    suggestion = None
+    if final_interest_pending:
+        # Entered interest is an estimate only: realized settlement interest stays zero.
+        try:
+            suggestion = resolve_suggested_payout(gross_interest, tax_withheld)
+        except PendingPayoutValidationError as exc:
+            raise SettlementValidationError(str(exc)) from exc
+        if resolved_principal <= 0:
+            raise SettlementValidationError(
+                "principal_returned must be greater than zero when final interest is pending."
+            )
+        gross_interest = Decimal("0")
+        tax_withheld = Decimal("0")
     net_interest, total_net_proceeds = _validate_settlement_amounts(
         principal_returned=resolved_principal,
         gross_interest=gross_interest,
@@ -174,7 +201,23 @@ def create_fixed_deposit_settlement(
         fd.status = FixedDepositStatus.CLOSED
     fd.save(update_fields=["status", "updated_at"])
 
-    return SettlementCreateResult(settlement=settlement, fixed_deposit=fd)
+    pending_payout = None
+    if final_interest_pending:
+        try:
+            pending_payout = create_pending_payout(
+                user,
+                fd,
+                origin=FixedDepositPendingPayoutOrigin.SETTLEMENT,
+                expected_payout_date=pending_expected_date,
+                suggestion=suggestion,
+                comment=note,
+            )
+        except PendingPayoutValidationError as exc:
+            raise SettlementValidationError(str(exc)) from exc
+
+    return SettlementCreateResult(
+        settlement=settlement, fixed_deposit=fd, pending_payout=pending_payout
+    )
 
 
 def list_fixed_deposit_settlements(

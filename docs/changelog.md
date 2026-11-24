@@ -1,5 +1,57 @@
 # Changelog — KPulla6
 
+## 2026-11-23 — Fixed deposit payment corrections and release verification
+
+- Open **Interest payments** on a current fixed deposit to edit or reverse an eligible payment by row. Reversed payments stay visible for audit. The interest report refreshes after a successful correction.
+- Pull requests run the full test suites, frontend build, and documentation consistency checks. The development workflow now describes release preflight and pinned review handoffs.
+
+## 2026-11-23 — FD detail maturity interest and renewal split reporting (#43 review)
+
+- `GET /fixed-deposits/{id}/detail` term totals and financial-year summary include confirmed maturity settlement / renewal interest on the originating term once (event date drives FY attribution). Pending estimates stay out of actuals; confirmed delayed payouts remain once-only.
+- Detail and interest-report UIs show **Interest paid to bank** and **Interest reinvested** from backend `interest_cash_amount` / `reinvested_interest_amount` (null → Unavailable, distinct from confirmed zero). Total net interest remains cash + reinvested.
+- Interest report payout and reinvestment amounts use each deposit’s native currency, including when the report totals use a different display currency.
+- Renewal form no longer client-checks allocation with floating-point tolerance; submits decimal strings and surfaces the backend allocation error without closing the form.
+
+## 2026-11-22 — Read-only FD renewal audit (#44)
+
+- New `python manage.py audit_fd_renewals [--user-id N] [--json]` and `GET /api/v1/reports/fixed-deposit-renewal-audit` (owner-scoped, `portfolio_id` / `portfolio_scope`, optional `start_date` / `end_date`). Each recorded renewal is `CONSISTENT`, `INCONSISTENT` (recorded data contradicts the #43 allocation rules, settlement, or linked bank credits), or `INCOMPLETE` (missing or ambiguous evidence such as pending final interest, an unreviewed payout discrepancy, or a payout with no linked credit), with a reason per finding, reviewable totals, and term references.
+- Pending interest estimates are excluded from settled proceeds. The audit only reads: no repair, ledger backfill, or bank movement; the command runs in an always-rolled-back transaction.
+- Added an integrated #40 acceptance test: renew with pending interest, Current/History split, delayed ₹1,850 payout against a ₹2,000 estimate, resolve, and value history across the renewal boundary.
+- Guide: [Audit FD renewals](how-to/audit-fd-renewals.md).
+
+## 2026-11-22 — Review and resolve FD maturity payout discrepancies (#46)
+
+- New `POST /fixed-deposit-pending-payouts/{id}/resolve-discrepancy` (`{ comment }`, required, ≤ 1000 chars). Only an `OPEN` discrepancy moves to `RESOLVED`, recording `resolution_comment` and `resolved_at`. Confirmed amounts, payment date, the bank credit, interest report totals, and the completed term are unchanged. **409** when there is no open discrepancy (none, still pending, or already resolved); **404** for another user's payout.
+- Discrepancy detection stays net vs net: flagged only when both a suggested and an actual net exist and differ (a different gross/tax split with the same net is not flagged).
+- `GET /fixed-deposit-pending-payouts` accepts optional `discrepancy_status=none|open|resolved`. The FD list/detail `pending_payout` summary now includes `resolution_comment` and `resolved_at`.
+- Fixed Deposits page: **Payout discrepancies to review** panel (estimated net, actual net, shortfall/excess) with **Resolve**, plus **Discrepancy open / resolved** badges and **Resolve discrepancy** on History terms. FD detail adds a **Final maturity payout** card with the same review state and resolve flow.
+- Test fix: `test_cannot_cancel_renewed_fd` now renews at the matured principal so it satisfies the #43 direct-rollover allocation.
+
+## 2026-11-22 — Pending FD maturity payouts (#45)
+
+- Settle and Renew accept **Final interest pending** (`final_interest_pending`, optional `pending_expected_date`). Entered interest becomes a suggestion on a new `FixedDepositPendingPayout` for the completed term: no bank credit, no realized interest, and excluded from renewal proceeds (`old principal = new principal + cash payout`).
+- New `GET /fixed-deposit-pending-payouts` (portfolio-scoped, with originating term) and `POST /fixed-deposit-pending-payouts/{id}/confirm`. Confirmation is atomic, posts exactly one linked maturity/closure interest credit on the actual date (net > 0), and is retry-safe via `client_request_id`; a second confirm returns **409**.
+- Mismatches never block confirmation; suggested and actual amounts are kept with `discrepancy_status=OPEN` and a signed `discrepancy_amount` (resolve workflow deferred to #46).
+- FD list/detail expose `pending_payout`; detail term/FY totals and the interest report count confirmed actuals once on the originating term (`PENDING_PAYOUT` source) and exclude pending estimates.
+- Fixed Deposits page: pending checkbox + expected date in Settle/Renew modals, a scoped **Pending maturity payouts** panel, and a **Payout pending** badge with **Confirm payout** on History terms (other History actions stay read-only). Migration `debt.0015_fd_pending_payout`.
+
+## 2026-11-22 — Direct FD rollover allocation and maturity payouts (#43)
+
+- Direct renewal requires `old principal + final net interest = new principal + cash payout`. Bank cash is posted only for the cash payout (interest attributed first, then principal).
+- Full rollover reinvests interest with no bank credit; principal-only rollover plus interest payout posts the interest credit once. Inconsistent allocations fail atomically.
+- Renewal API/report responses expose `interest_cash_amount` and `reinvested_interest_amount`.
+
+## 2026-11-22 — Unify periodic FD interest entry (#42)
+
+- Shared actual-payment form for Fixed Deposits list row and detail schedule; forecast amounts stay display-only until Save.
+- `POST /fixed-deposits/{id}/interest-payments` accepts optional `client_request_id` for retry-safe posting (unique per user); replays return the existing payment and bank credit without duplicating.
+
+## 2026-11-22 — Separate Current and History fixed deposit terms (#41)
+
+- Fixed Deposits page defaults to a **Current** list (`ACTIVE` / `MATURED`) and adds a **History** list for completed terms (`MATURED_SETTLED` / `CLOSED`), with a **Renewed** label and previous/next term links.
+- `GET /fixed-deposits` accepts optional `lifecycle_view=current|history`; omitting it keeps the legacy all soft-active list. Additive response fields: `lifecycle_view`, `is_renewed`, `next_term_id`.
+- Renewal does not clear `is_active` on the predecessor; Value History boundaries remain settlement-exclusive / investment-inclusive.
+
 ## 2026-11-22 — FD/bank valuation review corrections (#35)
 
 - Native-currency FD-only / bank-cash-only reporting no longer requires FX for a zero investment subtotal (avoids false `fx_unavailable` on INR→INR).

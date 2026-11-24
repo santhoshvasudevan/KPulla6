@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from django.contrib.auth.models import AbstractBaseUser
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db import transaction as db_transaction
+from django.db import IntegrityError, transaction as db_transaction
 from django.db.models import QuerySet
 
 from debt.bank_ledger_services import (
@@ -38,6 +38,7 @@ class InterestPaymentValidationError(Exception):
 class InterestPaymentCreateResult:
     payment: FixedDepositInterestPayment
     warning: str | None = None
+    created: bool = True
 
 
 def _validate_interest_amounts(
@@ -65,7 +66,6 @@ def _validate_fd_for_interest_payment(fd: FixedDeposit) -> str | None:
     return None
 
 
-@db_transaction.atomic
 def create_fixed_deposit_interest_payment(
     user: AbstractBaseUser,
     fd_id: int,
@@ -74,40 +74,84 @@ def create_fixed_deposit_interest_payment(
     gross_interest: Decimal,
     tax_withheld: Decimal = Decimal("0"),
     comment: str = "",
+    client_request_id: str | None = None,
 ) -> InterestPaymentCreateResult:
     fd = get_fixed_deposit(user, fd_id)
     warning = _validate_fd_for_interest_payment(fd)
     net_interest = _validate_interest_amounts(gross_interest, tax_withheld)
 
+    request_id = (client_request_id or "").strip() or None
+    if request_id is not None:
+        if len(request_id) > 64:
+            raise InterestPaymentValidationError(
+                "client_request_id must be at most 64 characters."
+            )
+        existing = (
+            FixedDepositInterestPayment.objects.select_related("cash_movement")
+            .filter(user=user, client_request_id=request_id)
+            .first()
+        )
+        if existing is not None:
+            if existing.fixed_deposit_id != fd.id:
+                raise InterestPaymentValidationError(
+                    "client_request_id was already used for a different fixed deposit."
+                )
+            return InterestPaymentCreateResult(
+                payment=existing, warning=warning, created=False
+            )
+
     description = (comment or "").strip()
-    movement = create_fd_interest_cash_movement(
-        user,
-        fd,
-        net_interest=net_interest,
-        payment_date=payment_date,
-        description=description,
-    )
 
-    payment = FixedDepositInterestPayment(
-        user=user,
-        fixed_deposit=fd,
-        bank_account=fd.bank_account,
-        payment_date=payment_date,
-        gross_interest=gross_interest,
-        tax_withheld=tax_withheld,
-        net_interest=net_interest,
-        currency=fd.currency,
-        cash_movement=movement,
-        comment=description,
-    )
+    def _create() -> FixedDepositInterestPayment:
+        movement = create_fd_interest_cash_movement(
+            user,
+            fd,
+            net_interest=net_interest,
+            payment_date=payment_date,
+            description=description,
+        )
+        payment = FixedDepositInterestPayment(
+            user=user,
+            fixed_deposit=fd,
+            bank_account=fd.bank_account,
+            payment_date=payment_date,
+            gross_interest=gross_interest,
+            tax_withheld=tax_withheld,
+            net_interest=net_interest,
+            currency=fd.currency,
+            cash_movement=movement,
+            comment=description,
+            client_request_id=request_id,
+        )
+        try:
+            payment.save()
+        except DjangoValidationError as exc:
+            raise InterestPaymentValidationError(
+                exc.messages[0] if exc.messages else str(exc)
+            ) from exc
+        return payment
+
     try:
-        payment.save()
-    except DjangoValidationError as exc:
-        raise InterestPaymentValidationError(
-            exc.messages[0] if exc.messages else str(exc)
-        ) from exc
+        with db_transaction.atomic():
+            payment = _create()
+    except IntegrityError as exc:
+        if request_id is None:
+            raise
+        # Concurrent retry with the same client_request_id — return the winner.
+        existing = (
+            FixedDepositInterestPayment.objects.select_related("cash_movement")
+            .filter(user=user, client_request_id=request_id)
+            .first()
+        )
+        if existing is None:
+            raise InterestPaymentValidationError(
+                "Could not record interest payment (concurrent conflict)."
+            ) from exc
+        return InterestPaymentCreateResult(
+            payment=existing, warning=warning, created=False
+        )
 
-    return InterestPaymentCreateResult(payment=payment, warning=warning)
+    return InterestPaymentCreateResult(payment=payment, warning=warning, created=True)
 
 
 @db_transaction.atomic

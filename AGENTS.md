@@ -2,6 +2,8 @@
 
 **Documentation index:** [docs/README.md](./docs/README.md)
 
+**Release or review handoff:** follow [Development Workflow](./docs/workflows.md) for pinned diffs, rollout preflight, and running-app verification.
+
 - Inspect existing code before editing.
 - Make the smallest safe change.
 - Do not rewrite unrelated files.

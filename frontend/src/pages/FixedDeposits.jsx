@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  confirmFixedDepositPendingPayout,
   createFixedDeposit,
   createFixedDepositInterestPayment,
   cancelFixedDeposit,
@@ -11,6 +12,7 @@ import {
   fetchFixedDepositInterestPayments,
   fetchFixedDeposits,
   fetchFixedDepositMaturityEstimate,
+  fetchFixedDepositPendingPayouts,
   fetchPortfolios,
   markFixedDepositMatured,
   renewFixedDeposit,
@@ -18,6 +20,7 @@ import {
   seedBankAccountHistoricalBalance,
   settleFixedDeposit,
   updateFixedDeposit,
+  updateFixedDepositInterestPayment,
 } from '../api';
 import { usePortfolio } from '../portfolioContext';
 import {
@@ -34,8 +37,17 @@ import {
   CurrencyValue,
   StatusBadge,
 } from '../components/ui';
-import { fdPayoutLabel, fdStatusBadgeProps, fdStatusCounts, fdMaturityValueSourceBadgeProps, fdDisplayMaturityValue, fdDisplayTotalInterest, fdDisplayPeriodicInterest, fdDisplayMaturitySource, fdIsCompounded, fdIsPayout, FD_ESTIMATE_TYPE_COMPOUNDED, FD_ESTIMATE_TYPE_PAYOUT } from '../utils/fdDisplay';
+import { fdPayoutLabel, fdStatusBadgeProps, fdStatusCounts, fdMaturityValueSourceBadgeProps, fdDisplayMaturityValue, fdDisplayTotalInterest, fdDisplayPeriodicInterest, fdDisplayMaturitySource, fdIsCompounded, fdIsPayout, fdIsHistoryTerm, FD_ESTIMATE_TYPE_COMPOUNDED, FD_ESTIMATE_TYPE_PAYOUT } from '../utils/fdDisplay';
 import FixedDepositInterestReport from '../components/FixedDepositInterestReport';
+import FixedDepositInterestPaymentForm, {
+  newInterestClientRequestId,
+} from '../components/FixedDepositInterestPaymentForm';
+import {
+  FixedDepositPayoutResolveModal,
+  PayoutDifferenceValue,
+  payoutDiscrepancyBadgeProps,
+} from '../components/FixedDepositPayoutReview';
+import '../components/FixedDepositInterestPaymentForm.css';
 import './FixedDeposits.css';
 
 const FD_SECTION_NAV = [
@@ -272,6 +284,8 @@ function emptyRenewalForm(fd) {
     gross_interest: '0',
     tax_withheld: '0',
     cash_payout_amount: '0',
+    final_interest_pending: false,
+    pending_expected_date: '',
     nominee_name: fd?.nominee_name || '',
     comment: '',
   };
@@ -284,7 +298,29 @@ function emptySettlementForm(fd) {
     principal_returned: fd ? String(fd.principal_amount ?? '') : '',
     gross_interest: '0',
     tax_withheld: '0',
+    final_interest_pending: false,
+    pending_expected_date: '',
     comment: '',
+  };
+}
+
+function emptyPendingConfirmForm(pending) {
+  return {
+    payment_date: pending?.expected_payout_date || new Date().toISOString().slice(0, 10),
+    gross_interest:
+      pending?.suggested_gross_interest != null ? String(pending.suggested_gross_interest) : '',
+    tax_withheld:
+      pending?.suggested_tax_withheld != null ? String(pending.suggested_tax_withheld) : '0',
+    comment: '',
+  };
+}
+
+function pendingPayoutConfirmTarget(fd) {
+  return {
+    ...fd.pending_payout,
+    institution_name: fd.institution_name,
+    deposit_account_number: fd.deposit_account_number,
+    bank_account_name: fd.bank_account_name,
   };
 }
 
@@ -314,10 +350,13 @@ export default function FixedDeposits() {
   const [maturityPreviewLoading, setMaturityPreviewLoading] = useState(false);
   const formErrorRef = useRef(null);
   const [interestFd, setInterestFd] = useState(null);
+  const [interestEditingId, setInterestEditingId] = useState(null);
   const [interestForm, setInterestForm] = useState(emptyInterestForm);
+  const [interestClientRequestId, setInterestClientRequestId] = useState('');
   const [interestModalOpen, setInterestModalOpen] = useState(false);
   const [interestSubmitting, setInterestSubmitting] = useState(false);
   const [interestFormError, setInterestFormError] = useState('');
+  const [interestReportRevision, setInterestReportRevision] = useState(0);
   const [expandedFdId, setExpandedFdId] = useState(null);
   const [interestReverseTarget, setInterestReverseTarget] = useState(null);
   const [interestReverseFd, setInterestReverseFd] = useState(null);
@@ -341,8 +380,18 @@ export default function FixedDeposits() {
   const [renewalSubmitting, setRenewalSubmitting] = useState(false);
   const [renewalFormError, setRenewalFormError] = useState('');
   const [markingMaturedId, setMarkingMaturedId] = useState(null);
+  const [lifecycleView, setLifecycleView] = useState('current');
+  const [pendingPayouts, setPendingPayouts] = useState([]);
+  const [pendingConfirmTarget, setPendingConfirmTarget] = useState(null);
+  const [pendingConfirmForm, setPendingConfirmForm] = useState(emptyPendingConfirmForm);
+  const [pendingConfirmRequestId, setPendingConfirmRequestId] = useState('');
+  const [pendingConfirmSubmitting, setPendingConfirmSubmitting] = useState(false);
+  const [pendingConfirmError, setPendingConfirmError] = useState('');
+  const [payoutDiscrepancies, setPayoutDiscrepancies] = useState([]);
+  const [resolveTarget, setResolveTarget] = useState(null);
 
   const statusCounts = useMemo(() => fdStatusCounts(items), [items]);
+  const isHistoryView = lifecycleView === 'history';
 
   const loadData = useCallback(async () => {
     if (!settingsLoaded || !apiQuery) return;
@@ -350,7 +399,7 @@ export default function FixedDeposits() {
     setError('');
     try {
       const [fdData, portfolioData, bankData] = await Promise.all([
-        fetchFixedDeposits(apiQuery),
+        fetchFixedDeposits({ ...apiQuery, lifecycle_view: lifecycleView }),
         fetchPortfolios(),
         fetchBankAccounts(),
       ]);
@@ -362,7 +411,27 @@ export default function FixedDeposits() {
     } finally {
       setLoading(false);
     }
-  }, [apiQuery, settingsLoaded]);
+    try {
+      const pendingData = await fetchFixedDepositPendingPayouts(apiQuery);
+      setPendingPayouts(Array.isArray(pendingData) ? pendingData : []);
+    } catch {
+      setPendingPayouts([]);
+    }
+    try {
+      const discrepancyData = await fetchFixedDepositPendingPayouts({
+        ...apiQuery,
+        status: 'confirmed',
+        discrepancy_status: 'open',
+      });
+      setPayoutDiscrepancies(
+        Array.isArray(discrepancyData)
+          ? discrepancyData.filter((p) => p.discrepancy_status === 'OPEN')
+          : []
+      );
+    } catch {
+      setPayoutDiscrepancies([]);
+    }
+  }, [apiQuery, settingsLoaded, lifecycleView]);
 
   useEffect(() => {
     loadData();
@@ -690,9 +759,16 @@ export default function FixedDeposits() {
     }
   };
 
-  const openInterestModal = (fd) => {
+  const openInterestModal = (fd, payment = null) => {
     setInterestFd(fd);
-    setInterestForm(emptyInterestForm());
+    setInterestEditingId(payment?.id ?? null);
+    setInterestForm(payment ? {
+      payment_date: payment.payment_date,
+      gross_interest: String(payment.gross_interest),
+      tax_withheld: String(payment.tax_withheld),
+      comment: payment.comment ?? '',
+    } : emptyInterestForm());
+    setInterestClientRequestId(payment ? '' : newInterestClientRequestId());
     setInterestFormError('');
     setInterestModalOpen(true);
   };
@@ -700,6 +776,8 @@ export default function FixedDeposits() {
   const closeInterestModal = () => {
     setInterestModalOpen(false);
     setInterestFd(null);
+    setInterestEditingId(null);
+    setInterestClientRequestId('');
     setInterestFormError('');
   };
 
@@ -757,19 +835,25 @@ export default function FixedDeposits() {
       gross_interest: interestForm.gross_interest,
       tax_withheld: interestForm.tax_withheld || '0',
     };
-    if (interestForm.comment.trim()) {
-      payload.comment = interestForm.comment.trim();
-    }
+    const comment = interestForm.comment.trim();
+    if (interestEditingId != null || comment) payload.comment = comment;
 
     setInterestSubmitting(true);
     try {
-      const result = await createFixedDepositInterestPayment(interestFd.id, payload);
-      closeInterestModal();
-      setStatus(
-        result.warning
+      if (interestEditingId != null) {
+        await updateFixedDepositInterestPayment(interestEditingId, payload);
+        setStatus('Interest payment updated.');
+      } else {
+        const result = await createFixedDepositInterestPayment(interestFd.id, {
+          ...payload,
+          client_request_id: interestClientRequestId || newInterestClientRequestId(),
+        });
+        setStatus(result.warning
           ? `Interest payment recorded. ${result.warning}`
-          : 'Interest payment recorded.'
-      );
+          : 'Interest payment recorded.');
+      }
+      closeInterestModal();
+      setInterestReportRevision((revision) => revision + 1);
       if (expandedFdId === interestFd.id) {
         await loadInterestPayments(interestFd.id);
       } else {
@@ -781,16 +865,13 @@ export default function FixedDeposits() {
       }
       await loadData();
     } catch (err) {
-      setInterestFormError(err.message || 'Failed to record interest payment.');
+      setInterestFormError(err.message || (interestEditingId != null
+        ? 'Failed to update interest payment.'
+        : 'Failed to record interest payment.'));
     } finally {
       setInterestSubmitting(false);
     }
   };
-
-  const displayNetInterest = computeDisplayNetInterest(
-    interestForm.gross_interest,
-    interestForm.tax_withheld
-  );
 
   const openInterestReverseModal = (fd, payment) => {
     setInterestReverseFd(fd);
@@ -833,6 +914,7 @@ export default function FixedDeposits() {
       });
       closeInterestReverseModal();
       setStatus('Interest payment reversed. Net interest bank credit was reversed.');
+      setInterestReportRevision((revision) => revision + 1);
       await loadInterestPayments(interestReverseFd.id);
       await loadData();
     } catch (err) {
@@ -892,8 +974,15 @@ export default function FixedDeposits() {
       setSettlementFormError('Tax withheld cannot exceed gross final interest.');
       return;
     }
+    const settlementPending = settlementForm.final_interest_pending;
     const net = gross - tax;
-    if (principal + net <= 0) {
+    if (settlementPending && principal <= 0) {
+      setSettlementFormError(
+        'Principal returned must be greater than zero when final interest is pending.'
+      );
+      return;
+    }
+    if (!settlementPending && principal + net <= 0) {
       setSettlementFormError(
         'At least one of principal returned or net interest must be greater than zero.'
       );
@@ -911,6 +1000,10 @@ export default function FixedDeposits() {
       gross_interest: settlementForm.gross_interest || '0',
       tax_withheld: settlementForm.tax_withheld || '0',
     };
+    if (settlementPending) {
+      payload.final_interest_pending = true;
+      payload.pending_expected_date = settlementForm.pending_expected_date || null;
+    }
     if (settlementForm.comment.trim()) {
       payload.comment = settlementForm.comment.trim();
     }
@@ -920,7 +1013,9 @@ export default function FixedDeposits() {
       const result = await settleFixedDeposit(settlementFd.id, payload);
       closeSettlementModal();
       setStatus(
-        `Settlement recorded. FD status is now ${result.fixed_deposit_status}. Portfolio value drops by principal; proceeds are in bank cash only.`
+        result.pending_payout
+          ? `Settlement recorded. FD status is now ${result.fixed_deposit_status}. Final interest is pending — confirm it when the bank credits it.`
+          : `Settlement recorded. FD status is now ${result.fixed_deposit_status}. Portfolio value drops by principal; proceeds are in bank cash only.`
       );
       await loadData();
     } catch (err) {
@@ -934,10 +1029,12 @@ export default function FixedDeposits() {
     settlementForm.gross_interest,
     settlementForm.tax_withheld
   );
-  const displayTotalProceeds =
-    displaySettlementNet == null
+  const settlementPrincipalDisplay = parseFloat(settlementForm.principal_returned || '0') || 0;
+  const displayTotalProceeds = settlementForm.final_interest_pending
+    ? settlementPrincipalDisplay
+    : displaySettlementNet == null
       ? null
-      : (parseFloat(settlementForm.principal_returned || '0') || 0) + displaySettlementNet;
+      : settlementPrincipalDisplay + displaySettlementNet;
 
   const openRenewalModal = (fd) => {
     setRenewalFd(fd);
@@ -1016,6 +1113,10 @@ export default function FixedDeposits() {
       tax_withheld: renewalForm.tax_withheld || '0',
       cash_payout_amount: renewalForm.cash_payout_amount || '0',
     };
+    if (renewalForm.final_interest_pending) {
+      payload.final_interest_pending = true;
+      payload.pending_expected_date = renewalForm.pending_expected_date || null;
+    }
     if (renewalForm.nominee_name.trim()) {
       payload.nominee_name = renewalForm.nominee_name.trim();
     }
@@ -1042,6 +1143,71 @@ export default function FixedDeposits() {
     renewalForm.gross_interest,
     renewalForm.tax_withheld
   );
+
+  const openPendingConfirmModal = (pending) => {
+    setPendingConfirmTarget(pending);
+    setPendingConfirmForm(emptyPendingConfirmForm(pending));
+    setPendingConfirmRequestId(newInterestClientRequestId());
+    setPendingConfirmError('');
+  };
+
+  const closePendingConfirmModal = () => {
+    setPendingConfirmTarget(null);
+    setPendingConfirmRequestId('');
+    setPendingConfirmError('');
+  };
+
+  const handlePendingConfirmSubmit = async () => {
+    setPendingConfirmError('');
+    const gross = parseFloat(pendingConfirmForm.gross_interest);
+    const tax = parseFloat(pendingConfirmForm.tax_withheld || '0');
+    if (!Number.isFinite(gross) || gross <= 0) {
+      setPendingConfirmError('Gross interest must be greater than zero.');
+      return;
+    }
+    if (!Number.isFinite(tax) || tax < 0) {
+      setPendingConfirmError('Tax withheld must be zero or positive.');
+      return;
+    }
+    if (tax > gross) {
+      setPendingConfirmError('Tax withheld cannot exceed gross interest.');
+      return;
+    }
+    if (!pendingConfirmForm.payment_date) {
+      setPendingConfirmError('Payment date is required.');
+      return;
+    }
+    const payload = {
+      payment_date: pendingConfirmForm.payment_date,
+      gross_interest: pendingConfirmForm.gross_interest,
+      tax_withheld: pendingConfirmForm.tax_withheld || '0',
+      client_request_id: pendingConfirmRequestId || newInterestClientRequestId(),
+    };
+    if (pendingConfirmForm.comment.trim()) {
+      payload.comment = pendingConfirmForm.comment.trim();
+    }
+    setPendingConfirmSubmitting(true);
+    try {
+      const result = await confirmFixedDepositPendingPayout(pendingConfirmTarget.id, payload);
+      closePendingConfirmModal();
+      setStatus(
+        result.discrepancy_status === 'OPEN'
+          ? 'Final payout confirmed. Actual amount differs from the estimate; the difference is kept for review.'
+          : 'Final payout confirmed.'
+      );
+      await loadData();
+    } catch (err) {
+      setPendingConfirmError(err.message || 'Failed to confirm payout.');
+    } finally {
+      setPendingConfirmSubmitting(false);
+    }
+  };
+
+  const handleDiscrepancyResolved = async () => {
+    setResolveTarget(null);
+    setStatus('Payout discrepancy marked resolved. Posted amounts are unchanged.');
+    await loadData();
+  };
 
   if (!settingsLoaded || loading) {
     return <LoadingState message="Loading fixed deposits…" />;
@@ -1121,14 +1287,166 @@ export default function FixedDeposits() {
       </nav>
 
       <div id="fd-deposits" className="fixed-deposits-page__deposits">
+      <div
+        className="fd-lifecycle-toggle"
+        role="tablist"
+        aria-label="Fixed deposit lifecycle view"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={lifecycleView === 'current'}
+          className={
+            lifecycleView === 'current'
+              ? 'fd-lifecycle-toggle__btn fd-lifecycle-toggle__btn--active'
+              : 'fd-lifecycle-toggle__btn'
+          }
+          onClick={() => setLifecycleView('current')}
+        >
+          Current
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={lifecycleView === 'history'}
+          className={
+            lifecycleView === 'history'
+              ? 'fd-lifecycle-toggle__btn fd-lifecycle-toggle__btn--active'
+              : 'fd-lifecycle-toggle__btn'
+          }
+          onClick={() => setLifecycleView('history')}
+        >
+          History
+        </button>
+      </div>
+      {pendingPayouts.length > 0 ? (
+        <DataTableShell
+          className="fixed-deposits-page__pending-payouts"
+          title="Pending maturity payouts"
+          subtitle="Final interest awaiting the bank credit — estimates are not counted as realized interest or bank cash"
+          dense
+        >
+          <AppTable compact className="fd-pending-payouts-table" data-testid="fd-pending-payouts">
+            <thead>
+              <tr>
+                <AppTableHeaderCell>Portfolio</AppTableHeaderCell>
+                <AppTableHeaderCell>Originating term</AppTableHeaderCell>
+                <AppTableHeaderCell>From</AppTableHeaderCell>
+                <AppTableHeaderCell>Expected</AppTableHeaderCell>
+                <AppTableHeaderCell numeric>Estimated net</AppTableHeaderCell>
+                <AppTableHeaderCell>Actions</AppTableHeaderCell>
+              </tr>
+            </thead>
+            <tbody>
+              {pendingPayouts.map((p) => (
+                <tr key={p.id}>
+                  <AppTableCell>{p.portfolio_name}</AppTableCell>
+                  <AppTableCell>
+                    <button
+                      type="button"
+                      className="fd-term-link"
+                      onClick={() => navigate(`/fixed-deposits/${p.fixed_deposit_id}`)}
+                    >
+                      {p.institution_name} / {p.deposit_account_number}
+                    </button>
+                  </AppTableCell>
+                  <AppTableCell>{p.origin === 'RENEWAL' ? 'Renewal' : 'Settlement'}</AppTableCell>
+                  <AppTableCell>{p.expected_payout_date || '—'}</AppTableCell>
+                  <AppTableCell numeric>
+                    {p.suggested_net_interest != null ? (
+                      <CurrencyValue value={p.suggested_net_interest} currency={p.currency} />
+                    ) : (
+                      '—'
+                    )}
+                  </AppTableCell>
+                  <AppTableCell>
+                    <Button
+                      variant="primary"
+                      type="button"
+                      onClick={() => openPendingConfirmModal(p)}
+                    >
+                      Confirm payout
+                    </Button>
+                  </AppTableCell>
+                </tr>
+              ))}
+            </tbody>
+          </AppTable>
+        </DataTableShell>
+      ) : null}
+      {payoutDiscrepancies.length > 0 ? (
+        <DataTableShell
+          className="fixed-deposits-page__payout-discrepancies"
+          title="Payout discrepancies to review"
+          subtitle="Confirmed final payouts that differ from the estimate — the actual amount is already posted to bank cash"
+          dense
+        >
+          <AppTable
+            compact
+            className="fd-payout-discrepancies-table"
+            data-testid="fd-payout-discrepancies"
+          >
+            <thead>
+              <tr>
+                <AppTableHeaderCell>Portfolio</AppTableHeaderCell>
+                <AppTableHeaderCell>Originating term</AppTableHeaderCell>
+                <AppTableHeaderCell>Paid on</AppTableHeaderCell>
+                <AppTableHeaderCell numeric>Estimated net</AppTableHeaderCell>
+                <AppTableHeaderCell numeric>Actual net</AppTableHeaderCell>
+                <AppTableHeaderCell numeric>Difference</AppTableHeaderCell>
+                <AppTableHeaderCell>Actions</AppTableHeaderCell>
+              </tr>
+            </thead>
+            <tbody>
+              {payoutDiscrepancies.map((p) => (
+                <tr key={p.id}>
+                  <AppTableCell>{p.portfolio_name}</AppTableCell>
+                  <AppTableCell>
+                    <button
+                      type="button"
+                      className="fd-term-link"
+                      onClick={() => navigate(`/fixed-deposits/${p.fixed_deposit_id}`)}
+                    >
+                      {p.institution_name} / {p.deposit_account_number}
+                    </button>
+                  </AppTableCell>
+                  <AppTableCell>{p.payment_date || '—'}</AppTableCell>
+                  <AppTableCell numeric>
+                    <CurrencyValue value={p.suggested_net_interest} currency={p.currency} />
+                  </AppTableCell>
+                  <AppTableCell numeric>
+                    <CurrencyValue value={p.net_interest} currency={p.currency} />
+                  </AppTableCell>
+                  <AppTableCell numeric>
+                    <PayoutDifferenceValue amount={p.discrepancy_amount} currency={p.currency} />
+                  </AppTableCell>
+                  <AppTableCell>
+                    <Button variant="primary" type="button" onClick={() => setResolveTarget(p)}>
+                      Resolve
+                    </Button>
+                  </AppTableCell>
+                </tr>
+              ))}
+            </tbody>
+          </AppTable>
+        </DataTableShell>
+      ) : null}
       <DataTableShell
         className="fixed-deposits-page__table"
-        title="Fixed deposit holdings"
-        subtitle="Lifecycle actions and interest history per deposit"
+        title={isHistoryView ? 'Fixed deposit history' : 'Fixed deposit holdings'}
+        subtitle={
+          isHistoryView
+            ? 'Completed terms with renewal links and recorded payouts'
+            : 'Outstanding terms — lifecycle actions and interest per deposit'
+        }
         dense
         empty={items.length === 0}
-        emptyTitle="No active fixed deposits"
-        emptyDescription="No active fixed deposits for the current portfolio view."
+        emptyTitle={isHistoryView ? 'No historical fixed deposits' : 'No current fixed deposits'}
+        emptyDescription={
+          isHistoryView
+            ? 'No completed terms for the current portfolio view.'
+            : 'No outstanding fixed deposits for the current portfolio view.'
+        }
       >
         {items.length > 0 ? (
           <AppTable compact className="fd-table">
@@ -1151,7 +1469,8 @@ export default function FixedDeposits() {
             </thead>
             <tbody>
               {items.map((fd) => {
-                const badge = fdStatusBadgeProps(fd.status);
+                const historyTerm = isHistoryView || fdIsHistoryTerm(fd);
+                const badge = fdStatusBadgeProps(fd.status, fd);
                 const displayMaturityValue = fdDisplayMaturityValue(fd);
                 const displayTotalInterest = fdDisplayTotalInterest(fd);
                 const displayPeriodicInterest = fdDisplayPeriodicInterest(fd);
@@ -1175,7 +1494,31 @@ export default function FixedDeposits() {
                     >
                       <AppTableCell>{fd.portfolio_name}</AppTableCell>
                       <AppTableCell>{fd.institution_name}</AppTableCell>
-                      <AppTableCell className="fd-table__account">{fd.deposit_account_number}</AppTableCell>
+                      <AppTableCell className="fd-table__account">
+                        {fd.deposit_account_number}
+                        {(fd.renewal_of_id || fd.next_term_id) ? (
+                          <div className="fd-table__term-links" onClick={(e) => e.stopPropagation()}>
+                            {fd.renewal_of_id ? (
+                              <button
+                                type="button"
+                                className="fd-term-link"
+                                onClick={() => navigate(`/fixed-deposits/${fd.renewal_of_id}`)}
+                              >
+                                Previous term
+                              </button>
+                            ) : null}
+                            {fd.next_term_id ? (
+                              <button
+                                type="button"
+                                className="fd-term-link"
+                                onClick={() => navigate(`/fixed-deposits/${fd.next_term_id}`)}
+                              >
+                                Next term
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </AppTableCell>
                       <AppTableCell>{fd.bank_account_name}</AppTableCell>
                       <AppTableCell numeric>
                         <CurrencyValue value={fd.principal_amount} currency={fd.currency} />
@@ -1238,6 +1581,14 @@ export default function FixedDeposits() {
                       <AppTableCell>{fd.nominee_name || '—'}</AppTableCell>
                       <AppTableCell>
                         <StatusBadge status={badge.status} label={badge.label} />
+                        {fd.pending_payout?.status === 'PENDING' ? (
+                          <StatusBadge status="warning" label="Payout pending" />
+                        ) : null}
+                        {payoutDiscrepancyBadgeProps(fd.pending_payout?.discrepancy_status) ? (
+                          <StatusBadge
+                            {...payoutDiscrepancyBadgeProps(fd.pending_payout.discrepancy_status)}
+                          />
+                        ) : null}
                       </AppTableCell>
                     </tr>
                     <tr
@@ -1247,7 +1598,7 @@ export default function FixedDeposits() {
                       <td colSpan={13}>
                         <div className="fd-action-strip" data-testid={`fd-action-strip-${fd.id}`}>
                           <div className="fd-action-strip__group" aria-label="Common actions">
-                            {!isSettledFd(fd) ? (
+                            {!historyTerm && !isSettledFd(fd) ? (
                               <Button
                                 variant="primary"
                                 type="button"
@@ -1264,51 +1615,95 @@ export default function FixedDeposits() {
                               {expandedFdId === fd.id ? 'Hide payments' : 'Interest payments'}
                             </Button>
                           </div>
-                          <div className="fd-action-strip__group" aria-label="Lifecycle actions">
-                            {canMarkMatured(fd) ? (
-                              <Button
-                                variant="secondary"
-                                type="button"
-                                onClick={() => handleMarkMatured(fd)}
-                                disabled={markingMaturedId === fd.id}
-                              >
-                                {markingMaturedId === fd.id ? 'Marking…' : 'Mark matured'}
+                          {!historyTerm ? (
+                            <div className="fd-action-strip__group" aria-label="Lifecycle actions">
+                              {canMarkMatured(fd) ? (
+                                <Button
+                                  variant="secondary"
+                                  type="button"
+                                  onClick={() => handleMarkMatured(fd)}
+                                  disabled={markingMaturedId === fd.id}
+                                >
+                                  {markingMaturedId === fd.id ? 'Marking…' : 'Mark matured'}
+                                </Button>
+                              ) : null}
+                              {canSettle(fd) ? (
+                                <Button
+                                  variant="secondary"
+                                  type="button"
+                                  onClick={() => openSettlementModal(fd)}
+                                >
+                                  {fd.status === 'MATURED' ? 'Settle' : 'Settle / Close'}
+                                </Button>
+                              ) : null}
+                              {canRenew(fd) ? (
+                                <Button
+                                  variant="secondary"
+                                  type="button"
+                                  onClick={() => openRenewalModal(fd)}
+                                >
+                                  Renew
+                                </Button>
+                              ) : null}
+                            </div>
+                          ) : null}
+                          {!historyTerm ? (
+                            <div className="fd-action-strip__group" aria-label="Maintenance actions">
+                              <Button variant="secondary" type="button" onClick={() => openEdit(fd)}>
+                                Edit
                               </Button>
-                            ) : null}
-                            {canSettle(fd) ? (
-                              <Button
-                                variant="secondary"
-                                type="button"
-                                onClick={() => openSettlementModal(fd)}
-                              >
-                                {fd.status === 'MATURED' ? 'Settle' : 'Settle / Close'}
-                              </Button>
-                            ) : null}
-                            {canRenew(fd) ? (
-                              <Button
-                                variant="secondary"
-                                type="button"
-                                onClick={() => openRenewalModal(fd)}
-                              >
-                                Renew
-                              </Button>
-                            ) : null}
-                          </div>
-                          <div className="fd-action-strip__group" aria-label="Maintenance actions">
-                            <Button variant="secondary" type="button" onClick={() => openEdit(fd)}>
-                              Edit
-                            </Button>
-                            {canCancel(fd) ? (
-                              <Button variant="danger" type="button" onClick={() => handleCancel(fd)}>
-                                Cancel FD
-                              </Button>
-                            ) : null}
-                            {canDeactivate(fd) ? (
-                              <Button variant="secondary" type="button" onClick={() => handleDeactivate(fd)}>
-                                Deactivate
-                              </Button>
-                            ) : null}
-                          </div>
+                              {canCancel(fd) ? (
+                                <Button variant="danger" type="button" onClick={() => handleCancel(fd)}>
+                                  Cancel FD
+                                </Button>
+                              ) : null}
+                              {canDeactivate(fd) ? (
+                                <Button variant="secondary" type="button" onClick={() => handleDeactivate(fd)}>
+                                  Deactivate
+                                </Button>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <>
+                              <div className="fd-action-strip__group" aria-label="History actions">
+                                <span className="fd-history-readonly-hint">
+                                  Read-only completed term
+                                </span>
+                              </div>
+                              {fd.pending_payout?.status === 'PENDING' ? (
+                                <div
+                                  className="fd-action-strip__group"
+                                  aria-label="Pending payout actions"
+                                >
+                                  <Button
+                                    variant="primary"
+                                    type="button"
+                                    onClick={() =>
+                                      openPendingConfirmModal(pendingPayoutConfirmTarget(fd))
+                                    }
+                                  >
+                                    Confirm payout
+                                  </Button>
+                                </div>
+                              ) : null}
+                              {fd.pending_payout?.discrepancy_status === 'OPEN' ? (
+                                <div
+                                  className="fd-action-strip__group"
+                                  aria-label="Payout discrepancy actions"
+                                >
+                                  <Button
+                                    variant="primary"
+                                    type="button"
+                                    onClick={() =>
+                                      setResolveTarget(pendingPayoutConfirmTarget(fd))
+                                    }
+                                  >
+                                    Resolve discrepancy
+                                  </Button>
+                                </div>
+                              ) : null}
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1350,14 +1745,25 @@ export default function FixedDeposits() {
                                       {p.is_reversed ? 'Reversed' : 'Active'}
                                     </AppTableCell>
                                     <AppTableCell>
-                                      {canReverseInterestPayment(fd, p) ? (
-                                        <Button
-                                          variant="secondary"
-                                          type="button"
-                                          onClick={() => openInterestReverseModal(fd, p)}
-                                        >
-                                          Reverse interest
-                                        </Button>
+                                      {!historyTerm && canReverseInterestPayment(fd, p) ? (
+                                        <div className="fd-interest-table__actions">
+                                          {p.cash_movement_id != null && (
+                                            <Button
+                                              variant="secondary"
+                                              type="button"
+                                              onClick={() => openInterestModal(fd, p)}
+                                            >
+                                              Edit payment
+                                            </Button>
+                                          )}
+                                          <Button
+                                            variant="secondary"
+                                            type="button"
+                                            onClick={() => openInterestReverseModal(fd, p)}
+                                          >
+                                            Reverse interest
+                                          </Button>
+                                        </div>
                                       ) : (
                                         '—'
                                       )}
@@ -1382,7 +1788,7 @@ export default function FixedDeposits() {
       </DataTableShell>
       </div>
 
-      <FixedDepositInterestReport />
+      <FixedDepositInterestReport refreshRevision={interestReportRevision} />
 
       {modalOpen ? (
         <div className="fd-modal-backdrop" role="presentation" onClick={() => setModalOpen(false)}>
@@ -1969,90 +2375,74 @@ export default function FixedDeposits() {
             className="fd-modal"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="fd-interest-modal-title"
+            aria-label={interestEditingId != null ? 'Edit interest payment' : 'Record interest payment'}
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="fd-interest-modal-title">Record interest payment</h2>
-            <p className="settings-hint fd-form__note">
-              Net interest is credited to {interestFd.bank_account_name}. FD portfolio value
-              stays principal-only.
-            </p>
-            {interestFormError ? <WarningBanner severity="error" message={interestFormError} /> : null}
-            <form onSubmit={handleInterestSubmit} className="fd-form" noValidate>
-              <div className="form-group">
-                <label htmlFor="fd-int-date">Payment date</label>
-                <input
-                  id="fd-int-date"
-                  type="date"
-                  value={interestForm.payment_date}
-                  onChange={(e) =>
-                    setInterestForm((p) => ({ ...p, payment_date: e.target.value }))
-                  }
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="fd-int-gross">Gross interest</label>
-                <input
-                  id="fd-int-gross"
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  value={interestForm.gross_interest}
-                  onChange={(e) =>
-                    setInterestForm((p) => ({ ...p, gross_interest: e.target.value }))
-                  }
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="fd-int-tax">Tax withheld (TDS)</label>
-                <input
-                  id="fd-int-tax"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={interestForm.tax_withheld}
-                  onChange={(e) =>
-                    setInterestForm((p) => ({ ...p, tax_withheld: e.target.value }))
-                  }
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="fd-int-net">Net interest (display only)</label>
-                <input
-                  id="fd-int-net"
-                  value={
-                    displayNetInterest == null
-                      ? ''
-                      : `${displayNetInterest} ${interestFd.currency}`
-                  }
-                  readOnly
-                  disabled
-                />
-              </div>
-              <div className="form-group">
-                <label htmlFor="fd-int-comment">Comment (optional)</label>
-                <textarea
-                  id="fd-int-comment"
-                  value={interestForm.comment}
-                  onChange={(e) =>
-                    setInterestForm((p) => ({ ...p, comment: e.target.value }))
-                  }
-                  rows={2}
-                />
-              </div>
-              <div className="fd-form__actions">
-                <Button type="submit" variant="primary" disabled={interestSubmitting}>
-                  {interestSubmitting ? 'Saving…' : 'Record payment'}
-                </Button>
-                <Button type="button" variant="secondary" onClick={closeInterestModal}>
-                  Cancel
-                </Button>
-              </div>
-            </form>
+            <FixedDepositInterestPaymentForm
+              title={interestEditingId != null ? 'Edit interest payment' : 'Record interest payment'}
+              submitLabel={interestEditingId != null ? 'Save changes' : 'Record payment'}
+              showUnscheduledHint={interestEditingId == null}
+              form={interestForm}
+              onChange={setInterestForm}
+              onSubmit={handleInterestSubmit}
+              onCancel={closeInterestModal}
+              submitting={interestSubmitting}
+              error={interestFormError}
+              currency={interestFd.currency}
+              bankAccountName={interestFd.bank_account_name}
+            />
           </div>
         </div>
+      ) : null}
+
+      {pendingConfirmTarget ? (
+        <div
+          className="fd-modal-backdrop"
+          role="presentation"
+          onClick={closePendingConfirmModal}
+        >
+          <div
+            className="fd-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Confirm final payout"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="settings-hint fd-form__note">
+              {pendingConfirmTarget.institution_name} / {pendingConfirmTarget.deposit_account_number}
+              {' — '}posts one bank credit for the actual net amount on the credited date.
+            </p>
+            <FixedDepositInterestPaymentForm
+              title="Confirm final payout"
+              submitLabel="Confirm payout"
+              form={pendingConfirmForm}
+              onChange={setPendingConfirmForm}
+              onSubmit={handlePendingConfirmSubmit}
+              onCancel={closePendingConfirmModal}
+              submitting={pendingConfirmSubmitting}
+              error={pendingConfirmError}
+              currency={pendingConfirmTarget.currency}
+              bankAccountName={pendingConfirmTarget.bank_account_name}
+              suggested={
+                pendingConfirmTarget.suggested_gross_interest != null
+                  ? {
+                      expected_payout_date: pendingConfirmTarget.expected_payout_date,
+                      expected_gross_interest: pendingConfirmTarget.suggested_gross_interest,
+                    }
+                  : null
+              }
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {resolveTarget ? (
+        <FixedDepositPayoutResolveModal
+          payout={resolveTarget}
+          termLabel={`${resolveTarget.institution_name} / ${resolveTarget.deposit_account_number}`}
+          onClose={() => setResolveTarget(null)}
+          onResolved={handleDiscrepancyResolved}
+        />
       ) : null}
 
       {interestReverseModalOpen && interestReverseTarget && interestReverseFd ? (
@@ -2205,6 +2595,42 @@ export default function FixedDeposits() {
                   }
                 />
               </div>
+              <label className="fd-form__checkbox">
+                <input
+                  type="checkbox"
+                  checked={settlementForm.final_interest_pending}
+                  onChange={(e) =>
+                    setSettlementForm((p) => ({
+                      ...p,
+                      final_interest_pending: e.target.checked,
+                      pending_expected_date: e.target.checked ? p.pending_expected_date : '',
+                    }))
+                  }
+                />
+                Final interest pending
+              </label>
+              {settlementForm.final_interest_pending ? (
+                <>
+                  <p className="settings-hint fd-form__note">
+                    Interest above is saved as an estimate only — no bank credit and no realized
+                    interest until you confirm the actual payout.
+                  </p>
+                  <div className="form-group">
+                    <label htmlFor="fd-settle-pending-date">Expected payout date (optional)</label>
+                    <input
+                      id="fd-settle-pending-date"
+                      type="date"
+                      value={settlementForm.pending_expected_date}
+                      onChange={(e) =>
+                        setSettlementForm((p) => ({
+                          ...p,
+                          pending_expected_date: e.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                </>
+              ) : null}
               <div className="form-group">
                 <label htmlFor="fd-settle-net">Net interest (display only)</label>
                 <input
@@ -2269,6 +2695,11 @@ export default function FixedDeposits() {
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id="fd-renewal-modal-title">Renew fixed deposit</h2>
+            <p className="settings-hint fd-form__note">
+              Direct rollover: old principal + final net interest must equal new principal + cash
+              payout. Bank cash is credited only for the cash payout. Reinvested interest stays in
+              the new term and is not double-counted.
+            </p>
             <p className="settings-hint fd-form__note">
               Directly renewed principal will not pass through the bank account. Only cash
               payout/net received amounts are credited to bank cash.
@@ -2407,6 +2838,39 @@ export default function FixedDeposits() {
                   }
                 />
               </div>
+              <label className="fd-form__checkbox">
+                <input
+                  type="checkbox"
+                  checked={renewalForm.final_interest_pending}
+                  onChange={(e) =>
+                    setRenewalForm((p) => ({
+                      ...p,
+                      final_interest_pending: e.target.checked,
+                      pending_expected_date: e.target.checked ? p.pending_expected_date : '',
+                    }))
+                  }
+                />
+                Final interest pending
+              </label>
+              {renewalForm.final_interest_pending ? (
+                <>
+                  <p className="settings-hint fd-form__note">
+                    Pending interest is an estimate only: it cannot be reinvested or paid out now.
+                    Old principal must equal new principal + cash payout.
+                  </p>
+                  <div className="form-group">
+                    <label htmlFor="fd-renew-pending-date">Expected payout date (optional)</label>
+                    <input
+                      id="fd-renew-pending-date"
+                      type="date"
+                      value={renewalForm.pending_expected_date}
+                      onChange={(e) =>
+                        setRenewalForm((p) => ({ ...p, pending_expected_date: e.target.value }))
+                      }
+                    />
+                  </div>
+                </>
+              ) : null}
               <div className="form-group">
                 <label htmlFor="fd-renew-net">Net interest (display only)</label>
                 <input

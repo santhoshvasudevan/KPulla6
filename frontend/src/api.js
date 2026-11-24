@@ -884,9 +884,15 @@ function withFdScopeParams(params, scopeParams) {
   return out;
 }
 
-/** GET /api/v1/fixed-deposits */
+/** GET /api/v1/fixed-deposits
+ * Optional scopeParams.lifecycle_view: 'current' | 'history' (#41).
+ * Omitting lifecycle_view preserves the legacy all-active list for callers.
+ */
 export async function fetchFixedDeposits(scopeParams = null) {
   const params = withFdScopeParams({}, scopeParams);
+  if (scopeParams?.lifecycle_view) {
+    params.set('lifecycle_view', String(scopeParams.lifecycle_view));
+  }
   return fetchWithHandling(`/fixed-deposits?${params.toString()}`);
 }
 
@@ -1013,6 +1019,40 @@ export async function renewFixedDeposit(fdId, payload) {
 /** GET /api/v1/fixed-deposits/{id}/settlements */
 export async function fetchFixedDepositSettlements(fdId) {
   return fetchWithHandling(`/fixed-deposits/${fdId}/settlements`);
+}
+
+/** GET /api/v1/fixed-deposit-pending-payouts — scoped pending final payouts (#45).
+ * Optional scopeParams.status: 'pending' (default) | 'confirmed' | 'all'.
+ * Optional scopeParams.discrepancy_status: 'none' | 'open' | 'resolved' (#46).
+ */
+export async function fetchFixedDepositPendingPayouts(scopeParams = null) {
+  const params = withFdScopeParams({}, scopeParams);
+  if (scopeParams?.status) {
+    params.set('status', String(scopeParams.status));
+  }
+  if (scopeParams?.discrepancy_status) {
+    params.set('discrepancy_status', String(scopeParams.discrepancy_status));
+  }
+  return fetchWithHandling(`/fixed-deposit-pending-payouts?${params.toString()}`);
+}
+
+/** POST /api/v1/fixed-deposit-pending-payouts/{id}/confirm — records actual payout */
+export async function confirmFixedDepositPendingPayout(pendingId, payload) {
+  return fetchWithHandling(`/fixed-deposit-pending-payouts/${pendingId}/confirm`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** POST /api/v1/fixed-deposit-pending-payouts/{id}/resolve-discrepancy — review metadata only (#46) */
+export async function resolveFixedDepositPendingPayoutDiscrepancy(pendingId, comment) {
+  return fetchWithHandling(
+    `/fixed-deposit-pending-payouts/${pendingId}/resolve-discrepancy`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ comment }),
+    }
+  );
 }
 
 /** Build query params for FD interest report JSON/CSV endpoints. */

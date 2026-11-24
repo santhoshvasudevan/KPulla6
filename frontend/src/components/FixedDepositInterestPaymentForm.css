@@ -1,0 +1,50 @@
+.fd-interest-payment-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.fd-interest-payment-form__title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.fd-interest-payment-form__forecast,
+.fd-interest-payment-form__bank-hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.fd-interest-payment-form__tax-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.fd-interest-payment-form__net {
+  min-height: 2.25rem;
+  display: flex;
+  align-items: center;
+  font-weight: 650;
+}
+
+.fd-interest-payment-form__variance {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--text-warning, #a16207);
+}
+
+.fd-interest-payment-form__variance--ok {
+  color: var(--text-secondary);
+}
+
+.fd-interest-payment-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}

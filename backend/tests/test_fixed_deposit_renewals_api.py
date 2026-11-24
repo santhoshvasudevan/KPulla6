@@ -180,6 +180,7 @@ def test_partial_cash_payout_creates_bank_credit(api_client, seeded, test_user):
 
 @pytest.mark.django_db
 def test_net_interest_cash_payment_creates_bank_credit(api_client, seeded, test_user):
+    """Principal-only rollover with final interest paid to the bank (#43)."""
     portfolio = ensure_default_portfolio(test_user)
     bank = _bank(test_user)
     fd = _create_fd(test_user, portfolio.id, bank)
@@ -188,18 +189,115 @@ def test_net_interest_cash_payment_creates_bank_credit(api_client, seeded, test_
 
     response = api_client.post(
         f"/api/v1/fixed-deposits/{fd.id}/renew",
-        _renew_payload(gross_interest=Decimal("5000"), tax_withheld=Decimal("500")),
+        _renew_payload(
+            gross_interest=Decimal("5000"),
+            tax_withheld=Decimal("500"),
+            cash_payout_amount=Decimal("4500"),
+        ),
         format="json",
     )
     assert response.status_code == 201
     body = response.json()
     assert body["net_interest"] == 4500.0
+    assert body["interest_cash_amount"] == 4500.0
+    assert body["reinvested_interest_amount"] == 0.0
     assert len(body["cash_movement_ids"]) == 1
 
     interest_mv = CashMovement.objects.get(id=body["cash_movement_ids"][0])
     assert interest_mv.movement_type == CashMovementType.FD_MATURITY_INTEREST
     bank.refresh_from_db()
     assert bank.current_balance == balance_before + Decimal("4500")
+
+
+@pytest.mark.django_db
+def test_full_rollover_reinvests_interest_without_bank_credit(api_client, seeded, test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    bank = _bank(test_user)
+    fd = _create_fd(test_user, portfolio.id, bank)
+    bank.refresh_from_db()
+    balance_before = bank.current_balance
+
+    response = api_client.post(
+        f"/api/v1/fixed-deposits/{fd.id}/renew",
+        _renew_payload(
+            new_principal_amount=Decimal("104500"),
+            gross_interest=Decimal("5000"),
+            tax_withheld=Decimal("500"),
+            cash_payout_amount=Decimal("0"),
+        ),
+        format="json",
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["cash_payout_amount"] == 0.0
+    assert body["interest_cash_amount"] == 0.0
+    assert body["reinvested_interest_amount"] == 4500.0
+    assert body["cash_movement_ids"] == []
+    bank.refresh_from_db()
+    assert bank.current_balance == balance_before
+    new_fd = FixedDeposit.objects.get(id=body["new_fixed_deposit"]["id"])
+    assert new_fd.principal_amount == Decimal("104500")
+
+
+@pytest.mark.django_db
+def test_partial_rollover_with_interest_posts_only_cash_payout(api_client, seeded, test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    bank = _bank(test_user)
+    fd = _create_fd(test_user, portfolio.id, bank)
+    bank.refresh_from_db()
+    balance_before = bank.current_balance
+
+    # old 100000 + net 4500 = new 102000 + cash 2500
+    response = api_client.post(
+        f"/api/v1/fixed-deposits/{fd.id}/renew",
+        _renew_payload(
+            new_principal_amount=Decimal("102000"),
+            gross_interest=Decimal("5000"),
+            tax_withheld=Decimal("500"),
+            cash_payout_amount=Decimal("2500"),
+        ),
+        format="json",
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["interest_cash_amount"] == 2500.0
+    assert body["reinvested_interest_amount"] == 2000.0
+    assert len(body["cash_movement_ids"]) == 1
+    bank.refresh_from_db()
+    assert bank.current_balance == balance_before + Decimal("2500")
+
+
+@pytest.mark.django_db
+def test_inconsistent_renewal_allocation_rolls_back(api_client, seeded, test_user):
+    portfolio = ensure_default_portfolio(test_user)
+    bank = _bank(test_user)
+    fd = _create_fd(test_user, portfolio.id, bank)
+    bank.refresh_from_db()
+    balance_before = bank.current_balance
+    fd_count_before = FixedDeposit.objects.count()
+    settlement_count_before = FixedDepositSettlement.objects.count()
+    movement_count_before = CashMovement.objects.count()
+
+    response = api_client.post(
+        f"/api/v1/fixed-deposits/{fd.id}/renew",
+        _renew_payload(
+            new_principal_amount=Decimal("100000"),
+            gross_interest=Decimal("5000"),
+            tax_withheld=Decimal("500"),
+            cash_payout_amount=Decimal("0"),  # missing 4500 payout or reinvest
+        ),
+        format="json",
+    )
+    assert response.status_code == 400
+    assert "Inconsistent renewal allocation" in response.json()["detail"]
+
+    fd.refresh_from_db()
+    assert fd.status == FixedDepositStatus.ACTIVE
+    bank.refresh_from_db()
+    assert bank.current_balance == balance_before
+    assert FixedDeposit.objects.count() == fd_count_before
+    assert FixedDepositSettlement.objects.count() == settlement_count_before
+    assert CashMovement.objects.count() == movement_count_before
 
 
 @pytest.mark.django_db
@@ -317,11 +415,17 @@ def test_portfolio_summary_after_renewal_uses_new_principal_only(api_client, see
     ).json()
     assert summary_before["current_value"] >= 100000.0
 
-    api_client.post(
+    renew = api_client.post(
         f"/api/v1/fixed-deposits/{fd.id}/renew",
-        _renew_payload(new_principal_amount=Decimal("120000")),
+        _renew_payload(
+            new_principal_amount=Decimal("120000"),
+            gross_interest=Decimal("20000"),
+            tax_withheld=Decimal("0"),
+            cash_payout_amount=Decimal("0"),
+        ),
         format="json",
     )
+    assert renew.status_code == 201
 
     summary_after = api_client.get(
         f"/api/v1/portfolio/summary?portfolio_id={portfolio.id}&include_timeseries=false&display_currency=INR"
@@ -347,16 +451,17 @@ def test_bank_cash_not_in_portfolio_summary_after_renewal_with_payout(api_client
         f"/api/v1/portfolio/summary?portfolio_id={portfolio.id}&include_timeseries=false&display_currency=INR"
     ).json()
 
-    api_client.post(
+    renew = api_client.post(
         f"/api/v1/fixed-deposits/{fd.id}/renew",
         _renew_payload(
             new_principal_amount=Decimal("90000"),
-            cash_payout_amount=Decimal("10000"),
+            cash_payout_amount=Decimal("14500"),
             gross_interest=Decimal("5000"),
             tax_withheld=Decimal("500"),
         ),
         format="json",
     )
+    assert renew.status_code == 201
 
     summary_after = api_client.get(
         f"/api/v1/portfolio/summary?portfolio_id={portfolio.id}&include_timeseries=false&display_currency=INR"

@@ -120,10 +120,12 @@ Approved decisions (FD-ACC-0.1): see accounting doc § Approved product decision
 |-------|----------|
 | **Route** | `/fixed-deposits/:id` (UI) · `GET /fixed-deposits/{id}/detail` (API) |
 | **Expected schedule** | Read-only forecast from FD terms; payout FDs get per-period rows; compounded FDs get one maturity accrual row |
-| **Actual credits** | User-recorded `FixedDepositInterestPayment`; creates bank `FD_INTEREST` CREDIT for net amount |
+| **Actual credits** | Shared form from list row or schedule (#42); user-recorded `FixedDepositInterestPayment`; creates bank `FD_INTEREST` CREDIT for net amount when positive; optional `client_request_id` makes retries idempotent |
 | **Tax withheld** | Per payment; net credited = gross − tax |
 | **Indian FY filter** | April–March; `financial_year=2025-26` or `fy_start`/`fy_end` |
-| **Edit actual** | `PATCH /fixed-deposit-interest-payments/{id}` updates payment + linked cash movement |
+| **Maturity interest** | Confirmed settlement / renewal interest (and confirmed delayed payouts) counted once on the originating term; pending estimates excluded from actuals |
+| **Paid vs reinvested** | Detail KPIs and interest report show `interest_cash_amount` / `reinvested_interest_amount` (Unavailable when null; distinct from confirmed zero) |
+| **Edit actual** | Open **Interest payments** on a current FD and select **Edit payment** on the intended row. FD Detail also offers **Edit actual** for matched schedule rows. Both use `PATCH /fixed-deposit-interest-payments/{id}` to update the payment and linked cash movement. |
 | **Estimates** | Not settlement, not tax advice, not auto interest accrual |
 
 ### Portfolio value rules (MVP; extended by accounting design)
@@ -159,7 +161,7 @@ Base: `/api/v1` · Session auth required.
 
 | Method | Path | Behavior |
 |--------|------|----------|
-| GET | `/fixed-deposits` | List active FDs; `portfolio_scope=all` or `portfolio_id` |
+| GET | `/fixed-deposits` | List soft-active FDs; `portfolio_scope=all` or `portfolio_id`; optional `lifecycle_view=current\|history` (#41) |
 | POST | `/fixed-deposits` | Create with validation |
 | GET | `/fixed-deposits/{id}` | Detail |
 | PUT | `/fixed-deposits/{id}` | Update active FD. After `FD_OPENING`: **locked** — principal, bank account, currency, portfolio; **editable** — investment date (syncs opening debit date), maturity date, rate, payout, nominee, metadata; maturity estimate recalculates |
@@ -177,7 +179,28 @@ Use the action that matches the real-world event. These are **not** interchangea
 | **Settle / Close** | `POST .../settle` | Real maturity or early closure at institution | `FD_MATURITY_*` / `FD_CLOSURE_*` CREDITs | Principal removed after settlement; bank credited per settlement | **Yes** — `MATURED_SETTLED` or `CLOSED` |
 | **Renew** | `POST .../renew` | Real rollover at institution | Settlement + optional payout movements; renewed FD may skip `FD_OPENING` on direct rollover | Old FD settled; new FD principal included | **Yes** — old + new FD rows |
 
+### Current vs History list (#41)
+
+| View | Query | Includes | UI |
+|------|-------|----------|-----|
+| **Current** (default on Fixed Deposits page) | `lifecycle_view=current` | `ACTIVE` and `MATURED` (including matured awaiting settlement) | Edit / renew / settle / record interest |
+| **History** | `lifecycle_view=history` | `MATURED_SETTLED` and `CLOSED` | Read-only; **Renewed** label when a successor exists; previous/next term links; **Payout pending** badge + **Confirm payout** only when final interest is pending (#45); **Discrepancy open / resolved** badge + **Resolve discrepancy** for an open payout discrepancy (#46) |
+| **Legacy (no filter)** | omit `lifecycle_view` | All soft-active rows (`is_active=true`) | Preserves existing API callers |
+
+**Pending final payouts (#45):** Settle and Renew have a **Final interest pending** checkbox with an optional expected date. Entered interest is stored as an estimate on the completed term — no bank credit, not realized interest, and excluded from renewal proceeds (`old principal = new principal + cash payout`). A **Pending maturity payouts** panel (both views, portfolio-scoped) lists open payouts with their originating term; **Confirm payout** records the actual date/gross/tax/net and posts one bank credit. A difference from the estimate is kept as an open discrepancy.
+
+**Payout discrepancy review (#46):**
+
+1. **Detection** — on confirm, the actual net is compared with the suggested net (same basis). It is flagged `OPEN` only when both exist and differ; no estimate, or an equal net with a different gross/tax split, stays `NONE`. Example: estimated net ₹2,000, actual net ₹1,850 → ₹150 shortfall, and ₹1,850 is what the bank credit posts.
+2. **Review** — open items appear in the **Payout discrepancies to review** panel (portfolio-scoped: estimated net, actual net, shortfall/excess). The originating term shows the same state: History row badge, and the FD detail **Final maturity payout** card (estimate, actual posted, difference, review state).
+3. **Resolve** — **Resolve** / **Resolve discrepancy** opens a modal that requires a comment. Saving calls `POST /fixed-deposit-pending-payouts/{id}/resolve-discrepancy`; the item leaves the panel and the term shows **Discrepancy resolved** with the comment and date after reload.
+4. **No ledger effect** — resolving never edits the confirmed amounts or date, the bank credit, interest report totals, or the completed term.
+
+Renewal does **not** clear `is_active` on the predecessor. Cancelled / soft-deactivated rows stay out of both views. Response fields: `lifecycle_view`, `is_renewed`, `next_term_id`, `renewal_of_id`. Value History still attributes each term’s principal through the day before settlement and the successor from its investment date.
+
 **Blocked:** `DELETE` on ledger-backed FD with unreversed `FD_OPENING` → **409** (“Use Cancel FD”). Cancel rejected when interest payments, settlement, or renewal exist.
+
+To void a duplicate interest credit, select **Reverse interest** on the extra row in **Interest payments**. The reversed record remains visible with status **Reversed** and is excluded from actual interest totals and the interest report. The History list presents recorded payments for review.
 
 | **Reverse interest** | `POST .../fixed-deposit-interest-payments/{id}/reverse` | Mistaken interest payment | `FD_INTEREST_REVERSAL` DEBIT | Bank cash reduced; payment `is_reversed`; not allowed after settlement |
 | **Reverse cash movement** | `POST .../cash-movements/{id}/reverse` | Mistaken manual deposit/withdrawal/adjustment/opening seed | `REVERSAL` opposite direction | Original marked reversed; bank balance updated |
@@ -194,7 +217,7 @@ Use the action that matches the real-world event. These are **not** interchangea
 
 **Query:** `portfolio_scope` / `portfolio_id`, `start_date`, `end_date`, optional `display_currency`, `group_by` (`year`, `portfolio`, `bank`, `fd`, `source`, `none`) — JSON only; CSV ignores `group_by` (detail rows only).
 
-**Excludes:** reversed interest payments; zero-interest settlement/renewal rows; `CANCELLED` FD rows; renewal-linked settlement rows (renewal group used instead).
+**Excludes:** reversed interest payments; zero-interest settlement/renewal rows; `CANCELLED` FD rows; renewal-linked settlement rows (renewal group used instead); unconfirmed pending payout estimates. Confirmed pending payouts appear once as `PENDING_PAYOUT` rows on the originating term (#45).
 
 **UI (FD-TAX-1A / FD-TAX-2):** Fixed Deposits → **Interest & Tax** section — default date range = current calendar year; **Reset filters**; `group_by` includes **Bank account**; KPI cards (gross/tax/net/row count); grouped totals with readable labels; exclusion/disclaimer notes; FX and mixed-currency warnings near totals; improved empty state; **Export CSV** button (current filters; blob download).
 

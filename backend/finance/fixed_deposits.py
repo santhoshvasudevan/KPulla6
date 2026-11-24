@@ -50,6 +50,23 @@ class FixedDepositLike(Protocol):
 
 VALUE_CONTRIBUTING_STATUSES = frozenset({"ACTIVE", "MATURED"})
 
+# Lifecycle list views (#41): outstanding vs completed terms.
+# Soft-deleted / CANCELLED terms are excluded from both views.
+LIFECYCLE_CURRENT_STATUSES = frozenset({"ACTIVE", "MATURED"})
+LIFECYCLE_HISTORY_STATUSES = frozenset({"MATURED_SETTLED", "CLOSED"})
+LIFECYCLE_VIEW_CURRENT = "current"
+LIFECYCLE_VIEW_HISTORY = "history"
+VALID_LIFECYCLE_VIEWS = frozenset({LIFECYCLE_VIEW_CURRENT, LIFECYCLE_VIEW_HISTORY})
+
+
+def fixed_deposit_lifecycle_view(status: str) -> str | None:
+    """Classify an FD status into Current or History; None for cancelled/other."""
+    if status in LIFECYCLE_CURRENT_STATUSES:
+        return LIFECYCLE_VIEW_CURRENT
+    if status in LIFECYCLE_HISTORY_STATUSES:
+        return LIFECYCLE_VIEW_HISTORY
+    return None
+
 
 @dataclass(frozen=True)
 class MaturityEstimateResult:

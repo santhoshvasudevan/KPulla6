@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { fdPayoutLabel, fdStatusBadgeProps, fdStatusCounts } from './fdDisplay';
+import {
+  fdPayoutLabel,
+  fdStatusBadgeProps,
+  fdStatusCounts,
+  fdIsHistoryTerm,
+  fdIsCurrentTerm,
+} from './fdDisplay';
 
 describe('fdDisplay', () => {
   it('maps backend FD status to badge props', () => {
@@ -7,6 +13,18 @@ describe('fdDisplay', () => {
     expect(fdStatusBadgeProps('MATURED')).toEqual({ status: 'warning', label: 'Matured' });
     expect(fdStatusBadgeProps('MATURED_SETTLED')).toEqual({ status: 'info', label: 'Settled' });
     expect(fdStatusBadgeProps('CLOSED')).toEqual({ status: 'closed', label: 'Closed' });
+  });
+
+  it('labels renewed predecessors as Renewed', () => {
+    expect(
+      fdStatusBadgeProps('MATURED_SETTLED', { is_renewed: true, has_renewal: true })
+    ).toEqual({ status: 'info', label: 'Renewed' });
+  });
+
+  it('classifies current vs history terms', () => {
+    expect(fdIsCurrentTerm({ status: 'ACTIVE', lifecycle_view: 'current' })).toBe(true);
+    expect(fdIsHistoryTerm({ status: 'MATURED_SETTLED', lifecycle_view: 'history' })).toBe(true);
+    expect(fdIsHistoryTerm({ status: 'ACTIVE' })).toBe(false);
   });
 
   it('formats payout frequency labels', () => {

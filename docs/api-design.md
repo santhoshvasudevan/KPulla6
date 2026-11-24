@@ -1290,7 +1290,8 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 | GET | `/api/v1/fixed-deposits/{id}/interest-payments` | **Done** — list payments for FD (user-scoped) |
 | POST | `/api/v1/fixed-deposits/{id}/interest-payments` | **Done** — `{ payment_date, gross_interest, tax_withheld?, comment? }`; atomically creates `FixedDepositInterestPayment` + `FD_INTEREST` CREDIT for **net**; optional `warning` for COMPOUNDED FD |
 | GET | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | **Done** |
-| PUT/PATCH/DELETE | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | **405** — immutable; use reverse (FD-ACC-10B) |
+| PUT/PATCH | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | Update the credited date, gross interest, tax withheld, or note. Updates the selected payment and its linked bank movement atomically. Reversed payments and missing or reversed bank movements are rejected. |
+| DELETE | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | **405** — use the reversal endpoint to void an eligible payment. |
 | POST | `/api/v1/fixed-deposit-interest-payments/{payment_id}/reverse` | **Done** — `{ reversal_date?, reason }`; `FD_INTEREST_REVERSAL` DEBIT; `is_reversed=true` |
 
 **Rejected:** interest payment on `CLOSED` FD (**400**). `ACTIVE` and `MATURED` allowed. Bank account taken from FD (not client-supplied).
@@ -1317,11 +1318,33 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 
 **Request:** `renewal_date`, `new_deposit_account_number`, `new_principal_amount`, `new_interest_rate_percent`, `new_interest_payout_frequency`, `new_maturity_date`, optional `new_institution_name`, `new_investment_date` (defaults `renewal_date`), `nominee_name`, `comment`, `gross_interest`, `tax_withheld`, `cash_payout_amount`, optional `direct_reinvest_amount` (defaults `new_principal_amount`).
 
-**Response (201):** `renewal_id`, `old_fixed_deposit`, `new_fixed_deposit`, `settlement_id`, `direct_reinvest_amount`, `cash_payout_amount`, `gross_interest`, `tax_withheld`, `net_interest`, `cash_movement_ids`, `currency`.
+**Response (201):** `renewal_id`, `old_fixed_deposit`, `new_fixed_deposit`, `settlement_id`, `direct_reinvest_amount`, `cash_payout_amount`, `gross_interest`, `tax_withheld`, `net_interest`, `interest_cash_amount`, `reinvested_interest_amount`, `cash_movement_ids`, `currency`.
 
-**Accounting:** Direct rollover — no bank movement for reinvested principal; renewed FD has no `FD_OPENING` debit. `cash_payout_amount` → `FD_MATURITY_PRINCIPAL` CREDIT; net final interest → `FD_MATURITY_INTEREST` CREDIT. Normal `POST /fixed-deposits` still creates `FD_OPENING` debit.
+**Accounting:** Direct rollover — no bank movement for reinvested principal; renewed FD has no `FD_OPENING` debit. Bank cash is posted only for the cash payout (interest attributed first, then principal). Allocation identity: `old principal + net interest = new principal + cash payout` (exact Decimal validation on the server). Normal `POST /fixed-deposits` still creates `FD_OPENING` debit.
 
-**Rejected:** `CLOSED`/`MATURED_SETTLED` FD; already renewed FD; foreign FD (**404**); invalid dates/amounts (**400**).
+**Rejected:** `CLOSED`/`MATURED_SETTLED` FD; already renewed FD; foreign FD (**404**); inconsistent allocation or invalid dates/amounts (**400** with exact allocation message).
+
+### FD pending maturity payouts (#45)
+
+Settle and renew accept optional `final_interest_pending` (bool, default `false`) and `pending_expected_date` (date or null; only allowed when pending). When pending:
+
+- Entered `gross_interest` / `tax_withheld` become **suggested** amounts on a `FixedDepositPendingPayout` row for the completed term (null when no amount entered). Settlement / renewal group interest is recorded as **0**; no interest bank credit is posted.
+- Settle still credits principal; principal returned must be positive.
+- Renew allocation excludes the estimate: `old principal = new principal + cash payout` (estimated interest cannot be reinvested or paid out now).
+- Responses add `final_interest_pending` and `pending_payout` (or `null`).
+
+| Method | Path | Notes |
+|--------|------|--------|
+| GET | `/api/v1/fixed-deposit-pending-payouts` | `portfolio_scope=all` or `portfolio_id`; optional `status=pending` (default) \| `confirmed` \| `all`; optional `discrepancy_status=none` \| `open` \| `resolved` (#46, **400** otherwise). Each row includes the originating term (`fixed_deposit_id`, institution, deposit account, portfolio, bank, status, maturity date). Cancelled FDs excluded |
+| GET | `/api/v1/fixed-deposit-pending-payouts/{id}` | Owner-scoped (**404** otherwise) |
+| POST | `/api/v1/fixed-deposit-pending-payouts/{id}/confirm` | `{ payment_date, gross_interest, tax_withheld?, comment?, client_request_id? }` |
+| POST | `/api/v1/fixed-deposit-pending-payouts/{id}/resolve-discrepancy` | `{ comment }` (required, trimmed, ≤ 1000 chars) — #46 |
+
+**Confirm:** atomic; records actual date/gross/tax/net and posts exactly one `FD_MATURITY_INTEREST` (or `FD_CLOSURE_INTEREST` for closures) CREDIT linked to the originating FD on `payment_date` when net > 0. A mismatch with the suggestion never blocks: `discrepancy_status=OPEN`, `discrepancy_amount = actual net − suggested net`; equal or no suggestion → `NONE`. **201** on first confirm; **200** replay with the same `client_request_id` (unique per user); **409** when already confirmed without a matching key; **400** when a key was used for a different payout.
+
+**Resolve discrepancy (#46):** moves `discrepancy_status` `OPEN` → `RESOLVED` and sets `resolution_comment` + `resolved_at`; returns **200** with the full payout row. Review metadata only — suggested/actual amounts, `payment_date`, `discrepancy_amount`, the linked bank credit, interest report rows/totals, and the completed term are unchanged. **400** blank/missing comment; **409** when `discrepancy_status` is `NONE` (no comparable estimate, equal nets, or still `PENDING`) or already `RESOLVED`; **404** for another user's payout. Summary blocks (`pending_payout` on FD list/detail) include `discrepancy_status`, `discrepancy_amount`, `resolution_comment`, and `resolved_at`.
+
+**FD list / detail:** `FixedDeposit` responses add `pending_payout` (summary or `null`). `GET /fixed-deposits/{id}/detail` adds `pending_payout`; `term_totals` / FY summary include a **confirmed** payout once and never a pending estimate. Confirmed maturity settlement / renewal interest is counted once on the originating term (renewal + linked settlement prefer the renewal group; event date for FY). Additive fields: `interest_cash_amount`, `reinvested_interest_amount` on `term_totals`, and `interest_cash_amount_fy` / `reinvested_interest_amount_fy` on `financial_year_summary` (null when a legacy renewal split cannot be reconstructed; successor terms do not re-count predecessor interest).
 
 ### FD interest / tax report (FD-TAX-1)
 
@@ -1329,16 +1352,19 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 |--------|------|--------|
 | GET | `/api/v1/reports/fixed-deposit-interest` | **Done** — read-only gross/tax/net report; no accounting side effects |
 | GET | `/api/v1/reports/fixed-deposit-interest/export.csv` | **Done** — read-only CSV export; same filters/exclusions; detail rows only |
+| GET | `/api/v1/reports/fixed-deposit-renewal-audit` | **Done (#44)** — read-only renewal audit; `portfolio_scope`/`portfolio_id`, optional `start_date`/`end_date` on `renewal_date`; native currency only |
 
 **Query:** `portfolio_scope=all` or `portfolio_id`, optional `start_date`, `end_date`, `display_currency`, `group_by` (`year`, `portfolio`, `bank`, `fd`, `source`, `none`) — JSON only; CSV export ignores `group_by`.
 
-**Sources:** non-reversed interest payments; settlement final interest (excludes renewal-linked settlements to avoid double count); renewal group interest. Excludes zero-interest rows and `CANCELLED` FD rows.
+**Sources:** non-reversed interest payments; settlement final interest (excludes renewal-linked settlements to avoid double count); renewal group interest; **confirmed** pending payouts (`source_type=PENDING_PAYOUT`, dated `payment_date`, with `discrepancy_status` / `discrepancy_amount`, #45). Excludes zero-interest rows, unconfirmed pending estimates, and `CANCELLED` FD rows.
 
 **Response:** `rows`, `totals` (gross/tax/net, `row_count`, `fx_status`), optional `grouped_totals`, `warnings` (FX partial / mixed currency).
 
-**CSV export (FD-TAX-2):** `Content-Type: text/csv`; `Content-Disposition: attachment; filename="fd-interest-tax-{start}-to-{end}.csv"` (variants when dates partial). Columns: Date, Source Type, Source Label, Portfolio, Bank / Institution, Bank Account, FD Account, Currency, Gross Interest, Tax Withheld, Net Interest, Display Currency, Gross/Tax/Net Interest Display, Comment. Rows-only (no footer totals or warnings in file); header row when empty.
+**Renewal audit (#44):** `{ read_only: true, summary, results }`. `summary` has `renewal_count`, `status_counts` (`CONSISTENT` / `INCONSISTENT` / `INCOMPLETE`), `finding_counts` by code, and `totals_by_currency`. Each result has `renewal_id`, `renewal_date`, `currency`, `status`, `old_term` / `new_term` references, `settlement_id`, `settlement_movement_ids`, `unlinked_movement_ids`, `pending_payout_id`, `totals` (available vs allocated amounts, linked bank credits by leg, pending estimate excluded from proceeds, confirmed later payout), and `findings` (`code`, `kind`, `message`). Issues only read queries. Finding codes: [Audit FD renewals](how-to/audit-fd-renewals.md).
 
-**Frontend (FD-TAX-1A / FD-TAX-2):** `FixedDepositInterestReport.jsx` — filters, reset, notes, warnings, grouped totals, table polish, **Export CSV** (`exportFixedDepositInterestReportCsv`, `downloadBlobFile`). `FixedDepositInterestReport.test.jsx` · `FixedDeposits.test.jsx` · `api.test.js`.
+**CSV export (FD-TAX-2):** `Content-Type: text/csv`; `Content-Disposition: attachment; filename="fd-interest-tax-{start}-to-{end}.csv"` (variants when dates partial). Columns: Date, Source Type, Source Label, Portfolio, Bank / Institution, Bank Account, FD Account, Currency, Gross Interest, Tax Withheld, Net Interest, Display Currency, Gross/Tax/Net Interest Display, Comment. Rows-only (no footer totals or warnings in file); header row when empty. Renewal rows also expose `interest_cash_amount` / `reinvested_interest_amount` on the JSON report (null when the split is unknown).
+
+**Frontend (FD-TAX-1A / FD-TAX-2):** `FixedDepositInterestReport.jsx` — filters, reset, notes, warnings, grouped totals, **Paid to bank** / **Reinvested** columns, table polish, **Export CSV** (`exportFixedDepositInterestReportCsv`, `downloadBlobFile`). `FixedDepositInterestReport.test.jsx` · `FixedDeposits.test.jsx` · `api.test.js`.
 
 **Not tax advice.** No accounting changes.
 
@@ -1350,7 +1376,6 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 | GET | `/api/v1/fixed-deposits` | **Done** — list includes maturity fields; **FD-HOLDINGS-UX-1:** `resolve_maturity_display()` fills estimates dynamically when stored values are null (legacy rows). **FD-INTEREST-MATURITY-LOGIC-1:** payout FDs return principal as maturity; `estimate_type`, `estimated_total_interest`, `estimated_periodic_interest`. |
 | GET | `/api/v1/fixed-deposits/maturity-estimate` | **Done** — query: `principal_amount`, `interest_rate_percent`, `interest_payout_frequency`, `investment_date`, `maturity_date`; returns estimate fields for create/edit preview |
 | GET | `/api/v1/fixed-deposits/{id}/detail` | **Done (FD-DETAIL-CALC-1)** — composite detail: estimate summary, `expected_interest_schedule`, actual payments, `financial_year_summary`, `term_totals`, `detailed_calculation`; query `financial_year` or `fy_start`/`fy_end` |
-| PATCH | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | **Done (FD-DETAIL-CALC-1)** — update actual credited date/gross/tax/note; updates linked `FD_INTEREST` cash movement and bank balance |
 
 **Create body:** `bank_account_id` required; `portfolio_id` optional (must match bank account when supplied). Bank account must be **ASSIGNED** before create.
 

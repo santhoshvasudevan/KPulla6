@@ -151,7 +151,7 @@ def test_report_includes_renewal_interest_not_duplicate_settlement(
     portfolio = ensure_default_portfolio(test_user)
     bank = _bank(test_user)
     fd = _create_fd(test_user, portfolio.id, bank)
-    api_client.post(
+    renew = api_client.post(
         f"/api/v1/fixed-deposits/{fd.id}/renew",
         {
             "renewal_date": "2026-01-01",
@@ -163,14 +163,18 @@ def test_report_includes_renewal_interest_not_duplicate_settlement(
             "new_maturity_date": "2028-01-01",
             "gross_interest": 1500,
             "tax_withheld": 150,
+            "cash_payout_amount": 1350,
         },
         format="json",
     )
+    assert renew.status_code == 201
 
     body = _report(api_client).json()
     assert body["totals"]["row_count"] == 1
     assert body["rows"][0]["source_type"] == "RENEWAL"
     assert body["rows"][0]["gross_interest"] == pytest.approx(1500.0)
+    assert body["rows"][0]["interest_cash_amount"] == pytest.approx(1350.0)
+    assert body["rows"][0]["reinvested_interest_amount"] == pytest.approx(0.0)
 
 
 @pytest.mark.django_db

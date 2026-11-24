@@ -12,6 +12,8 @@ from django.db.models import Q
 
 from debt.models import (
     FixedDepositInterestPayment,
+    FixedDepositPendingPayout,
+    FixedDepositPendingPayoutStatus,
     FixedDepositRenewalGroup,
     FixedDepositSettlement,
     FixedDepositStatus,
@@ -19,7 +21,7 @@ from debt.models import (
 from fx.lookup import convert_amount_with_fill
 from portfolios.scope import ResolvedPortfolioScope
 
-SourceType = Literal["INTEREST_PAYMENT", "SETTLEMENT", "RENEWAL"]
+SourceType = Literal["INTEREST_PAYMENT", "SETTLEMENT", "RENEWAL", "PENDING_PAYOUT"]
 GroupByCode = Literal["year", "portfolio", "bank", "fd", "source", "none"]
 
 FD_INTEREST_FX_WARNING = (
@@ -30,6 +32,7 @@ SOURCE_LABELS = {
     "INTEREST_PAYMENT": "Interest payment",
     "SETTLEMENT": "Settlement",
     "RENEWAL": "Renewal",
+    "PENDING_PAYOUT": "Confirmed final payout",
 }
 
 
@@ -286,7 +289,7 @@ def build_fixed_deposit_interest_report(
     display_currency: str | None = None,
     group_by: GroupByCode = "none",
 ) -> FixedDepositInterestReportResult:
-    """Aggregate FD interest/tax rows from payments, settlements, and renewals."""
+    """Aggregate FD interest/tax rows from payments, settlements, renewals, and confirmed payouts."""
     rows: list[dict] = []
 
     payment_qs = (
@@ -378,20 +381,76 @@ def build_fixed_deposit_interest_report(
 
     for renewal in renewal_qs.order_by("renewal_date", "id"):
         fd = renewal.old_fixed_deposit
-        rows.append(
-            _row_base(
-                source_type="RENEWAL",
-                source_id=renewal.id,
-                row_date=renewal.renewal_date,
-                fd=fd,
-                bank=fd.bank_account,
-                currency=renewal.currency,
-                gross=renewal.gross_interest,
-                tax=renewal.tax_withheld,
-                net=renewal.net_interest,
-                comment=renewal.comment,
+        from finance.fd_renewal_allocation import allocate_renewal_proceeds
+
+        try:
+            allocation = allocate_renewal_proceeds(
+                old_principal=renewal.old_principal,
+                net_interest=renewal.net_interest,
+                new_principal=renewal.direct_reinvest_amount,
+                cash_payout_amount=renewal.cash_payout_amount,
             )
+            interest_cash = allocation.interest_cash_amount
+            reinvested_interest = allocation.reinvested_interest_amount
+        except ValueError:
+            # Legacy inconsistent rows: still report net once without disposition split.
+            interest_cash = None
+            reinvested_interest = None
+        row = _row_base(
+            source_type="RENEWAL",
+            source_id=renewal.id,
+            row_date=renewal.renewal_date,
+            fd=fd,
+            bank=fd.bank_account,
+            currency=renewal.currency,
+            gross=renewal.gross_interest,
+            tax=renewal.tax_withheld,
+            net=renewal.net_interest,
+            comment=renewal.comment,
         )
+        row["interest_cash_amount"] = (
+            float(interest_cash) if interest_cash is not None else None
+        )
+        row["reinvested_interest_amount"] = (
+            float(reinvested_interest) if reinvested_interest is not None else None
+        )
+        rows.append(row)
+
+    # Pending estimates are not realized; only confirmed actuals report, once, on the
+    # originating term (settle/renew recorded zero interest for these terms).
+    payout_qs = (
+        FixedDepositPendingPayout.objects.filter(
+            user=user, status=FixedDepositPendingPayoutStatus.CONFIRMED
+        )
+        .select_related("fixed_deposit", "fixed_deposit__portfolio", "bank_account")
+        .filter(_exclude_cancelled())
+        .filter(_portfolio_filter(scope, "fixed_deposit"))
+    )
+    if start_date:
+        payout_qs = payout_qs.filter(payment_date__gte=start_date)
+    if end_date:
+        payout_qs = payout_qs.filter(payment_date__lte=end_date)
+
+    for payout in payout_qs.order_by("payment_date", "id"):
+        row = _row_base(
+            source_type="PENDING_PAYOUT",
+            source_id=payout.id,
+            row_date=payout.payment_date,
+            fd=payout.fixed_deposit,
+            bank=payout.bank_account,
+            currency=payout.currency,
+            gross=payout.gross_interest,
+            tax=payout.tax_withheld,
+            net=payout.net_interest,
+            comment=payout.comment,
+        )
+        row["discrepancy_status"] = payout.discrepancy_status
+        row["discrepancy_amount"] = (
+            float(payout.discrepancy_amount)
+            if payout.discrepancy_amount is not None
+            else None
+        )
+        rows.append(row)
 
     rows.sort(key=lambda r: (r["date"], r["source_type"], r["source_id"]))
 

@@ -13,6 +13,7 @@ Solve **one specific problem**. Each guide has steps, verification, and links to
 | Google sign-in | [Configure Google OAuth](configure-google-oauth.md) |
 | Stale prices or NAVs | [Refresh market cache](refresh-market-cache.md) |
 | Backup before risky work | [Back up and restore](backup-restore-database.md) |
+| Check FD renewals vs bank statements | [Audit FD renewals](audit-fd-renewals.md) |
 | Add an API endpoint | [Add backend API endpoint](add-backend-api-endpoint.md) |
 | Add a React page | [Add frontend page](add-frontend-page.md) |
 | Slow dashboard | [Investigate dashboard performance](investigate-dashboard-performance.md) |

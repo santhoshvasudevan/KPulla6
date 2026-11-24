@@ -487,6 +487,8 @@ class FixedDepositInterestPayment(models.Model):
         related_name="fixed_deposit_interest_payment",
     )
     comment = models.TextField(blank=True, default="")
+    # Stable client request identity for retry-safe create (#42). Null = legacy / no key.
+    client_request_id = models.CharField(max_length=64, null=True, blank=True)
     is_reversed = models.BooleanField(default=False)
     reversed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -511,6 +513,11 @@ class FixedDepositInterestPayment(models.Model):
             models.CheckConstraint(
                 condition=models.Q(net_interest__gte=0),
                 name="fd_interest_payments_net_non_negative",
+            ),
+            models.UniqueConstraint(
+                fields=["user", "client_request_id"],
+                condition=models.Q(client_request_id__isnull=False),
+                name="fd_interest_payments_user_client_request_id_uniq",
             ),
         ]
 
@@ -737,6 +744,188 @@ class FixedDepositSettlement(models.Model):
 
     def __str__(self):
         return f"FD settlement {self.settlement_type} {self.total_net_proceeds} {self.currency}"
+
+
+class FixedDepositPendingPayoutStatus(models.TextChoices):
+    PENDING = "PENDING", "Pending"
+    CONFIRMED = "CONFIRMED", "Confirmed"
+
+
+class FixedDepositPendingPayoutOrigin(models.TextChoices):
+    SETTLEMENT = "SETTLEMENT", "Settlement"
+    RENEWAL = "RENEWAL", "Renewal"
+
+
+class FixedDepositPayoutDiscrepancyStatus(models.TextChoices):
+    NONE = "NONE", "None"
+    OPEN = "OPEN", "Open"
+    RESOLVED = "RESOLVED", "Resolved"
+
+
+class FixedDepositPendingPayout(models.Model):
+    """Final maturity interest not yet received at settle/renew time (#45).
+
+    Suggested amounts are estimates only: no bank movement, not realized interest.
+    Confirmation records actual amounts and posts one linked bank credit when net > 0.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="fixed_deposit_pending_payouts",
+    )
+    fixed_deposit = models.OneToOneField(
+        FixedDeposit,
+        on_delete=models.PROTECT,
+        related_name="pending_payout",
+    )
+    bank_account = models.ForeignKey(
+        BankAccount,
+        on_delete=models.PROTECT,
+        related_name="fixed_deposit_pending_payouts",
+    )
+    origin = models.CharField(
+        max_length=16, choices=FixedDepositPendingPayoutOrigin.choices
+    )
+    status = models.CharField(
+        max_length=16,
+        choices=FixedDepositPendingPayoutStatus.choices,
+        default=FixedDepositPendingPayoutStatus.PENDING,
+    )
+    currency = models.CharField(max_length=3)
+    expected_payout_date = models.DateField(null=True, blank=True)
+    suggested_gross_interest = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True
+    )
+    suggested_tax_withheld = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True
+    )
+    suggested_net_interest = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True
+    )
+    payment_date = models.DateField(null=True, blank=True)
+    gross_interest = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True
+    )
+    tax_withheld = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True
+    )
+    net_interest = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True
+    )
+    cash_movement = models.OneToOneField(
+        CashMovement,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="fixed_deposit_pending_payout",
+    )
+    client_request_id = models.CharField(max_length=64, null=True, blank=True)
+    # Discrepancy fields are populated on confirm; resolution workflow is #46.
+    discrepancy_amount = models.DecimalField(
+        max_digits=18, decimal_places=4, null=True, blank=True
+    )
+    discrepancy_status = models.CharField(
+        max_length=16,
+        choices=FixedDepositPayoutDiscrepancyStatus.choices,
+        default=FixedDepositPayoutDiscrepancyStatus.NONE,
+    )
+    resolution_comment = models.TextField(blank=True, default="")
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    comment = models.TextField(blank=True, default="")
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "fixed_deposit_pending_payouts"
+        indexes = [
+            models.Index(fields=["user", "status"]),
+            models.Index(fields=["bank_account", "payment_date"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "client_request_id"],
+                condition=models.Q(client_request_id__isnull=False),
+                name="fd_pending_payouts_user_client_request_id_uniq",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(suggested_gross_interest__isnull=True)
+                | models.Q(suggested_gross_interest__gte=0),
+                name="fd_pending_payouts_suggested_gross_non_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(gross_interest__isnull=True)
+                | models.Q(gross_interest__gt=0),
+                name="fd_pending_payouts_gross_positive",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(tax_withheld__isnull=True)
+                | models.Q(tax_withheld__gte=0),
+                name="fd_pending_payouts_tax_non_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(net_interest__isnull=True)
+                | models.Q(net_interest__gte=0),
+                name="fd_pending_payouts_net_non_negative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status="PENDING", cash_movement__isnull=True)
+                | models.Q(status="CONFIRMED", payment_date__isnull=False),
+                name="fd_pending_payouts_status_consistent",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.fixed_deposit_id and self.user_id:
+            if self.fixed_deposit.user_id != self.user_id:
+                raise ValidationError(
+                    {"fixed_deposit": "Fixed deposit must belong to the same user."}
+                )
+        if self.bank_account_id and self.fixed_deposit_id:
+            if self.bank_account_id != self.fixed_deposit.bank_account_id:
+                raise ValidationError(
+                    {
+                        "bank_account": (
+                            "Bank account must match the fixed deposit linked bank account."
+                        )
+                    }
+                )
+        if self.currency and self.fixed_deposit_id:
+            if self.currency != self.fixed_deposit.currency:
+                raise ValidationError(
+                    {"currency": "Currency must match fixed deposit currency."}
+                )
+        for gross, tax, net, label in (
+            (
+                self.suggested_gross_interest,
+                self.suggested_tax_withheld,
+                self.suggested_net_interest,
+                "suggested_",
+            ),
+            (self.gross_interest, self.tax_withheld, self.net_interest, ""),
+        ):
+            if gross is not None and tax is not None:
+                if tax > gross:
+                    raise ValidationError(
+                        {f"{label}tax_withheld": "Tax withheld cannot exceed gross interest."}
+                    )
+                if net is not None and net != gross - tax:
+                    raise ValidationError(
+                        {
+                            f"{label}net_interest": (
+                                "Net interest must equal gross interest minus tax withheld."
+                            )
+                        }
+                    )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"FD pending payout {self.fixed_deposit_id} ({self.status})"
 
 
 class FixedDepositRenewalGroup(models.Model):

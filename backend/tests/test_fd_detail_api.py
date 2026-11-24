@@ -4,8 +4,9 @@ from decimal import Decimal
 import pytest
 
 from debt.interest_payment_services import create_fixed_deposit_interest_payment
-from debt.models import CashMovement, FixedDepositStatus
+from debt.models import CashMovement, CashMovementType, FixedDepositStatus
 from debt.services import create_fixed_deposit
+from fx.services import upsert_fx_rate
 from portfolios.seed import ensure_default_portfolio
 from tests.debt_test_helpers import create_test_bank_account, fund_bank_account
 
@@ -121,6 +122,12 @@ def test_update_interest_payment_adjusts_cash_movement(api_client, seeded, test_
         tax_withheld=Decimal("100"),
     ).payment
     movement_id = payment.cash_movement_id
+    other_payment = create_fixed_deposit_interest_payment(
+        test_user,
+        fd.id,
+        payment_date=payment.payment_date,
+        gross_interest=Decimal("250"),
+    ).payment
     bank.refresh_from_db()
     balance_before = bank.current_balance
 
@@ -144,6 +151,12 @@ def test_update_interest_payment_adjusts_cash_movement(api_client, seeded, test_
     assert movement.movement_date == date(2024, 4, 2)
     bank.refresh_from_db()
     assert bank.current_balance == balance_before + Decimal("180")
+    other_payment.refresh_from_db()
+    assert other_payment.payment_date == date(2024, 4, 1)
+    assert other_payment.net_interest == Decimal("250")
+    other_payment.cash_movement.refresh_from_db()
+    assert other_payment.cash_movement.amount == Decimal("250")
+    assert other_payment.cash_movement.movement_date == date(2024, 4, 1)
 
 
 @pytest.mark.django_db
@@ -197,3 +210,94 @@ def test_interest_payment_delete_still_blocked(api_client, seeded, test_user):
         f"/api/v1/fixed-deposit-interest-payments/{payment.id}"
     )
     assert response.status_code == 405
+
+
+@pytest.mark.django_db
+def test_partial_rollover_detail_includes_maturity_interest_once(api_client, seeded, test_user):
+    """#43 review: predecessor detail must show renewal interest paid + reinvested."""
+    portfolio = ensure_default_portfolio(test_user)
+    bank = create_test_bank_account(test_user, portfolio=portfolio)
+    fd = _create_fd(test_user, portfolio.id, bank, principal_amount=Decimal("100000"))
+    bank.refresh_from_db()
+    balance_before = bank.current_balance
+
+    renew = api_client.post(
+        f"/api/v1/fixed-deposits/{fd.id}/renew",
+        {
+            "renewal_date": "2026-01-01",
+            "new_deposit_account_number": "FD-DETAIL-NEW",
+            "new_principal_amount": "102000",
+            "new_interest_rate_percent": "7.5",
+            "new_interest_payout_frequency": "QUARTERLY",
+            "new_investment_date": "2026-01-01",
+            "new_maturity_date": "2028-01-01",
+            "gross_interest": "5000",
+            "tax_withheld": "500",
+            "cash_payout_amount": "2500",
+        },
+        format="json",
+    )
+    assert renew.status_code == 201
+    renew_body = renew.json()
+    new_id = renew_body["new_fixed_deposit"]["id"]
+    assert renew_body["net_interest"] == 4500.0
+    assert renew_body["interest_cash_amount"] == 2500.0
+    assert renew_body["reinvested_interest_amount"] == 2000.0
+    assert len(renew_body["cash_movement_ids"]) == 1
+
+    bank.refresh_from_db()
+    assert bank.current_balance == balance_before + Decimal("2500")
+    assert (
+        CashMovement.objects.filter(
+            linked_fixed_deposit_id=fd.id,
+            movement_type=CashMovementType.FD_MATURITY_INTEREST,
+            amount=Decimal("2500"),
+        ).count()
+        == 1
+    )
+
+    predecessor = api_client.get(f"/api/v1/fixed-deposits/{fd.id}/detail").json()
+    totals = predecessor["term_totals"]
+    assert totals["actual_gross_interest"] == 5000.0
+    assert totals["tax_withheld"] == 500.0
+    assert totals["actual_net_interest"] == 4500.0
+    assert totals["interest_cash_amount"] == 2500.0
+    assert totals["reinvested_interest_amount"] == 2000.0
+
+    fy = api_client.get(
+        f"/api/v1/fixed-deposits/{fd.id}/detail?financial_year=2025-26"
+    ).json()["financial_year_summary"]
+    assert fy["actual_gross_interest_fy"] == 5000.0
+    assert fy["tax_withheld_fy"] == 500.0
+    assert fy["actual_net_interest_fy"] == 4500.0
+    assert fy["interest_cash_amount_fy"] == 2500.0
+    assert fy["reinvested_interest_amount_fy"] == 2000.0
+
+    report = api_client.get("/api/v1/reports/fixed-deposit-interest").json()
+    renewal_rows = [r for r in report["rows"] if r["source_type"] == "RENEWAL"]
+    assert len(renewal_rows) == 1
+    assert renewal_rows[0]["fixed_deposit_id"] == fd.id
+    assert renewal_rows[0]["net_interest"] == 4500.0
+    assert renewal_rows[0]["interest_cash_amount"] == 2500.0
+    assert renewal_rows[0]["reinvested_interest_amount"] == 2000.0
+    assert not any(r["fixed_deposit_id"] == new_id for r in report["rows"])
+
+    upsert_fx_rate(
+        from_currency="INR", to_currency="EUR", row_date=date(2026, 1, 1), rate=Decimal("0.01")
+    )
+    converted = api_client.get("/api/v1/reports/fixed-deposit-interest?display_currency=EUR")
+    assert converted.status_code == 200
+    converted_report = converted.json()
+    assert len(converted_report["rows"]) == 1
+    converted_row = converted_report["rows"][0]
+    assert converted_report["totals"]["net_interest"] == 45.0
+    assert converted_row["display_currency"] == "EUR"
+    assert converted_row["currency"] == "INR"
+    assert converted_row["interest_cash_amount"] == 2500.0
+    assert converted_row["reinvested_interest_amount"] == 2000.0
+
+    successor = api_client.get(f"/api/v1/fixed-deposits/{new_id}/detail").json()
+    assert successor["term_totals"]["actual_gross_interest"] == 0.0
+    assert successor["term_totals"]["actual_net_interest"] == 0.0
+    assert successor["term_totals"]["interest_cash_amount"] in (0.0, None)
+    assert successor["term_totals"]["reinvested_interest_amount"] in (0.0, None)

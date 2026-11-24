@@ -20,10 +20,14 @@ vi.mock('../api', () => ({
   cancelFixedDeposit: vi.fn(),
   fetchFixedDepositInterestPayments: vi.fn(),
   createFixedDepositInterestPayment: vi.fn(),
+  updateFixedDepositInterestPayment: vi.fn(),
   reverseFixedDepositInterestPayment: vi.fn(),
   markFixedDepositMatured: vi.fn(),
   renewFixedDeposit: vi.fn(),
   settleFixedDeposit: vi.fn(),
+  fetchFixedDepositPendingPayouts: vi.fn(),
+  confirmFixedDepositPendingPayout: vi.fn(),
+  resolveFixedDepositPendingPayoutDiscrepancy: vi.fn(),
   fetchFixedDepositInterestReport: vi.fn(),
   exportFixedDepositInterestReportCsv: vi.fn(),
   downloadBlobFile: vi.fn(),
@@ -154,6 +158,7 @@ describe('FixedDeposits page', () => {
       has_ledger_entries: true,
     });
     api.fetchFixedDepositInterestPayments.mockResolvedValue([]);
+    api.fetchFixedDepositPendingPayouts.mockResolvedValue([]);
     api.fetchFixedDepositInterestReport.mockResolvedValue({
       rows: [],
       totals: {
@@ -183,6 +188,54 @@ describe('FixedDeposits page', () => {
       expect(screen.getByRole('heading', { name: /fixed deposits/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /add fixed deposit/i })).toBeInTheDocument();
     });
+  });
+
+  it('defaults to Current lifecycle view and switches to History', async () => {
+    const historyFd = {
+      ...sampleFd,
+      id: 9,
+      status: 'MATURED_SETTLED',
+      lifecycle_view: 'history',
+      is_renewed: true,
+      has_renewal: true,
+      next_term_id: 10,
+      renewal_of_id: null,
+      deposit_account_number: 'FD-OLD',
+    };
+    api.fetchFixedDeposits.mockImplementation(async (params) => {
+      if (params?.lifecycle_view === 'history') return [historyFd];
+      return [{ ...sampleFd, lifecycle_view: 'current', is_renewed: false, has_renewal: false }];
+    });
+    api.fetchFixedDepositInterestPayments.mockResolvedValueOnce([{
+      id: 40, cash_movement_id: 100, payment_date: '2026-04-14', gross_interest: 200,
+      tax_withheld: 20, net_interest: 180, currency: 'INR', comment: 'Completed term payment',
+    }]);
+
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole('tab', { name: /^current$/i })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByText('FD-001')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /record interest/i })).toBeInTheDocument();
+    });
+    expect(api.fetchFixedDeposits).toHaveBeenCalledWith(
+      expect.objectContaining({ lifecycle_view: 'current' })
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: /^history$/i }));
+    await waitFor(() => {
+      expect(screen.getByText('FD-OLD')).toBeInTheDocument();
+      expect(screen.getByText('Renewed')).toBeInTheDocument();
+      expect(screen.getByText(/read-only completed term/i)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /record interest/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /next term/i })).toBeInTheDocument();
+    });
+    expect(api.fetchFixedDeposits).toHaveBeenCalledWith(
+      expect.objectContaining({ lifecycle_view: 'history' })
+    );
+    fireEvent.click(screen.getByRole('button', { name: /interest payments/i }));
+    const paymentRow = (await screen.findByText('Completed term payment')).closest('tr');
+    expect(within(paymentRow).queryByRole('button')).not.toBeInTheDocument();
   });
 
   it('renders overview KPI cards and section navigation', async () => {
@@ -658,7 +711,7 @@ describe('FixedDeposits page', () => {
 
     expect(screen.getByLabelText(/gross interest/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/tax withheld/i)).toBeInTheDocument();
-    expect(screen.getByText(/fd portfolio value stays principal-only/i)).toBeInTheDocument();
+    expect(screen.getByTestId('fd-interest-unscheduled')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText(/gross interest/i), { target: { value: '0' } });
     fireEvent.click(screen.getByRole('button', { name: /record payment/i }));
@@ -679,17 +732,21 @@ describe('FixedDeposits page', () => {
     renderPage();
     await waitFor(() => screen.getByRole('button', { name: /record interest/i }));
     fireEvent.click(screen.getByRole('button', { name: /record interest/i }));
-    fireEvent.change(screen.getByLabelText(/payment date/i), { target: { value: '2024-04-01' } });
+    fireEvent.change(screen.getByLabelText(/actual credited date/i), { target: { value: '2024-04-01' } });
     fireEvent.change(screen.getByLabelText(/gross interest/i), { target: { value: '1000' } });
     fireEvent.change(screen.getByLabelText(/tax withheld/i), { target: { value: '100' } });
     fireEvent.click(screen.getByRole('button', { name: /record payment/i }));
 
     await waitFor(() => {
-      expect(api.createFixedDepositInterestPayment).toHaveBeenCalledWith(1, {
-        payment_date: '2024-04-01',
-        gross_interest: '1000',
-        tax_withheld: '100',
-      });
+      expect(api.createFixedDepositInterestPayment).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({
+          payment_date: '2024-04-01',
+          gross_interest: '1000',
+          tax_withheld: '100',
+          client_request_id: expect.any(String),
+        })
+      );
       expect(screen.getByText(/interest payment recorded/i)).toBeInTheDocument();
     });
   });
@@ -723,6 +780,50 @@ describe('FixedDeposits page', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/not allowed for closed fixed deposits/i)).toBeInTheDocument();
+    });
+  });
+
+  it('edits the selected same-date payment and refreshes both payments and report', async () => {
+    const first = {
+      id: 41, cash_movement_id: 101, payment_date: '2026-04-14', gross_interest: 200,
+      tax_withheld: 20, net_interest: 180, currency: 'INR', comment: 'Keep this payment',
+    };
+    const second = {
+      ...first, id: 42, cash_movement_id: 102, comment: 'Correct this payment',
+    };
+    const reversed = { ...first, id: 43, is_reversed: true, comment: 'Reversed duplicate' };
+    api.fetchFixedDepositInterestPayments
+      .mockResolvedValueOnce([first, second, reversed])
+      .mockResolvedValueOnce([first, { ...second, gross_interest: 250, net_interest: 230, comment: '' }, reversed]);
+    api.updateFixedDepositInterestPayment.mockResolvedValueOnce({ id: 42 });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /interest payments/i }));
+    const firstRow = (await screen.findByText(first.comment)).closest('tr');
+    const secondRow = screen.getByText(second.comment).closest('tr');
+    const reversedRow = screen.getByText(reversed.comment).closest('tr');
+    expect(within(firstRow).getByRole('button', { name: 'Edit payment' })).toBeInTheDocument();
+    expect(within(reversedRow).queryByRole('button')).not.toBeInTheDocument();
+    const reportCalls = api.fetchFixedDepositInterestReport.mock.calls.length;
+
+    fireEvent.click(within(secondRow).getByRole('button', { name: 'Edit payment' }));
+    const dialog = screen.getByRole('dialog', { name: 'Edit interest payment' });
+    expect(within(dialog).getByLabelText('Actual credited date')).toHaveValue('2026-04-14');
+    expect(within(dialog).getByLabelText('Gross interest')).toHaveValue(200);
+    fireEvent.change(within(dialog).getByLabelText('Gross interest'), { target: { value: '250' } });
+    fireEvent.change(within(dialog).getByLabelText('Note'), { target: { value: '' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+
+    expect(await screen.findByText('Interest payment updated.')).toBeInTheDocument();
+    expect(api.updateFixedDepositInterestPayment).toHaveBeenCalledTimes(1);
+    expect(api.updateFixedDepositInterestPayment).toHaveBeenCalledWith(42, {
+      payment_date: '2026-04-14', gross_interest: '250', tax_withheld: '20', comment: '',
+    });
+    expect(api.createFixedDepositInterestPayment).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.getByText(first.comment)).toBeInTheDocument();
+      expect(screen.queryByText(second.comment)).not.toBeInTheDocument();
+      expect(api.fetchFixedDepositInterestReport.mock.calls.length).toBeGreaterThan(reportCalls);
     });
   });
 
@@ -922,6 +1023,317 @@ describe('FixedDeposits page', () => {
 
     expect(screen.getByText(/tax withheld cannot exceed gross interest/i)).toBeInTheDocument();
     expect(api.renewFixedDeposit).not.toHaveBeenCalled();
+  });
+
+  it('settlement with final interest pending sends estimate flags', async () => {
+    api.settleFixedDeposit.mockResolvedValueOnce({
+      id: 10,
+      fixed_deposit_status: 'MATURED_SETTLED',
+      pending_payout: { id: 5, status: 'PENDING' },
+    });
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /settle \/ close/i }));
+    fireEvent.click(screen.getByRole('button', { name: /settle \/ close/i }));
+
+    expect(screen.queryByLabelText(/expected payout date/i)).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/gross final interest/i), { target: { value: '5000' } });
+    fireEvent.change(screen.getByLabelText(/tax withheld/i), { target: { value: '500' } });
+    fireEvent.click(screen.getByLabelText(/final interest pending/i));
+    expect(screen.getByText(/saved as an estimate only/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/total net proceeds \(display only\)/i).value).toBe('100000 INR');
+    fireEvent.change(screen.getByLabelText(/expected payout date/i), {
+      target: { value: '2026-01-10' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /record settlement/i }));
+
+    await waitFor(() => {
+      expect(api.settleFixedDeposit).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({
+          gross_interest: '5000',
+          tax_withheld: '500',
+          final_interest_pending: true,
+          pending_expected_date: '2026-01-10',
+        })
+      );
+      expect(screen.getByText(/final interest is pending/i)).toBeInTheDocument();
+    });
+  });
+
+  it('renewal with final interest pending submits decimal strings to backend', async () => {
+    api.renewFixedDeposit.mockResolvedValueOnce({
+      renewal_id: 3,
+      old_fixed_deposit: { id: 1, status: 'MATURED_SETTLED' },
+      new_fixed_deposit: { id: 4, status: 'ACTIVE' },
+      pending_payout: { id: 6, status: 'PENDING' },
+    });
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /^renew$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^renew$/i }));
+    fireEvent.change(screen.getByLabelText(/new deposit account number/i), {
+      target: { value: 'FD-RENEW-P' },
+    });
+    fireEvent.change(screen.getByLabelText(/new maturity date/i), {
+      target: { value: '2028-01-01' },
+    });
+    fireEvent.change(screen.getByLabelText(/gross interest/i), { target: { value: '5000' } });
+    fireEvent.change(screen.getByLabelText(/tax withheld/i), { target: { value: '500' } });
+    fireEvent.click(screen.getByLabelText(/final interest pending/i));
+    fireEvent.change(screen.getByLabelText(/new principal amount/i), {
+      target: { value: '100000' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /record renewal/i }));
+    await waitFor(() => {
+      expect(api.renewFixedDeposit).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({
+          new_principal_amount: '100000',
+          gross_interest: '5000',
+          final_interest_pending: true,
+          pending_expected_date: null,
+        })
+      );
+    });
+  });
+
+  it('surfaces backend allocation error without closing the renewal form', async () => {
+    api.renewFixedDeposit.mockRejectedValueOnce(
+      new api.FixedDepositApiError(
+        'Inconsistent renewal allocation: old principal (100000) + net interest (4500) = 104500, but new principal (100000) + cash payout (0) = 100000.'
+      )
+    );
+    renderPage();
+    await waitFor(() => screen.getByRole('button', { name: /^renew$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^renew$/i }));
+    fireEvent.change(screen.getByLabelText(/new deposit account number/i), {
+      target: { value: 'FD-RENEW-BAD' },
+    });
+    fireEvent.change(screen.getByLabelText(/new maturity date/i), {
+      target: { value: '2028-01-01' },
+    });
+    fireEvent.change(screen.getByLabelText(/gross interest/i), { target: { value: '5000' } });
+    fireEvent.change(screen.getByLabelText(/tax withheld/i), { target: { value: '500' } });
+    fireEvent.change(screen.getByLabelText(/cash payout amount/i), { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: /record renewal/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Inconsistent renewal allocation/i)).toBeInTheDocument();
+    });
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByLabelText(/gross interest/i).value).toBe('5000');
+    expect(screen.getByLabelText(/new deposit account number/i).value).toBe('FD-RENEW-BAD');
+  });
+
+  it('history term with pending payout shows badge and confirm entry point', async () => {
+    const historyFd = {
+      ...sampleFd,
+      id: 9,
+      status: 'MATURED_SETTLED',
+      lifecycle_view: 'history',
+      deposit_account_number: 'FD-OLD',
+      pending_payout: {
+        id: 21,
+        fixed_deposit_id: 9,
+        status: 'PENDING',
+        origin: 'SETTLEMENT',
+        currency: 'INR',
+        expected_payout_date: '2026-01-10',
+        suggested_gross_interest: 15000,
+        suggested_tax_withheld: 1500,
+        suggested_net_interest: 13500,
+      },
+    };
+    api.fetchFixedDeposits.mockImplementation(async (params) => {
+      if (params?.lifecycle_view === 'history') return [historyFd];
+      return [sampleFd];
+    });
+    api.confirmFixedDepositPendingPayout.mockResolvedValueOnce({
+      id: 21,
+      status: 'CONFIRMED',
+      discrepancy_status: 'OPEN',
+    });
+
+    renderPage();
+    await waitFor(() => screen.getByText('FD-001'));
+    fireEvent.click(screen.getByRole('tab', { name: /^history$/i }));
+    await waitFor(() => screen.getByText('FD-OLD'));
+
+    expect(screen.getByText('Payout pending')).toBeInTheDocument();
+    expect(screen.getByText(/read-only completed term/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^edit$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /record interest/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /confirm payout/i }));
+    const dialog = screen.getByRole('dialog', { name: /confirm final payout/i });
+    expect(within(dialog).getByLabelText(/actual credited date/i).value).toBe('2026-01-10');
+    expect(within(dialog).getByLabelText(/gross interest/i).value).toBe('15000');
+    expect(within(dialog).getByTestId('fd-interest-forecast')).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText(/gross interest/i), {
+      target: { value: '14000' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: /confirm payout/i }));
+
+    await waitFor(() => {
+      expect(api.confirmFixedDepositPendingPayout).toHaveBeenCalledWith(
+        21,
+        expect.objectContaining({
+          payment_date: '2026-01-10',
+          gross_interest: '14000',
+          tax_withheld: '1500',
+          client_request_id: expect.any(String),
+        })
+      );
+      expect(screen.getByText(/differs from the estimate/i)).toBeInTheDocument();
+    });
+  });
+
+  it('lists scoped pending payouts with originating term on the current view', async () => {
+    api.fetchFixedDepositPendingPayouts.mockResolvedValue([
+      {
+        id: 31,
+        fixed_deposit_id: 7,
+        portfolio_name: 'Default Portfolio',
+        institution_name: 'SBI',
+        deposit_account_number: 'FD-PREV',
+        bank_account_name: 'Savings',
+        origin: 'RENEWAL',
+        status: 'PENDING',
+        currency: 'INR',
+        expected_payout_date: null,
+        suggested_gross_interest: null,
+        suggested_tax_withheld: null,
+        suggested_net_interest: null,
+      },
+    ]);
+    renderPage();
+
+    const table = await screen.findByTestId('fd-pending-payouts');
+    const fdScope = { ...api.fetchFixedDeposits.mock.calls[0][0] };
+    delete fdScope.lifecycle_view;
+    expect(api.fetchFixedDepositPendingPayouts).toHaveBeenCalledWith(fdScope);
+    expect(within(table).getByText('SBI / FD-PREV')).toBeInTheDocument();
+    expect(within(table).getByText('Renewal')).toBeInTheDocument();
+
+    fireEvent.click(within(table).getByRole('button', { name: /confirm payout/i }));
+    const dialog = screen.getByRole('dialog', { name: /confirm final payout/i });
+    expect(within(dialog).getByTestId('fd-interest-unscheduled')).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: /confirm payout/i }));
+    expect(within(dialog).getByText(/gross interest must be greater than zero/i)).toBeInTheDocument();
+    expect(api.confirmFixedDepositPendingPayout).not.toHaveBeenCalled();
+  });
+
+  it('lists open payout discrepancies and resolves with a comment', async () => {
+    const openItem = {
+      id: 41,
+      fixed_deposit_id: 9,
+      portfolio_name: 'Default Portfolio',
+      institution_name: 'SBI',
+      deposit_account_number: 'FD-OLD',
+      bank_account_name: 'Savings',
+      origin: 'SETTLEMENT',
+      status: 'CONFIRMED',
+      currency: 'INR',
+      payment_date: '2026-01-12',
+      suggested_net_interest: 2000,
+      net_interest: 1850,
+      discrepancy_status: 'OPEN',
+      discrepancy_amount: -150,
+    };
+    let resolved = false;
+    api.fetchFixedDepositPendingPayouts.mockImplementation(async (params) =>
+      params?.discrepancy_status === 'open' && !resolved ? [openItem] : []
+    );
+    api.resolveFixedDepositPendingPayoutDiscrepancy.mockImplementation(async () => {
+      resolved = true;
+      return { ...openItem, discrepancy_status: 'RESOLVED' };
+    });
+
+    renderPage();
+    const table = await screen.findByTestId('fd-payout-discrepancies');
+    const fdScope = { ...api.fetchFixedDeposits.mock.calls[0][0] };
+    delete fdScope.lifecycle_view;
+    expect(api.fetchFixedDepositPendingPayouts).toHaveBeenCalledWith({
+      ...fdScope,
+      status: 'confirmed',
+      discrepancy_status: 'open',
+    });
+    expect(within(table).getByText('SBI / FD-OLD')).toBeInTheDocument();
+    expect(within(table).getByText(/shortfall/)).toHaveTextContent('150');
+
+    fireEvent.click(within(table).getByRole('button', { name: /^resolve$/i }));
+    const dialog = screen.getByRole('dialog', { name: /resolve payout discrepancy/i });
+    expect(within(dialog).getByText('Discrepancy open')).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: /mark resolved/i }));
+    expect(within(dialog).getByText(/comment is required/i)).toBeInTheDocument();
+    expect(api.resolveFixedDepositPendingPayoutDiscrepancy).not.toHaveBeenCalled();
+
+    fireEvent.change(within(dialog).getByLabelText(/resolution comment/i), {
+      target: { value: 'Accepted bank figure.' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: /mark resolved/i }));
+
+    await waitFor(() => {
+      expect(api.resolveFixedDepositPendingPayoutDiscrepancy).toHaveBeenCalledWith(
+        41,
+        'Accepted bank figure.'
+      );
+    });
+    await waitFor(() =>
+      expect(screen.getByText(/discrepancy marked resolved/i)).toBeInTheDocument()
+    );
+    expect(screen.queryByTestId('fd-payout-discrepancies')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(api.confirmFixedDepositPendingPayout).not.toHaveBeenCalled();
+  });
+
+  it('history terms show discrepancy review state and resolve entry point', async () => {
+    const openTerm = {
+      ...sampleFd,
+      id: 9,
+      status: 'MATURED_SETTLED',
+      lifecycle_view: 'history',
+      deposit_account_number: 'FD-OPEN',
+      pending_payout: {
+        id: 41,
+        fixed_deposit_id: 9,
+        status: 'CONFIRMED',
+        currency: 'INR',
+        suggested_net_interest: 2000,
+        net_interest: 1850,
+        discrepancy_status: 'OPEN',
+        discrepancy_amount: -150,
+      },
+    };
+    const resolvedTerm = {
+      ...openTerm,
+      id: 10,
+      deposit_account_number: 'FD-DONE',
+      pending_payout: {
+        ...openTerm.pending_payout,
+        id: 42,
+        fixed_deposit_id: 10,
+        discrepancy_status: 'RESOLVED',
+        resolution_comment: 'Checked.',
+      },
+    };
+    api.fetchFixedDeposits.mockImplementation(async (params) => {
+      if (params?.lifecycle_view === 'history') return [openTerm, resolvedTerm];
+      return [sampleFd];
+    });
+
+    renderPage();
+    await waitFor(() => screen.getByText('FD-001'));
+    fireEvent.click(screen.getByRole('tab', { name: /^history$/i }));
+    await waitFor(() => screen.getByText('FD-OPEN'));
+
+    expect(screen.getByText('Discrepancy open')).toBeInTheDocument();
+    expect(screen.getByText('Discrepancy resolved')).toBeInTheDocument();
+    const resolveButtons = screen.getAllByRole('button', { name: /resolve discrepancy/i });
+    expect(resolveButtons).toHaveLength(1);
+
+    fireEvent.click(resolveButtons[0]);
+    const dialog = screen.getByRole('dialog', { name: /resolve payout discrepancy/i });
+    expect(within(dialog).getByText(/FD-OPEN/)).toBeInTheDocument();
   });
 
   it('shows Cancel FD for ledger-backed active FD', async () => {

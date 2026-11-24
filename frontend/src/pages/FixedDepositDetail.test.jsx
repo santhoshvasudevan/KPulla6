@@ -108,7 +108,63 @@ describe('FixedDepositDetail page', () => {
     expect(screen.getAllByText('HDFC').length).toBeGreaterThan(0);
     expect(screen.getAllByText('FD-001').length).toBeGreaterThan(0);
     expect(screen.getAllByText(/expected total interest/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/net interest received/i)).toBeInTheDocument();
+    expect(screen.getByText(/total net interest/i)).toBeInTheDocument();
+  });
+
+  it('shows interest paid to bank and reinvested from term totals', async () => {
+    api.fetchFixedDepositDetail.mockResolvedValue({
+      ...detailPayload,
+      term_totals: {
+        ...detailPayload.term_totals,
+        actual_gross_interest: 5000,
+        tax_withheld: 500,
+        actual_net_interest: 4500,
+        interest_cash_amount: 2500,
+        reinvested_interest_amount: 2000,
+      },
+    });
+    renderDetail();
+    const paid = await screen.findByTestId('fd-detail-interest-paid');
+    const reinvested = screen.getByTestId('fd-detail-interest-reinvested');
+    expect(within(paid).getByText(/2,500/)).toBeInTheDocument();
+    expect(within(reinvested).getByText(/2,000/)).toBeInTheDocument();
+    expect(screen.queryByTestId('fd-detail-interest-paid-unavailable')).not.toBeInTheDocument();
+  });
+
+  it('shows Unavailable for unknown legacy renewal split, distinct from zero', async () => {
+    api.fetchFixedDepositDetail.mockResolvedValue({
+      ...detailPayload,
+      term_totals: {
+        ...detailPayload.term_totals,
+        actual_net_interest: 4500,
+        interest_cash_amount: null,
+        reinvested_interest_amount: null,
+      },
+    });
+    renderDetail();
+    expect(await screen.findByTestId('fd-detail-interest-paid-unavailable')).toHaveTextContent(
+      'Unavailable'
+    );
+    expect(screen.getByTestId('fd-detail-interest-reinvested-unavailable')).toHaveTextContent(
+      'Unavailable'
+    );
+  });
+
+  it('shows confirmed zero bank payout for full rollover', async () => {
+    api.fetchFixedDepositDetail.mockResolvedValue({
+      ...detailPayload,
+      term_totals: {
+        ...detailPayload.term_totals,
+        actual_net_interest: 4500,
+        interest_cash_amount: 0,
+        reinvested_interest_amount: 4500,
+      },
+    });
+    renderDetail();
+    const paid = await screen.findByTestId('fd-detail-interest-paid');
+    expect(screen.queryByTestId('fd-detail-interest-paid-unavailable')).not.toBeInTheDocument();
+    expect(within(paid).getByText(/0/)).toBeInTheDocument();
+    expect(within(screen.getByTestId('fd-detail-interest-reinvested')).getByText(/4,500/)).toBeInTheDocument();
   });
 
   it('renders FY filter and schedule table', async () => {
@@ -126,6 +182,7 @@ describe('FixedDepositDetail page', () => {
     fireEvent.click(screen.getByRole('button', { name: /record actual/i }));
 
     const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByTestId('fd-interest-forecast')).toBeInTheDocument();
     expect(within(dialog).getByLabelText(/actual credited date/i).value).toBe('2024-04-01');
     expect(within(dialog).getByLabelText(/gross interest/i).value).toBe('1750');
 
@@ -141,6 +198,7 @@ describe('FixedDepositDetail page', () => {
           payment_date: '2024-04-01',
           gross_interest: '1750',
           tax_withheld: '175',
+          client_request_id: expect.any(String),
         })
       );
     });
@@ -151,6 +209,87 @@ describe('FixedDepositDetail page', () => {
     await waitFor(() => screen.getByRole('heading', { name: /detailed calculation/i }));
     expect(screen.getAllByText(/actual\/365/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/this is an estimate/i)).toBeInTheDocument();
+  });
+
+  it('shows final payout review and resolves an open discrepancy', async () => {
+    const openPayout = {
+      id: 41,
+      fixed_deposit_id: 1,
+      status: 'CONFIRMED',
+      currency: 'INR',
+      suggested_net_interest: 2000,
+      payment_date: '2026-01-12',
+      net_interest: 1850,
+      discrepancy_status: 'OPEN',
+      discrepancy_amount: -150,
+      resolution_comment: null,
+      resolved_at: null,
+    };
+    const resolvedPayout = {
+      ...openPayout,
+      discrepancy_status: 'RESOLVED',
+      resolution_comment: 'Bank deducted extra TDS.',
+      resolved_at: '2026-01-20T10:00:00+00:00',
+    };
+    api.fetchFixedDepositDetail
+      .mockResolvedValueOnce({ ...detailPayload, pending_payout: openPayout })
+      .mockResolvedValue({ ...detailPayload, pending_payout: resolvedPayout });
+    api.resolveFixedDepositPendingPayoutDiscrepancy.mockResolvedValue(resolvedPayout);
+
+    renderDetail();
+    const review = await screen.findByTestId('fd-payout-review');
+    expect(within(review).getByText(/2,000/)).toBeInTheDocument();
+    expect(within(review).getByText(/1,850/)).toBeInTheDocument();
+    expect(within(review).getByText(/shortfall/)).toHaveTextContent('150');
+    expect(within(review).getByText('Discrepancy open')).toBeInTheDocument();
+
+    fireEvent.click(within(review).getByRole('button', { name: /resolve discrepancy/i }));
+    const dialog = screen.getByRole('dialog', { name: /resolve payout discrepancy/i });
+    fireEvent.click(within(dialog).getByRole('button', { name: /mark resolved/i }));
+    expect(within(dialog).getByText(/comment is required/i)).toBeInTheDocument();
+    expect(api.resolveFixedDepositPendingPayoutDiscrepancy).not.toHaveBeenCalled();
+
+    fireEvent.change(within(dialog).getByLabelText(/resolution comment/i), {
+      target: { value: '  Bank deducted extra TDS. ' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: /mark resolved/i }));
+
+    await waitFor(() => {
+      expect(api.resolveFixedDepositPendingPayoutDiscrepancy).toHaveBeenCalledWith(
+        41,
+        'Bank deducted extra TDS.'
+      );
+    });
+    const reloaded = await screen.findByTestId('fd-payout-review');
+    await waitFor(() =>
+      expect(within(reloaded).getByText('Discrepancy resolved')).toBeInTheDocument()
+    );
+    expect(within(reloaded).getByText(/bank deducted extra tds/i)).toBeInTheDocument();
+    expect(within(reloaded).getByText(/1,850/)).toBeInTheDocument();
+    expect(
+      within(reloaded).queryByRole('button', { name: /resolve discrepancy/i })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('pending final payout shows estimate without a difference', async () => {
+    api.fetchFixedDepositDetail.mockResolvedValue({
+      ...detailPayload,
+      pending_payout: {
+        id: 42,
+        status: 'PENDING',
+        currency: 'INR',
+        suggested_net_interest: 2000,
+        net_interest: null,
+        discrepancy_status: 'NONE',
+        discrepancy_amount: null,
+      },
+    });
+    renderDetail();
+    const review = await screen.findByTestId('fd-payout-review');
+    expect(within(review).getByText(/awaiting bank credit/i)).toBeInTheDocument();
+    expect(within(review).getByText(/pending confirmation/i)).toBeInTheDocument();
+    expect(within(review).queryByRole('button')).not.toBeInTheDocument();
   });
 
   it('reloads with financial year filter', async () => {
@@ -164,5 +303,26 @@ describe('FixedDepositDetail page', () => {
         financial_year: '2024-25',
       });
     });
+  });
+
+  it('FY summary shows paid and reinvested split amounts', async () => {
+    api.fetchFixedDepositDetail.mockResolvedValue({
+      ...detailPayload,
+      financial_year_summary: {
+        financial_year: '2025-26',
+        expected_gross_interest_fy: 0,
+        actual_gross_interest_fy: 5000,
+        tax_withheld_fy: 500,
+        actual_net_interest_fy: 4500,
+        interest_cash_amount_fy: 2500,
+        reinvested_interest_amount_fy: 2000,
+      },
+    });
+    renderDetail();
+    const fy = await screen.findByTestId('fd-detail-fy-summary');
+    expect(fy).toHaveTextContent(/paid to bank/i);
+    expect(fy).toHaveTextContent(/2,500/);
+    expect(fy).toHaveTextContent(/reinvested/i);
+    expect(fy).toHaveTextContent(/2,000/);
   });
 });

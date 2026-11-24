@@ -340,6 +340,7 @@ Bank-account cash ledger is **separate** from portfolio `cash_ledger_entries` (u
 | `fixed_deposit_interest_payments` | `FixedDepositInterestPayment` | **Done** (FD-ACC-4) — gross/tax/net; OneToOne `cash_movement`; `is_reversed`, `reversed_at` (FD-ACC-10B) |
 | `fixed_deposit_settlements` | `FixedDepositSettlement` | **Done** (FD-ACC-5) — maturity/closure proceeds |
 | `fixed_deposit_renewal_groups` | `FixedDepositRenewalGroup` | **Done** (FD-ACC-6) — renewal audit trail |
+| `fixed_deposit_pending_payouts` | `FixedDepositPendingPayout` | **Done** (#45, migration `debt.0015`) — one per completed term; `PENDING`/`CONFIRMED`; suggested vs actual gross/tax/net; nullable linked `cash_movement`; unique `(user, client_request_id)`; discrepancy fields (`discrepancy_status` `NONE`/`OPEN`/`RESOLVED`, signed `discrepancy_amount`, `resolution_comment`, `resolved_at`) used by the #46 resolve workflow (no schema change in #46) |
 
 ### `FixedDeposit.status` (FD-ACC-5, FD-ACC-10A)
 

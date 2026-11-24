@@ -45,7 +45,7 @@
 | Item | FD-TAX-1 outcome |
 |------|------------------|
 | **API** | `GET /api/v1/reports/fixed-deposit-interest` |
-| **Sources** | Interest payments (`is_reversed=false`); settlement final interest (non-zero; excludes renewal-linked settlement); renewal group interest (non-zero) |
+| **Sources** | Interest payments (`is_reversed=false`); settlement final interest (non-zero; excludes renewal-linked settlement); renewal group interest (non-zero); confirmed pending payouts (`PENDING_PAYOUT`, #45) |
 | **Exclusions** | Reversed payments; zero-interest settlement/renewal; `CANCELLED` FD rows |
 | **Semantics** | `gross_interest`, `tax_withheld`, `net_interest` as stored at source; optional `display_currency` conversion with date-aware FX + fill |
 | **Scope** | User-scoped; portfolio filter via existing scope params |
@@ -106,7 +106,7 @@ Public `POST .../cancel` rules unchanged.
 
 ---
 
-All bank ledger and FD accounting corrections use **linked reversal rows** (`is_reversal=true`, `reverses_id`). Original movements and interest payments remain visible for audit. PUT/PATCH/DELETE on movements and interest payments remain **405**.
+To void an erroneous bank movement or FD interest payment, use a **linked reversal row** (`is_reversal=true`, `reverses_id`). Original movements and payments remain visible for audit. The interest-payment `PUT` and `PATCH` endpoints also support correcting a credited date, amount, or note by updating the payment and its linked credit together. See [FD interest payment API](./api-design.md#fd-interest-payments-fd-acc-4) for supported methods.
 
 ---
 
@@ -234,12 +234,15 @@ See **§ FD-ACC-8 performance/timeseries design** below for full detail.
 | Item | Implemented behavior |
 |------|----------------------|
 | **Model** | `FixedDepositRenewalGroup` — old/new FD, settlement, direct reinvest vs cash payout breakdown |
-| **Renew** | `POST /fixed-deposits/{id}/renew` — atomically settles old FD (`MATURED_SETTLED`), creates renewed FD (`renewal_of`, `ACTIVE`) |
+| **Renew** | `POST /fixed-deposits/{id}/renew` — atomically settles old FD (`MATURED_SETTLED`), creates renewed FD (`renewal_of`, `ACTIVE`). **#43:** `old principal + net interest = new principal + cash payout`; bank credits only the cash payout (split into interest then principal legs). |
 | **Direct rollover** | Reinvested principal **does not** create bank movement; renewed FD **does not** create `FD_OPENING` debit |
+| **Pending final interest (#45)** | `final_interest_pending=true` on settle/renew records interest as a `FixedDepositPendingPayout` estimate on the completed term: settlement/renewal interest = 0, no interest bank credit, renew allocation `old principal = new principal + cash payout`. `POST /fixed-deposit-pending-payouts/{id}/confirm` atomically records actuals and posts one `FD_MATURITY_INTEREST` / `FD_CLOSURE_INTEREST` CREDIT (net > 0) on the actual date; retry-safe via `client_request_id`; mismatch stored as `discrepancy_status=OPEN` |
+| **Payout discrepancy review (#46)** | Compared net vs net (`actual net − suggested net`); flagged only when both exist and differ. `POST /fixed-deposit-pending-payouts/{id}/resolve-discrepancy` with a required comment moves `OPEN` → `RESOLVED` and sets `resolved_at`. No ledger effect: confirmed amounts/date, the bank credit, interest report totals, and the completed term are preserved |
+| **Renewal audit (#44)** | Read-only `manage.py audit_fd_renewals [--user-id N] [--json]` and `GET /reports/fixed-deposit-renewal-audit` classify each renewal `CONSISTENT` / `INCONSISTENT` / `INCOMPLETE` with per-finding reasons, totals, and term references; pending estimates never count as settled proceeds; no repair or backfill. See [Audit FD renewals](how-to/audit-fd-renewals.md) |
 | **Cash payout** | `cash_payout_amount` → `FD_MATURITY_PRINCIPAL` CREDIT; net final interest → `FD_MATURITY_INTEREST` CREDIT |
 | **Normal FD create** | `POST /fixed-deposits` still requires `FD_OPENING` bank debit (unchanged) |
 | **Portfolio** | Old settled FD excluded; new renewed FD principal included in Debt; bank cash still excluded |
-| **UI** | Fixed Deposits page — Renew modal for `ACTIVE`/`MATURED` (hidden when settled or `has_renewal`) |
+| **UI** | Fixed Deposits page — Renew modal for `ACTIVE`/`MATURED` on the **Current** view (hidden when settled or `has_renewal`); renewed predecessors appear in **History** with term links (#41) |
 | **Deferred** | Bank cash in portfolio value (FD-ACC-7), performance/XIRR, reversals |
 
 ## FD-ACC-1 implementation notes (2026-06-14)
@@ -281,7 +284,8 @@ See **§ FD-ACC-8 performance/timeseries design** below for full detail.
 | **API** | `GET/POST /fixed-deposits/{id}/interest-payments`; `GET /fixed-deposit-interest-payments/{id}`; **405** update/delete |
 | **Validation** | `net = gross − tax`; tax ≤ gross; bank account from FD; **400** on `CLOSED` FD; COMPOUNDED → optional `warning` |
 | **Portfolio** | FD principal summary unchanged; interest not in portfolio value |
-| **UI** | Fixed Deposits page — Record interest modal + expandable payment list; Settings movements show `FD interest` |
+| **UI** | Shared actual-payment form from Fixed Deposits list row and FD detail schedule (#42); expandable payment list; Settings movements show `FD interest` |
+| **Retry** | Optional `client_request_id` on create — same key returns the existing payment/credit; different keys with identical amounts remain allowed |
 | **Deferred** | Maturity/closure/renewal (FD-ACC-5+) |
 
 ---

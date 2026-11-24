@@ -316,7 +316,7 @@ def test_cannot_cancel_renewed_fd(api_client, seeded, test_user):
         {
             "renewal_date": "2026-01-01",
             "new_deposit_account_number": "FD-002",
-            "new_principal_amount": 120000,
+            "new_principal_amount": 100000,
             "new_interest_rate_percent": 7.5,
             "new_interest_payout_frequency": "QUARTERLY",
             "new_investment_date": "2026-01-01",

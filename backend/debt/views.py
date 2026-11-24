@@ -20,8 +20,12 @@ from debt.serializers import (
     FixedDepositSettlementWriteSerializer,
     FixedDepositCancelWriteSerializer,
     FixedDepositMaturityEstimateQuerySerializer,
+    FixedDepositPendingPayoutConfirmSerializer,
+    FixedDepositPendingPayoutResolveSerializer,
     FixedDepositUpdateSerializer,
     FixedDepositWriteSerializer,
+    fixed_deposit_pending_payout_payload,
+    pending_payout_summary,
 )
 from datetime import date
 
@@ -77,6 +81,15 @@ from debt.reversal_services import (
     ReversalValidationError,
     reverse_cash_movement,
     reverse_fixed_deposit_interest_payment,
+)
+from debt.pending_payout_services import (
+    PendingPayoutConflictError,
+    PendingPayoutNotFoundError,
+    PendingPayoutValidationError,
+    confirm_fixed_deposit_pending_payout,
+    get_fixed_deposit_pending_payout,
+    list_fixed_deposit_pending_payouts,
+    resolve_pending_payout_discrepancy,
 )
 from debt.renewal_services import RenewalValidationError, renew_fixed_deposit
 from debt.settlement_services import (
@@ -185,9 +198,17 @@ class FixedDepositListCreateView(APIView):
         except PortfolioNotFoundError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
 
-        fds = list_fixed_deposits(
-            request.user, portfolio_ids=scope.portfolio_ids
-        )
+        lifecycle_view = request.query_params.get("lifecycle_view")
+        if lifecycle_view is not None:
+            lifecycle_view = str(lifecycle_view).strip().lower() or None
+        try:
+            fds = list_fixed_deposits(
+                request.user,
+                portfolio_ids=scope.portfolio_ids,
+                lifecycle_view=lifecycle_view,
+            )
+        except FixedDepositValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(FixedDepositSerializer(fds, many=True).data)
 
     def post(self, request):
@@ -293,7 +314,10 @@ class FixedDepositInterestPaymentListCreateView(APIView):
         body = FixedDepositInterestPaymentSerializer(result.payment).data
         if result.warning:
             body["warning"] = result.warning
-        return Response(body, status=status.HTTP_201_CREATED)
+        return Response(
+            body,
+            status=status.HTTP_201_CREATED if result.created else status.HTTP_200_OK,
+        )
 
 
 class FixedDepositInterestPaymentDetailView(APIView):
@@ -431,6 +455,10 @@ class FixedDepositSettleView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         body = FixedDepositSettlementSerializer(result.settlement).data
         body["fixed_deposit_status"] = result.fixed_deposit.status
+        body["final_interest_pending"] = result.pending_payout is not None
+        body["pending_payout"] = (
+            pending_payout_summary(result.pending_payout) if result.pending_payout else None
+        )
         return Response(body, status=status.HTTP_201_CREATED)
 
 
@@ -445,6 +473,7 @@ class FixedDepositRenewView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
         except RenewalValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        allocation = result.allocation
         return Response(
             {
                 "renewal_id": result.renewal_group.id,
@@ -462,11 +491,107 @@ class FixedDepositRenewView(APIView):
                 "gross_interest": float(result.renewal_group.gross_interest),
                 "tax_withheld": float(result.renewal_group.tax_withheld),
                 "net_interest": float(result.renewal_group.net_interest),
+                "interest_cash_amount": float(allocation.interest_cash_amount),
+                "reinvested_interest_amount": float(allocation.reinvested_interest_amount),
+                "principal_cash_amount": float(allocation.principal_cash_amount),
                 "cash_movement_ids": result.cash_movement_ids,
                 "currency": result.renewal_group.currency,
+                "final_interest_pending": result.pending_payout is not None,
+                "pending_payout": (
+                    pending_payout_summary(result.pending_payout)
+                    if result.pending_payout
+                    else None
+                ),
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class FixedDepositPendingPayoutListView(APIView):
+    def get(self, request):
+        try:
+            portfolio_id = _parse_portfolio_id(request)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            scope = resolve_portfolio_scope(
+                request.user,
+                portfolio_scope=request.query_params.get("portfolio_scope"),
+                portfolio_id=portfolio_id,
+            )
+        except PortfolioScopeError as exc:
+            return Response(
+                {"detail": str(exc)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY
+            )
+        except PortfolioNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+
+        status_filter = (request.query_params.get("status") or "pending").strip().lower()
+        discrepancy_filter = (
+            request.query_params.get("discrepancy_status") or ""
+        ).strip().lower() or None
+        try:
+            items = list_fixed_deposit_pending_payouts(
+                request.user,
+                portfolio_ids=scope.portfolio_ids,
+                status=status_filter,
+                discrepancy_status=discrepancy_filter,
+            )
+        except PendingPayoutValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response([fixed_deposit_pending_payout_payload(p) for p in items])
+
+
+class FixedDepositPendingPayoutDetailView(APIView):
+    def get(self, request, pending_id: int):
+        try:
+            pending = get_fixed_deposit_pending_payout(request.user, pending_id)
+        except PendingPayoutNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        return Response(fixed_deposit_pending_payout_payload(pending))
+
+
+class FixedDepositPendingPayoutConfirmView(APIView):
+    def post(self, request, pending_id: int):
+        serializer = FixedDepositPendingPayoutConfirmSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            result = confirm_fixed_deposit_pending_payout(
+                request.user,
+                pending_id,
+                **serializer.validated_data,
+            )
+        except PendingPayoutNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except PendingPayoutConflictError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        except PendingPayoutValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            fixed_deposit_pending_payout_payload(result.pending_payout),
+            status=status.HTTP_201_CREATED if result.created else status.HTTP_200_OK,
+        )
+
+
+class FixedDepositPendingPayoutResolveDiscrepancyView(APIView):
+    def post(self, request, pending_id: int):
+        serializer = FixedDepositPendingPayoutResolveSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            pending = resolve_pending_payout_discrepancy(
+                request.user,
+                pending_id,
+                serializer.validated_data["comment"],
+            )
+        except PendingPayoutNotFoundError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except PendingPayoutConflictError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        except PendingPayoutValidationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(fixed_deposit_pending_payout_payload(pending))
 
 
 class FixedDepositSettlementDetailView(APIView):

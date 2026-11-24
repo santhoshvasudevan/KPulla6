@@ -23,6 +23,7 @@ Fixed deposit CRUD, maturity estimates, and lifecycle actions. Deep spec: [api-d
 |-------|-------|
 | `portfolio_scope` | `all` (default) |
 | `portfolio_id` | Single portfolio |
+| `lifecycle_view` | Optional. `current` = outstanding (`ACTIVE`/`MATURED`); `history` = completed (`MATURED_SETTLED`/`CLOSED`). Omit to return all soft-active rows (legacy callers). |
 
 ### Example request
 
@@ -48,7 +49,7 @@ curl -s -b cookies.txt \
 ]
 ```
 
-List responses include `resolve_maturity_display()` fields for legacy rows. See [fixed-deposits-accounting.md](../fixed-deposits-accounting.md).
+List responses include `resolve_maturity_display()` fields for legacy rows, plus lifecycle fields `lifecycle_view`, `is_renewed`, `next_term_id`, and `renewal_of_id` (#41). See [fixed-deposits.md](../fixed-deposits.md) § Current vs History and [fixed-deposits-accounting.md](../fixed-deposits-accounting.md).
 
 ---
 
@@ -94,8 +95,15 @@ Updates metadata; after opening, principal/bank/currency/portfolio are locked. I
 |--------|------|-------|
 | `DELETE` | `/fixed-deposits/{id}` | Soft deactivate (legacy / no-ledger) |
 | `POST` | `/fixed-deposits/{id}/cancel` | Reverse opening debit |
-| `POST` | `/fixed-deposits/{id}/interest-payments` | Record interest |
-| `POST` | `/fixed-deposits/{id}/settle` | Maturity settlement |
+| `POST` | `/fixed-deposits/{id}/interest-payments` | Record interest (`client_request_id` optional for retry safety, #42) |
+| `PATCH` | `/fixed-deposit-interest-payments/{payment_id}` | Correct the selected interest payment and its linked bank credit |
+| `POST` | `/fixed-deposit-interest-payments/{payment_id}/reverse` | Reverse an eligible payment and retain it in the audit history |
+| `POST` | `/fixed-deposits/{id}/settle` | Maturity settlement (`final_interest_pending` / `pending_expected_date` optional, #45) |
+| `POST` | `/fixed-deposits/{id}/renew` | Renewal (`final_interest_pending` / `pending_expected_date` optional, #45) |
+| `GET` | `/fixed-deposit-pending-payouts` | Scoped pending (or `status=confirmed\|all`) final payouts with originating term (#45); optional `discrepancy_status=none\|open\|resolved` (#46) |
+| `POST` | `/fixed-deposit-pending-payouts/{id}/confirm` | Record actual payout; one linked bank credit; `client_request_id` for retry safety (#45) |
+| `POST` | `/fixed-deposit-pending-payouts/{id}/resolve-discrepancy` | Mark an `OPEN` payout discrepancy `RESOLVED` with a required `comment`; review metadata only (#46) |
+| `GET` | `/reports/fixed-deposit-renewal-audit` | Read-only renewal audit: `CONSISTENT` / `INCONSISTENT` / `INCOMPLETE` with reasons and totals (#44); see [Audit FD renewals](../how-to/audit-fd-renewals.md) |
 
 ## Next
 
