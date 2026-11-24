@@ -187,7 +187,10 @@ class TransactionListCreateView(APIView):
         )
 
     def _post_mutual_fund(self, request):
-        serializer = MutualFundTransactionWriteSerializer(data=request.data)
+        serializer = MutualFundTransactionWriteSerializer(
+            data=request.data,
+            context={"user": request.user, "allow_provisional": True},
+        )
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -195,6 +198,7 @@ class TransactionListCreateView(APIView):
             transaction = create_mutual_fund_transaction(
                 request.user,
                 validated_data=serializer.validated_data,
+                allow_provisional=True,
             )
         except Exception as exc:
             err = _transaction_write_error_response(exc)
@@ -262,7 +266,7 @@ class TransactionDetailView(APIView):
             except MutualFundTransactionDetail.DoesNotExist:
                 pass
         if is_mutual_fund:
-            return self._put_mutual_fund(request, transaction_id)
+            return self._put_mutual_fund(request, transaction_id, existing)
 
         serializer = TransactionWriteSerializer(data=request.data)
         if not serializer.is_valid():
@@ -291,11 +295,18 @@ class TransactionDetailView(APIView):
 
         return Response(TransactionSerializer(transaction).data)
 
-    def _put_mutual_fund(self, request, transaction_id: int):
+    def _put_mutual_fund(self, request, transaction_id: int, existing):
         payload = request.data.copy()
         if "asset_type" not in payload:
             payload["asset_type"] = "MUTUAL_FUND"
-        serializer = MutualFundTransactionWriteSerializer(data=payload)
+        serializer = MutualFundTransactionWriteSerializer(
+            data=payload,
+            context={
+                "user": request.user,
+                "allow_provisional": True,
+                "existing_detail": getattr(existing, "mutual_fund_detail", None),
+            },
+        )
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -306,6 +317,7 @@ class TransactionDetailView(APIView):
                 transaction_id,
                 validated_data=serializer.validated_data,
                 update_portfolio=update_portfolio,
+                allow_provisional=True,
             )
         except TransactionNotFoundError:
             return Response(

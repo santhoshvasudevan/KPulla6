@@ -309,6 +309,9 @@ cash, only if NAV actually changes and **all** statement/cash fields are unchang
 - Units (transaction quantity and detail units), fees, market value, and paid value.
 - `actual_cash_received` and `settlement_note`.
 
+Provisional-NAV BUY payloads (#50) never qualify; they always use normal cash
+sufficiency and settlement with the user-confirmed `paid_value`.
+
 This is not a general cash-validation bypass. Creates, SELLs, no-op NAV saves,
 edits with existing linked cash, or any change to those fields retain normal
 cash validation and atomic settlement handling. Preserve statement amounts;

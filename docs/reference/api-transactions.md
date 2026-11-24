@@ -104,6 +104,49 @@ folio, type, currency, both dates, units, fees, market/paid values,
 and SELLs retain normal cash validation and settlement handling. See
 [cash settlement rules](../cash-ledger.md#8-cash-aware-buysell-settlements-cash-4a-implemented).
 
+### Provisional MF BUY (#50)
+
+Manual `POST`/`PUT` only (never CSV import or refresh). When the exact-date cache
+is missing **and** the same user's latest exact-date fetch for that scheme/date was
+unsuccessful, a BUY may carry:
+
+| Field | Rule |
+|-------|------|
+| `provisional_nav` | Positive decimal; stored as `nav` / `price_per_share` |
+| `provisional_attempt_id` | `attempt_id` from `POST /nav/fetch-missing` (`date_unavailable`, `timeout`, `provider_failure`); same user, scheme, date; latest attempt; at most 24h old |
+| `confirm_provisional_nav`, `confirm_paid_value` | Must both be `true` |
+| `fees` | Required (use `0` if none); never inferred from the provisional NAV |
+
+The backend computes `market_value` (provisional NAV × units, half-up 4 dp) and
+ignores client `nav`/`market_value`. `units_allotted`, `fees`, and `paid_value`
+are stored as entered; cash-aware portfolios apply normal sufficiency and
+settlement (atomic rollback on failure). If exact-date cache now exists the write
+is rejected (`400`); save with the cached NAV instead. Editing an existing
+provisional BUY keeps its authority without a new attempt only while scheme,
+NAV date, and provisional NAV are unchanged; other changes need a fresh attempt.
+SELL with a provisional NAV is rejected (#51).
+
+MF transaction responses add `nav_source` (`PROVIDER_CACHE`, `PROVISIONAL_USER`,
+or `UNKNOWN` for rows saved before #50), `nav_provisional`, and for provisional
+rows `provisional_confirmed_at`, `provisional_failure_reason`, and
+`provisional_superseded_by_cache` (exact-date cache has since arrived; the
+transaction is not rewritten).
+
+## `POST /nav/provisional-preview`
+
+**Auth:** Session + CSRF. **Purpose:** Backend market value for a provisional BUY
+before saving; read-only, no provider calls. Full path:
+`/api/v1/nav/provisional-preview`.
+
+**Body:** `{"scheme_code":"120503","nav_date":"2026-11-20","provisional_nav":"15.2885",
+"units_allotted":"65.4321","attempt_id":"…"}`. For an existing provisional BUY,
+send `transaction_id` instead of `attempt_id`.
+
+**200:** `{"scheme_code":"120503","nav_date":"2026-11-20","nav":"15.288500",
+"units_allotted":"65.43210000","market_value":"1000.3587","nav_source":"PROVISIONAL_USER","status":"provisional"}`.
+**400** ineligible or invalid (`detail`, `code`), **404** unknown transaction,
+**409** exact-date cache available (`code: cache_available`).
+
 ---
 
 ## `GET /nav/lookup`
@@ -167,7 +210,8 @@ one positive exact-date INR observation. Adjacent dates are never cached.
 
 For unsuccessful outcomes `failure_category` equals `outcome`. Failed attempts
 start a 60-second cooldown and return an opaque `attempt_id` bound to the
-requesting user, scheme, and date (`cooldown` returns it only to that user).
+requesting user, scheme, and date (`cooldown` returns it only to that user); it
+can authorize a [provisional BUY](#provisional-mf-buy-50).
 In-flight claims expire after 30 seconds. **400:** invalid body. **409:** a
 non-mutual-fund price row already occupies that symbol/date. Database errors are
 server errors, never a cache miss.

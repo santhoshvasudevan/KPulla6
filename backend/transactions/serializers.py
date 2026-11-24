@@ -2,8 +2,14 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from transactions.models import Transaction, TransactionType
+from transactions.models import (
+    MutualFundNavSource,
+    NavVerificationStatus,
+    Transaction,
+    TransactionType,
+)
 from transactions.mf_nav_validation import verify_mutual_fund_nav_inputs
+from transactions.mf_provisional import PROVISIONAL_FIELDS
 from transactions.mutual_fund_services import validate_mutual_fund_transaction_payload
 from transactions.services import validate_transaction_payload
 
@@ -72,6 +78,19 @@ class TransactionSerializer(serializers.ModelSerializer):
             data["nav_verification_status"] = verification.status
             if verification.message:
                 data["nav_verification_message"] = verification.message
+            data["nav_source"] = detail.nav_source
+            provisional = detail.nav_source == MutualFundNavSource.PROVISIONAL_USER
+            data["nav_provisional"] = provisional
+            if provisional:
+                data["provisional_confirmed_at"] = (
+                    detail.provisional_confirmed_at.isoformat()
+                    if detail.provisional_confirmed_at
+                    else None
+                )
+                data["provisional_failure_reason"] = detail.provisional_failure_reason or None
+                data["provisional_superseded_by_cache"] = (
+                    verification.status != NavVerificationStatus.NAV_MISSING
+                )
         return data
 
 
@@ -170,10 +189,18 @@ class MutualFundTransactionWriteSerializer(serializers.Serializer):
     type = serializers.ChoiceField(choices=[TransactionType.BUY, TransactionType.SELL])
     investment_date = serializers.DateField()
     nav_date = serializers.DateField()
-    nav = serializers.DecimalField(max_digits=18, decimal_places=6)
+    nav = serializers.DecimalField(max_digits=18, decimal_places=6, required=False, allow_null=True)
     units_allotted = serializers.DecimalField(max_digits=18, decimal_places=8)
     paid_value = serializers.DecimalField(max_digits=18, decimal_places=4)
-    market_value = serializers.DecimalField(max_digits=18, decimal_places=4)
+    market_value = serializers.DecimalField(
+        max_digits=18, decimal_places=4, required=False, allow_null=True
+    )
+    provisional_nav = serializers.DecimalField(
+        max_digits=18, decimal_places=6, required=False, allow_null=True
+    )
+    provisional_attempt_id = serializers.UUIDField(required=False, allow_null=True)
+    confirm_provisional_nav = serializers.BooleanField(required=False, default=False)
+    confirm_paid_value = serializers.BooleanField(required=False, default=False)
     portfolio_id = serializers.IntegerField(required=False, allow_null=True)
     currency = serializers.CharField(max_length=3, required=False, allow_null=True)
     fees = serializers.DecimalField(
@@ -209,10 +236,21 @@ class MutualFundTransactionWriteSerializer(serializers.Serializer):
             data["portfolio_id"] = self.initial_data.get("portfolio_id")
 
         try:
-            validated = validate_mutual_fund_transaction_payload(data)
+            validated = validate_mutual_fund_transaction_payload(
+                data,
+                user_id=getattr(self.context.get("user"), "id", None),
+                allow_provisional=bool(self.context.get("allow_provisional")),
+                existing=self.context.get("existing_detail"),
+            )
         except TransactionValidationError as exc:
             raise serializers.ValidationError(str(exc)) from exc
+        provisional = (
+            {name: data.get(name) for name in PROVISIONAL_FIELDS}
+            if validated.provisional is not None
+            else {}
+        )
         return {
+            **provisional,
             "portfolio_id": validated.portfolio_id,
             "scheme_code": validated.scheme_code,
             "scheme_name": validated.scheme_name,

@@ -48,6 +48,23 @@ export async function fetchMissingMutualFundNav(schemeCode, navDate) {
   });
 }
 
+export async function previewProvisionalMutualFundNav({
+  schemeCode, navDate, provisionalNav, unitsAllotted, attemptId, transactionId,
+}) {
+  const body = {
+    scheme_code: schemeCode,
+    nav_date: navDate,
+    provisional_nav: provisionalNav,
+    units_allotted: unitsAllotted,
+  };
+  if (attemptId) body.attempt_id = attemptId;
+  if (transactionId != null) body.transaction_id = transactionId;
+  return fetchWithHandling('/nav/provisional-preview', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
 export async function fetchWithHandling(path, options = {}) {
   const response = await fetch(buildUrl(path), defaultFetchOptions(options));
   if (response.status === 401 && !path.startsWith('/auth/') && _onUnauthorized) {

@@ -27,6 +27,7 @@ from debt.portfolio_value import (
 )
 from finance.fifo import build_split_adjusted_lot_snapshots, calculate_fifo_cost_basis_metrics
 from finance.mutual_fund_cashflows import MutualFundCashflowEvent
+from finance.mutual_fund_valuation import PROVISIONAL_USER, merge_nav_timeline
 from finance.oversell import detect_oversell
 from finance.splits import apply_stock_split_adjustments
 from finance.types import TransactionType
@@ -49,6 +50,11 @@ from market_data.price_repository import (
     list_stock_prices_in_range,
 )
 from portfolios import dates as portfolio_dates
+from portfolios.mf_valuation import (
+    provisional_navs_by_folio,
+    provisional_valuation_warnings,
+    value_mutual_fund_holding,
+)
 from portfolios.models import Portfolio
 from portfolios.scope import ResolvedPortfolioScope
 from settings_app.services import get_settings
@@ -227,6 +233,7 @@ class HoldingsCalcResult:
     total_pl: Decimal
     any_fx_missing: bool
     warnings: list[str]
+    nav_provisional: bool = False
 
 
 def _calculate_holdings(
@@ -336,26 +343,35 @@ def _calculate_mf_holdings(
     any_fx_missing = False
     warnings: list[str] = []
 
+    nav_provisional = False
     for _key, txns in by_mf.items():
         scheme = normalize_scheme_code(txns[0].asset_symbol)
         nav_result = latest_navs.get(scheme)
-        current_nav: Optional[Decimal] = None
-        nav_date = today
-        if nav_result is not None and nav_result.status == "ok" and nav_result.nav is not None:
-            current_nav = nav_result.nav
-            nav_date = nav_result.date or today
-        else:
-            warnings.append(f"Latest cached NAV missing for mutual fund {scheme}")
-
+        provider_point = (
+            (nav_result.date, nav_result.nav)
+            if nav_result is not None and nav_result.status == "ok" and nav_result.nav is not None
+            else None
+        )
         fifo_txns = _to_fifo_dtos(txns)
+        qty = calculate_fifo_cost_basis_metrics(fifo_txns, current_price=None).cumulative_qty
+        valuation = value_mutual_fund_holding(txns, provider_point=provider_point, qty=qty)
+        nav_date = valuation.nav_date or today
+        if valuation.current_value is None:
+            if not valuation.conflict_dates:
+                warnings.append(f"Latest cached NAV missing for mutual fund {scheme}")
+        if qty > 0:
+            warnings += provisional_valuation_warnings(
+                valuation, scheme=scheme, folio_number=txns[0].mutual_fund_detail.folio.folio_number
+            )
+            nav_provisional = nav_provisional or valuation.provisional
+
         if detect_oversell(fifo_txns):
             warnings.append(f"Oversell detected for mutual fund {scheme}")
 
         fifo_metrics = calculate_fifo_cost_basis_metrics(
-            fifo_txns, current_price=current_nav
+            fifo_txns, current_price=valuation.nav
         )
-        qty = fifo_metrics.cumulative_qty
-        cv_inr = (current_nav or Decimal("0")) * qty
+        cv_inr = valuation.current_value or Decimal("0")
         inv_inr = fifo_metrics.cumulative_invested_amount
         real_inr = fifo_metrics.realized_pl
 
@@ -387,6 +403,7 @@ def _calculate_mf_holdings(
         total_pl=total_pl,
         any_fx_missing=any_fx_missing,
         warnings=warnings,
+        nav_provisional=nav_provisional,
     )
 
 
@@ -405,6 +422,7 @@ def _merge_holdings_results(
         total_pl=total_pl,
         any_fx_missing=stock.any_fx_missing or mf.any_fx_missing,
         warnings=stock.warnings + mf.warnings,
+        nav_provisional=stock.nav_provisional or mf.nav_provisional,
     )
 
 
@@ -444,6 +462,29 @@ def _merge_with_fd(
     )
 
 
+def _mf_fifo_timelines(fifo_dtos) -> tuple[dict[date, Decimal], dict[date, Decimal]]:
+    """Event-dated FIFO units and remaining cost for one MF holding (or folio)."""
+    timeline: dict[date, Decimal] = {}
+    inv_timeline: dict[date, Decimal] = {}
+    lots: list[dict[str, Decimal]] = []
+    for t in sorted(fifo_dtos, key=lambda x: x.date):
+        if t.type == TransactionType.BUY:
+            if t.quantity > 0:
+                lots.append({"qty": t.quantity, "unit_cost": t.price})
+        elif t.type == TransactionType.SELL:
+            remaining = t.quantity
+            while remaining > 0 and lots:
+                lot = lots[0]
+                take = min(lot["qty"], remaining)
+                lot["qty"] -= take
+                remaining -= take
+                if lot["qty"] <= 0:
+                    lots.pop(0)
+        timeline[t.date] = sum(l["qty"] for l in lots)
+        inv_timeline[t.date] = sum(l["qty"] * l["unit_cost"] for l in lots)
+    return timeline, inv_timeline
+
+
 def _mf_timeseries_by_date(
     by_mf: dict[str, list[TransactionModel]],
     *,
@@ -474,52 +515,50 @@ def _mf_timeseries_by_date(
     for row in hist_navs:
         scheme = normalize_scheme_code(row.asset_symbol)
         nav_dict.setdefault(scheme, {})[row.date] = Decimal(row.close_price)
+    provider_timelines = {
+        scheme: merge_nav_timeline(navs, {}) for scheme, navs in nav_dict.items()
+    }
 
     fx_pairs = {(MF_BASE_CURRENCY, portfolio_base)}
     fx_start = min(load_start, loop_start - timedelta(days=FX_LOOKBACK_DAYS))
     fx_maps = load_fx_rate_maps(fx_pairs, fx_start, today)
 
-    qty_dict: dict[str, dict[date, Decimal]] = {}
     inv_dict: dict[str, dict[date, Decimal]] = {}
+    # Each slot pairs a units timeline with its effective NAV timeline. A holding
+    # without provisional NAVs is one slot on the scheme's provider timeline; with
+    # them, each folio is valued on its own provisional overlay.
+    slots: dict[str, list[dict]] = {}
 
     for key, txns in by_mf.items():
         scheme = normalize_scheme_code(txns[0].asset_symbol)
-        adjusted = _to_fifo_dtos(txns)
-        txns_sorted = sorted(adjusted, key=lambda x: x.date)
-        timeline: dict[date, Decimal] = {}
-        inv_timeline: dict[date, Decimal] = {}
-        lots: list[dict[str, Decimal]] = []
-
-        for t in txns_sorted:
-            if t.type == TransactionType.BUY:
-                if t.quantity > 0:
-                    lots.append({"qty": t.quantity, "unit_cost": t.price})
-            elif t.type == TransactionType.SELL:
-                remaining = t.quantity
-                while remaining > 0 and lots:
-                    lot = lots[0]
-                    take = min(lot["qty"], remaining)
-                    lot["qty"] -= take
-                    remaining -= take
-                    if lot["qty"] <= 0:
-                        lots.pop(0)
-            cum_qty = sum(l["qty"] for l in lots)
-            cum_inv = sum(l["qty"] * l["unit_cost"] for l in lots)
-            timeline[t.date] = cum_qty
-            inv_timeline[t.date] = cum_inv
-
-        qty_dict[key] = timeline
+        timeline, inv_timeline = _mf_fifo_timelines(_to_fifo_dtos(txns))
         inv_dict[key] = inv_timeline
+        provider_timeline = provider_timelines.get(scheme, {})
+        provisional = provisional_navs_by_folio(txns)
+        if not provisional:
+            slots[key] = [{"qty_timeline": timeline, "nav_timeline": provider_timeline}]
+            continue
+        by_folio: dict[int, list[TransactionModel]] = {}
+        for txn in txns:
+            by_folio.setdefault(txn.mutual_fund_detail.folio_id, []).append(txn)
+        slots[key] = [
+            {
+                "qty_timeline": _mf_fifo_timelines(_to_fifo_dtos(folio_txns))[0],
+                "nav_timeline": merge_nav_timeline(
+                    nav_dict.get(scheme, {}), provisional.get(folio_id, {})
+                ),
+            }
+            for folio_id, folio_txns in by_folio.items()
+        ]
 
     current_state: dict[str, dict] = {}
     for key in by_mf:
-        scheme = normalize_scheme_code(by_mf[key][0].asset_symbol)
         current_state[key] = {
-            "scheme": scheme,
-            "qty": _forward_fill_decimal(qty_dict.get(key, {}), loop_start),
             "inv": _forward_fill_decimal(inv_dict.get(key, {}), loop_start),
-            "nav": _last_on_or_before_optional(nav_dict.get(scheme, {}), loop_start),
         }
+        for slot in slots[key]:
+            slot["qty"] = _forward_fill_decimal(slot["qty_timeline"], loop_start)
+            slot["nav"] = _last_on_or_before_optional(slot["nav_timeline"], loop_start)
 
     daily: dict[date, dict] = {}
     d = loop_start
@@ -528,22 +567,26 @@ def _mf_timeseries_by_date(
         daily_inv_inr = Decimal("0")
         daily_fx_missing = False
         daily_nav_missing = False
+        daily_provisional = False
 
         for key in by_mf:
             st = current_state[key]
-            if d in qty_dict.get(key, {}):
-                st["qty"] = qty_dict[key][d]
             if d in inv_dict.get(key, {}):
                 st["inv"] = inv_dict[key][d]
-            scheme = st["scheme"]
-            if d in nav_dict.get(scheme, {}):
-                st["nav"] = nav_dict[scheme][d]
-
             daily_inv_inr += st["inv"]
-            if st["qty"] > 0 and st["nav"] is not None:
-                daily_value_inr += st["qty"] * st["nav"]
-            elif st["qty"] > 0:
-                daily_nav_missing = True
+            for slot in slots[key]:
+                if d in slot["qty_timeline"]:
+                    slot["qty"] = slot["qty_timeline"][d]
+                if d in slot["nav_timeline"]:
+                    slot["nav"] = slot["nav_timeline"][d]
+                point = slot["nav"]
+                if slot["qty"] <= 0:
+                    continue
+                if point is not None and point.nav is not None:
+                    daily_value_inr += slot["qty"] * point.nav
+                    daily_provisional = daily_provisional or point.source == PROVISIONAL_USER
+                else:
+                    daily_nav_missing = True
 
         value_base: Decimal | None = Decimal("0")
         if daily_value_inr > 0:
@@ -573,6 +616,7 @@ def _mf_timeseries_by_date(
             "invested": inv_base,
             "fx_missing": daily_fx_missing,
             "nav_missing": daily_nav_missing,
+            "nav_provisional": daily_provisional,
         }
         d += timedelta(days=1)
 
@@ -694,9 +738,11 @@ def _build_portfolio_value_timeseries(
             )
 
         mf_pt = mf_daily.get(d)
+        daily_provisional = False
         if mf_pt is not None:
             daily_inv += mf_pt["invested"]
             daily_nav_missing = mf_pt.get("nav_missing", False)
+            daily_provisional = mf_pt.get("nav_provisional", False)
             if mf_pt.get("fx_missing"):
                 if mf_pt["value"] is None:
                     daily_fx_missing = True
@@ -704,15 +750,16 @@ def _build_portfolio_value_timeseries(
             elif mf_pt["value"] is not None:
                 daily_value += mf_pt["value"]
 
-        timeseries.append(
-            {
-                "date": d.isoformat(),
-                "portfolio_value": None if daily_fx_missing or daily_nav_missing else float(daily_value),
-                "invested_amount": float(daily_inv),
-                "fx_status": fx_status,
-                "_nav_missing": daily_nav_missing,
-            }
-        )
+        point = {
+            "date": d.isoformat(),
+            "portfolio_value": None if daily_fx_missing or daily_nav_missing else float(daily_value),
+            "invested_amount": float(daily_inv),
+            "fx_status": fx_status,
+            "_nav_missing": daily_nav_missing,
+        }
+        if daily_provisional:
+            point["nav_provisional"] = True
+        timeseries.append(point)
         d += timedelta(days=1)
 
     return timeseries
@@ -734,6 +781,7 @@ class PortfolioSummaryResult:
     cash_summary: dict | None = None
     allocation_buckets: dict | None = None
     has_fixed_deposits: bool = False
+    nav_provisional: bool = False
 
 
 def _float(v: Decimal) -> float:
@@ -782,6 +830,8 @@ def _aggregate_timeseries_lists(series_list: list[list[dict]]) -> list[dict]:
                     "_pv_unknown": False,
                 }
             row = by_date[d]
+            if pt.get("nav_provisional"):
+                row["nav_provisional"] = True
             child_pv = pt.get("portfolio_value")
             # Preserve missing NAV even when FX gaps coexist; FX-only partial
             # aggregation retains its established behavior.
@@ -1090,6 +1140,7 @@ def _build_single_portfolio_summary(
         cash_summary=cash_summary,
         allocation_buckets=allocation_buckets,
         has_fixed_deposits=scope_has_contributing_fixed_deposits(scope),
+        nav_provisional=investment_holdings.nav_provisional,
     )
 
 
@@ -1259,6 +1310,7 @@ def _build_all_active_portfolio_summary(
         cash_summary=cash_summary,
         allocation_buckets=allocation_buckets,
         has_fixed_deposits=scope_has_contributing_fixed_deposits(scope),
+        nav_provisional=any(c.nav_provisional for c in child_summaries),
     )
 
 

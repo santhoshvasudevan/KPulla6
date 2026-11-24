@@ -1509,8 +1509,43 @@ expiry), calls MFAPI for that single day, and caches only one positive INR
 and `attempt_id` (opaque; recorded for unsuccessful attempts and bound to the
 user). Unsuccessful attempts start a 60s cooldown; a cache hit wins during
 cooldown. **400** invalid body, **409** conflicting non-MF price row. No
-transaction or cash writes; manual/provisional NAV entry remains disabled. See
+transaction or cash writes. An unsuccessful `attempt_id` can authorize a
+provisional manual BUY (#50, below). See
 [transaction API reference](./reference/api-transactions.md#post-navfetch-missing).
+
+### Provisional mutual-fund BUY (#50)
+
+Manual API exception only; CSV import, bulk refresh, and SELL stay strict.
+`POST`/`PUT /api/v1/transactions` (BUY, `asset_type=MUTUAL_FUND`) may send
+`provisional_nav`, `provisional_attempt_id`, `confirm_provisional_nav: true`,
+`confirm_paid_value: true`, and explicit `fees` (never inferred). The backend
+(`transactions/mf_provisional.py`) requires the latest unsuccessful
+(`date_unavailable|timeout|provider_failure`) `MutualFundNavFetchState` attempt
+for the same scheme/date by the same user, at most 24h old, and no positive
+exact-date INR cache; it rechecks under row lock inside the atomic write.
+`market_value` is calculated by `finance/mutual_fund_valuation.py` (NAV × units,
+half-up 4 dp); client `nav`/`market_value` are ignored. Units, fees, and
+`paid_value` are stored as entered; normal cash sufficiency and settlement apply
+and the NAV-only correction exception never applies to provisional payloads.
+An existing provisional BUY may be edited without a new attempt only while
+scheme, NAV date, and provisional NAV are unchanged; once cache exists the write
+must use the cache path. The provisional NAV is never written to
+`historical_prices` and never feeds fund (NAV-only) metrics.
+
+`POST /api/v1/nav/provisional-preview` (session + CSRF) returns the backend
+`market_value` for `{scheme_code, nav_date, provisional_nav, units_allotted,
+attempt_id | transaction_id}`; **400** ineligible (`code`), **409** cache available.
+
+Valuation overlay (`portfolios/mf_valuation.py`): for a folio with a provisional
+BUY, the latest observation on or before the valuation date wins, with a provider
+NAV on the same date winning; so the provisional per-unit NAV carries from its
+date until the next cached NAV. Other folios, portfolios, and users keep the
+provider NAV. Same-date conflicting provisional NAVs make the value unavailable
+with a warning (never averaged). Holdings rows add `nav_source`
+(`PROVISIONAL_USER|MIXED`), `nav_date`, `nav_provisional`; summary adds
+`nav_provisional: true` and warnings; value-history points add
+`nav_provisional: true` where a provisional NAV contributes. See
+[transaction API reference](./reference/api-transactions.md#provisional-mf-buy-50).
 
 ### Planned: Scheme lookup (MF-4+)
 
@@ -1533,6 +1568,7 @@ Mutual fund positions appear as additional holding rows (stock rows unchanged �
 | `latest_nav` | Cached NAV (MF); stocks keep `latest_price` |
 | `latest_price` | Also set to latest NAV on MF rows (backward compatibility) |
 | `nav_status` | `ok` \| `nav_missing` (MF); stocks keep `price_status` |
+| `nav_source`, `nav_date`, `nav_provisional` | Only when a provisional NAV (#50) affects the row: `PROVISIONAL_USER` or `MIXED` (folios merged in all scope) |
 | `price_status` | `ok` \| `price_missing`; MF mirrors NAV (`nav_missing` → `price_missing`) |
 | `primary_asset_class` | `EQUITY`, `DEBT`, `HYBRID`, `LIQUID`, `COMMODITY`, `OTHER`, `UNKNOWN` (MF-7) |
 | `classification_source` | `EXPLICIT`, `INFERRED`, `UNKNOWN` (MF-7) |

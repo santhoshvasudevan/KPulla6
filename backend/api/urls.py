@@ -12,6 +12,7 @@ from market_data.views import (
     NavFetchMissingView,
     NavRefreshView,
     NavLookupView,
+    NavProvisionalPreviewView,
     PortfolioForceSyncView,
     PricesRefreshView,
 )
@@ -87,6 +88,11 @@ urlpatterns = [
     path("nav/refresh", NavRefreshView.as_view(), name="nav-refresh"),
     path("nav/lookup", NavLookupView.as_view(), name="nav-lookup"),
     path("nav/fetch-missing", NavFetchMissingView.as_view(), name="nav-fetch-missing"),
+    path(
+        "nav/provisional-preview",
+        NavProvisionalPreviewView.as_view(),
+        name="nav-provisional-preview",
+    ),
     path("benchmarks/indices", BenchmarkIndicesView.as_view(), name="benchmark-indices"),
     path("portfolio/force-sync", PortfolioForceSyncView.as_view(), name="portfolio-force-sync"),
     path(

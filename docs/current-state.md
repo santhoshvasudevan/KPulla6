@@ -156,7 +156,12 @@ See [performance/dashboard-read-paths.md](./performance/dashboard-read-paths.md)
   - `POST /api/v1/nav/fetch-missing` — explicit MFAPI fetch of one scheme/date after a confirmed cache miss; cache recheck, DB-backed in-flight claim, 60s cooldown, user-bound `attempt_id` (`MutualFundNavFetchState`)
   - `market_data/services/missing_nav_fetch.py`; Transaction form **Fetch missing NAV** button
   - Tests: `backend/tests/test_mf_nav_fetch_missing_api.py`
-  - **Deferred (#50):** manual/provisional NAV entry using `attempt_id` evidence
+- **Provisional MF BUY** (#50):
+  - Manual BUY may carry a user-confirmed provisional NAV after the same user's unsuccessful exact-date fetch (`transactions/mf_provisional.py`); backend market value via `finance/mutual_fund_valuation.py`; `POST /api/v1/nav/provisional-preview`
+  - Provenance on `MutualFundTransactionDetail` (`nav_source`, `provisional_*`; migration `transactions.0006`); never in `historical_prices` or fund metrics
+  - Per-folio valuation overlay in holdings, summary, XIRR terminal, value history (`portfolios/mf_valuation.py`)
+  - Tests: `backend/tests/test_mf_provisional_buy_api.py`, `backend/tests/test_finance_mutual_fund_valuation.py`
+  - **Deferred:** provisional SELL (#51); deeper valuation edges such as merged all-scope folios, oversell, per-point provenance on performance responses (#52)
 - **Mutual fund classification** (Phase MF-7):
   - `finance/mutual_fund_classification.py` — metadata inference (HYBRID ≠ EQUITY)
   - MF holdings/asset detail: `primary_asset_class`, `classification_source`, optional `classification_notes`

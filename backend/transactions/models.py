@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 from portfolios.constants import DEFAULT_BASE_CURRENCY
@@ -21,6 +22,12 @@ class NavVerificationStatus(models.TextChoices):
     OK = "OK", "OK"
     WARNING = "WARNING", "Warning"
     UNCHECKED = "UNCHECKED", "Unchecked"
+
+
+class MutualFundNavSource(models.TextChoices):
+    PROVIDER_CACHE = "PROVIDER_CACHE", "Provider cache"
+    PROVISIONAL_USER = "PROVISIONAL_USER", "Provisional (user-confirmed)"
+    UNKNOWN = "UNKNOWN", "Unknown"
 
 
 class Transaction(models.Model):
@@ -120,6 +127,21 @@ class MutualFundTransactionDetail(models.Model):
         default=NavVerificationStatus.NOT_VERIFIED,
     )
     nav_verification_message = models.TextField(blank=True, default="")
+    nav_source = models.CharField(
+        max_length=24,
+        choices=MutualFundNavSource.choices,
+        default=MutualFundNavSource.UNKNOWN,
+    )
+    provisional_confirmed_at = models.DateTimeField(null=True, blank=True)
+    provisional_confirmed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    provisional_failure_reason = models.CharField(max_length=32, blank=True, default="")
+    provisional_attempt_id = models.UUIDField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

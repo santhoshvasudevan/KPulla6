@@ -14,6 +14,7 @@ vi.mock('../api', async (importOriginal) => {
     updateTransaction: vi.fn(),
     getCachedMutualFundNav: vi.fn(),
     fetchMissingMutualFundNav: vi.fn(),
+    previewProvisionalMutualFundNav: vi.fn(),
     createCashDeposit: vi.fn(),
     createCashWithdrawal: vi.fn(),
     fetchPortfolios: vi.fn(),
@@ -406,6 +407,133 @@ describe('TransactionModal MUTUAL_FUND behavior', () => {
     fireEvent.change(container.querySelector('input[name="nav_date"]'), { target: { value: '2026-03-15' } });
     await screen.findByText('No cached NAV for this exact date.');
     expect(screen.getByLabelText('NAV')).toHaveValue(null);
+  });
+
+  const fillProvisionalBuy = async ({ fees = '4.64' } = {}) => {
+    missingLookup();
+    api.fetchMissingMutualFundNav.mockResolvedValueOnce(fetchResult({
+      outcome: 'date_unavailable', nav: null, status: 'missing', retry_after_seconds: 60,
+      failure_category: 'date_unavailable', attempt_id: 'att-1',
+    }));
+    const utils = renderModal();
+    fireEvent.change(screen.getByLabelText('record type'), { target: { value: 'MUTUAL_FUND' } });
+    const set = (name, value) => fireEvent.change(
+      utils.container.querySelector(`input[name="${name}"]`), { target: { value } });
+    set('scheme_code', '120503');
+    set('scheme_name', 'Test Fund');
+    set('folio_number', 'F1');
+    set('investment_date', '2026-03-15');
+    set('nav_date', '2026-03-15');
+    set('units_allotted', '65.4321');
+    set('paid_value', '1005');
+    set('fees', fees);
+    fireEvent.click(await screen.findByRole('button', { name: 'Fetch missing NAV' }));
+    await screen.findByRole('group', { name: 'Provisional NAV entry' });
+    set('provisional_nav', '15.2885');
+    return { ...utils, set };
+  };
+  const previewOk = (overrides = {}) => ({
+    scheme_code: '120503', nav_date: '2026-03-15', nav: '15.288500', units_allotted: '65.43210000',
+    market_value: '1000.3587', nav_source: 'PROVISIONAL_USER', status: 'provisional', ...overrides,
+  });
+
+  it('saves a provisional BUY only after server market value and both confirmations', async () => {
+    api.previewProvisionalMutualFundNav.mockResolvedValueOnce(previewOk());
+    api.createTransaction.mockResolvedValueOnce({ id: 7 });
+    const { container } = await fillProvisionalBuy();
+    const save = screen.getByRole('button', { name: 'Save' });
+    expect(save).toBeDisabled();
+    expect(screen.getByLabelText('NAV')).toHaveAttribute('readonly');
+    expect(screen.getByLabelText('NAV')).toHaveValue(null);
+    expect(screen.getByText('Provisional NAV (unverified)')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Get market value' }));
+    expect(await screen.findByText('Market value from server: 1000.3587 INR (unverified).')).toBeInTheDocument();
+    expect(api.previewProvisionalMutualFundNav).toHaveBeenCalledWith({
+      schemeCode: '120503', navDate: '2026-03-15', provisionalNav: '15.2885',
+      unitsAllotted: '65.4321', attemptId: 'att-1', transactionId: null,
+    });
+    const marketValue = container.querySelector('input[name="market_value"]');
+    expect(marketValue).toHaveValue(1000.3587);
+    expect(marketValue).toHaveAttribute('readonly');
+    expect(save).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: /provisional and unverified/ }));
+    expect(save).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: /actual amount I paid/ }));
+    expect(save).toBeEnabled();
+
+    fireEvent.click(save);
+    await waitFor(() => expect(api.createTransaction).toHaveBeenCalledTimes(1));
+    expect(api.createTransaction).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'BUY', nav_date: '2026-03-15', units_allotted: 65.4321, paid_value: 1005, fees: 4.64,
+      nav: 15.2885, market_value: 1000.3587, provisional_nav: '15.2885',
+      provisional_attempt_id: 'att-1', confirm_provisional_nav: true, confirm_paid_value: true,
+    }));
+  });
+
+  it('invalidates the server market value when units change', async () => {
+    api.previewProvisionalMutualFundNav.mockResolvedValueOnce(previewOk());
+    const { container, set } = await fillProvisionalBuy();
+    fireEvent.click(screen.getByRole('button', { name: 'Get market value' }));
+    await screen.findByText(/Market value from server/);
+    fireEvent.click(screen.getByRole('checkbox', { name: /provisional and unverified/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /actual amount I paid/ }));
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+    set('units_allotted', '70');
+    expect(container.querySelector('input[name="market_value"]')).toHaveValue(null);
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    expect(screen.queryByText(/Market value from server/)).not.toBeInTheDocument();
+  });
+
+  it('requires fees with a provisional NAV instead of inferring them', async () => {
+    api.previewProvisionalMutualFundNav.mockResolvedValueOnce(previewOk());
+    const { container } = await fillProvisionalBuy({ fees: '' });
+    fireEvent.click(screen.getByRole('button', { name: 'Get market value' }));
+    await screen.findByText(/Market value from server/);
+    fireEvent.click(screen.getByRole('checkbox', { name: /provisional and unverified/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /actual amount I paid/ }));
+    fireEvent.submit(container.querySelector('form'));
+    expect(await screen.findByText('Fees are required with a provisional NAV (enter 0 if none).')).toBeInTheDocument();
+    expect(api.createTransaction).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a rejected preview and keeps save blocked', async () => {
+    api.previewProvisionalMutualFundNav.mockRejectedValueOnce(new Error('No matching unsuccessful NAV fetch'));
+    await fillProvisionalBuy();
+    fireEvent.click(screen.getByRole('button', { name: 'Get market value' }));
+    expect(await screen.findByText('No matching unsuccessful NAV fetch')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('checkbox', { name: /provisional and unverified/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /actual amount I paid/ }));
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('does not offer provisional entry without unsuccessful attempt evidence', async () => {
+    missingLookup();
+    api.fetchMissingMutualFundNav.mockResolvedValueOnce(fetchResult({
+      outcome: 'in_flight', nav: null, status: 'missing', retry_after_seconds: 5, attempt_id: null,
+    }));
+    renderModal({ initialData: { ...editTransaction, type: 'BUY' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Fetch missing NAV' }));
+    await screen.findByText(/already in progress/);
+    expect(screen.queryByRole('group', { name: 'Provisional NAV entry' })).not.toBeInTheDocument();
+  });
+
+  it('keeps an existing provisional BUY editable without a new fetch', async () => {
+    missingLookup();
+    api.previewProvisionalMutualFundNav.mockResolvedValueOnce(previewOk({ market_value: '4255.3125' }));
+    renderModal({ initialData: {
+      ...editTransaction, type: 'BUY', nav_source: 'PROVISIONAL_USER', nav_provisional: true,
+      nav_verification_status: 'NAV_MISSING',
+    } });
+    await screen.findByRole('group', { name: 'Provisional NAV entry' });
+    expect(screen.getAllByText('Provisional NAV (unverified)').length).toBeGreaterThan(0);
+    expect(screen.getByLabelText('Provisional NAV')).toHaveValue(42.5);
+    fireEvent.click(screen.getByRole('button', { name: 'Get market value' }));
+    await screen.findByText(/Market value from server: 4255.3125/);
+    expect(api.previewProvisionalMutualFundNav).toHaveBeenCalledWith(expect.objectContaining({
+      attemptId: null, transactionId: 99, provisionalNav: '42.5',
+    }));
+    expect(api.fetchMissingMutualFundNav).not.toHaveBeenCalled();
   });
 
   it('requires explicit replacement confirmation and preserves statement fields in an edit PUT', async () => {

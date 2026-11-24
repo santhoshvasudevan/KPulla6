@@ -5,6 +5,7 @@ import {
   updateTransaction,
   getCachedMutualFundNav,
   fetchMissingMutualFundNav,
+  previewProvisionalMutualFundNav,
   createCashDeposit,
   createCashWithdrawal,
   ApiError,
@@ -35,6 +36,10 @@ const NAV_FETCH_MESSAGES = {
   cooldown: 'A recent fetch for this NAV failed.',
   request_error: 'NAV fetch request failed.',
 };
+
+const PROVISIONAL_FETCH_OUTCOMES = new Set(['date_unavailable', 'timeout', 'provider_failure', 'cooldown']);
+
+const emptyProvisional = (nav = '') => ({ nav, confirmNav: false, confirmPaid: false });
 
 const isUsableNav = (nav) => typeof nav === 'string' && Number.isFinite(Number(nav)) && Number(nav) > 0;
 
@@ -329,6 +334,8 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
   const [navRetry, setNavRetry] = useState(0);
   const [navConfirmed, setNavConfirmed] = useState(false);
   const [navFetch, setNavFetch] = useState(null);
+  const [provisional, setProvisional] = useState(emptyProvisional());
+  const [provisionalPreview, setProvisionalPreview] = useState(null);
   const [clockMs, setClockMs] = useState(() => Date.now());
   const navIdentity = useRef('');
   const navFetchInFlight = useRef('');
@@ -380,6 +387,10 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
     setNavLookup(null);
     setNavFetch(null);
     setNavConfirmed(false);
+    setProvisional(emptyProvisional(
+      initialData?.nav_source === 'PROVISIONAL_USER' ? String(initialData.nav ?? '') : ''
+    ));
+    setProvisionalPreview(null);
     setPartialWarning('');
     setShortfall(null);
     setFutureImpact(null);
@@ -437,14 +448,29 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
   const lookupStatus = navLookup?.schemeCode === schemeCode && navLookup?.navDate === navDate
     ? navLookup.status : 'loading';
   const cachedNav = lookupStatus === 'available' ? navLookup.nav : '';
-  const effectiveMfForm = { ...mfForm, nav: cachedNav };
   const originalNav = initialData?.nav ?? initialData?.price_per_share;
   const needsNavConfirmation = isMutualFund && isEditing && cachedNav !== '' &&
     Number(originalNav) !== Number(cachedNav);
-  const navBlocked = isMutualFund &&
-    (!cachedNav || (needsNavConfirmation && !navConfirmed));
   const currentNavFetch = navFetch?.schemeCode === schemeCode && navFetch?.navDate === navDate
     ? navFetch : null;
+  const provisionalAttemptId = currentNavFetch && PROVISIONAL_FETCH_OUTCOMES.has(currentNavFetch.status)
+    ? currentNavFetch.attemptId : null;
+  const editingProvisional = isEditing && initialData?.nav_source === 'PROVISIONAL_USER' &&
+    String(initialData?.scheme_code ?? '') === schemeCode && initialData?.nav_date === navDate;
+  const provisionalMode = isMutualFund && mfForm.type === 'BUY' && lookupStatus === 'missing' &&
+    (Boolean(provisionalAttemptId) || editingProvisional);
+  const provisionalKey = [schemeCode, navDate, provisional.nav, mfForm.units_allotted,
+    provisionalAttemptId ?? ''].join('|');
+  const currentPreview = provisionalPreview?.key === provisionalKey ? provisionalPreview : null;
+  const provisionalMarketValue = currentPreview?.status === 'ready' ? currentPreview.marketValue : '';
+  const provisionalReady = provisionalMode && provisionalMarketValue !== '' &&
+    provisional.confirmNav && provisional.confirmPaid;
+  const effectiveMfForm = provisionalMode
+    ? { ...mfForm, nav: provisional.nav, market_value: provisionalMarketValue }
+    : { ...mfForm, nav: cachedNav };
+  const navBlocked = isMutualFund && (provisionalMode
+    ? !provisionalReady
+    : (!cachedNav || (needsNavConfirmation && !navConfirmed)));
   const navFetchWaitSeconds = currentNavFetch?.retryUntil
     ? Math.max(0, Math.ceil((currentNavFetch.retryUntil - clockMs) / 1000)) : 0;
   const navFetching = currentNavFetch?.status === 'fetching';
@@ -492,6 +518,39 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
     }
   };
 
+  const handleProvisionalPreview = async () => {
+    const key = provisionalKey;
+    setProvisionalPreview({ key, status: 'loading' });
+    try {
+      const result = await previewProvisionalMutualFundNav({
+        schemeCode,
+        navDate,
+        provisionalNav: provisional.nav,
+        unitsAllotted: mfForm.units_allotted,
+        attemptId: provisionalAttemptId,
+        transactionId: provisionalAttemptId ? null : initialData?.id,
+      });
+      const matches = String(result?.scheme_code) === schemeCode && result?.nav_date === navDate &&
+        typeof result?.market_value === 'string';
+      setProvisionalPreview((prev) => (prev?.key !== key ? prev : matches
+        ? { key, status: 'ready', marketValue: result.market_value }
+        : { key, status: 'error', message: 'Market value preview failed.' }));
+    } catch (err) {
+      setProvisionalPreview((prev) => (prev?.key !== key ? prev
+        : { key, status: 'error', message: err.message || 'Market value preview failed.' }));
+    }
+  };
+
+  const buildMfSubmitPayload = () => {
+    const payload = buildMutualFundPayload(effectiveMfForm);
+    if (!provisionalMode) return payload;
+    payload.provisional_nav = provisional.nav;
+    if (provisionalAttemptId) payload.provisional_attempt_id = provisionalAttemptId;
+    payload.confirm_provisional_nav = provisional.confirmNav;
+    payload.confirm_paid_value = provisional.confirmPaid;
+    return payload;
+  };
+
   const handleStockChange = (e) => {
     const { name, value } = e.target;
     setStockForm((prev) => ({ ...prev, [name]: value }));
@@ -502,6 +561,7 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
     if (name === 'nav') return;
     if (name === 'scheme_code' || name === 'nav_date') {
       setNavConfirmed(false);
+      setProvisional((prev) => ({ ...prev, confirmNav: false, confirmPaid: false }));
       setShortfall(null);
       setPendingAssetSubmit(null);
     }
@@ -601,13 +661,15 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
           onSuccess?.({ kind: 'cash', message: 'Withdrawal recorded.' });
         }
       } else if (isMutualFund) {
-        const validationError = validateMutualFundForm(effectiveMfForm);
+        const validationError = validateMutualFundForm(effectiveMfForm) ||
+          (provisionalMode && !String(mfForm.fees ?? '').trim()
+            ? 'Fees are required with a provisional NAV (enter 0 if none).' : null);
         if (validationError) {
           setError(validationError);
           setSubmitting(false);
           return;
         }
-        const payload = buildMutualFundPayload(effectiveMfForm);
+        const payload = buildMfSubmitPayload();
         if (isEditing) {
           await updateTransaction(initialData.id, payload);
         } else {
@@ -653,7 +715,7 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
           ? {
               mode: isEditing ? 'update' : 'create',
               transactionId: initialData?.id,
-              payload: buildMutualFundPayload(effectiveMfForm),
+              payload: buildMfSubmitPayload(),
               isMutualFund: true,
             }
           : {
@@ -849,6 +911,9 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
                         status={navVerificationBadgeStatus(navStatus)}
                         label={navVerificationLabel(navStatus)}
                       />
+                      {initialData?.nav_provisional ? (
+                        <StatusBadge status="warning" label="Provisional NAV (unverified)" />
+                      ) : null}
                       {navMessage ? (
                         <p className="modal-nav-status__message">{navMessage}</p>
                       ) : null}
@@ -960,6 +1025,43 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
                           {navFetchWaitSeconds > 0 && ` Try again in ${navFetchWaitSeconds}s.`}
                         </p>
                       )}
+                      {provisionalMode && (
+                        <div className="modal-provisional-nav" role="group"
+                          aria-label="Provisional NAV entry">
+                          <StatusBadge status="warning" label="Provisional NAV (unverified)" />
+                          <label htmlFor="provisional-mf-nav">Provisional NAV</label>
+                          <input
+                            type="number"
+                            step="any"
+                            id="provisional-mf-nav"
+                            name="provisional_nav"
+                            value={provisional.nav}
+                            onChange={(e) => setProvisional((prev) => ({ ...prev, nav: e.target.value }))}
+                          />
+                          <Button type="button" variant="secondary" onClick={handleProvisionalPreview}
+                            disabled={busy || !provisional.nav || !mfForm.units_allotted ||
+                              currentPreview?.status === 'loading'}>
+                            Get market value
+                          </Button>
+                          <p className="modal-form__hint" aria-live="polite">
+                            {currentPreview?.status === 'loading' ? 'Calculating market value...' :
+                              currentPreview?.status === 'ready'
+                                ? `Market value from server: ${currentPreview.marketValue} INR (unverified).` :
+                                currentPreview?.status === 'error' ? currentPreview.message :
+                                  'Enter the NAV from your statement, then get the market value.'}
+                          </p>
+                          <label>
+                            <input type="checkbox" checked={provisional.confirmNav}
+                              onChange={(e) => setProvisional((prev) => ({ ...prev, confirmNav: e.target.checked }))} />
+                            This NAV is provisional and unverified; it is not added to the NAV cache.
+                          </label>
+                          <label>
+                            <input type="checkbox" checked={provisional.confirmPaid}
+                              onChange={(e) => setProvisional((prev) => ({ ...prev, confirmPaid: e.target.checked }))} />
+                            Paid value is the actual amount I paid.
+                          </label>
+                        </div>
+                      )}
                       {needsNavConfirmation && (
                         <label>
                           <input type="checkbox" checked={navConfirmed}
@@ -999,8 +1101,9 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
                         type="number"
                         step="any"
                         name="market_value"
-                        value={mfForm.market_value}
+                        value={provisionalMode ? provisionalMarketValue : mfForm.market_value}
                         onChange={handleMfChange}
+                        readOnly={provisionalMode}
                         required
                       />
                     </div>
@@ -1018,13 +1121,14 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
                       />
                     </div>
                     <div className="form-group">
-                      <label>Fees (optional)</label>
+                      <label>{provisionalMode ? 'Fees' : 'Fees (optional)'}</label>
                       <input
                         type="number"
                         step="any"
                         name="fees"
                         value={mfForm.fees}
                         onChange={handleMfChange}
+                        required={provisionalMode}
                       />
                     </div>
                   </div>

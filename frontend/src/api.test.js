@@ -72,6 +72,39 @@ describe('API Service', () => {
     document.cookie = 'csrftoken=; expires=Thu, 01 Jan 1970 00:00:00 GMT';
   });
 
+  it('previewProvisionalMutualFundNav POSTs raw values with CSRF and returns the server market value', async () => {
+    document.cookie = 'csrftoken=tok123';
+    const mockResponse = { market_value: '1000.3587', nav: '15.288500', status: 'provisional' };
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => mockResponse });
+
+    expect(await api.previewProvisionalMutualFundNav({
+      schemeCode: '120503', navDate: '2026-03-15', provisionalNav: '15.2885',
+      unitsAllotted: '65.4321', attemptId: 'att-1', transactionId: null,
+    })).toEqual(mockResponse);
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(url).toBe('/api/v1/nav/provisional-preview');
+    expect(options.method).toBe('POST');
+    expect(options.credentials).toBe('include');
+    expect(options.headers.get('X-CSRFToken')).toBe('tok123');
+    expect(JSON.parse(options.body)).toEqual({
+      scheme_code: '120503', nav_date: '2026-03-15', provisional_nav: '15.2885',
+      units_allotted: '65.4321', attempt_id: 'att-1',
+    });
+    document.cookie = 'csrftoken=; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+  });
+
+  it('previewProvisionalMutualFundNav sends transaction_id for an existing provisional BUY', async () => {
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+    await api.previewProvisionalMutualFundNav({
+      schemeCode: '120503', navDate: '2026-03-15', provisionalNav: '42.5', unitsAllotted: '100',
+      attemptId: null, transactionId: 99,
+    });
+    expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({
+      scheme_code: '120503', nav_date: '2026-03-15', provisional_nav: '42.5', units_allotted: '100',
+      transaction_id: 99,
+    });
+  });
+
   it('fetchMissingMutualFundNav surfaces request errors', async () => {
     global.fetch.mockResolvedValueOnce({
       ok: false, status: 409, json: async () => ({ detail: 'A non-mutual-fund price row already exists' }),

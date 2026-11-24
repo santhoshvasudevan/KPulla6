@@ -241,9 +241,26 @@ When lookup reports `missing` (not a lookup error), the transaction form offers
 scheme/date only. The backend rechecks cache, then fetches from MFAPI and caches
 the exact-date INR NAV if published. Outcomes distinguish cache hit, fetched,
 date unavailable, timeout, provider failure, in-flight, and a 60-second cooldown
-after unsuccessful attempts. It never saves the transaction; manual NAV entry
-stays disabled and save stays blocked until a cached NAV exists. See
+after unsuccessful attempts. It never saves the transaction. See
 [fetch-missing contract](./reference/api-transactions.md#post-navfetch-missing).
+
+### Provisional BUY NAV (manual-only exception, #50)
+
+After an unsuccessful exact-date fetch (`date_unavailable`, `timeout`, or
+`provider_failure`), a manual **BUY** may be saved with a user-entered provisional
+NAV. The form asks for the statement NAV, shows the backend-calculated market
+value (`POST /api/v1/nav/provisional-preview`), and requires two explicit
+confirmations: the NAV is provisional and unverified, and paid value is the actual
+payment. Fees must be entered. The backend validates the fetch attempt (same
+user, scheme, date; latest; ≤ 24h) and that the cache is still missing.
+
+The provisional NAV is stored only on that transaction (`nav_source =
+PROVISIONAL_USER`), never in `historical_prices`, and never used by fund NAV-only
+metrics. Holdings, summary, allocation, and value history value that folio with
+the provisional per-unit NAV from its date until the next cached provider NAV,
+and label it unverified. Other folios, portfolios, and users are not repriced.
+CSV import, bulk refresh, and MF SELL keep the strict cache requirement. See
+[provisional BUY contract](./reference/api-transactions.md#provisional-mf-buy-50).
 
 ### Historical correction preview (read-only)
 

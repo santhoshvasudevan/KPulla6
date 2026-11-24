@@ -65,6 +65,69 @@ class NavFetchMissingView(APIView):
         return Response(result.as_payload())
 
 
+class NavProvisionalPreviewView(APIView):
+    """Backend Market Value for an eligible provisional BUY NAV; read-only, never contacts a provider."""
+
+    def post(self, request: Request) -> Response:
+        from finance.mutual_fund_valuation import (
+            PROVISIONAL_USER,
+            calculate_mutual_fund_market_value,
+        )
+        from market_data.nav_lookup import normalize_scheme_code
+        from transactions.mf_provisional import ProvisionalNavError, resolve_provisional_authority
+        from transactions.services import TransactionNotFoundError, get_transaction
+
+        class Body(serializers.Serializer):
+            scheme_code = serializers.CharField(max_length=32)
+            nav_date = serializers.DateField()
+            provisional_nav = serializers.DecimalField(max_digits=18, decimal_places=6)
+            units_allotted = serializers.DecimalField(max_digits=18, decimal_places=8)
+            attempt_id = serializers.UUIDField(required=False, allow_null=True)
+            transaction_id = serializers.IntegerField(required=False, allow_null=True)
+
+        body = Body(data=request.data)
+        body.is_valid(raise_exception=True)
+        data = body.validated_data
+        scheme = normalize_scheme_code(data["scheme_code"])
+        units = data["units_allotted"]
+        if not scheme:
+            return Response({"detail": "scheme_code is required"}, status=status.HTTP_400_BAD_REQUEST)
+        if units <= 0:
+            return Response({"detail": "units_allotted must be greater than 0"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        existing = None
+        if data.get("transaction_id") is not None:
+            try:
+                txn = get_transaction(request.user, data["transaction_id"])
+            except TransactionNotFoundError:
+                return Response({"detail": "Transaction not found"}, status=status.HTTP_404_NOT_FOUND)
+            existing = getattr(txn, "mutual_fund_detail", None)
+        try:
+            authority = resolve_provisional_authority(
+                {"provisional_nav": data["provisional_nav"],
+                 "provisional_attempt_id": data.get("attempt_id")},
+                user_id=request.user.id,
+                scheme_code=scheme,
+                nav_date=data["nav_date"],
+                txn_type="BUY",
+                existing=existing,
+                require_confirmations=False,
+            )
+        except ProvisionalNavError as exc:
+            code = status.HTTP_409_CONFLICT if exc.code == "cache_available" else status.HTTP_400_BAD_REQUEST
+            return Response({"detail": str(exc), "code": exc.code}, status=code)
+        market_value = calculate_mutual_fund_market_value(authority.nav, units)
+        return Response({
+            "scheme_code": scheme,
+            "nav_date": data["nav_date"].isoformat(),
+            "nav": str(authority.nav),
+            "units_allotted": str(units),
+            "market_value": str(market_value),
+            "nav_source": PROVISIONAL_USER,
+            "status": "provisional",
+        })
+
+
 class PricesRefreshView(APIView):
     """
     Manual historical price refresh (synchronous).

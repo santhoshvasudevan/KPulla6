@@ -82,4 +82,6 @@ class PortfolioSummaryView(APIView):
             payload["allocation_buckets"] = result.allocation_buckets
         if result.has_fixed_deposits:
             payload["has_fixed_deposits"] = True
+        if result.nav_provisional:
+            payload["nav_provisional"] = True
         return Response(payload)

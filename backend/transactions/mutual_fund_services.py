@@ -10,11 +10,18 @@ from django.db import transaction as db_transaction
 from market_data.models import Asset, AssetType, MutualFundProfile
 from market_data.mutual_fund_classification_bridge import maybe_apply_inferred_asset_class
 from market_data.nav_lookup import normalize_scheme_code
+from finance.mutual_fund_valuation import calculate_mutual_fund_market_value
 from transactions.mf_nav_validation import cached_nav_for_date, verify_mutual_fund_nav_inputs
+from transactions.mf_provisional import (
+    ProvisionalAuthority,
+    has_provisional_request,
+    resolve_provisional_authority,
+)
 from portfolios.services import PortfolioNotFoundError
 from portfolios.scope import resolve_portfolio_id_or_default
 from transactions.models import (
     Folio,
+    MutualFundNavSource,
     MutualFundTransactionDetail,
     Transaction,
     TransactionType,
@@ -54,6 +61,7 @@ class MutualFundValidatedPayload:
     growth_or_idcw: str
     actual_cash_received: Decimal | None
     settlement_note: str | None
+    provisional: ProvisionalAuthority | None = None
 
 
 def _require_decimal(value, *, field: str, gt_zero: bool = False, ge_zero: bool = False) -> Decimal:
@@ -100,7 +108,18 @@ def _nav_verification_for(payload: MutualFundValidatedPayload) -> tuple[str, str
     return result.status, result.message
 
 
-def validate_mutual_fund_transaction_payload(data: dict[str, Any]) -> MutualFundValidatedPayload:
+def validate_mutual_fund_transaction_payload(
+    data: dict[str, Any],
+    *,
+    user_id: int | None = None,
+    allow_provisional: bool = False,
+    existing: MutualFundTransactionDetail | None = None,
+    lock: bool = False,
+) -> MutualFundValidatedPayload:
+    """
+    Validate a mutual fund write. NAV comes from the exact-date cache; only manual
+    API writes (``allow_provisional``) may carry a user-confirmed provisional BUY NAV.
+    """
     scheme_code = normalize_scheme_code(data.get("scheme_code") or "")
     if not scheme_code:
         raise TransactionValidationError("scheme_code is required")
@@ -124,7 +143,20 @@ def validate_mutual_fund_transaction_payload(data: dict[str, Any]) -> MutualFund
     if nav_date is None:
         raise TransactionValidationError("nav_date is required")
 
-    nav = cached_nav_for_date(scheme_code=scheme_code, nav_date=nav_date)
+    provisional = None
+    if allow_provisional and has_provisional_request(data):
+        provisional = resolve_provisional_authority(
+            data,
+            user_id=user_id,
+            scheme_code=scheme_code,
+            nav_date=nav_date,
+            txn_type=txn_type,
+            existing=existing,
+            lock=lock,
+        )
+        nav = provisional.nav
+    else:
+        nav = cached_nav_for_date(scheme_code=scheme_code, nav_date=nav_date)
     if nav is None:
         raise TransactionValidationError(
             f"Exact-date cached NAV is required for scheme {scheme_code} on {nav_date}. "
@@ -132,11 +164,19 @@ def validate_mutual_fund_transaction_payload(data: dict[str, Any]) -> MutualFund
         )
     units_allotted = _require_decimal(data.get("units_allotted"), field="units_allotted", gt_zero=True)
     paid_value = _require_decimal(data.get("paid_value"), field="paid_value", ge_zero=True)
-    market_value = _require_decimal(data.get("market_value"), field="market_value", ge_zero=True)
 
     fees_raw = data.get("fees")
     fees = None if fees_raw is None else _require_decimal(fees_raw, field="fees", ge_zero=True)
-    fees = _resolve_fees(fees=fees, paid_value=paid_value, market_value=market_value)
+    if provisional is not None:
+        if fees is None:
+            raise TransactionValidationError(
+                "fees is required with a provisional NAV (enter 0 if none); "
+                "fees are not inferred from a provisional NAV."
+            )
+        market_value = calculate_mutual_fund_market_value(nav, units_allotted)
+    else:
+        market_value = _require_decimal(data.get("market_value"), field="market_value", ge_zero=True)
+        fees = _resolve_fees(fees=fees, paid_value=paid_value, market_value=market_value)
 
     currency = (data.get("currency") or "INR").strip().upper() or "INR"
     if currency != "INR":
@@ -183,7 +223,22 @@ def validate_mutual_fund_transaction_payload(data: dict[str, Any]) -> MutualFund
         growth_or_idcw=(data.get("growth_or_idcw") or "").strip(),
         actual_cash_received=validated_actual,
         settlement_note=validated_note,
+        provisional=provisional,
     )
+
+
+def _provenance_fields(payload: MutualFundValidatedPayload, user) -> dict[str, Any]:
+    if payload.provisional is None:
+        return {"nav_source": MutualFundNavSource.PROVIDER_CACHE}
+    fields: dict[str, Any] = {"nav_source": MutualFundNavSource.PROVISIONAL_USER}
+    if not payload.provisional.reused:
+        fields.update(
+            provisional_confirmed_at=payload.provisional.confirmed_at,
+            provisional_confirmed_by=user,
+            provisional_failure_reason=payload.provisional.failure_reason,
+            provisional_attempt_id=payload.provisional.attempt_id,
+        )
+    return fields
 
 
 def _ensure_mf_asset(payload: MutualFundValidatedPayload) -> Asset:
@@ -260,9 +315,17 @@ def _ensure_folio(*, portfolio_id: int, asset: Asset, folio_number: str) -> Foli
 
 @db_transaction.atomic
 def create_mutual_fund_transaction(
-    user: AbstractBaseUser, *, validated_data: dict[str, Any]
+    user: AbstractBaseUser,
+    *,
+    validated_data: dict[str, Any],
+    allow_provisional: bool = False,
 ) -> Transaction:
-    payload = validate_mutual_fund_transaction_payload(validated_data)
+    payload = validate_mutual_fund_transaction_payload(
+        validated_data,
+        user_id=user.id,
+        allow_provisional=allow_provisional,
+        lock=True,
+    )
     try:
         portfolio_id = resolve_portfolio_id_or_default(user, payload.portfolio_id)
     except PortfolioNotFoundError:
@@ -302,6 +365,7 @@ def create_mutual_fund_transaction(
         market_value=payload.market_value,
         nav_verification_status=nav_status,
         nav_verification_message=nav_message,
+        **_provenance_fields(payload, user),
     )
     sync_mutual_fund_settlement(txn, detail)
     return get_transaction(user, txn.id)
@@ -314,6 +378,7 @@ def update_mutual_fund_transaction(
     *,
     validated_data: dict[str, Any],
     update_portfolio: bool,
+    allow_provisional: bool = False,
 ) -> Transaction:
     transaction = get_transaction(user, transaction_id)
     try:
@@ -321,7 +386,13 @@ def update_mutual_fund_transaction(
     except MutualFundTransactionDetail.DoesNotExist as exc:
         raise TransactionValidationError("Transaction is not a mutual fund transaction") from exc
 
-    payload = validate_mutual_fund_transaction_payload(validated_data)
+    payload = validate_mutual_fund_transaction_payload(
+        validated_data,
+        user_id=user.id,
+        allow_provisional=allow_provisional,
+        existing=transaction.mutual_fund_detail,
+        lock=True,
+    )
 
     if update_portfolio:
         try:
@@ -335,7 +406,8 @@ def update_mutual_fund_transaction(
     # Correcting a recorded BUY price is not authorization to backfill historical
     # broker cash. Only this unchanged-statement, NAV-only path skips missing cash.
     nav_only_buy_correction = (
-        transaction.type == payload.txn_type == TransactionType.BUY
+        payload.provisional is None
+        and transaction.type == payload.txn_type == TransactionType.BUY
         and transaction.price_per_share != payload.nav
         and transaction.portfolio_id == portfolio_id
         and transaction.asset_symbol == payload.scheme_code
@@ -387,6 +459,8 @@ def update_mutual_fund_transaction(
     detail.market_value = payload.market_value
     detail.nav_verification_status = nav_status
     detail.nav_verification_message = nav_message
+    for field, value in _provenance_fields(payload, user).items():
+        setattr(detail, field, value)
     detail.save()
 
     if not nav_only_buy_correction:

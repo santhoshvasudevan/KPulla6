@@ -1,5 +1,14 @@
 # Changelog — KPulla6
 
+## 2026-11-24 — Confirmed provisional mutual-fund BUY (#50)
+
+- Manual MF **BUY** may be saved with a user-entered provisional NAV after the same user's unsuccessful exact-date fetch (`date_unavailable`, `timeout`, `provider_failure`) for that scheme/date, while the exact-date cache is still missing. Requires `provisional_attempt_id`, explicit `confirm_provisional_nav` and `confirm_paid_value`, and explicit fees. Forged, stale (>24h), superseded, other-user, wrong scheme/date attempts and an available cache are rejected. CSV import, bulk refresh, and SELL stay strict.
+- Backend calculates `market_value` (NAV × units, half-up 4 dp); units, fees, and paid value are stored as entered. Normal cash sufficiency and atomic settlement apply; the NAV-only correction exception never applies to provisional payloads.
+- Additive migration `transactions.0006`: `nav_source` (`UNKNOWN` default, no backfill), `provisional_confirmed_at`, `provisional_confirmed_by`, `provisional_failure_reason`, `provisional_attempt_id`. Transaction responses add `nav_source`, `nav_provisional`, and provisional provenance fields.
+- New `POST /api/v1/nav/provisional-preview` returns the backend market value; read-only.
+- Holdings, summary, allocation, XIRR terminal value, and value history value the folio with the provisional NAV from its date until the next cached NAV and flag it (`nav_provisional`, warnings). Provisional NAVs never enter `historical_prices` or fund metrics; other folios/portfolios/users are not repriced; same-date conflicts are reported, not averaged.
+- Transaction form: provisional NAV entry, **Get market value**, and both confirmations after an unsuccessful fetch; market value shown from the server.
+
 ## 2026-11-24 — Exact-date missing mutual-fund NAV fetch (#49)
 
 - Added authenticated, CSRF-protected `POST /api/v1/nav/fetch-missing`. It rechecks the exact-date cache, then fetches only the selected scheme/date from MFAPI and caches only a positive exact-date INR NAV. Outcomes: `cache_hit`, `fetched`, `date_unavailable`, `timeout`, `provider_failure`, `in_flight`, `cooldown`. Never writes transactions or cash.

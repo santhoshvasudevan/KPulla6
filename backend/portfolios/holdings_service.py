@@ -11,6 +11,7 @@ from django.db.models import QuerySet
 from cash.services import CashDisplaySummary, build_cash_display_summary, cash_allocation_rows
 from debt.portfolio_value import build_bank_cash_holding_rows, build_fd_holding_rows
 from finance.fifo import calculate_fifo_cost_basis_metrics
+from finance.mutual_fund_valuation import PROVIDER_CACHE
 from finance.oversell import detect_oversell
 from finance.personal_holding_xirr import (
     mf_holding_settlement_amount,
@@ -24,6 +25,11 @@ from market_data.models import Asset, AssetType
 from market_data.nav_lookup import latest_nav_for_asset, normalize_scheme_code
 from market_data.price_lookup import latest_historical_price, normalize_asset_symbol
 from portfolios import dates as portfolio_dates
+from portfolios.mf_valuation import (
+    MIXED,
+    provisional_valuation_warnings,
+    value_mutual_fund_holding,
+)
 from portfolios.scope import ResolvedPortfolioScope
 from settings_app.models import DisplayCurrency
 from transactions.finance_adapter import transaction_to_finance_dto
@@ -174,21 +180,77 @@ def _resolve_price(
     return converted, "ok", display_fx_unavailable
 
 
-def _resolve_nav(
+@dataclass
+class _MfCurrentValue:
+    nav: Optional[Decimal]
+    nav_status: str
+    price_status: str
+    fx_missing: bool
+    fifo: object
+    current_value: Decimal
+    unrealized_pl: Decimal
+    valuation: object
+    warnings: list[str]
+    xirr: Optional[float]
+
+
+def _mf_current_value(
     *,
     scheme_code: str,
+    folio_number: str,
+    db_txns: list[TransactionModel],
+    finance_txns,
     display_currency: str,
-) -> tuple[Optional[Decimal], str, str, bool]:
-    """
-    Returns (latest NAV, nav_status, price_status, display_fx_unavailable).
-
-    NAV is always INR; price_status mirrors nav_status for UI compatibility.
-    """
+) -> _MfCurrentValue:
+    """Latest cached NAV, overlaid by a newer provisional NAV recorded on the holding's own BUY."""
     display_fx_unavailable = display_currency != MF_BASE_CURRENCY
-    nav_result = latest_nav_for_asset(scheme_code)
-    if nav_result is None or nav_result.status != "ok" or nav_result.nav is None:
-        return None, "nav_missing", "price_missing", display_fx_unavailable
-    return nav_result.nav, "ok", "ok", display_fx_unavailable
+    provider = latest_nav_for_asset(scheme_code)
+    provider_point = (
+        (provider.date, provider.nav)
+        if provider is not None and provider.status == "ok" and provider.nav is not None
+        else None
+    )
+    qty = calculate_fifo_cost_basis_metrics(finance_txns, current_price=None).cumulative_qty
+    valuation = value_mutual_fund_holding(db_txns, provider_point=provider_point, qty=qty)
+    overlaid = valuation.source not in (None, PROVIDER_CACHE)
+    current_nav = valuation.nav if overlaid else (provider_point[1] if provider_point else None)
+    known = valuation.current_value is not None if overlaid else current_nav is not None
+
+    fifo = calculate_fifo_cost_basis_metrics(finance_txns, current_price=current_nav)
+    qty = fifo.cumulative_qty
+    if valuation.source == MIXED and valuation.current_value is not None and qty > 0:
+        current_value = valuation.current_value
+    elif current_nav is not None and qty > 0:
+        current_value = current_nav * qty
+    else:
+        current_value = Decimal("0")
+    unrealized = (
+        current_value - fifo.cumulative_invested_amount
+        if valuation.source == MIXED
+        else fifo.unrealized_pl
+    )
+    warnings = (
+        provisional_valuation_warnings(valuation, scheme=scheme_code, folio_number=folio_number)
+        if qty > 0
+        else []
+    )
+    today = portfolio_dates.current_date()
+    if valuation.provisional:
+        xirr = mutual_fund_holding_xirr(db_txns, current_nav, today=today)
+    else:
+        xirr = cached_mutual_fund_holding_xirr(scheme_code, db_txns, today=today)
+    return _MfCurrentValue(
+        nav=current_nav,
+        nav_status="ok" if known else "nav_missing",
+        price_status="ok" if known else "price_missing",
+        fx_missing=display_fx_unavailable,
+        fifo=fifo,
+        current_value=current_value,
+        unrealized_pl=unrealized,
+        valuation=valuation,
+        warnings=warnings,
+        xirr=xirr,
+    )
 
 
 def _float_or_none(value: Decimal | None) -> float | None:
@@ -318,23 +380,23 @@ def _build_mf_holding_item(
     finance_txns = _to_finance_dtos(db_txns)
     oversold = detect_oversell(finance_txns)
 
-    current_nav, nav_status, price_status, fx_missing = _resolve_nav(
+    cur = _mf_current_value(
         scheme_code=scheme_code,
+        folio_number=folio_number,
+        db_txns=db_txns,
+        finance_txns=finance_txns,
         display_currency=display_currency,
     )
-
-    fifo_metrics = calculate_fifo_cost_basis_metrics(
-        finance_txns,
-        current_price=current_nav,
+    current_nav, nav_status, price_status, fx_missing = (
+        cur.nav, cur.nav_status, cur.price_status, cur.fx_missing
     )
+    fifo_metrics = cur.fifo
+    valuation = cur.valuation
     qty = fifo_metrics.cumulative_qty
     invested = fifo_metrics.cumulative_invested_amount
     avg_cost = fifo_metrics.avg_cost_per_share if qty > 0 else Decimal("0")
-
-    if current_nav is not None and qty > 0:
-        current_value = current_nav * qty
-    else:
-        current_value = Decimal("0")
+    current_value = cur.current_value
+    unrealized = cur.unrealized_pl
 
     warnings: list[str] = []
     status = _holding_status(qty=qty, oversold=oversold)
@@ -342,9 +404,8 @@ def _build_mf_holding_item(
         warnings.append("SELL quantity exceeded available FIFO lots for this asset")
     if nav_status == "nav_missing" and qty > 0:
         warnings.append("Latest cached NAV is missing")
-
-    today = portfolio_dates.current_date()
-    xirr = cached_mutual_fund_holding_xirr(scheme_code, db_txns, today=today)
+    warnings += cur.warnings
+    xirr = cur.xirr
 
     portfolio_units = {}
     for txn in db_txns:
@@ -371,8 +432,8 @@ def _build_mf_holding_item(
         "invested": float(invested),
         "realized_gain_loss": float(fifo_metrics.realized_pl),
         "realized_pl": float(fifo_metrics.realized_pl),
-        "unrealized_gain_loss": float(fifo_metrics.unrealized_pl),
-        "unrealized_pl": float(fifo_metrics.unrealized_pl),
+        "unrealized_gain_loss": float(unrealized),
+        "unrealized_pl": float(unrealized),
         "currency": MF_BASE_CURRENCY,
         "price_status": price_status,
         "nav_status": nav_status,
@@ -382,6 +443,10 @@ def _build_mf_holding_item(
         "fx_status": "fx_unavailable" if fx_missing else "ok",
         "_fx_missing": fx_missing,
     }
+    if valuation.source not in (None, PROVIDER_CACHE) and qty > 0:
+        item["nav_source"] = valuation.source
+        item["nav_date"] = valuation.nav_date.isoformat() if valuation.nav_date else None
+        item["nav_provisional"] = valuation.provisional
     asset, profile = _mf_asset_and_profile(db_txns)
     item.update(classification_fields_for_asset(asset, profile))
     if profile is not None:
@@ -714,22 +779,22 @@ def _build_mf_asset_detail(
     finance_txns = _to_finance_dtos(db_txns)
     oversold = detect_oversell(finance_txns)
 
-    current_nav, nav_status, price_status, fx_missing = _resolve_nav(
+    cur = _mf_current_value(
         scheme_code=scheme_code,
+        folio_number=folio_number,
+        db_txns=db_txns,
+        finance_txns=finance_txns,
         display_currency=display_currency,
+    )
+    current_nav, nav_status, price_status, fx_missing = (
+        cur.nav, cur.nav_status, cur.price_status, cur.fx_missing
     )
     if display_currency != MF_BASE_CURRENCY:
         fx_missing = True
 
-    fifo_metrics = calculate_fifo_cost_basis_metrics(
-        finance_txns,
-        current_price=current_nav,
-    )
+    fifo_metrics = cur.fifo
     qty = fifo_metrics.cumulative_qty
-    if current_nav is not None and qty > 0:
-        current_value = current_nav * qty
-    else:
-        current_value = Decimal("0")
+    current_value = cur.current_value
 
     warnings: list[str] = []
     status = _holding_status(qty=qty, oversold=oversold)
@@ -737,9 +802,8 @@ def _build_mf_asset_detail(
         warnings.append("SELL quantity exceeded available FIFO lots for this asset")
     if nav_status == "nav_missing" and qty > 0:
         warnings.append("Latest cached NAV is missing")
-
-    today = portfolio_dates.current_date()
-    xirr = cached_mutual_fund_holding_xirr(scheme_code, db_txns, today=today)
+    warnings += cur.warnings
+    xirr = cur.xirr
 
     asset, profile = _mf_asset_and_profile(db_txns)
     cls_fields = classification_fields_for_asset(asset, profile)
@@ -756,7 +820,7 @@ def _build_mf_asset_detail(
             fifo_metrics.avg_cost_per_share if qty > 0 else Decimal("0")
         ),
         realized_pl=float(fifo_metrics.realized_pl),
-        unrealized_pl=float(fifo_metrics.unrealized_pl),
+        unrealized_pl=float(cur.unrealized_pl),
         xirr=xirr,
         holding_status=status,
         fx_status="fx_unavailable" if fx_missing else "ok",
