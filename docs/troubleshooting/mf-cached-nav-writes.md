@@ -46,7 +46,8 @@ Lookup does not refresh providers or change data. Keep session cookies private.
    request is already fetching it. Bulk `POST /api/v1/nav/refresh` with
    `scheme_codes` remains available for profiled schemes. If lookup still says
    `missing`, leave CSV imports blocked and investigate coverage. Never
-   substitute an investment date or nearby NAV.
+   substitute an investment date or nearby NAV. CSV cannot carry a provisional
+   NAV: provisional or consent columns reject the whole file.
    For a manual **BUY or SELL**, after `date_unavailable`, `timeout`, or
    `provider_failure`, the form offers a provisional NAV: enter the statement NAV,
    click **Get market value**, enter fees, and confirm both the unverified NAV and
@@ -62,7 +63,11 @@ Lookup does not refresh providers or change data. Keep session cookies private.
    them to suppress `VALUE_MISMATCH`.
 3. For historical review, use `python manage.py preview_mf_nav_corrections --user-id ID`
    in the backend environment against an authorized database. It emits JSONL
-   review rows plus a non-JSON summary and has **no apply mode**. Keep all personal
+   review rows plus a non-JSON summary and has **no apply mode**. Each row's
+   `review_class` is `provisional` (awaiting provider NAV), `legacy`
+   (pre-provenance row with no cache), `missing` (provider-sourced row whose cache
+   is gone), or `cached_discrepancy` (reviewable against a cached NAV). The
+   Transactions list shows the same states. Keep all personal
    output private, outside version control, public docs, issues, PRs, and shared logs.
 4. Review each correction explicitly. Only a NAV-changing existing BUY with no
    linked cash and all statement/cash fields unchanged skips historical settlement

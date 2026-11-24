@@ -201,7 +201,8 @@ describe('Compare page', () => {
     fireEvent.change(screen.getByLabelText('compare-asset-a'), { target: { value: 'AAPL' } });
     fireEvent.change(screen.getByLabelText('compare-asset-b'), { target: { value: 'MSFT' } });
     await screen.findByText('Metric Sheet comparison');
-    expect(screen.getAllByText('NAV · INR')).toHaveLength(bothNav ? 2 : 1);
+    expect(screen.getAllByText('Fund NAV (provider) · INR')).toHaveLength(bothNav ? 2 : 1);
+    expect(screen.getByText(/Fund performance uses cached provider NAV history only/)).toBeInTheDocument();
     expect(screen.getAllByText('Actual NAV coverage: 2025-06-01 to 2026-05-30')).toHaveLength(bothNav ? 2 : 1);
     if (!bothNav) {
       expect(screen.getByText('Cash-flow adjusted · EUR')).toBeInTheDocument();
@@ -216,6 +217,28 @@ describe('Compare page', () => {
       expect(screen.queryByText('XIRR is full-scope; other Metric Sheet values follow the selected range.')).not.toBeInTheDocument();
     }
     expect(screen.queryByText(/partial/i)).not.toBeInTheDocument();
+  });
+
+  it('flags provisional NAVs on the personal position only, not the fund columns', async () => {
+    const warning = 'Your position includes transactions recorded with an unverified provisional NAV.';
+    const subjects = sampleCompareMetricSheetPayload.subjects.map((subject, index) => ({
+      ...subject, performance_basis: 'nav', currency: 'INR', fund_nav_source: 'PROVIDER_CACHE',
+      personal_metrics: {
+        xirr: 0.1, xirr_scope: 'full_scope', status: 'calculated', basis: 'native_inr',
+        nav_provisional: index === 0, warnings: index === 0 ? [warning] : [],
+      },
+    }));
+    api.getCompareMetricSheet.mockResolvedValue({ ...sampleCompareMetricSheetPayload, subjects, currency: 'INR' });
+    renderCompare();
+    await screen.findByLabelText('compare-asset-a');
+    fireEvent.change(screen.getByLabelText('compare-asset-a'), { target: { value: 'AAPL' } });
+    fireEvent.change(screen.getByLabelText('compare-asset-b'), { target: { value: 'MSFT' } });
+    await screen.findByText('Metric Sheet comparison');
+    const personalRow = screen.getByRole('row', { name: /Your Holding XIRR/i });
+    expect(within(personalRow).getAllByText('Includes provisional NAV')).toHaveLength(1);
+    expect(within(personalRow).getByText(warning)).toBeInTheDocument();
+    expect(screen.getAllByText('Includes provisional NAV')).toHaveLength(1);
+    expect(screen.getAllByText('Fund NAV (provider) · INR')).toHaveLength(2);
   });
 
   it('renders global and subject warnings', async () => {

@@ -37,6 +37,8 @@ import {
   transactionQuantity,
   transactionUnitPrice,
   transactionLineTotal,
+  navReviewBadgeStatus,
+  navReviewLabel,
   navVerificationBadgeStatus,
   navVerificationLabel,
 } from '../utils/transactionDisplay';
@@ -815,10 +817,18 @@ export default function Transactions() {
                       </AppTableCell>
                       <AppTableCell>
                         {isMf && navStatus ? (
-                          <StatusBadge
-                            status={navVerificationBadgeStatus(navStatus)}
-                            label={navVerificationLabel(navStatus)}
-                          />
+                          <>
+                            <StatusBadge
+                              status={navVerificationBadgeStatus(navStatus)}
+                              label={navVerificationLabel(navStatus)}
+                            />
+                            {navReviewLabel(txn) ? (
+                              <StatusBadge
+                                status={navReviewBadgeStatus(txn)}
+                                label={navReviewLabel(txn)}
+                              />
+                            ) : null}
+                          </>
                         ) : (
                           '—'
                         )}

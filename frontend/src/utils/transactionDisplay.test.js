@@ -7,6 +7,8 @@ import {
   transactionLineTotal,
   navVerificationLabel,
   navVerificationBadgeStatus,
+  navReviewLabel,
+  navReviewBadgeStatus,
   holdingRowKey,
   holdingSymbolLabel,
   holdingAssetClassVariant,
@@ -52,6 +54,21 @@ describe('transactionDisplay', () => {
     expect(navVerificationLabel('NAV_MISSING')).toBe('NAV not in cache');
     expect(navVerificationBadgeStatus('VERIFIED')).toBe('verified');
     expect(navVerificationBadgeStatus('NAV_MISMATCH')).toBe('nav_warning');
+  });
+
+  it('distinguishes read-only NAV review states from the API', () => {
+    const review = (reviewClass, extra = {}) => ({ nav_review: { review_class: reviewClass }, ...extra });
+    expect(navReviewLabel({ nav_review: null })).toBeNull();
+    expect(navReviewBadgeStatus({})).toBeNull();
+    expect(navReviewLabel(review('provisional'))).toBe('Provisional NAV — awaiting provider');
+    expect(navReviewLabel(review('legacy'))).toBe('Legacy NAV — no provider NAV');
+    expect(navReviewLabel(review('missing'))).toBe('Provider NAV no longer cached');
+    expect(navReviewLabel(review('cached_discrepancy', { nav_provisional: true })))
+      .toBe('Provider NAV now available — review');
+    expect(navReviewLabel(review('cached_discrepancy'))).toBe('Cached NAV differs — review');
+    expect(navReviewBadgeStatus(review('provisional'))).toBe('warning');
+    expect(navReviewBadgeStatus(review('cached_discrepancy'))).toBe('warning');
+    expect(navReviewBadgeStatus(review('legacy'))).toBe('neutral');
   });
 
   it('formats MF holding labels and keys', () => {

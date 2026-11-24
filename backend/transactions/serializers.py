@@ -8,10 +8,15 @@ from transactions.models import (
     Transaction,
     TransactionType,
 )
-from transactions.mf_nav_validation import verify_mutual_fund_nav_inputs
+from transactions.mf_nav_review import classify_nav_review
+from transactions.mf_nav_validation import cached_nav_for_date, verify_mutual_fund_nav_inputs
 from transactions.mf_provisional import PROVISIONAL_FIELDS
 from transactions.mutual_fund_services import validate_mutual_fund_transaction_payload
 from transactions.services import validate_transaction_payload
+
+
+def _float_or_none(value):
+    return None if value is None else float(value)
 
 
 class TransactionSerializer(serializers.ModelSerializer):
@@ -68,12 +73,16 @@ class TransactionSerializer(serializers.ModelSerializer):
             data["paid_value"] = float(detail.paid_value)
             data["market_value"] = float(detail.market_value)
             # Saved verification is a write-time snapshot; the cache can change later.
+            cached_nav = cached_nav_for_date(
+                scheme_code=instance.asset_symbol, nav_date=detail.nav_date
+            )
             verification = verify_mutual_fund_nav_inputs(
                 scheme_code=instance.asset_symbol,
                 nav_date=detail.nav_date,
                 entered_nav=detail.nav,
                 units_allotted=detail.units_allotted,
                 market_value=detail.market_value,
+                cached_nav=cached_nav,
             )
             data["nav_verification_status"] = verification.status
             if verification.message:
@@ -91,6 +100,22 @@ class TransactionSerializer(serializers.ModelSerializer):
                 data["provisional_superseded_by_cache"] = (
                     verification.status != NavVerificationStatus.NAV_MISSING
                 )
+            review = classify_nav_review(
+                nav_source=detail.nav_source,
+                recorded_nav=detail.nav,
+                price_per_share=instance.price_per_share,
+                cached_nav=cached_nav,
+            )
+            data["nav_review"] = (
+                {
+                    "review_class": review.review_class,
+                    "reviewable": review.reviewable,
+                    "cached_nav": _float_or_none(review.cached_nav),
+                    "nav_difference": _float_or_none(review.nav_difference),
+                }
+                if review is not None
+                else None
+            )
         return data
 
 

@@ -257,6 +257,31 @@ describe('AssetDetail Page', () => {
     expect(api.getAssetMetricSheet).toHaveBeenCalledWith('118968', expect.objectContaining({ portfolio_scope: 'all' }));
   });
 
+  it.each([true, false])('labels provider fund performance apart from a provisional position (%s)', async (provisional) => {
+    const warning = 'Your position includes transactions recorded with an unverified provisional NAV.';
+    api.fetchAssetDetails.mockResolvedValueOnce({ ...mockAssetDetail, asset_type: 'MUTUAL_FUND' });
+    api.getAssetMetricSheet.mockResolvedValueOnce({
+      ...mockMetricSheet, performance_basis: 'nav', fund_nav_source: 'PROVIDER_CACHE', currency: 'INR',
+      coverage: { start: '2024-03-01', end: '2024-03-31' },
+      personal_metrics: {
+        xirr: 0.1, xirr_scope: 'full_scope', status: 'calculated', basis: 'native_inr',
+        nav_provisional: provisional, warnings: provisional ? [warning] : [],
+      },
+    });
+    renderDetail();
+    const heading = await screen.findByRole('heading', { name: 'Fund Performance — INR' });
+    const fundSection = heading.closest('.asset-detail-metric-sheet');
+    expect(within(fundSection).getByText(/Fund performance uses cached provider NAV history only/)).toBeInTheDocument();
+    expect(within(fundSection).queryByText('Includes provisional NAV')).toBeNull();
+    const position = screen.getByRole('region', { name: 'Your Position' });
+    if (provisional) {
+      expect(within(position).getByText('Includes provisional NAV')).toBeInTheDocument();
+      expect(within(position).getByText(warning)).toBeInTheDocument();
+    } else {
+      expect(within(position).queryByText('Includes provisional NAV')).toBeNull();
+    }
+  });
+
   it('does not bypass a position authorization error with an analytics request', async () => {
     api.fetchAssetDetails.mockRejectedValueOnce(new Error('Forbidden'));
     renderDetail();

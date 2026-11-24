@@ -28,6 +28,7 @@ from transactions.serializers import (
     TransactionWriteSerializer,
 )
 from transactions.services import (
+    CsvImportAborted,
     TransactionNotFoundError,
     TransactionValidationError,
     create_transaction,
@@ -466,6 +467,13 @@ class TransactionCsvImportView(APIView):
             return Response(
                 preview_to_response_dict(exc.preview),
                 status=status.HTTP_409_CONFLICT,
+            )
+        except CsvImportAborted as exc:
+            return Response(
+                CsvImportResponseSerializer(
+                    {"success": False, "imported_count": 0, "errors": exc.errors}
+                ).data,
+                status=status.HTTP_200_OK,
             )
 
         return Response(

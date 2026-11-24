@@ -39,10 +39,23 @@ MF_REQUIRED_HEADER_KEYS = frozenset(
 )
 MF_MARKER_HEADER_KEYS = frozenset({"scheme code", "folio number"})
 STOCK_MARKER_HEADER_KEYS = frozenset({"asset symbol", "qty", "price/share"})
+# Provisional NAV consent exists only in the manual transaction form; a CSV column
+# must never look like it grants it, so these headers reject the whole file.
+CONSENT_HEADER_KEYS = frozenset({"confirm paid value", "nav source", "attempt id"})
+PROVISIONAL_CSV_HEADER_MESSAGE = (
+    "Provisional NAV columns are not accepted in CSV import: every CSV row requires an "
+    "exact-date cached NAV. Record a provisional NAV manually in the transaction form "
+    "after an unsuccessful Fetch missing NAV."
+)
 
 
 def _norm_header(h: str) -> str:
     return (h or "").strip().lower()
+
+
+def _is_consent_header(header: str) -> bool:
+    key = " ".join(header.replace("_", " ").replace("-", " ").split())
+    return "provisional" in key or key in CONSENT_HEADER_KEYS
 
 
 def parse_money(value: str) -> tuple[Decimal, str]:
@@ -705,6 +718,10 @@ def parse_import_csv(
         return None, [], [{"row": 1, "field": "file", "message": "Empty CSV"}]
 
     headers_norm = [_norm_header(h) for h in rows[0]]
+    if any(_is_consent_header(h) for h in headers_norm):
+        return None, [], [
+            {"row": 1, "field": "headers", "message": PROVISIONAL_CSV_HEADER_MESSAGE}
+        ]
     header_set = set(headers_norm)
     fmt, fmt_errors = _detect_csv_format(header_set)
     if fmt_errors:

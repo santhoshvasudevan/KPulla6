@@ -218,7 +218,10 @@ an override. This supersedes the original warning-only save policy.
 CSV row validation preserves the existing all-or-nothing response contract:
 HTTP `200` with `success: false`, `imported_count: 0`, and
 `errors: [{row, field, message}]`, including missing exact-date NAV cache.
-This does not change request-level error statuses. See the
+This does not change request-level error statuses. CSV has no provisional
+exception: provisional or consent columns reject the file, and neither cash-funding
+confirmation nor an earlier unsuccessful fetch grants consent. A missing row aborts
+the batch without deposits or transactions. See the
 [import API contract](./reference/api-transactions.md#post-transactionsimport-csv).
 
 Never call providers during validation or lookup. Never use an adjacent date,
@@ -292,16 +295,59 @@ NAVs affect the selected range or holdings. Fund NAV-only analytics stay
 provider-only. See the
 [scope and quality contract](./api-design.md#provisional-mutual-fund-sell-and-edits-51).
 
+### Fund performance versus your position (#53)
+
+Each MF transaction records where its NAV came from (`nav_source`):
+`PROVIDER_CACHE` (exact-date provider cache), `PROVISIONAL_USER` (a manual,
+confirmed provisional entry), or `UNKNOWN` (saved before provenance existed).
+
+**Fund performance** on Asset Detail and Compare uses cached provider NAV history
+only. This covers returns, risk, drawdowns, monthly/yearly heatmaps, benchmark
+pairing, and Compare's normalized series. Adding, editing, or deleting a
+provisional transaction never changes these figures or creates fund or benchmark
+history. Compare and Asset Detail use the same provider series.
+
+**Your Position** uses your own transactions. Holdings, summary, and value history
+may use a provisional NAV as described above. When a position includes
+provisional rows, Asset Detail and Compare label it **Includes provisional NAV**
+and add a warning. The position XIRR in that section values open units at the
+latest cached provider NAV.
+
+Provisional NAV is a manual-only fallback. CSV import, NAV refresh, and reads never
+create, apply, or replace one.
+
+When a provider NAV later arrives for the same date, the transaction is not
+corrected automatically, either on refresh or on read. The Transactions list and
+edit form show a review state (`nav_review` in the API):
+
+| Review state | Meaning |
+|--------------|---------|
+| Provisional NAV — awaiting provider | Provisional row; exact-date provider NAV still missing |
+| Provider NAV now available — review | Provisional row; provider NAV is now cached (the form shows it) |
+| Cached NAV differs — review | Provider or legacy row whose cached NAV differs from the recorded NAV |
+| Legacy NAV — no provider NAV | Pre-provenance row; no exact-date cache |
+| Provider NAV no longer cached | Provider-sourced row whose cache row is missing |
+
+Recorded NAV, units, fees, Paid Value, provenance, and settlements stay as
+recorded. To adopt the cached NAV, open the transaction and save it explicitly.
+This is the normal cache-path edit, with normal cash rules.
+
 ### Historical correction preview (read-only)
 
 From the backend environment, `python manage.py preview_mf_nav_corrections --user-id ID`
 reviews only that user's MF transactions against the exact-date cache. It emits
 one JSON object per review row (JSONL), followed by a human-readable summary
-`Review rows: N. No records changed.` The summary is not a JSONL row.
+`Review rows: N (provisional: a, legacy: b, missing: c, cached_discrepancy: d). No records changed.`
+The summary is not a JSONL row.
 
 Rows contain `transaction_id`, `scheme_code`, `nav_date`, `entered_nav`,
-`cached_nav` (decimal string or null), `status` (`NAV_MISSING` or `NAV_MISMATCH`),
-and `statement_fields` (`unchanged; review only`). Matching rows are omitted.
+`cached_nav` (decimal string or null), `status` (`NAV_MISSING`, `NAV_MISMATCH`,
+or `NAV_MATCH` for a provisional row whose provider NAV now agrees), `nav_source`,
+`review_class` (`provisional`, `legacy`, `missing`, `cached_discrepancy`),
+`reviewable` (true only for `cached_discrepancy`), `nav_difference` (cached −
+entered, or null), and `statement_fields` (`unchanged; review only`). Rows
+whose provider or legacy NAV matches the cache are omitted. Provisional rows are always
+listed until they are explicitly re-saved from the cache.
 There is **no apply mode**: the command does not change transactions, statement
 fields, NAV cache, or cash and does not fetch providers. Review individual
 corrections explicitly; do not treat this output as authorization for bulk rewrite.

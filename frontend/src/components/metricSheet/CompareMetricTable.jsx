@@ -8,7 +8,14 @@ import {
   COMPARE_HIGHLIGHT_LABELS,
   getCompareHighlightStates,
 } from './compareMetricRanking';
-import { METRIC_SHEET_XIRR_FULL_SCOPE_NOTE, personalXirrHelperText } from './metricSheetCopy';
+import {
+  FUND_NAV_BASIS_LABEL,
+  FUND_PROVIDER_NAV_NOTE,
+  METRIC_SHEET_XIRR_FULL_SCOPE_NOTE,
+  POSITION_PROVISIONAL_LABEL,
+  personalXirrHelperText,
+} from './metricSheetCopy';
+import { StatusBadge } from '../ui';
 import MetricSheetWarnings from './MetricSheetWarnings';
 import MetricSheetNavCoverage from './MetricSheetNavCoverage';
 
@@ -97,6 +104,7 @@ export default function CompareMetricTable({ subjects = [], showBenchmark = fals
   return (
     <div className={['compare-metric-table-wrap', 'metric-sheet-table-scroll', className].filter(Boolean).join(' ')}>
       <p className="compare-metric-table__highlight-note">{COMPARE_METRIC_HIGHLIGHT_NOTE}</p>
+      {hasNav ? <p className="metric-sheet__note">{FUND_PROVIDER_NAV_NOTE}</p> : null}
       <table className="compare-metric-table compare-metric-table--header">
         <thead>
           <tr>
@@ -107,7 +115,7 @@ export default function CompareMetricTable({ subjects = [], showBenchmark = fals
                 {subjects[index].performance_basis || subjects[index].currency ? (
                   <span className="compare-metric-table__helper">
                     {[
-                      subjects[index].performance_basis === 'nav' ? 'NAV' :
+                      subjects[index].performance_basis === 'nav' ? FUND_NAV_BASIS_LABEL :
                         ['cash_flow_adjusted', 'holding_cash_flow_adjusted'].includes(subjects[index].performance_basis) ? 'Cash-flow adjusted' : subjects[index].performance_basis,
                       subjects[index].currency,
                     ].filter(Boolean).join(' · ')}
@@ -161,6 +169,9 @@ export default function CompareMetricTable({ subjects = [], showBenchmark = fals
                 {cellValue(subject.personal_metrics?.xirr, 'percent')}
                 {subject.performance_basis === 'nav' ? (
                   <>
+                    {subject.personal_metrics?.nav_provisional ? (
+                      <StatusBadge status="warning" label={POSITION_PROVISIONAL_LABEL} />
+                    ) : null}
                     <span className="compare-metric-table__helper">{personalXirrHelperText(subject.personal_metrics?.status)}</span>
                     {subject.personal_metrics?.xirr_scope === 'full_scope' ? (
                       <span className="compare-metric-table__helper">Full-scope personal return</span>

@@ -15,6 +15,13 @@ export function personalXirrHelperText(status) {
 
 export const NAV_RETURN_NOTE =
   'NAV return measures the fund’s performance. Your purchases and redemptions affect Your Holding XIRR.';
+
+export const FUND_PROVIDER_NAV_NOTE =
+  'Fund performance uses cached provider NAV history only. Your transactions, including provisional NAVs, never change it.';
+
+export const FUND_NAV_BASIS_LABEL = 'Fund NAV (provider)';
+
+export const POSITION_PROVISIONAL_LABEL = 'Includes provisional NAV';
 /**
  * Compare page: requested range vs backend-aligned common window.
  * @param {string} timeRange — selected control value (fallback if API omits range.code)

@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import Transactions from './Transactions';
@@ -760,6 +760,48 @@ describe('Transactions Page', () => {
       expect(screen.getByText(/Folio FOLIO-12345/)).toBeInTheDocument();
       expect(screen.getByText('NAV verified')).toBeInTheDocument();
     });
+  });
+
+  it('shows read-only NAV review states without changing recorded values', async () => {
+    api.fetchPortfolios.mockResolvedValueOnce([]);
+    api.getSettings.mockResolvedValueOnce({ display_currency: 'INR' });
+    const mf = (id, extra) => ({
+      id, asset_type: 'MUTUAL_FUND', asset_symbol: '120503', scheme_code: '120503',
+      scheme_name: `Fund ${id}`, folio_number: `F${id}`, date: '2026-03-12', nav_date: '2026-03-12',
+      type: 'BUY', units_allotted: 100, nav: 42.5, quantity: 100, price_per_share: 42.5,
+      paid_value: 4250, market_value: 4250, fees: 0, currency: 'INR', portfolio_id: 1,
+      portfolio_name: 'Default Portfolio', ...extra,
+    });
+    api.fetchTransactions.mockResolvedValue({
+      items: [
+        mf(1, { nav_source: 'PROVISIONAL_USER', nav_provisional: true, nav_verification_status: 'NAV_MISSING',
+          nav_review: { review_class: 'provisional', reviewable: false, cached_nav: null, nav_difference: null } }),
+        mf(2, { nav_source: 'PROVISIONAL_USER', nav_provisional: true, nav_verification_status: 'NAV_MISMATCH',
+          provisional_superseded_by_cache: true,
+          nav_review: { review_class: 'cached_discrepancy', reviewable: true, cached_nav: 43, nav_difference: 0.5 } }),
+        mf(3, { nav_source: 'UNKNOWN', nav_verification_status: 'NAV_MISSING',
+          nav_review: { review_class: 'legacy', reviewable: false, cached_nav: null, nav_difference: null } }),
+        mf(4, { nav_source: 'PROVIDER_CACHE', nav_verification_status: 'NAV_MISSING',
+          nav_review: { review_class: 'missing', reviewable: false, cached_nav: null, nav_difference: null } }),
+        mf(5, { nav_source: 'PROVIDER_CACHE', nav_verification_status: 'VERIFIED', nav_review: null }),
+      ],
+      total: 5, page: 1, page_size: 50, pages: 1,
+    });
+    render(
+      <PortfolioProvider>
+        <Transactions />
+      </PortfolioProvider>
+    );
+    expect(await screen.findByText('Provisional NAV — awaiting provider')).toBeInTheDocument();
+    expect(screen.getByText('Provider NAV now available — review')).toBeInTheDocument();
+    expect(screen.getByText('Legacy NAV — no provider NAV')).toBeInTheDocument();
+    expect(screen.getByText('Provider NAV no longer cached')).toBeInTheDocument();
+    const verifiedRow = screen.getByText('Fund 5 (120503)').closest('tr');
+    expect(within(verifiedRow).getByText('NAV verified')).toBeInTheDocument();
+    expect(within(verifiedRow).queryByText(/review|awaiting|legacy/i)).toBeNull();
+    const supersededRow = screen.getByText('Fund 2 (120503)').closest('tr');
+    expect(within(supersededRow).getAllByText(/42\.50/).length).toBeGreaterThan(0);
+    expect(api.updateTransaction).not.toHaveBeenCalled();
   });
 
   describe('Column filters', () => {

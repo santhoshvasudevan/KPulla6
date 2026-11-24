@@ -286,6 +286,14 @@ class CsvImportResult:
     errors: list[dict[str, Any]]
 
 
+class CsvImportAborted(TransactionValidationError):
+    """A row failed after parsing; raised so the whole import transaction rolls back."""
+
+    def __init__(self, errors: list[dict[str, Any]]):
+        super().__init__(errors[0]["message"] if errors else "CSV import aborted")
+        self.errors = errors
+
+
 def preview_csv_cash_for_import(
     user: AbstractBaseUser,
     *,
@@ -335,7 +343,7 @@ def import_transactions_from_csv(
         CsvImportCashPreviewRequired,
         simulate_csv_cash_preview,
     )
-    from transactions.csv_import import parse_import_csv
+    from transactions.csv_import import _mf_error_field, parse_import_csv
     from transactions.mutual_fund_services import create_mutual_fund_transaction
 
     csv_format, payloads, parse_errors = parse_import_csv(csv_text)
@@ -385,11 +393,17 @@ def import_transactions_from_csv(
                 validated_data={**validated, "portfolio_id": target_portfolio_id},
             )
     elif csv_format == "mf":
-        for data in payloads:
-            create_mutual_fund_transaction(
-                user,
-                validated_data={**data, "portfolio_id": target_portfolio_id}
-            )
+        # One payload per data row, in file order (any row error aborts parsing).
+        for line_no, data in enumerate(payloads, start=2):
+            try:
+                create_mutual_fund_transaction(
+                    user,
+                    validated_data={**data, "portfolio_id": target_portfolio_id}
+                )
+            except TransactionValidationError as exc:
+                raise CsvImportAborted(
+                    [{"row": line_no, "field": _mf_error_field(str(exc)), "message": str(exc)}]
+                ) from exc
     else:
         return CsvImportResult(
             success=False,

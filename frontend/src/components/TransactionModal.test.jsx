@@ -666,6 +666,30 @@ describe('TransactionModal MUTUAL_FUND behavior', () => {
     expect(screen.getByLabelText('NAV')).toHaveValue(42.5);
   });
 
+  it('shows the cached provider NAV as review information without saving', async () => {
+    renderModal({ initialData: {
+      ...editTransaction, nav: '42.5', nav_source: 'PROVISIONAL_USER', nav_provisional: true,
+      nav_verification_status: 'NAV_MISMATCH', provisional_superseded_by_cache: true,
+      nav_review: { review_class: 'cached_discrepancy', reviewable: true, cached_nav: 43, nav_difference: 0.5 },
+    } });
+    expect(await screen.findByText('Provider NAV now available — review')).toBeInTheDocument();
+    const note = screen.getByText(/Cached provider NAV for this date: 43\./);
+    expect(note).toHaveTextContent(/stay unchanged unless you save an edit/);
+    expect(screen.getByLabelText('NAV')).toHaveValue(42.5);
+    expect(api.updateTransaction).not.toHaveBeenCalled();
+    expect(api.createTransaction).not.toHaveBeenCalled();
+  });
+
+  it('labels a provisional row awaiting provider NAV as not yet reviewable', async () => {
+    renderModal({ initialData: {
+      ...editTransaction, nav: '42.5', nav_source: 'PROVISIONAL_USER', nav_provisional: true,
+      nav_verification_status: 'NAV_MISSING',
+      nav_review: { review_class: 'provisional', reviewable: false, cached_nav: null, nav_difference: null },
+    } });
+    expect(await screen.findByText('Provisional NAV — awaiting provider')).toBeInTheDocument();
+    expect(screen.queryByText(/Cached provider NAV for this date/)).toBeNull();
+  });
+
   it('requires explicit replacement confirmation and preserves statement fields in an edit PUT', async () => {
     api.getCachedMutualFundNav.mockImplementation(async (scheme_code, nav_date) => ({
       scheme_code, nav_date, nav: '43.1250', status: 'available',

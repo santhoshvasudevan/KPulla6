@@ -1,5 +1,12 @@
 # Changelog — KPulla6
 
+## 2026-11-24 — Provider-only fund analytics, historical NAV review, strict CSV (#53)
+
+- Fund NAV performance on Asset Detail and Compare remains provider-cache-only: returns, risk, drawdowns, monthly/yearly heatmaps, benchmark pairing, and normalized series. New HTTP tests prove that adding, editing, or deleting a provisional transaction leaves them unchanged and creates no fund or benchmark history, and that Compare and Asset Detail use the same series. Additive `fund_nav_source: "PROVIDER_CACHE"`. `personal_metrics.nav_provisional` and a warning flag positions that include provisional rows. No formula changes.
+- MF transaction rows add read-only `nav_review` (`provisional`, `legacy`, `missing`, `cached_discrepancy`, with `cached_nav`/`nav_difference`). `preview_mf_nav_corrections` emits the same classes plus `nav_source`, `reviewable`, and `nav_difference`, and its summary now counts each class. Provisional rows stay listed until explicitly re-saved from the cache. Refresh and reads never rewrite recorded NAV, units, fees, Paid Value, provenance, or settlements. There is still no apply mode.
+- CSV import and cash preview reject provisional/consent columns (`Provisional NAV`, `Confirm Paid Value`, `NAV Source`, `Attempt ID`, …) with a row-1 `headers` error, even when the cache exists. A row that fails after parsing, including after confirmed cash-funding deposits, now returns `200` `success: false` with its row number instead of a server error. The batch still rolls back fully.
+- Asset Detail and Compare state that fund performance uses provider NAV history only and badge **Includes provisional NAV** on Your Position. Compare labels the basis **Fund NAV (provider)**. The Transactions list and edit form show review states; the form shows the cached provider NAV without changing recorded values.
+
 ## 2026-11-24 — Provisional MF valuation across scopes, folios, and currencies (#52)
 
 - Fix: holdings and Asset Detail no longer fall back to an older cached NAV when a folio's newest provisional observation is a same-date conflict. The folio is unavailable (`nav_missing`, `latest_nav: null`, `xirr: null`), as in Summary and value history.

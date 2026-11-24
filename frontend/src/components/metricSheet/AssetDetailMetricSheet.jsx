@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { fetchBenchmarkIndices, getAssetMetricSheet } from '../../api';
-import { LoadingState, ErrorState, SegmentedControl, MetricCard } from '../ui';
+import { LoadingState, ErrorState, SegmentedControl, MetricCard, StatusBadge } from '../ui';
 import { formatMetricPercentFraction } from '../../utils/metricFormatters';
-import { NAV_RETURN_NOTE, personalXirrHelperText } from './metricSheetCopy';
+import {
+  FUND_PROVIDER_NAV_NOTE,
+  NAV_RETURN_NOTE,
+  POSITION_PROVISIONAL_LABEL,
+  personalXirrHelperText,
+} from './metricSheetCopy';
 import MetricSheetSection from './MetricSheetSection';
 import MetricSheetSummaryCards from './MetricSheetSummaryCards';
 import MetricSheetRiskReturnTable from './MetricSheetRiskReturnTable';
@@ -137,6 +142,7 @@ export default function AssetDetailMetricSheet({
           />
         ) : metricSheetData ? (
           <>
+            {isNav ? <p className="metric-sheet__note">{FUND_PROVIDER_NAV_NOTE}</p> : null}
             {isNav ? <MetricSheetNavCoverage coverage={metricSheetData.coverage} /> : null}
             <MetricSheetWarnings warnings={metricSheetData.warnings} />
             <MetricSheetSummaryCards metrics={metricSheetData.metrics} showXirr={!isMutualFund}
@@ -161,6 +167,9 @@ export default function AssetDetailMetricSheet({
       {!metricSheetLoading && !metricSheetError && metricSheetData && isMutualFund ? (
         <section aria-label="Your Position" className="asset-detail-metric-sheet__position">
           <h3 className="metric-sheet__section-heading">Your Position</h3>
+          {metricSheetData.personal_metrics?.nav_provisional ? (
+            <StatusBadge status="warning" label={POSITION_PROVISIONAL_LABEL} />
+          ) : null}
           <MetricCard
             label="Your Holding XIRR"
             value={formatMetricPercentFraction(metricSheetData.personal_metrics?.xirr, { showSign: true })}

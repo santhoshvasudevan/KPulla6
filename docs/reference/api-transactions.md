@@ -132,6 +132,13 @@ rows `provisional_confirmed_at`, `provisional_failure_reason`, and
 `provisional_superseded_by_cache` (exact-date cache has since arrived; the
 transaction is not rewritten).
 
+Every MF row also carries read-only `nav_review` (#53), computed from the
+exact-date cache on each read: `null`, or `{review_class, reviewable, cached_nav,
+nav_difference}` with `review_class` of `provisional`, `legacy`, `missing`, or
+`cached_discrepancy` (`reviewable: true` only for the last). Refreshes and reads
+never rewrite the transaction. See the
+[review contract](../api-design.md#provider-only-fund-analytics-and-historical-nav-review-53).
+
 ### Provisional MF SELL and edits (#51)
 
 A manual MF **SELL** may carry the same provisional fields and passes the same
@@ -268,8 +275,16 @@ server errors, never a cache miss.
 for row validation failures (all-or-nothing), including missing exact-date MF NAV
 cache. Request-level errors retain their existing HTTP statuses.
 
-MF imports use the same strict cached-NAV write rule above. Missing exact-date
+MF imports use the same strict cached-NAV write rule above (no provisional
+exception). Missing exact-date
 cache blocks import; cash-funding confirmation does not bypass NAV validation.
+CSV cannot record a provisional NAV. A file with any provisional or consent
+column (`Provisional NAV`, `Provisional Attempt ID`, `Confirm Provisional NAV`,
+`Confirm Paid Value`, `NAV Source`, `Attempt ID`) is rejected with a row-1
+`headers` error, even when the cache exists. An earlier unsuccessful
+**Fetch missing NAV** does not change this. If any row fails, including after
+confirmed cash-funding deposits, nothing is written: no deposits, transactions,
+or settlements.
 
 Formats: [CSV formats](csv-formats.md) · Tutorial: [Import stock transactions](../tutorials/import-stock-transactions.md)
 

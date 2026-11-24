@@ -57,6 +57,28 @@ export function navVerificationLabel(status) {
   return NAV_STATUS_LABELS[status] ?? String(status).replace(/_/g, ' ').toLowerCase();
 }
 
+const NAV_REVIEW_LABELS = {
+  provisional: 'Provisional NAV — awaiting provider',
+  legacy: 'Legacy NAV — no provider NAV',
+  missing: 'Provider NAV no longer cached',
+};
+
+/** Read-only historical review state from the API `nav_review` block. */
+export function navReviewLabel(txn) {
+  const reviewClass = txn?.nav_review?.review_class;
+  if (!reviewClass) return null;
+  if (reviewClass === 'cached_discrepancy') {
+    return txn.nav_provisional ? 'Provider NAV now available — review' : 'Cached NAV differs — review';
+  }
+  return NAV_REVIEW_LABELS[reviewClass] ?? String(reviewClass).replace(/_/g, ' ');
+}
+
+export function navReviewBadgeStatus(txn) {
+  const reviewClass = txn?.nav_review?.review_class;
+  if (reviewClass === 'provisional' || reviewClass === 'cached_discrepancy') return 'warning';
+  return reviewClass ? 'neutral' : null;
+}
+
 export function navVerificationBadgeStatus(status) {
   if (!status) return null;
   const s = String(status).toUpperCase();

@@ -111,9 +111,14 @@ from portfolios.summary_service import (
 )
 from portfolios.xirr_service import compute_scope_xirr_detail
 from transactions.finance_adapter import transaction_to_finance_dto
-from transactions.models import Transaction as TransactionModel
+from transactions.models import MutualFundNavSource, Transaction as TransactionModel
 
 _ZERO = Decimal("0")
+_PERSONAL_PROVISIONAL_WARNING = (
+    "Your position includes transactions recorded with an unverified provisional NAV. "
+    "Fund performance uses provider NAVs only; this Holding XIRR uses your recorded "
+    "payments and values open units at the latest cached provider NAV."
+)
 _SPLIT_RAW_PRICE_RATIO_TOLERANCE = Decimal("0.15")
 _SPLIT_RAW_PRICE_MIN_FACTOR = Decimal("1.5")
 _WARN_MISSING_STOCK_PRICES = (
@@ -1205,13 +1210,19 @@ def _nav_benchmark_block(symbol: str, values: list[dict], warnings: list[str]) -
 def _apply_nav_contract(payload: dict, inputs: AssetDailyMetricsInputs) -> None:
     """Separate NAV metrics from native-INR personal XIRR."""
     payload["performance_basis"] = "nav"
+    payload["fund_nav_source"] = MutualFundNavSource.PROVIDER_CACHE
     payload["currency"] = "INR"
     payload["coverage"] = inputs.coverage
+    provisional = any(
+        t.mutual_fund_detail.nav_source == MutualFundNavSource.PROVISIONAL_USER
+        for t in inputs.ctx.asset_txns
+    )
     payload["personal_metrics"] = {
         "xirr": inputs.xirr_val, "xirr_scope": "full_scope",
         "status": "calculated" if inputs.xirr_val is not None else "unavailable",
         "basis": "native_inr",
-        "warnings": [],
+        "nav_provisional": provisional,
+        "warnings": [_PERSONAL_PROVISIONAL_WARNING] if provisional else [],
     }
     coverage = inputs.coverage or {}
     if coverage.get("incomplete") or not any(p.return_fraction is not None for p in inputs.daily_pts):

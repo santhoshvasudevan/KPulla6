@@ -15,6 +15,9 @@ NAV_ABSOLUTE_TOLERANCE_INR = Decimal("0.01")
 MARKET_VALUE_TOLERANCE_INR = Decimal("1")
 
 
+_LOOKUP = object()
+
+
 @dataclass(frozen=True)
 class MutualFundNavValidationResult:
     status: str
@@ -43,15 +46,18 @@ def verify_mutual_fund_nav_inputs(
     entered_nav: Decimal,
     units_allotted: Decimal,
     market_value: Decimal,
+    cached_nav: Any = _LOOKUP,
 ) -> MutualFundNavValidationResult:
     """
     Compare entered NAV and market_value to cached NAV for scheme_code + nav_date.
 
     Reads HistoricalPrice (MUTUAL_FUND) only — never calls an external NAV provider.
     Does not raise when cache is missing; returns NAV_MISSING status instead.
+    Pass ``cached_nav`` (Decimal or None) when the caller already looked it up.
     """
     scheme = normalize_scheme_code(scheme_code)
-    cached_nav = cached_nav_for_date(scheme_code=scheme, nav_date=nav_date)
+    if cached_nav is _LOOKUP:
+        cached_nav = cached_nav_for_date(scheme_code=scheme, nav_date=nav_date)
 
     if cached_nav is None:
         return MutualFundNavValidationResult(

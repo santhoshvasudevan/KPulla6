@@ -173,6 +173,13 @@ See [performance/dashboard-read-paths.md](./performance/dashboard-read-paths.md)
   - Holdings `nav_provisional`; performance (all metrics, benchmark) and portfolio Metric Sheet add a provisional-NAV quality warning for affected ranges; Dashboard/Assets banners and badges
   - Tests: `backend/tests/test_mf_provisional_valuation_scopes_api.py`, `frontend/src/pages/Dashboard.test.jsx`, `frontend/src/pages/Assets.test.jsx`
   - **Deferred:** per-point provenance on performance points (range-level warning only); MF value-history days with zero MF value still need INR FX in non-INR base portfolios (existing policy); oversell with provisional folios
+- **Provider-only fund analytics, historical NAV review, strict CSV** (#53):
+  - Fund NAV performance, heatmaps, benchmark pairing, and Compare read `historical_prices` only (`fund_nav_source: PROVIDER_CACHE`); `personal_metrics.nav_provisional` and a warning flag provisional rows in the position
+  - Read-only review classification `transactions/mf_nav_review.py` (`provisional`, `legacy`, `missing`, `cached_discrepancy`), shared by transaction `nav_review` and `preview_mf_nav_corrections` (no apply mode); refresh/read never rewrite recorded rows
+  - CSV rejects provisional/consent columns; a row failing after parsing rolls back the whole batch (including confirmed deposits) with a row-numbered `success: false`
+  - Asset Detail/Compare label provider fund performance apart from **Your Position** (**Includes provisional NAV**); Transactions list/form show review states
+  - Tests: `backend/tests/test_mf_provisional_analytics_csv_api.py`, `frontend/src/pages/{AssetDetail,Compare,Transactions}.test.jsx`, `frontend/src/components/TransactionModal.test.jsx`, `frontend/src/utils/transactionDisplay.test.js`
+  - **Deferred:** Metric Sheet/Compare `personal_metrics.xirr` values open units at the latest cached NAV, while the holdings/Asset Detail header XIRR uses the #52 provisional overlay; they can differ while a provisional NAV is newer than the latest cache
 - **Mutual fund classification** (Phase MF-7):
   - `finance/mutual_fund_classification.py` — metadata inference (HYBRID ≠ EQUITY)
   - MF holdings/asset detail: `primary_asset_class`, `classification_source`, optional `classification_notes`

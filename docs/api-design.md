@@ -1591,6 +1591,44 @@ Scope and quality contract (#52):
 - Missing NAV or FX stays `null` in history; reads never call providers or write
   `historical_prices`.
 
+### Provider-only fund analytics and historical NAV review (#53)
+
+Fund NAV performance (`GET /api/v1/analytics/assets/{scheme}/performance-metrics`
+and MF subjects of `GET /api/v1/analytics/compare`) reads `historical_prices`
+(`MUTUAL_FUND`) only: cumulative, risk, drawdown, monthly/yearly heatmaps,
+benchmark pairing, and Compare normalized series. Adding, editing, or deleting
+a provisional transaction never changes these blocks or creates fund or benchmark
+history. Compare subjects and the direct Asset Detail fund view use the same
+provider series. Additive fields:
+
+- `fund_nav_source: "PROVIDER_CACHE"` on the MF payload/subject.
+- `personal_metrics.nav_provisional` (bool), plus a `personal_metrics.warnings`
+  entry when the selected position includes `PROVISIONAL_USER` rows. Personal
+  XIRR formulas are unchanged: recorded payments with open units at the latest
+  cached provider NAV.
+
+MF rows from `GET /api/v1/transactions` add `nav_review` (`null` when nothing
+needs review), which is computed on read from the exact-date cache:
+
+| `review_class` | Meaning | `reviewable` |
+|----------------|---------|--------------|
+| `provisional` | `PROVISIONAL_USER`, exact-date cache still missing | `false` |
+| `legacy` | `UNKNOWN` (pre-#50) source, cache missing | `false` |
+| `missing` | `PROVIDER_CACHE` source, cache no longer present | `false` |
+| `cached_discrepancy` | Cache exists and differs from the recorded NAV, or the row is still provisional | `true` |
+
+`cached_nav` and `nav_difference` (cached − recorded) are numbers or `null`.
+Neither reads nor NAV refreshes rewrite recorded NAV, units, fees, Paid Value,
+provenance, or settlements. A change happens only through an explicit edit, and
+no apply endpoint exists. `preview_mf_nav_corrections` emits the same classes
+(see [MF review](./mutual-funds.md#historical-correction-preview-read-only)).
+
+CSV import (`POST /transactions/import-csv` and `/preview-cash`) rejects any
+provisional/consent column (`provisional*`, `confirm paid value`, `nav source`,
+`attempt id`) with a row-1 `headers` error, even when the cache exists. A row
+that fails after parsing (including after confirmed cash-funding deposits) rolls
+back the whole batch and returns `200` `success: false` with that row number.
+
 ### Planned: Scheme lookup (MF-4+)
 
 `GET /api/v1/mutual-funds/schemes?q={search}` — search by scheme name, return `scheme_code` + metadata from DB profile table. DB only; no live AMFI on read.

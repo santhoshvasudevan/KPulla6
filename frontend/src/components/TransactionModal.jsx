@@ -12,7 +12,12 @@ import {
   futureImpactFromApiError,
 } from '../api';
 import { Button, StatusBadge } from './ui';
-import { navVerificationBadgeStatus, navVerificationLabel } from '../utils/transactionDisplay';
+import {
+  navReviewBadgeStatus,
+  navReviewLabel,
+  navVerificationBadgeStatus,
+  navVerificationLabel,
+} from '../utils/transactionDisplay';
 import CashEntryFormFields, { emptyCashForm } from './CashEntryFormFields';
 import CashShortfallDisplay from './CashShortfallDisplay';
 import CashFutureImpactDisplay, {
@@ -941,8 +946,21 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
                       {initialData?.nav_provisional ? (
                         <StatusBadge status="warning" label="Provisional NAV (unverified)" />
                       ) : null}
+                      {navReviewLabel(initialData) ? (
+                        <StatusBadge
+                          status={navReviewBadgeStatus(initialData)}
+                          label={navReviewLabel(initialData)}
+                        />
+                      ) : null}
                       {navMessage ? (
                         <p className="modal-nav-status__message">{navMessage}</p>
+                      ) : null}
+                      {initialData?.nav_review?.reviewable ? (
+                        <p className="modal-nav-status__message" role="note">
+                          Cached provider NAV for this date: {initialData.nav_review.cached_nav}.
+                          Recorded NAV, units, fees, paid value and settlements stay unchanged
+                          unless you save an edit.
+                        </p>
                       ) : null}
                     </div>
                   ) : null}
