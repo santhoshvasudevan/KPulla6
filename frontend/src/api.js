@@ -41,6 +41,13 @@ export async function getCachedMutualFundNav(schemeCode, navDate) {
   return fetchWithHandling(`/nav/lookup?${params.toString()}`);
 }
 
+export async function fetchMissingMutualFundNav(schemeCode, navDate) {
+  return fetchWithHandling('/nav/fetch-missing', {
+    method: 'POST',
+    body: JSON.stringify({ scheme_code: schemeCode, nav_date: navDate }),
+  });
+}
+
 export async function fetchWithHandling(path, options = {}) {
   const response = await fetch(buildUrl(path), defaultFetchOptions(options));
   if (response.status === 401 && !path.startsWith('/auth/') && _onUnauthorized) {

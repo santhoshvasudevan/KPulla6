@@ -124,6 +124,41 @@ class HistoricalPrice(models.Model):
         return f"{self.asset_symbol} {self.date} ({self.close_price})"
 
 
+class MutualFundNavFetchState(models.Model):
+    """In-flight claim, cooldown, and last unsuccessful-attempt evidence for one scheme/date fetch."""
+
+    scheme_code = models.CharField(max_length=32)
+    nav_date = models.DateField()
+    in_flight_until = models.DateTimeField(null=True, blank=True)
+    in_flight_token = models.UUIDField(null=True, blank=True)
+    cooldown_until = models.DateTimeField(null=True, blank=True)
+    last_outcome = models.CharField(max_length=32, blank=True, default="")
+    last_failure_category = models.CharField(max_length=32, blank=True, default="")
+    last_attempt_id = models.UUIDField(null=True, blank=True)
+    last_attempt_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "mutual_fund_nav_fetch_states"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["scheme_code", "nav_date"],
+                name="uq_mf_nav_fetch_state_scheme_date",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.scheme_code} {self.nav_date} ({self.last_outcome or 'new'})"
+
+
 class BenchmarkIndexConfig(models.Model):
     symbol = models.CharField(max_length=32, unique=True)
     display_name = models.CharField(max_length=255)

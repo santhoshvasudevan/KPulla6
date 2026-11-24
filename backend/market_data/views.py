@@ -36,6 +36,35 @@ class NavLookupView(APIView):
                          "status": "available" if nav is not None else "missing"})
 
 
+class NavFetchMissingView(APIView):
+    """Explicit exact-date MFAPI fetch after a confirmed NAV cache miss; never writes transactions."""
+
+    def post(self, request: Request) -> Response:
+        from market_data.services.missing_nav_fetch import (
+            MissingNavFetchConflict,
+            MissingNavFetchRequestError,
+            fetch_missing_mutual_fund_nav,
+        )
+
+        class Body(serializers.Serializer):
+            scheme_code = serializers.CharField(max_length=32)
+            nav_date = serializers.DateField()
+
+        body = Body(data=request.data)
+        body.is_valid(raise_exception=True)
+        try:
+            result = fetch_missing_mutual_fund_nav(
+                scheme_code=body.validated_data["scheme_code"],
+                nav_date=body.validated_data["nav_date"],
+                user_id=request.user.id,
+            )
+        except MissingNavFetchRequestError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except MissingNavFetchConflict as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response(result.as_payload())
+
+
 class PricesRefreshView(APIView):
     """
     Manual historical price refresh (synchronous).

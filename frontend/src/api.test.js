@@ -54,6 +54,32 @@ describe('API Service', () => {
     expect(global.fetch.mock.calls[0][1]).toEqual(expect.objectContaining(defaultFetchOptions));
   });
 
+  it('fetchMissingMutualFundNav POSTs the exact scheme/date with CSRF and session credentials', async () => {
+    document.cookie = 'csrftoken=tok123';
+    const mockResponse = {
+      scheme_code: '120503', nav_date: '2026-03-15', outcome: 'fetched', nav: '42.500000',
+      status: 'available', retry_after_seconds: null, failure_category: null, attempt_id: null,
+    };
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => mockResponse });
+
+    expect(await api.fetchMissingMutualFundNav('120503', '2026-03-15')).toEqual(mockResponse);
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(url).toBe('/api/v1/nav/fetch-missing');
+    expect(options).toEqual(expect.objectContaining(defaultFetchOptions));
+    expect(options.method).toBe('POST');
+    expect(JSON.parse(options.body)).toEqual({ scheme_code: '120503', nav_date: '2026-03-15' });
+    expect(options.headers.get('X-CSRFToken')).toBe('tok123');
+    document.cookie = 'csrftoken=; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+  });
+
+  it('fetchMissingMutualFundNav surfaces request errors', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: false, status: 409, json: async () => ({ detail: 'A non-mutual-fund price row already exists' }),
+    });
+    await expect(api.fetchMissingMutualFundNav('120503', '2026-03-15'))
+      .rejects.toThrow('A non-mutual-fund price row already exists');
+  });
+
   it('fetchTransactions calls the correct endpoint', async () => {
     const mockResponse = { items: [], total: 0 };
     global.fetch.mockResolvedValueOnce({

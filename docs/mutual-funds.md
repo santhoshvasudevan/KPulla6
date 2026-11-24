@@ -236,6 +236,15 @@ Authenticated `GET /api/v1/nav/lookup?scheme_code=CODE&nav_date=YYYY-MM-DD`
 returns exact-date cache availability, with no writes or provider calls. See
 [response contract](./reference/api-transactions.md#get-navlookup).
 
+When lookup reports `missing` (not a lookup error), the transaction form offers
+**Fetch missing NAV**, which calls `POST /api/v1/nav/fetch-missing` for that exact
+scheme/date only. The backend rechecks cache, then fetches from MFAPI and caches
+the exact-date INR NAV if published. Outcomes distinguish cache hit, fetched,
+date unavailable, timeout, provider failure, in-flight, and a 60-second cooldown
+after unsuccessful attempts. It never saves the transaction; manual NAV entry
+stays disabled and save stays blocked until a cached NAV exists. See
+[fetch-missing contract](./reference/api-transactions.md#post-navfetch-missing).
+
 ### Historical correction preview (read-only)
 
 From the backend environment, `python manage.py preview_mf_nav_corrections --user-id ID`

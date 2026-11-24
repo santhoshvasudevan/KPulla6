@@ -152,6 +152,11 @@ See [performance/dashboard-read-paths.md](./performance/dashboard-read-paths.md)
   - Tolerances: 0.01 INR NAV, 1 INR market value; mismatch does not block save
   - Tests: `backend/tests/test_mutual_fund_nav_validation.py` (11 cases)
   - **Deferred:** richer frontend validation UX beyond status badge
+- **Exact-date missing-NAV fetch** (#49):
+  - `POST /api/v1/nav/fetch-missing` — explicit MFAPI fetch of one scheme/date after a confirmed cache miss; cache recheck, DB-backed in-flight claim, 60s cooldown, user-bound `attempt_id` (`MutualFundNavFetchState`)
+  - `market_data/services/missing_nav_fetch.py`; Transaction form **Fetch missing NAV** button
+  - Tests: `backend/tests/test_mf_nav_fetch_missing_api.py`
+  - **Deferred (#50):** manual/provisional NAV entry using `attempt_id` evidence
 - **Mutual fund classification** (Phase MF-7):
   - `finance/mutual_fund_classification.py` — metadata inference (HYBRID ≠ EQUITY)
   - MF holdings/asset detail: `primary_asset_class`, `classification_source`, optional `classification_notes`

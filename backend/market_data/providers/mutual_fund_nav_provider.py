@@ -44,6 +44,10 @@ class AmfiNavFetchError(Exception):
     """Network or parse failure fetching NAV data from MFAPI."""
 
 
+class AmfiNavTimeoutError(AmfiNavFetchError):
+    """MFAPI did not respond within the request timeout."""
+
+
 HttpGetJson = Callable[[str, float], dict]
 
 
@@ -58,9 +62,11 @@ def http_get_json(url: str, timeout: float = DEFAULT_NAV_FETCH_TIMEOUT_SECONDS) 
     except urllib.error.HTTPError as exc:
         raise AmfiNavFetchError(f"HTTP {exc.code} for {url}") from exc
     except urllib.error.URLError as exc:
+        if isinstance(exc.reason, TimeoutError):
+            raise AmfiNavTimeoutError(f"Timeout fetching {url}") from exc
         raise AmfiNavFetchError(f"Network error for {url}: {exc.reason}") from exc
     except TimeoutError as exc:
-        raise AmfiNavFetchError(f"Timeout fetching {url}") from exc
+        raise AmfiNavTimeoutError(f"Timeout fetching {url}") from exc
 
     try:
         payload = json.loads(raw)

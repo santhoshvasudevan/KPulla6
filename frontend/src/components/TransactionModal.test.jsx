@@ -13,6 +13,7 @@ vi.mock('../api', async (importOriginal) => {
     createTransaction: vi.fn(),
     updateTransaction: vi.fn(),
     getCachedMutualFundNav: vi.fn(),
+    fetchMissingMutualFundNav: vi.fn(),
     createCashDeposit: vi.fn(),
     createCashWithdrawal: vi.fn(),
     fetchPortfolios: vi.fn(),
@@ -306,6 +307,105 @@ describe('TransactionModal MUTUAL_FUND behavior', () => {
     change('nav_date', '');
     expect(screen.getByLabelText('NAV')).toHaveValue(null);
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  const missingLookup = () => api.getCachedMutualFundNav.mockImplementation(async (scheme_code, nav_date) => ({
+    scheme_code, nav_date, nav: null, status: 'missing',
+  }));
+  const fetchResult = (overrides = {}) => ({
+    scheme_code: '120503', nav_date: '2026-03-15', outcome: 'fetched', nav: '42.500000',
+    status: 'available', retry_after_seconds: null, failure_category: null, attempt_id: null, ...overrides,
+  });
+
+  it('fetches a confirmed missing NAV once, showing progress, and unlocks save on success', async () => {
+    missingLookup();
+    let resolveFetch;
+    api.fetchMissingMutualFundNav.mockImplementation(() => new Promise((resolve) => { resolveFetch = resolve; }));
+    renderModal({ initialData: { ...editTransaction, nav: '42.5' } });
+    const fetchButton = await screen.findByRole('button', { name: 'Fetch missing NAV' });
+    expect(screen.getByRole('button', { name: 'Retry NAV lookup' })).toBeInTheDocument();
+    fireEvent.click(fetchButton);
+    fireEvent.click(fetchButton);
+    expect(api.fetchMissingMutualFundNav).toHaveBeenCalledTimes(1);
+    expect(api.fetchMissingMutualFundNav).toHaveBeenCalledWith('120503', '2026-03-15');
+    expect(screen.getByText('Fetching NAV from MFAPI...')).toBeInTheDocument();
+    expect(fetchButton).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    await act(async () => resolveFetch(fetchResult()));
+    expect(screen.getByLabelText('NAV')).toHaveValue(42.5);
+    expect(screen.getByText('Fetched NAV from MFAPI for this exact date.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+    expect(api.createTransaction).not.toHaveBeenCalled();
+    expect(api.updateTransaction).not.toHaveBeenCalled();
+  });
+
+  it('does not offer a provider fetch when the cache lookup itself failed', async () => {
+    api.getCachedMutualFundNav.mockRejectedValue(new Error('DB down'));
+    renderModal({ initialData: editTransaction });
+    await screen.findByText('Cached NAV lookup failed.');
+    expect(screen.queryByRole('button', { name: 'Fetch missing NAV' })).not.toBeInTheDocument();
+    expect(api.fetchMissingMutualFundNav).not.toHaveBeenCalled();
+  });
+
+  it('shows cooldown with a countdown, keeps save blocked and NAV read-only, then re-enables fetch', async () => {
+    missingLookup();
+    api.fetchMissingMutualFundNav.mockResolvedValueOnce(fetchResult({
+      outcome: 'cooldown', nav: null, status: 'missing', retry_after_seconds: 1,
+      failure_category: 'cooldown', attempt_id: 'a1b2',
+    }));
+    renderModal({ initialData: editTransaction });
+    fireEvent.click(await screen.findByRole('button', { name: 'Fetch missing NAV' }));
+    expect(await screen.findByText(/A recent fetch for this NAV failed\. Try again in 1s\./)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fetch missing NAV' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    expect(screen.getByLabelText('NAV')).toHaveAttribute('readonly');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Fetch missing NAV' })).toBeEnabled(),
+      { timeout: 2500 });
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it.each([
+    ['date_unavailable', 'MFAPI has no NAV for this exact date.'],
+    ['timeout', 'MFAPI timed out.'],
+    ['provider_failure', 'MFAPI fetch failed.'],
+    ['in_flight', 'A fetch for this NAV is already in progress.'],
+  ])('reports %s without unlocking save', async (outcome, message) => {
+    missingLookup();
+    api.fetchMissingMutualFundNav.mockResolvedValueOnce(fetchResult({
+      outcome, nav: null, status: 'missing', retry_after_seconds: 60, failure_category: outcome,
+    }));
+    renderModal({ initialData: editTransaction });
+    fireEvent.click(await screen.findByRole('button', { name: 'Fetch missing NAV' }));
+    expect(await screen.findByText(new RegExp(`${message.replace(/\./g, '\\.')} Try again in 60s\\.`))).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    expect(screen.getByLabelText('NAV')).toHaveValue(null);
+  });
+
+  it('reports a failed fetch request without treating it as a NAV', async () => {
+    missingLookup();
+    api.fetchMissingMutualFundNav.mockRejectedValueOnce(new Error('Offline'));
+    renderModal({ initialData: editTransaction });
+    fireEvent.click(await screen.findByRole('button', { name: 'Fetch missing NAV' }));
+    expect(await screen.findByText('NAV fetch request failed.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fetch missing NAV' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('ignores a fetch response that arrives after the scheme or date changed', async () => {
+    missingLookup();
+    let resolveFetch;
+    api.fetchMissingMutualFundNav.mockImplementation(() => new Promise((resolve) => { resolveFetch = resolve; }));
+    const { container } = renderModal({ initialData: editTransaction });
+    fireEvent.click(await screen.findByRole('button', { name: 'Fetch missing NAV' }));
+    fireEvent.change(container.querySelector('input[name="nav_date"]'), { target: { value: '2026-03-16' } });
+    await screen.findByText('No cached NAV for this exact date.');
+    await act(async () => resolveFetch(fetchResult()));
+    expect(screen.getByLabelText('NAV')).toHaveValue(null);
+    expect(screen.queryByText('Fetched NAV from MFAPI for this exact date.')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    fireEvent.change(container.querySelector('input[name="nav_date"]'), { target: { value: '2026-03-15' } });
+    await screen.findByText('No cached NAV for this exact date.');
+    expect(screen.getByLabelText('NAV')).toHaveValue(null);
   });
 
   it('requires explicit replacement confirmation and preserves statement fields in an edit PUT', async () => {

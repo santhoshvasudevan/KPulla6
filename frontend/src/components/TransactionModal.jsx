@@ -4,6 +4,7 @@ import {
   createTransaction,
   updateTransaction,
   getCachedMutualFundNav,
+  fetchMissingMutualFundNav,
   createCashDeposit,
   createCashWithdrawal,
   ApiError,
@@ -22,6 +23,20 @@ import './CashFutureImpactDisplay.css';
 import { buildShortfallDepositPayload } from '../utils/purchaseShortfallHelpers';
 import './TransactionModal.css';
 import { usePortfolio } from '../portfolioContext';
+
+const NAV_FETCH_MESSAGES = {
+  fetching: 'Fetching NAV from MFAPI...',
+  fetched: 'Fetched NAV from MFAPI for this exact date.',
+  cache_hit: 'NAV was already cached for this exact date.',
+  date_unavailable: 'MFAPI has no NAV for this exact date.',
+  timeout: 'MFAPI timed out.',
+  provider_failure: 'MFAPI fetch failed.',
+  in_flight: 'A fetch for this NAV is already in progress.',
+  cooldown: 'A recent fetch for this NAV failed.',
+  request_error: 'NAV fetch request failed.',
+};
+
+const isUsableNav = (nav) => typeof nav === 'string' && Number.isFinite(Number(nav)) && Number(nav) > 0;
 
 const PARTIAL_PURCHASE_WARNING =
   'Cash deposit was created, but the purchase could not be recorded. Please review and try again.';
@@ -313,6 +328,11 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
   const [navLookup, setNavLookup] = useState(null);
   const [navRetry, setNavRetry] = useState(0);
   const [navConfirmed, setNavConfirmed] = useState(false);
+  const [navFetch, setNavFetch] = useState(null);
+  const [clockMs, setClockMs] = useState(() => Date.now());
+  const navIdentity = useRef('');
+  const navFetchInFlight = useRef('');
+  const navFetchRequestId = useRef(0);
   const [cashForm, setCashForm] = useState(emptyCashForm());
 
   const [error, setError] = useState('');
@@ -358,6 +378,7 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
     }
     setError('');
     setNavLookup(null);
+    setNavFetch(null);
     setNavConfirmed(false);
     setPartialWarning('');
     setShortfall(null);
@@ -379,8 +400,7 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
       (result) => {
         if (!active) return;
         const matches = String(result?.scheme_code) === schemeCode && result?.nav_date === navDate;
-        const available = matches && result.status === 'available' &&
-          typeof result.nav === 'string' && Number.isFinite(Number(result.nav)) && Number(result.nav) > 0;
+        const available = matches && result.status === 'available' && isUsableNav(result.nav);
         setNavLookup({
           schemeCode, navDate,
           status: available ? 'available' : matches && result.status === 'missing' ? 'missing' : 'error',
@@ -395,6 +415,21 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
   }, [isOpen, recordType, schemeCode, navDate, navRetry, initialData,
     selectedPortfolioMode, selectedPortfolioId, defaultPortfolioId]);
 
+  useEffect(() => {
+    navIdentity.current = `${schemeCode}|${navDate}`;
+  }, [schemeCode, navDate]);
+
+  const navRetryUntil = navFetch?.retryUntil;
+  useEffect(() => {
+    if (!navRetryUntil) return undefined;
+    const id = setInterval(() => {
+      const now = Date.now();
+      setClockMs(now);
+      if (now >= navRetryUntil) clearInterval(id);
+    }, 250);
+    return () => clearInterval(id);
+  }, [navRetryUntil]);
+
   if (!isOpen) return null;
 
   const isCash = recordType === 'CASH';
@@ -408,6 +443,54 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
     Number(originalNav) !== Number(cachedNav);
   const navBlocked = isMutualFund &&
     (!cachedNav || (needsNavConfirmation && !navConfirmed));
+  const currentNavFetch = navFetch?.schemeCode === schemeCode && navFetch?.navDate === navDate
+    ? navFetch : null;
+  const navFetchWaitSeconds = currentNavFetch?.retryUntil
+    ? Math.max(0, Math.ceil((currentNavFetch.retryUntil - clockMs) / 1000)) : 0;
+  const navFetching = currentNavFetch?.status === 'fetching';
+
+  const handleFetchMissingNav = async () => {
+    const requestScheme = schemeCode;
+    const requestDate = navDate;
+    const identity = `${requestScheme}|${requestDate}`;
+    if (navFetchInFlight.current === identity) return;
+    navFetchInFlight.current = identity;
+    const requestId = navFetchRequestId.current + 1;
+    navFetchRequestId.current = requestId;
+    setNavFetch({ schemeCode: requestScheme, navDate: requestDate, status: 'fetching', requestId });
+    const settle = (next) => setNavFetch((prev) => (prev?.requestId === requestId ? next : prev));
+    try {
+      const result = await fetchMissingMutualFundNav(requestScheme, requestDate);
+      if (navIdentity.current !== identity) {
+        settle(null);
+        return;
+      }
+      const matches = String(result?.scheme_code) === requestScheme && result?.nav_date === requestDate;
+      const outcome = matches && NAV_FETCH_MESSAGES[result.outcome] ? result.outcome : 'request_error';
+      const retryAfter = Number(result?.retry_after_seconds);
+      const now = Date.now();
+      setClockMs(now);
+      settle({
+        schemeCode: requestScheme,
+        navDate: requestDate,
+        requestId,
+        status: outcome,
+        attemptId: matches ? result.attempt_id ?? null : null,
+        retryUntil: matches && retryAfter > 0 ? now + retryAfter * 1000 : null,
+      });
+      if ((outcome === 'fetched' || outcome === 'cache_hit') &&
+        result.status === 'available' && isUsableNav(result.nav)) {
+        setNavConfirmed(false);
+        setNavLookup({ schemeCode: requestScheme, navDate: requestDate, status: 'available', nav: result.nav });
+      }
+    } catch {
+      settle(navIdentity.current === identity
+        ? { schemeCode: requestScheme, navDate: requestDate, requestId, status: 'request_error' }
+        : null);
+    } finally {
+      if (navFetchInFlight.current === identity) navFetchInFlight.current = '';
+    }
+  };
 
   const handleStockChange = (e) => {
     const { name, value } = e.target;
@@ -864,6 +947,18 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
                         <Button type="button" variant="secondary" onClick={() => setNavRetry((n) => n + 1)}>
                           Retry NAV lookup
                         </Button>
+                      )}
+                      {lookupStatus === 'missing' && (
+                        <Button type="button" variant="secondary" onClick={handleFetchMissingNav}
+                          disabled={busy || navFetching || navFetchWaitSeconds > 0}>
+                          Fetch missing NAV
+                        </Button>
+                      )}
+                      {currentNavFetch && (
+                        <p className="modal-form__hint" aria-live="polite">
+                          {NAV_FETCH_MESSAGES[currentNavFetch.status]}
+                          {navFetchWaitSeconds > 0 && ` Try again in ${navFetchWaitSeconds}s.`}
+                        </p>
                       )}
                       {needsNavConfirmation && (
                         <label>

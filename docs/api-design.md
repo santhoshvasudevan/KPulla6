@@ -1494,6 +1494,24 @@ and `status` is `missing` (still **200**). `nav` is a decimal string or null.
 Missing/invalid parameters return **400**. See
 [transaction API reference](./reference/api-transactions.md#get-navlookup).
 
+### Exact-date missing-NAV fetch (#49)
+
+`POST /api/v1/nav/fetch-missing` (session + CSRF) with body
+`{ "scheme_code": "120503", "nav_date": "2026-11-20" }`. Explicit user action only;
+normal reads and saves never contact providers. The service
+(`market_data/services/missing_nav_fetch.py`) rechecks the cache, claims a
+DB-backed in-flight slot (`MutualFundNavFetchState`, unique per scheme/date, 30s
+expiry), calls MFAPI for that single day, and caches only one positive INR
+`MUTUAL_FUND` row for that date. **200** body: `scheme_code`, `nav_date`,
+`outcome` (`cache_hit|fetched|date_unavailable|timeout|provider_failure|in_flight|cooldown`),
+`nav` (decimal string or null), `status` (`available|missing`),
+`retry_after_seconds`, `failure_category` (equals `outcome` when unsuccessful),
+and `attempt_id` (opaque; recorded for unsuccessful attempts and bound to the
+user). Unsuccessful attempts start a 60s cooldown; a cache hit wins during
+cooldown. **400** invalid body, **409** conflicting non-MF price row. No
+transaction or cash writes; manual/provisional NAV entry remains disabled. See
+[transaction API reference](./reference/api-transactions.md#post-navfetch-missing).
+
 ### Planned: Scheme lookup (MF-4+)
 
 `GET /api/v1/mutual-funds/schemes?q={search}` — search by scheme name, return `scheme_code` + metadata from DB profile table. DB only; no live AMFI on read.

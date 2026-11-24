@@ -135,6 +135,45 @@ query parameters return `400`; unauthenticated access is rejected.
 
 ---
 
+## `POST /nav/fetch-missing`
+
+**Auth:** Session + CSRF. **Purpose:** Explicitly fetch one exact-date NAV from
+MFAPI after `GET /nav/lookup` reported `missing`. Never creates or edits
+transactions or cash. Full path: `/api/v1/nav/fetch-missing`.
+
+**Body:** `{"scheme_code":"120503","nav_date":"2026-11-20"}` (numeric AMFI code;
+`YYYY-MM-DD`, not later than tomorrow UTC).
+
+The backend rechecks the exact-date cache first; a usable cached NAV always wins,
+even during cooldown. Otherwise it requests only that scheme/date and caches only
+one positive exact-date INR observation. Adjacent dates are never cached.
+
+**200 (illustrative):**
+
+```json
+{"scheme_code":"120503","nav_date":"2026-11-20","outcome":"fetched","nav":"123.456789",
+ "status":"available","retry_after_seconds":null,"failure_category":null,"attempt_id":null}
+```
+
+| `outcome` | `status` | Meaning |
+|-----------|----------|---------|
+| `cache_hit` | `available` | Already cached; no provider call |
+| `fetched` | `available` | Fetched and cached the exact date |
+| `date_unavailable` | `missing` | Provider has no NAV for that exact date |
+| `timeout` | `missing` | Provider timed out |
+| `provider_failure` | `missing` | Provider error, wrong scheme, or invalid/zero/non-INR row |
+| `in_flight` | `missing` | Another request is fetching this scheme/date |
+| `cooldown` | `missing` | A recent attempt failed; wait `retry_after_seconds` |
+
+For unsuccessful outcomes `failure_category` equals `outcome`. Failed attempts
+start a 60-second cooldown and return an opaque `attempt_id` bound to the
+requesting user, scheme, and date (`cooldown` returns it only to that user).
+In-flight claims expire after 30 seconds. **400:** invalid body. **409:** a
+non-mutual-fund price row already occupies that symbol/date. Database errors are
+server errors, never a cache miss.
+
+---
+
 ## `POST /transactions/import-csv`
 
 | | |

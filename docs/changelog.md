@@ -1,5 +1,11 @@
 # Changelog — KPulla6
 
+## 2026-11-24 — Exact-date missing mutual-fund NAV fetch (#49)
+
+- Added authenticated, CSRF-protected `POST /api/v1/nav/fetch-missing`. It rechecks the exact-date cache, then fetches only the selected scheme/date from MFAPI and caches only a positive exact-date INR NAV. Outcomes: `cache_hit`, `fetched`, `date_unavailable`, `timeout`, `provider_failure`, `in_flight`, `cooldown`. Never writes transactions or cash.
+- New `MutualFundNavFetchState` model (migration `market_data.0007`) holds a DB-backed in-flight claim (30s expiry), a 60-second cooldown after unsuccessful attempts, and user-bound attempt evidence (`attempt_id`) for a later provisional-entry phase. Cache hits win during cooldown. Added `AmfiNavTimeoutError` (subclass of `AmfiNavFetchError`) for timeout classification.
+- Transaction form shows **Fetch missing NAV** only after a confirmed `missing` lookup (not a lookup error), with progress, outcome messages, and a cooldown countdown. Manual NAV entry stays disabled and save stays blocked without cached NAV. See [API contract](./reference/api-transactions.md#post-navfetch-missing).
+
 ## 2026-11-24 — Strict cached mutual-fund NAV writes
 
 - MF create/update/import require positive exact-date INR cached NAV, used canonically without override or provider reads. Missing cache blocks saving until explicit refresh supplies the date. Statement units/fees/market/paid values and `VALUE_MISMATCH` are preserved; history is not silently rewritten.

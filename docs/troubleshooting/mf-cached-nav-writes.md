@@ -29,11 +29,25 @@ Lookup does not refresh providers or change data. Keep session cookies private.
 
 ## Fix
 
-1. Confirm the scheme and NAV date against the statement. Explicitly request
-   `POST /api/v1/nav/refresh` with the required `scheme_codes`, then repeat lookup.
-   Refresh writes only market cache; it does not correct transactions. If lookup
-   still says `missing`, leave the save/import blocked and investigate coverage.
-   Never substitute an investment date, nearby NAV, or manual NAV override.
+1. Confirm the scheme and NAV date against the statement. In the transaction
+   form, click **Fetch missing NAV** (only shown when lookup says `missing`). It
+   calls `POST /api/v1/nav/fetch-missing` for that exact scheme/date, which writes
+   only that market-cache row and never saves the transaction:
+
+   ```bash
+   curl -s -b cookies.txt -H "X-CSRFToken: $CSRF" -H 'Content-Type: application/json' \
+     -d '{"scheme_code":"120503","nav_date":"2026-11-20"}' \
+     'http://127.0.0.1:8000/api/v1/nav/fetch-missing'
+   ```
+
+   `outcome` `fetched` or `cache_hit` means the NAV is now cached. `date_unavailable`
+   means MFAPI has no NAV for that date; `timeout` or `provider_failure` means try
+   again after `retry_after_seconds` (60-second cooldown); `in_flight` means another
+   request is already fetching it. Bulk `POST /api/v1/nav/refresh` with
+   `scheme_codes` remains available for profiled schemes. If lookup still says
+   `missing`, leave the save/import blocked and investigate coverage. Never
+   substitute an investment date, nearby NAV, or manual NAV override (provisional
+   entry is not yet enabled).
 2. Retry only after exact-date cache is available. The backend supplies canonical
    NAV. Preserve statement units, fees, market value, and paid value; do not alter
    them to suppress `VALUE_MISMATCH`.
