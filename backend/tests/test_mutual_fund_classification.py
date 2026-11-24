@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from tests.conftest import cached_mf_nav
 
 from finance.mutual_fund_classification import (
     CLASS_COMMODITY,
@@ -90,6 +91,7 @@ def test_explicit_primary_asset_class_preserved():
 
 @pytest.mark.django_db
 def test_mf_holdings_include_classification_fields(api_client, legacy_seeded):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     api_client.post(
         "/api/v1/transactions",
         _mf_payload(
@@ -110,6 +112,7 @@ def test_mf_holdings_include_classification_fields(api_client, legacy_seeded):
 
 @pytest.mark.django_db
 def test_mf_asset_detail_includes_classification_fields(api_client, legacy_seeded):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     api_client.post(
         "/api/v1/transactions",
         _mf_payload(
@@ -127,6 +130,7 @@ def test_mf_asset_detail_includes_classification_fields(api_client, legacy_seede
 
 @pytest.mark.django_db
 def test_explicit_asset_class_on_holdings(api_client, legacy_seeded):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     api_client.post(
         "/api/v1/transactions",
         _mf_payload(scheme_category="Equity Scheme - Mid Cap"),
@@ -147,6 +151,7 @@ def test_explicit_asset_class_on_holdings(api_client, legacy_seeded):
 
 @pytest.mark.django_db
 def test_create_upsert_sets_inferred_class_when_unknown(api_client, legacy_seeded):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     api_client.post(
         "/api/v1/transactions",
         _mf_payload(
@@ -161,6 +166,7 @@ def test_create_upsert_sets_inferred_class_when_unknown(api_client, legacy_seede
 
 @pytest.mark.django_db
 def test_create_does_not_override_explicit_class(api_client, legacy_seeded):
+    cached_mf_nav("999888", "2026-03-15", "42.5")
     asset, _ = Asset.objects.get_or_create(
         asset_type=AssetType.MUTUAL_FUND,
         symbol="999888",

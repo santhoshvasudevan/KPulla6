@@ -7,6 +7,8 @@ import pytest
 
 from market_data.models import AssetType, HistoricalPrice
 from tests.test_analytics_asset_metrics_api import _mf_payload
+from tests.conftest import cached_mf_nav, historical_mf_transaction
+from portfolios.seed import ensure_default_portfolio
 
 
 def nav(day, value, scheme="120503"):
@@ -22,12 +24,12 @@ def metrics(client, scheme="120503", **params):
 
 
 @pytest.mark.django_db
-def test_mf_heatmap_is_nav_only_despite_delayed_buy(api_client, legacy_seeded, monkeypatch):
+def test_mf_heatmap_is_nav_only_despite_delayed_buy(api_client, legacy_seeded, monkeypatch, test_user):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2024, 3, 31))
-    assert api_client.post("/api/v1/transactions", _mf_payload(
-        investment_date="2024-02-27", nav_date="2024-02-29"), format="json").status_code == 201
-    assert api_client.post("/api/v1/transactions", _mf_payload(
-        investment_date="2024-03-25", nav_date="2024-03-26"), format="json").status_code == 201
+    assert historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload(
+        investment_date="2024-02-27", nav_date="2024-02-29")).pk is not None
+    assert historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload(
+        investment_date="2024-03-25", nav_date="2024-03-26")).pk is not None
     # Pinned public NAV endpoints, with eligible intervening observations.
     d = date(2024, 2, 29)
     while d < date(2024, 3, 31):
@@ -45,10 +47,10 @@ def test_mf_heatmap_is_nav_only_despite_delayed_buy(api_client, legacy_seeded, m
 
 
 @pytest.mark.django_db
-def test_fund_history_precedes_purchase_and_allows_multiple_folios(api_client, legacy_seeded, monkeypatch):
+def test_fund_history_precedes_purchase_and_allows_multiple_folios(api_client, legacy_seeded, monkeypatch, test_user):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
     for folio in ("F1", "F2"):
-        assert api_client.post("/api/v1/transactions", _mf_payload(folio_number=folio), format="json").status_code == 201
+        assert historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload(folio_number=folio)).pk is not None
     for day, value in [("2026-03-01", "100"), ("2026-03-05", "100"),
                        ("2026-03-10", "100"), ("2026-03-15", "100"), ("2026-03-20", "100")]:
         nav(day, value)
@@ -59,14 +61,15 @@ def test_fund_history_precedes_purchase_and_allows_multiple_folios(api_client, l
 
 
 @pytest.mark.django_db
-def test_nav_returns_do_not_change_after_trade_edits(api_client, legacy_seeded, monkeypatch):
+def test_nav_returns_do_not_change_after_trade_edits(api_client, legacy_seeded, monkeypatch, test_user):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
-    created = api_client.post("/api/v1/transactions", _mf_payload(), format="json").json()
+    created = historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload())
+    cached_mf_nav("120503", "2026-02-03", "42.5")
     for day, value in [("2026-03-01", "100"), ("2026-03-05", "101"),
                        ("2026-03-10", "102"), ("2026-03-15", "103"), ("2026-03-20", "104")]:
         nav(day, value)
     original = metrics(api_client)
-    response = api_client.put(f"/api/v1/transactions/{created['id']}", _mf_payload(
+    response = api_client.put(f"/api/v1/transactions/{created.pk}", _mf_payload(
         investment_date="2026-02-01", nav_date="2026-02-03", units_allotted="200",
         paid_value="8505", market_value="8500"), format="json")
     assert response.status_code == 200
@@ -76,9 +79,9 @@ def test_nav_returns_do_not_change_after_trade_edits(api_client, legacy_seeded, 
 
 
 @pytest.mark.django_db
-def test_bounded_range_has_predecessor_and_no_invented_holiday_returns(api_client, legacy_seeded, monkeypatch):
+def test_bounded_range_has_predecessor_and_no_invented_holiday_returns(api_client, legacy_seeded, monkeypatch, test_user):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
-    api_client.post("/api/v1/transactions", _mf_payload(), format="json")
+    historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload())
     nav("2026-03-12", "100")
     nav("2026-03-13", "110")
     nav("2026-03-16", "121")
@@ -91,9 +94,9 @@ def test_bounded_range_has_predecessor_and_no_invented_holiday_returns(api_clien
 
 
 @pytest.mark.django_db
-def test_unexplained_gap_is_not_zero_or_compounded(api_client, legacy_seeded, monkeypatch):
+def test_unexplained_gap_is_not_zero_or_compounded(api_client, legacy_seeded, monkeypatch, test_user):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
-    api_client.post("/api/v1/transactions", _mf_payload(), format="json")
+    historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload())
     nav("2026-03-01", "100")
     nav("2026-03-20", "200")
     data = metrics(api_client)
@@ -104,10 +107,10 @@ def test_unexplained_gap_is_not_zero_or_compounded(api_client, legacy_seeded, mo
 
 
 @pytest.mark.django_db
-def test_mf_compare_uses_same_series_and_never_calls_provider(api_client, legacy_seeded, monkeypatch):
+def test_mf_compare_uses_same_series_and_never_calls_provider(api_client, legacy_seeded, monkeypatch, test_user):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
     for scheme in ("120503", "120504"):
-        api_client.post("/api/v1/transactions", _mf_payload(scheme_code=scheme), format="json")
+        historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload(scheme_code=scheme))
         for day, value in [("2026-03-01", "100"), ("2026-03-05", "101"),
                            ("2026-03-10", "102"), ("2026-03-15", "103"), ("2026-03-20", "104")]:
             nav(day, value, scheme)
@@ -123,10 +126,10 @@ def test_mf_compare_uses_same_series_and_never_calls_provider(api_client, legacy
 
 
 @pytest.mark.django_db
-def test_native_fund_metrics_require_compatible_benchmark(api_client, legacy_seeded, monkeypatch):
+def test_native_fund_metrics_require_compatible_benchmark(api_client, legacy_seeded, monkeypatch, test_user):
     from market_data.models import BenchmarkIndexConfig
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
-    api_client.post("/api/v1/transactions", _mf_payload(), format="json")
+    historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload())
     nav("2026-03-18", "100")
     nav("2026-03-19", "101")
     nav("2026-03-20", "102")
@@ -137,11 +140,11 @@ def test_native_fund_metrics_require_compatible_benchmark(api_client, legacy_see
 
 
 @pytest.mark.django_db
-def test_analytics_get_does_not_write_and_preserves_asset_access(api_client, legacy_seeded, monkeypatch):
+def test_analytics_get_does_not_write_and_preserves_asset_access(api_client, legacy_seeded, monkeypatch, test_user):
     from django.db import connection
     from django.test.utils import CaptureQueriesContext
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
-    api_client.post("/api/v1/transactions", _mf_payload(), format="json")
+    historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload())
     nav("2026-03-19", "100")
     nav("2026-03-20", "101")
     with CaptureQueriesContext(connection) as queries:
@@ -151,7 +154,7 @@ def test_analytics_get_does_not_write_and_preserves_asset_access(api_client, leg
 
 
 @pytest.mark.django_db
-def test_personal_xirr_uses_native_inr_settlement_flows(api_client, legacy_seeded, monkeypatch):
+def test_personal_xirr_uses_native_inr_settlement_flows(api_client, legacy_seeded, monkeypatch, test_user):
     """958-day oracle: −₹10,000 on 2024-01-01 → ₹11,808.953 on 2026-08-16 ≈ 6.54%.
 
     Independent two-flow annualization confirms ~6.54%. The legacy ~491.67% result
@@ -160,9 +163,9 @@ def test_personal_xirr_uses_native_inr_settlement_flows(api_client, legacy_seede
     from fx.services import upsert_fx_rate
 
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 8, 16))
-    api_client.post("/api/v1/transactions", _mf_payload(
+    historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload(
         investment_date="2024-01-01", nav_date="2024-01-01", nav="100",
-        units_allotted="100", paid_value="10000", market_value="10000"), format="json")
+        units_allotted="100", paid_value="10000", market_value="10000"))
     nav("2026-08-16", "118.089530")
     # Irrelevant FX must not change the native-INR personal return.
     upsert_fx_rate(from_currency="INR", to_currency="EUR", row_date=date(2024, 1, 1), rate=Decimal("0.01111111"))
@@ -177,17 +180,16 @@ def test_personal_xirr_uses_native_inr_settlement_flows(api_client, legacy_seede
 
 
 @pytest.mark.django_db
-def test_personal_xirr_ignores_nav_after_valuation_date(api_client, legacy_seeded, monkeypatch):
+def test_personal_xirr_ignores_nav_after_valuation_date(api_client, legacy_seeded, monkeypatch, test_user):
     """Future cached NAV must not leak into personal XIRR for a pinned valuation date.
 
     With only 2026-08-16 NAV the oracle is ~6.54%. A 2026-08-17 row that would
     inflate the rate to ~30.22% when used as 'latest' must be ignored.
     """
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 8, 16))
-    assert api_client.post("/api/v1/transactions", _mf_payload(
+    assert historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload(
         investment_date="2024-01-01", nav_date="2024-01-01", nav="100",
-        units_allotted="100", paid_value="10000", market_value="10000"), format="json"
-    ).status_code == 201
+        units_allotted="100", paid_value="10000", market_value="10000")).pk is not None
     nav("2026-08-16", "118.089530")
     nav("2026-08-17", "150")  # future relative to valuation date
     personal = metrics(api_client)["personal_metrics"]
@@ -207,20 +209,20 @@ def test_personal_xirr_ignores_nav_after_valuation_date(api_client, legacy_seede
     assert personal_future_only["status"] == "unavailable"
 
     # Closed position can still compute from realized cash flows without terminal NAV.
-    sell = api_client.post("/api/v1/transactions", _mf_payload(
+    sell = historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload(
         type="SELL", investment_date="2026-08-10", nav_date="2026-08-10", nav="118.089530",
-        units_allotted="100", paid_value="11808.953", market_value="11808.953"), format="json")
-    assert sell.status_code == 201, sell.json()
+        units_allotted="100", paid_value="11808.953", market_value="11808.953"))
+    assert sell.pk is not None
     personal_closed = metrics(api_client)["personal_metrics"]
     assert personal_closed["xirr"] == pytest.approx(0.0654, abs=5e-3)
     assert personal_closed["status"] == "calculated"
 
 
 @pytest.mark.django_db
-def test_compare_recalculates_returns_on_common_nav_intervals(api_client, legacy_seeded, monkeypatch):
+def test_compare_recalculates_returns_on_common_nav_intervals(api_client, legacy_seeded, monkeypatch, test_user):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 5))
     for scheme in ("120503", "120504"):
-        api_client.post("/api/v1/transactions", _mf_payload(scheme_code=scheme), format="json")
+        historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload(scheme_code=scheme))
         for day, value in [(1,"100"),(2,"100"),(3,"110"),(4,"121"),(5,"133.1")]:
             if scheme == "120504" and day == 3:
                 continue
@@ -234,12 +236,12 @@ def test_compare_recalculates_returns_on_common_nav_intervals(api_client, legacy
 
 
 @pytest.mark.django_db
-def test_benchmark_intervals_and_opening_returns_match_asset_and_compare(api_client, legacy_seeded, monkeypatch):
+def test_benchmark_intervals_and_opening_returns_match_asset_and_compare(api_client, legacy_seeded, monkeypatch, test_user):
     from market_data.models import BenchmarkIndexConfig
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 5))
     BenchmarkIndexConfig.objects.create(symbol="INR_TEST", display_name="INR test", currency="INR")
     for scheme in ("120503", "120504"):
-        api_client.post("/api/v1/transactions", _mf_payload(scheme_code=scheme), format="json")
+        historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload(scheme_code=scheme))
         for day, value in [(1,"100"),(2,"101"),(3,"103"),(4,"102"),(5,"104")]:
             nav(f"2026-03-{day:02d}", value, scheme)
     for day, value in [(1,"100"),(2,"101"),(3,"103"),(4,"102"),(5,"104")]:
@@ -253,10 +255,10 @@ def test_benchmark_intervals_and_opening_returns_match_asset_and_compare(api_cli
 
 
 @pytest.mark.django_db
-def test_compare_keeps_shared_predecessor_before_trimming(api_client, legacy_seeded, monkeypatch):
+def test_compare_keeps_shared_predecessor_before_trimming(api_client, legacy_seeded, monkeypatch, test_user):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
     for scheme in ("120503", "120504"):
-        api_client.post("/api/v1/transactions", _mf_payload(scheme_code=scheme), format="json")
+        historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload(scheme_code=scheme))
         for day in (11,13,16,20):
             nav(f"2026-03-{day:02d}", "100", scheme)
     nav("2026-03-12", "100", "120503")
@@ -268,10 +270,10 @@ def test_compare_keeps_shared_predecessor_before_trimming(api_client, legacy_see
 
 
 @pytest.mark.django_db
-def test_mixed_compare_preserves_fund_metrics_without_stock_overlap(api_client, legacy_seeded, monkeypatch):
+def test_mixed_compare_preserves_fund_metrics_without_stock_overlap(api_client, legacy_seeded, monkeypatch, test_user):
     from tests.test_analytics_asset_metrics_api import _buy, _price
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
-    api_client.post("/api/v1/transactions", _mf_payload(), format="json")
+    historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload())
     _buy(api_client, date="2026-03-20")
     _price("AAPL", "2026-03-20", "100")
     nav("2026-03-18", "100")
@@ -286,10 +288,10 @@ def test_mixed_compare_preserves_fund_metrics_without_stock_overlap(api_client, 
 
 
 @pytest.mark.django_db
-def test_benchmark_gap_remains_explicit_when_valid_pairs_survive(api_client, legacy_seeded, monkeypatch):
+def test_benchmark_gap_remains_explicit_when_valid_pairs_survive(api_client, legacy_seeded, monkeypatch, test_user):
     from market_data.models import BenchmarkIndexConfig
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 16))
-    api_client.post("/api/v1/transactions", _mf_payload(), format="json")
+    historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload())
     BenchmarkIndexConfig.objects.create(symbol="GAP_TEST",display_name="Gap test",currency="INR")
     for day in range(1,17):
         nav(f"2026-03-{day:02d}", str(100+day))
@@ -312,7 +314,7 @@ def test_fund_scope_independence_does_not_expand_other_user_access(api_client, l
     original = ensure_default_portfolio(test_user)
     second = Portfolio.objects.create(user=test_user,name="Other scope",base_currency="INR",cash_aware_enabled=False)
     for p in (original,second):
-        assert api_client.post("/api/v1/transactions", _mf_payload(portfolio_id=p.id), format="json").status_code == 201
+        assert historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload(portfolio_id=p.id)).pk is not None
     nav("2026-03-19","100")
     nav("2026-03-20","101")
     assert metrics(api_client,portfolio_id=original.id)["metrics"] == metrics(api_client,portfolio_id=second.id)["metrics"]

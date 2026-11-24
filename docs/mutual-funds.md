@@ -2,6 +2,11 @@
 
 **Status:** MF-1 schema through MF-10 live NAV provider implemented. **MF-11a mutual fund CSV import implemented.** Scheme search and polish remain MF-11+.
 
+**Current write rule (2026-11-24):** Strict exact-date cached NAV is mandatory.
+The [NAV validation strategy](#nav-validation-strategy) below supersedes the
+original warning-only MF-0/MF-6 write policy. Other planned sections retain their
+historical phase context; see [decisions.md](./decisions.md).
+
 **Related docs:** [architecture.md](./architecture.md) · [database.md](./database.md) · [api-design.md](./api-design.md) · [current-state.md](./current-state.md) · [decisions.md](./decisions.md)
 
 ---
@@ -32,7 +37,7 @@ KPulla6 today tracks **stocks** (and benchmark indices) with transactions as the
 - Holdings grouped by **scheme + folio** (MVP)
 - Summary, performance, and display-currency impact
 - Asset classification model (primary class, future exposure, future tax)
-- NAV validation against cached data (warnings, not hard reject by default)
+- NAV validation against cached data (strict write rule below; originally warning-only)
 - Phased implementation plan MF-1 through MF-9
 
 ### Out of scope (this design phase)
@@ -197,17 +202,57 @@ When they differ:
 
 ## NAV validation strategy
 
-On MF transaction create/update, the backend compares user-entered NAV and market value against **cached** `HistoricalPrice` for `(scheme_code, nav_date)`:
+MF create, update, and CSV import require `HistoricalPrice` for the exact
+`(scheme_code, nav_date)`, with `asset_type=MUTUAL_FUND`, `currency=INR`, and
+positive NAV. Transactions must use INR. The backend uses this canonical cached
+NAV for both detail `nav` and transaction `price_per_share`; submitted NAV is not
+an override. This supersedes the original warning-only save policy.
 
 | Check | Behavior |
 |-------|----------|
-| Cached NAV exists | Compare `\|entered_nav - cached_nav\| / cached_nav` to tolerance (e.g. 0.5% — configurable in MF-6) |
-| Units × NAV vs market value | Compare to tolerance on absolute or relative basis |
-| Cached NAV missing | `nav_validation_status=unchecked`; warning in API response; **do not block save** in MVP |
-| Mismatch within tolerance | `ok` |
-| Mismatch outside tolerance | `warning`; persist transaction; surface in `warnings[]` on holdings/asset detail |
+| Positive exact-date INR cache exists | Persist canonical cached NAV; no user override |
+| Cache missing, non-positive, wrong currency or wrong asset type | Block save/import; transaction `POST`/`PUT`: `400`; CSV row validation: `200` with `success: false` (see below). Explicit NAV history refresh required before retry |
+| Units × canonical NAV vs statement market value | Preserve statement values; `VALUE_MISMATCH` warning beyond 1 INR |
+| Historical NAV missing or mismatched | Remains visible on reads; no silent bulk correction |
 
-**Never** call AMFI during validation — cache only. Sync may be suggested in warning text (“Run NAV sync”).
+CSV row validation preserves the existing all-or-nothing response contract:
+HTTP `200` with `success: false`, `imported_count: 0`, and
+`errors: [{row, field, message}]`, including missing exact-date NAV cache.
+This does not change request-level error statuses. See the
+[import API contract](./reference/api-transactions.md#post-transactionsimport-csv).
+
+Never call providers during validation or lookup. Never use an adjacent date,
+forward-fill, or investment-date substitution to satisfy a write. Explicit
+refresh may leave dates missing when the provider has no exact-date NAV.
+Valuation-series forward-fill is separate and does not relax this rule.
+
+Statement units, fees, market value, and paid value remain authoritative; NAV
+correction must not recalculate them or hide `VALUE_MISMATCH`. The narrow
+[NAV-only BUY cash exception](./cash-ledger.md#nav-only-mf-buy-correction-2026-11-24)
+does not authorize historical settlement backfill or exempt other writes from
+cash validation.
+
+Authenticated `GET /api/v1/nav/lookup?scheme_code=CODE&nav_date=YYYY-MM-DD`
+returns exact-date cache availability, with no writes or provider calls. See
+[response contract](./reference/api-transactions.md#get-navlookup).
+
+### Historical correction preview (read-only)
+
+From the backend environment, `python manage.py preview_mf_nav_corrections --user-id ID`
+reviews only that user's MF transactions against the exact-date cache. It emits
+one JSON object per review row (JSONL), followed by a human-readable summary
+`Review rows: N. No records changed.` The summary is not a JSONL row.
+
+Rows contain `transaction_id`, `scheme_code`, `nav_date`, `entered_nav`,
+`cached_nav` (decimal string or null), `status` (`NAV_MISSING` or `NAV_MISMATCH`),
+and `statement_fields` (`unchanged; review only`). Matching rows are omitted.
+There is **no apply mode**: the command does not change transactions, statement
+fields, NAV cache, or cash and does not fetch providers. Review individual
+corrections explicitly; do not treat this output as authorization for bulk rewrite.
+
+Output contains personal portfolio information. Keep it private and outside
+version control and published docs, issues, PRs, or shared logs. Use only synthetic
+examples in shared material. See [blocked MF saves and correction review](./troubleshooting/mf-cached-nav-writes.md).
 
 ---
 
@@ -456,7 +501,7 @@ Each phase: tests first where practical, `make test`, update docs/changelog, sma
 | Breaking stock holdings/tests | Separate code paths by `asset_type`; run full regression suite each phase |
 | scheme_code / ticker collision | Type-filtered lookups; numeric scheme codes vs stock tickers |
 | AMFI download format changes | Provider abstraction; defensive parsing; logged failures |
-| User-entered NAV wrong | Validation warnings vs cache; never silent overwrite of user data |
+| User-entered NAV wrong | Canonical exact-date cached NAV on writes; preserve statement fields and existing history until explicit correction |
 | Hybrid misallocation | Explicit `HYBRID` class; exposure model later |
 | FIFO across folios | Never merge folios in MVP aggregation |
 | Unique constraint on prices | Evaluate `(symbol, date, asset_type)` in MF-1 if needed |

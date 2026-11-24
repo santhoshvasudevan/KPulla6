@@ -19,14 +19,14 @@ def test_delayed_subscription_existing_portfolio_timing(api_client, legacy_seede
             "portfolio_id": p.id, "date": "2026-03-01", "currency": "INR", "amount": "2000"}, format="json")
         assert response.status_code == 201, response.json()
     dates = ("2026-03-03", "2026-03-04") if payment_first else ("2026-03-04", "2026-03-03")
+    for day in range(1, 6):
+        nav(f"2026-03-{day:02d}", "10")
     for payment, allotment, units, paid, action in [("2026-03-01", "2026-03-01", "100", "1000", "BUY"),
                                             (*dates, "50", "500", kind)]:
         response = api_client.post("/api/v1/transactions", _mf_payload(
             portfolio_id=p.id, investment_date=payment, nav_date=allotment,
             type=action, nav="10", units_allotted=units, paid_value=paid, market_value=paid), format="json")
         assert response.status_code == 201, response.json()
-    for day in range(1, 6):
-        nav(f"2026-03-{day:02d}", "10")
     response = api_client.get("/api/v1/portfolio/performance", {
         "portfolio_id": p.id, "metric": "twror", "range": "ALL", "display_currency": "INR"})
     assert response.status_code == 200

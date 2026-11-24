@@ -80,6 +80,59 @@ curl -s -b cookies.txt \
 
 **Cash-aware portfolios:** `400` with `required`, `available`, `shortfall` when BUY exceeds cash.
 
+### Mutual-fund writes (`POST` and `PUT /transactions/{id}`)
+
+MF create, update, and CSV import require a **positive INR cached NAV for the
+exact `scheme_code` + `nav_date`**, typed `MUTUAL_FUND`. The backend stores this
+canonical NAV in both `nav` and `price_per_share`; a supplied `nav` cannot override
+it. No exact cache means `400` for transaction `POST`/`PUT`; CSV row failures
+retain HTTP `200` with `success: false` (see import below). Explicitly refresh
+NAV history, then retry.
+There is no adjacent-date fallback, date substitution, or provider read during
+validation. A refresh does not guarantee that the provider has that date.
+
+Keep statement `units_allotted`, `fees`, `market_value`, and `paid_value` unchanged
+when correcting NAV. Do not recompute them to make `nav × units` agree;
+`VALUE_MISMATCH` remains a warning when the difference exceeds 1 INR.
+Existing history is not silently rewritten by reads or refreshes.
+
+**Cash exception:** Only an existing BUY whose canonical NAV actually changes,
+with no linked settlement/cash rows and **all** statement/cash fields unchanged,
+skips historical settlement backfill. This includes unchanged portfolio, scheme,
+folio, type, currency, both dates, units, fees, market/paid values,
+`actual_cash_received`, and `settlement_note`. No-op updates, other edits, creates,
+and SELLs retain normal cash validation and settlement handling. See
+[cash settlement rules](../cash-ledger.md#8-cash-aware-buysell-settlements-cash-4a-implemented).
+
+---
+
+## `GET /nav/lookup`
+
+**Auth:** Authenticated session. **Purpose:** Exact-date DB-only lookup; no writes
+or provider calls. Full path: `/api/v1/nav/lookup`.
+
+| Query parameter | Required | Format |
+|-----------------|----------|--------|
+| `scheme_code` | Yes | AMFI scheme code |
+| `nav_date` | Yes | `YYYY-MM-DD` |
+
+Example: `GET /api/v1/nav/lookup?scheme_code=120503&nav_date=2026-11-20`.
+
+**200 (available; illustrative):**
+
+```json
+{"scheme_code":"120503","nav_date":"2026-11-20","nav":"123.456789","status":"available"}
+```
+
+**200 (missing, including non-positive or non-INR cache rows):**
+
+```json
+{"scheme_code":"120503","nav_date":"2026-11-20","nav":null,"status":"missing"}
+```
+
+`nav` is a decimal **string** or `null`, never a JSON number. Missing or invalid
+query parameters return `400`; unauthenticated access is rejected.
+
 ---
 
 ## `POST /transactions/import-csv`
@@ -90,7 +143,13 @@ curl -s -b cookies.txt \
 | **Body** | `multipart/form-data` field `file` |
 | **Query** | Optional `portfolio_id` |
 
-**Expected:** `200` with `success: true` or `400` with row errors (all-or-nothing).
+**Expected:** HTTP `200` with `success: true` on success, or HTTP `200` with
+`success: false`, `imported_count: 0`, and `errors: [{row, field, message}]`
+for row validation failures (all-or-nothing), including missing exact-date MF NAV
+cache. Request-level errors retain their existing HTTP statuses.
+
+MF imports use the same strict cached-NAV write rule above. Missing exact-date
+cache blocks import; cash-funding confirmation does not bypass NAV validation.
 
 Formats: [CSV formats](csv-formats.md) · Tutorial: [Import stock transactions](../tutorials/import-stock-transactions.md)
 

@@ -290,13 +290,33 @@ Gate: `portfolio.cash_aware_enabled == true` only. No auto-enable.
 - Update/delete: settlement row updated or removed with the transaction; BUY updates re-check cash excluding the old settlement.
 - Delete: settlement removed first; deleting a SELL settlement blocked if later cash would go negative.
 - **TXN-AUDIT-2:** `PUT`/`DELETE /transactions/{id}` return structured **409** future-impact payload (`currency`, `earliest_negative_date`, `lowest_balance`, `affected_entries`) when settlement sync would break later balances — same shape as manual cash ledger edit/delete.
-- **Legacy → cash-aware edit:** transactions created while legacy may gain a linked settlement on first `PUT` after enable; fails with **400** shortfall if funding is missing (no retroactive auto-deposit).
+- **Legacy → cash-aware edit:** transactions created while legacy may gain a linked settlement on first `PUT` after enable; fails with **400** shortfall if funding is missing (no retroactive auto-deposit). The NAV-only MF BUY correction exception below does not create historical cash rows.
 - Linked settlements remain **protected** from `PUT`/`DELETE /cash/ledger/{id}` (409).
 - **Cash-6A (done):** Summary `current_value` and holdings `allocation` include native cash converted to `display_currency` via cached FX.
 - **Cash-6B (done):** Summary timeseries and `GET /portfolio/performance?metric=value` include cash.
 - **Cash-6C.1 (done):** Portfolio-level XIRR uses cash ledger external flows when cash-aware; legacy portfolios unchanged.
 - **Cash-6C.2 (done):** Cash-aware TWROR / cumulative_return (cash-inclusive daily values + ledger external flows).
 - **Cash-6D (done):** Regression tests for deposit/BUY/growth/sell/withdrawal/mixed-scope; read-only `backend/scripts/diagnose_cash_aware_returns.py` (use `DJANGO_TEST_USE_SQLITE=1` or an approved DB).
+
+### NAV-only MF BUY correction (2026-11-24)
+
+An existing MF BUY with **no linked settlement or other cash rows** may correct
+NAV to the mandatory positive exact-date INR cache without backfilling historical
+cash, only if NAV actually changes and **all** statement/cash fields are unchanged:
+
+- Portfolio, scheme, folio, transaction type (still BUY), and currency.
+- Transaction/NAV date and investment date.
+- Units (transaction quantity and detail units), fees, market value, and paid value.
+- `actual_cash_received` and `settlement_note`.
+
+This is not a general cash-validation bypass. Creates, SELLs, no-op NAV saves,
+edits with existing linked cash, or any change to those fields retain normal
+cash validation and atomic settlement handling. Preserve statement amounts;
+`VALUE_MISMATCH` may remain after NAV correction. Never silently rewrite historic
+transactions or create funding to make a correction pass. Historical settlement
+repair remains a separate explicit workflow below. The
+[correction preview](./mutual-funds.md#historical-correction-preview-read-only)
+is review-only and has no apply mode.
 
 ---
 

@@ -10,6 +10,7 @@ from market_data.category_views import PersonalFundCategoryView
 from market_data.views import (
     BenchmarkIndicesView,
     NavRefreshView,
+    NavLookupView,
     PortfolioForceSyncView,
     PricesRefreshView,
 )
@@ -83,6 +84,7 @@ urlpatterns = [
     ),
     path("prices/refresh", PricesRefreshView.as_view(), name="prices-refresh"),
     path("nav/refresh", NavRefreshView.as_view(), name="nav-refresh"),
+    path("nav/lookup", NavLookupView.as_view(), name="nav-lookup"),
     path("benchmarks/indices", BenchmarkIndicesView.as_view(), name="benchmark-indices"),
     path("portfolio/force-sync", PortfolioForceSyncView.as_view(), name="portfolio-force-sync"),
     path(

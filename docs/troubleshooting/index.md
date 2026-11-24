@@ -24,6 +24,7 @@ If ports are wrong: [Dev server and port issues](dev-server-ports.md)
 | Google OAuth error | [Google OAuth errors](google-oauth-errors.md) |
 | Missing prices or NAVs | [Missing prices or NAVs](missing-prices-navs.md) |
 | Transactions shows NAV Not In Cache after refresh | [Transaction NAV verification](missing-prices-navs.md#symptom-transactions-shows-nav-not-in-cache-after-refresh) |
+| MF save/import blocked by exact-date NAV, or NAV correction asks for cash | [MF cached NAV writes](mf-cached-nav-writes.md) |
 | CSV import asks for cash again after confirmation | [CSV cash funding import](csv-cash-funding-import.md) |
 | Dashboard slow | [Dashboard is slow](dashboard-slow.md) |
 | Dashboard totals differ from transaction payments | [Dashboard totals](dashboard-totals.md) |

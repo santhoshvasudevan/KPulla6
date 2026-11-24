@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from tests.conftest import cached_mf_nav
 
 from cash.ledger_details import build_ledger_entry_details
 from cash.models import CashEntryType, CashLedgerEntry
@@ -347,6 +348,7 @@ def test_buy_rejects_actual_cash_received(api_client, seeded, test_user):
 
 @pytest.mark.django_db
 def test_mf_sell_with_actual_cash_received(api_client, seeded, test_user):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     portfolio = _enable_cash_aware(ensure_default_portfolio(test_user))
     response = api_client.post(
         "/api/v1/transactions",

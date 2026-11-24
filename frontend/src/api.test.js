@@ -10,6 +10,50 @@ describe('API Service', () => {
     api.setUnauthorizedHandler(null);
   });
 
+  it('getCachedMutualFundNav reads the exact date using session credentials', async () => {
+    const mockResponse = {
+      scheme_code: '120503', nav_date: '2026-03-15', nav: '42.5000', status: 'available',
+    };
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => mockResponse });
+
+    expect(await api.getCachedMutualFundNav('120503', '2026-03-15')).toEqual(mockResponse);
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/v1/nav/lookup?scheme_code=120503&nav_date=2026-03-15',
+      expect.objectContaining(defaultFetchOptions)
+    );
+    const options = global.fetch.mock.calls[0][1];
+    expect(options.method ?? 'GET').toBe('GET');
+    expect(options.body).toBeUndefined();
+  });
+
+  it('getCachedMutualFundNav safely encodes query values without injecting parameters', async () => {
+    const schemeCode = '120503 +/&?#=x';
+    const navDate = '2026-03-15&extra=1#fragment';
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'missing', nav: null }) });
+
+    await api.getCachedMutualFundNav(schemeCode, navDate);
+
+    const url = new URL(global.fetch.mock.calls[0][0], 'http://localhost');
+    expect(url.pathname).toBe('/api/v1/nav/lookup');
+    expect([...url.searchParams.entries()]).toEqual([
+      ['scheme_code', schemeCode], ['nav_date', navDate],
+    ]);
+    expect(url.hash).toBe('');
+  });
+
+  it('getCachedMutualFundNav reports an expired session through the shared handler', async () => {
+    const onUnauthorized = vi.fn();
+    api.setUnauthorizedHandler(onUnauthorized);
+    global.fetch.mockResolvedValueOnce({
+      ok: false, status: 401, json: async () => ({ detail: 'Session expired' }),
+    });
+
+    await expect(api.getCachedMutualFundNav('120503', '2026-03-15')).rejects.toThrow('Session expired');
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch.mock.calls[0][1]).toEqual(expect.objectContaining(defaultFetchOptions));
+  });
+
   it('fetchTransactions calls the correct endpoint', async () => {
     const mockResponse = { items: [], total: 0 };
     global.fetch.mockResolvedValueOnce({

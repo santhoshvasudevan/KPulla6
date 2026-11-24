@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from tests.conftest import cached_mf_nav
 
 from portfolios.models import Portfolio
 from portfolios.seed import ensure_default_portfolio
@@ -161,6 +162,7 @@ def test_date_from_after_date_to_returns_400(api_client, legacy_seeded):
 
 @pytest.mark.django_db
 def test_filter_mutual_fund_scheme_code(api_client, legacy_seeded, test_user):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     default = ensure_default_portfolio(test_user)
     _stock(default, "AAPL", "2026-01-01")
     create = api_client.post(

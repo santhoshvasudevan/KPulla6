@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from tests.conftest import cached_mf_nav
 
 from cash.models import CashEntryType, CashLedgerEntry
 from portfolios.models import Portfolio
@@ -360,6 +361,7 @@ def test_cash_aware_delete_sell_blocked_when_later_negative(
 
 @pytest.mark.django_db
 def test_cash_aware_mf_buy_settlement(api_client, seeded, test_user):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     portfolio = _enable_cash_aware(ensure_default_portfolio(test_user))
     _deposit(portfolio, day="2026-03-01", amount="10000", currency="INR")
     response = api_client.post(
@@ -379,6 +381,7 @@ def test_cash_aware_mf_buy_settlement(api_client, seeded, test_user):
 
 @pytest.mark.django_db
 def test_cash_aware_mf_buy_insufficient_inr(api_client, seeded, test_user):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     portfolio = _enable_cash_aware(ensure_default_portfolio(test_user))
     _deposit(portfolio, day="2026-03-01", amount="1000", currency="INR")
     response = api_client.post(
@@ -395,6 +398,7 @@ def test_cash_aware_mf_buy_insufficient_inr(api_client, seeded, test_user):
 
 @pytest.mark.django_db
 def test_cash_aware_mf_sell_settlement_uses_paid_value(api_client, seeded, test_user):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     portfolio = _enable_cash_aware(ensure_default_portfolio(test_user))
     response = api_client.post(
         "/api/v1/transactions",
@@ -412,6 +416,7 @@ def test_cash_aware_mf_sell_settlement_uses_paid_value(api_client, seeded, test_
 
 @pytest.mark.django_db
 def test_legacy_mf_buy_no_settlement(api_client, seeded, test_user):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     portfolio = _legacy_portfolio(test_user)
     assert portfolio.cash_aware_enabled is False
     response = api_client.post(
@@ -743,6 +748,7 @@ def test_cash_aware_buy_update_date_blocked_when_insufficient_on_new_date(
 def test_cash_aware_mf_buy_update_increases_paid_value_settlement(
     api_client, seeded, test_user
 ):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     """PUT MF BUY increases paid_value → BUY_SETTLEMENT updates; date = investment_date."""
     portfolio = _enable_cash_aware(ensure_default_portfolio(test_user))
     _deposit(portfolio, day="2026-03-01", amount="10000", currency="INR")
@@ -775,6 +781,7 @@ def test_cash_aware_mf_buy_update_increases_paid_value_settlement(
 def test_cash_aware_mf_buy_update_blocked_insufficient_inr(
     api_client, seeded, test_user
 ):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     """PUT MF BUY blocked when increased paid_value exceeds INR cash."""
     portfolio = _enable_cash_aware(ensure_default_portfolio(test_user))
     _deposit(portfolio, day="2026-03-01", amount="10000", currency="INR")
@@ -797,6 +804,7 @@ def test_cash_aware_mf_buy_update_blocked_insufficient_inr(
 
 @pytest.mark.django_db
 def test_cash_aware_mf_delete_buy_removes_settlement(api_client, seeded, test_user):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     """DELETE MF BUY removes linked BUY_SETTLEMENT atomically."""
     portfolio = _enable_cash_aware(ensure_default_portfolio(test_user))
     _deposit(portfolio, day="2026-03-01", amount="10000", currency="INR")
@@ -820,6 +828,8 @@ def test_cash_aware_mf_delete_buy_removes_settlement(api_client, seeded, test_us
 def test_cash_aware_mf_delete_sell_blocked_when_later_negative(
     api_client, seeded, test_user
 ):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
+    cached_mf_nav("120503", "2026-03-25", "42.5")
     """DELETE MF SELL blocked when proceeds funded a later MF BUY."""
     portfolio = _enable_cash_aware(ensure_default_portfolio(test_user))
     sell = api_client.post(
@@ -1008,6 +1018,7 @@ def test_legacy_put_delete_stock_no_settlement_created(api_client, seeded, test_
 
 @pytest.mark.django_db
 def test_legacy_put_delete_mf_no_settlement_created(api_client, seeded, test_user):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     """Legacy MF PUT/DELETE never creates linked settlements."""
     portfolio = _legacy_portfolio(test_user)
     created = api_client.post(
@@ -1125,7 +1136,7 @@ def test_cash_aware_dividend_rejects_tax_above_gross(api_client, seeded, test_us
 def test_performance_carries_funded_mutual_fund_purchase_until_nav(
     api_client, cash_aware_portfolio, monkeypatch, scope
 ):
-    from market_data.models import AssetType, HistoricalPrice
+    cached_mf_nav("120503", "2026-03-16", "42.5")
 
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 17))
     portfolio = cash_aware_portfolio
@@ -1140,10 +1151,6 @@ def test_performance_carries_funded_mutual_fund_purchase_until_nav(
         format="json",
     )
     assert response.status_code == 201, response.json()
-    HistoricalPrice.objects.create(
-        asset_symbol="120503", date=date(2026, 3, 16), close_price=Decimal("42.50"),
-        currency="INR", source="test", asset_type=AssetType.MUTUAL_FUND,
-    )
     selector = "portfolio_scope=all" if scope == "all" else f"portfolio_id={portfolio.id}"
     url = f"/api/v1/portfolio/performance?{selector}&display_currency=INR&range=ALL"
     returns = {p["date"]: p["value"] for p in api_client.get(f"{url}&metric=twror").json()}
@@ -1169,8 +1176,8 @@ def test_performance_carries_funded_mutual_fund_purchase_until_nav(
 
 @pytest.mark.django_db
 def test_same_day_mf_purchase_is_not_double_counted(api_client, cash_aware_portfolio, monkeypatch):
+    cached_mf_nav("120503", "2026-03-16", "42.5")
     """Settlement and NAV on the same day must not invent pending value."""
-    from market_data.models import AssetType, HistoricalPrice
 
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 16))
     portfolio = cash_aware_portfolio
@@ -1186,10 +1193,6 @@ def test_same_day_mf_purchase_is_not_double_counted(api_client, cash_aware_portf
         ),
         format="json",
     ).status_code == 201
-    HistoricalPrice.objects.create(
-        asset_symbol="120503", date=date(2026, 3, 16), close_price=Decimal("42.50"),
-        currency="INR", source="test", asset_type=AssetType.MUTUAL_FUND,
-    )
     url = (
         f"/api/v1/portfolio/performance?portfolio_id={portfolio.id}"
         "&display_currency=INR&range=ALL&metric=value"
@@ -1203,7 +1206,8 @@ def test_same_day_mf_purchase_is_not_double_counted(api_client, cash_aware_portf
 def test_overlapping_pending_mf_purchases_are_both_carried(
     api_client, cash_aware_portfolio, monkeypatch
 ):
-    from market_data.models import AssetType, HistoricalPrice
+    cached_mf_nav("120503", "2026-03-17", "42.5")
+    cached_mf_nav("120503", "2026-03-18", "42.5")
 
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
     portfolio = cash_aware_portfolio
@@ -1227,12 +1231,6 @@ def test_overlapping_pending_mf_purchases_are_both_carried(
         ),
         format="json",
     ).status_code == 201
-    for day, close in (("2026-03-17", "42.50"), ("2026-03-18", "42.50")):
-        HistoricalPrice.objects.create(
-            asset_symbol="120503", date=date.fromisoformat(day),
-            close_price=Decimal(close), currency="INR", source="test",
-            asset_type=AssetType.MUTUAL_FUND,
-        )
     url = (
         f"/api/v1/portfolio/performance?portfolio_id={portfolio.id}"
         "&display_currency=INR&range=ALL&metric=value"

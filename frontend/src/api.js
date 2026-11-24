@@ -36,6 +36,11 @@ function buildUrl(path, params) {
   return `${BASE_URL}${path}${qs}`;
 }
 
+export async function getCachedMutualFundNav(schemeCode, navDate) {
+  const params = new URLSearchParams({ scheme_code: schemeCode, nav_date: navDate });
+  return fetchWithHandling(`/nav/lookup?${params.toString()}`);
+}
+
 export async function fetchWithHandling(path, options = {}) {
   const response = await fetch(buildUrl(path), defaultFetchOptions(options));
   if (response.status === 401 && !path.startsWith('/auth/') && _onUnauthorized) {

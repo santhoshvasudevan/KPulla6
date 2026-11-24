@@ -7,6 +7,7 @@ import pytest
 from fx.services import upsert_fx_rate
 from market_data.models import AssetType, HistoricalPrice
 from tests.test_analytics_asset_metrics_api import _mf_payload
+from tests.conftest import cached_mf_nav
 
 
 @pytest.mark.django_db
@@ -16,6 +17,9 @@ def test_closed_holding_excluded_and_open_fx_coverage_preserved(
     api_client, legacy_seeded, monkeypatch, closed_kind, fx_available,
 ):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
+    cached_mf_nav("120503", "2026-03-01", "42.5")
+    if closed_kind == "MUTUAL_FUND":
+        cached_mf_nav("120504", "2026-03-02", "100")
     assert api_client.post("/api/v1/transactions", _mf_payload(
         investment_date="2026-03-01", nav_date="2026-03-01",
     ), format="json").status_code == 201

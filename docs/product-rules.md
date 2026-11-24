@@ -54,6 +54,15 @@ Do **not** bulk-enable legacy portfolios without per-portfolio user confirmation
 
 Settlement sync: `backend/transactions/cash_settlement.py` (atomic with transaction writes).
 
+**MF cached NAV:** Create/update/import require positive exact-date INR cached NAV;
+the backend uses it canonically with no override, date fallback, or provider read.
+Missing cache blocks until explicit refresh supplies that date. Preserve statement
+units/fees/market/paid values and `VALUE_MISMATCH`; never silently bulk-rewrite
+history. Only a NAV-changing BUY correction with no linked cash and all
+statement/cash fields unchanged skips historical settlement backfill; other
+writes retain normal cash validation. See [MF validation](./mutual-funds.md#nav-validation-strategy)
+and [cash exception](./cash-ledger.md#nav-only-mf-buy-correction-2026-11-24).
+
 ---
 
 ## D. Portfolio return rules

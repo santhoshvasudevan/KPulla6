@@ -10,6 +10,8 @@ from decimal import Decimal
 
 import pytest
 import pyxirr
+from tests.conftest import cached_mf_nav, historical_mf_transaction
+from portfolios.seed import ensure_default_portfolio
 
 from market_data.models import AssetType, HistoricalPrice
 from portfolios.models import Portfolio
@@ -68,6 +70,7 @@ def _detail_xirr(client, folio: str = FOLIO, **params):
 @pytest.mark.django_db
 def test_personal_xirr_uses_investment_date_not_nav_date(api_client, legacy_seeded, monkeypatch):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 8, 16))
+    cached_mf_nav("120503", '2024-01-15', '100')
     assert api_client.post("/api/v1/transactions", _mf_payload(
         investment_date="2024-01-01", nav_date="2024-01-15", nav="100",
         units_allotted="100", paid_value="10000", market_value="10000",
@@ -94,6 +97,7 @@ def test_personal_xirr_uses_investment_date_not_nav_date(api_client, legacy_seed
 @pytest.mark.django_db
 def test_personal_xirr_buy_paid_value_does_not_double_count_fees(api_client, legacy_seeded, monkeypatch):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2025, 1, 1))
+    cached_mf_nav("120503", '2024-01-01', '100')
     assert api_client.post("/api/v1/transactions", _mf_payload(
         investment_date="2024-01-01", nav_date="2024-01-01", nav="100",
         units_allotted="100", paid_value="10100", market_value="10000",
@@ -118,11 +122,13 @@ def test_personal_xirr_sell_paid_value_zero_uses_units_nav_fees_fallback(
     api_client, legacy_seeded, monkeypatch
 ):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2025, 6, 1))
+    cached_mf_nav("120503", '2024-01-01', '100')
     assert api_client.post("/api/v1/transactions", _mf_payload(
         investment_date="2024-01-01", nav_date="2024-01-01", nav="100",
         units_allotted="100", paid_value="10000", market_value="10000",
         folio_number=FOLIO,
     ), format="json").status_code == 201
+    cached_mf_nav("120503", '2025-01-01', '120')
     sell = api_client.post("/api/v1/transactions", _mf_payload(
         type="SELL", investment_date="2025-01-01", nav_date="2025-01-01", nav="120",
         units_allotted="100", paid_value="0", market_value="12000",
@@ -140,11 +146,13 @@ def test_personal_xirr_sell_paid_value_zero_uses_units_nav_fees_fallback(
 @pytest.mark.django_db
 def test_personal_xirr_sell_prefers_actual_cash_received(api_client, legacy_seeded, monkeypatch):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2025, 6, 1))
+    cached_mf_nav("120503", '2024-01-01', '100')
     assert api_client.post("/api/v1/transactions", _mf_payload(
         investment_date="2024-01-01", nav_date="2024-01-01", nav="100",
         units_allotted="100", paid_value="10000", market_value="10000",
         folio_number=FOLIO,
     ), format="json").status_code == 201
+    cached_mf_nav("120503", '2025-01-01', '120')
     sell = api_client.post("/api/v1/transactions", _mf_payload(
         type="SELL", investment_date="2025-01-01", nav_date="2025-01-01", nav="120",
         units_allotted="100", paid_value="12000", market_value="12000",
@@ -168,17 +176,20 @@ def test_personal_xirr_sell_prefers_actual_cash_received(api_client, legacy_seed
 @pytest.mark.django_db
 def test_personal_xirr_partial_sale_and_same_day_flows(api_client, legacy_seeded, monkeypatch):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2025, 1, 1))
+    cached_mf_nav("120503", '2024-01-01', '100')
     assert api_client.post("/api/v1/transactions", _mf_payload(
         investment_date="2024-01-01", nav_date="2024-01-01", nav="100",
         units_allotted="100", paid_value="10000", market_value="10000",
         folio_number=FOLIO,
     ), format="json").status_code == 201
     # Same-day second purchase.
+    cached_mf_nav("120503", '2024-01-01', '100')
     assert api_client.post("/api/v1/transactions", _mf_payload(
         investment_date="2024-01-01", nav_date="2024-01-01", nav="100",
         units_allotted="50", paid_value="5000", market_value="5000",
         folio_number=FOLIO,
     ), format="json").status_code == 201
+    cached_mf_nav("120503", '2024-07-01', '110')
     assert api_client.post("/api/v1/transactions", _mf_payload(
         type="SELL", investment_date="2024-07-01", nav_date="2024-07-01", nav="110",
         units_allotted="60", paid_value="6600", market_value="6600",
@@ -197,13 +208,13 @@ def test_personal_xirr_partial_sale_and_same_day_flows(api_client, legacy_seeded
 
 
 @pytest.mark.django_db
-def test_personal_xirr_unavailable_for_missing_nav_and_oversell(api_client, legacy_seeded, monkeypatch):
+def test_personal_xirr_unavailable_for_missing_nav_and_oversell(api_client, legacy_seeded, monkeypatch, test_user):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2025, 1, 1))
-    assert api_client.post("/api/v1/transactions", _mf_payload(
+    historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload(
         investment_date="2024-01-01", nav_date="2024-01-01", nav="100",
         units_allotted="100", paid_value="10000", market_value="10000",
         folio_number=FOLIO,
-    ), format="json").status_code == 201
+    ))
     missing = _metrics(api_client, folio_number=FOLIO)["personal_metrics"]
     assert missing["xirr"] is None
     assert missing["status"] == "unavailable"
@@ -215,6 +226,7 @@ def test_personal_xirr_unavailable_for_missing_nav_and_oversell(api_client, lega
 
     HistoricalPrice.objects.filter(asset_symbol=SCHEME).delete()
     _nav("2025-01-01", "120")
+    cached_mf_nav("120503", '2024-06-01', '110')
     oversell = api_client.post("/api/v1/transactions", _mf_payload(
         type="SELL", investment_date="2024-06-01", nav_date="2024-06-01", nav="110",
         units_allotted="150", paid_value="16500", market_value="16500",
@@ -236,21 +248,25 @@ def test_personal_xirr_folio_and_portfolio_scope_and_surface_parity(
         user=test_user, name="Secondary XIRR Scope", base_currency="EUR",
         cash_aware_enabled=False,
     )
+    cached_mf_nav("120503", '2024-01-01', '100')
     assert api_client.post("/api/v1/transactions", _mf_payload(
         investment_date="2024-01-01", nav_date="2024-01-01", nav="100",
         units_allotted="100", paid_value="10000", market_value="10000",
         folio_number="F-A", portfolio_id=primary.id,
     ), format="json").status_code == 201
+    cached_mf_nav("120503", '2024-01-01', '100')
     assert api_client.post("/api/v1/transactions", _mf_payload(
         investment_date="2024-01-01", nav_date="2024-01-01", nav="100",
         units_allotted="50", paid_value="10000", market_value="5000",
         folio_number="F-B", portfolio_id=primary.id,
     ), format="json").status_code == 201
+    cached_mf_nav("120503", '2024-06-01', '110')
     assert api_client.post("/api/v1/transactions", _mf_payload(
         investment_date="2024-06-01", nav_date="2024-06-01", nav="110",
         units_allotted="40", paid_value="4400", market_value="4400",
         folio_number="F-A", portfolio_id=secondary.id,
     ), format="json").status_code == 201
+    cached_mf_nav('120504', '2024-01-01', '100')
     assert api_client.post("/api/v1/transactions", _mf_payload(
         scheme_code="120504", scheme_name="Compare Peer Fund",
         investment_date="2024-01-01", nav_date="2024-01-01", nav="100",
@@ -321,6 +337,7 @@ def test_personal_xirr_independent_of_display_currency_and_range(
     from fx.services import upsert_fx_rate
 
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 8, 16))
+    cached_mf_nav("120503", '2024-01-01', '100')
     assert api_client.post("/api/v1/transactions", _mf_payload(
         investment_date="2024-01-01", nav_date="2024-01-01", nav="100",
         units_allotted="100", paid_value="10000", market_value="10000",
@@ -363,12 +380,14 @@ def test_unsolvable_same_day_cash_flows_are_unavailable_on_every_surface(
 ):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2025, 1, 1))
     for kind in ("BUY", "SELL"):
+        cached_mf_nav("120503", '2024-01-01', '100')
         response = api_client.post("/api/v1/transactions", _mf_payload(
             type=kind, investment_date="2024-01-01", nav_date="2024-01-01",
             nav="100", units_allotted="100", paid_value="10000", market_value="10000",
             folio_number=FOLIO,
         ), format="json")
         assert response.status_code == 201, response.json()
+    cached_mf_nav('120504', "2026-03-15", "42.5")
     assert api_client.post("/api/v1/transactions", _mf_payload(
         scheme_code="120504", folio_number=FOLIO,
     ), format="json").status_code == 201
@@ -386,6 +405,7 @@ def test_future_nav_and_future_only_cache_have_http_parity_on_every_surface(
 ):
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 8, 16))
     for scheme in (SCHEME, "120504"):
+        cached_mf_nav(scheme, '2024-01-01', '100')
         assert api_client.post("/api/v1/transactions", _mf_payload(
             scheme_code=scheme, investment_date="2024-01-01", nav_date="2024-01-01",
             nav="100", units_allotted="100", paid_value="10000", market_value="10000",

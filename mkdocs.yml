@@ -144,6 +144,7 @@ nav:
     - Login issues: troubleshooting/login-issues.md
     - Google OAuth errors: troubleshooting/google-oauth-errors.md
     - Missing prices or NAVs: troubleshooting/missing-prices-navs.md
+    - MF save or import blocked by cached NAV: troubleshooting/mf-cached-nav-writes.md
     - CSV cash funding import: troubleshooting/csv-cash-funding-import.md
     - Dashboard is slow: troubleshooting/dashboard-slow.md
     - Dashboard totals: troubleshooting/dashboard-totals.md

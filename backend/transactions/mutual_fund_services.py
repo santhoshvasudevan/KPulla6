@@ -10,7 +10,7 @@ from django.db import transaction as db_transaction
 from market_data.models import Asset, AssetType, MutualFundProfile
 from market_data.mutual_fund_classification_bridge import maybe_apply_inferred_asset_class
 from market_data.nav_lookup import normalize_scheme_code
-from transactions.mf_nav_validation import verify_mutual_fund_nav_inputs
+from transactions.mf_nav_validation import cached_nav_for_date, verify_mutual_fund_nav_inputs
 from portfolios.services import PortfolioNotFoundError
 from portfolios.scope import resolve_portfolio_id_or_default
 from transactions.models import (
@@ -124,7 +124,12 @@ def validate_mutual_fund_transaction_payload(data: dict[str, Any]) -> MutualFund
     if nav_date is None:
         raise TransactionValidationError("nav_date is required")
 
-    nav = _require_decimal(data.get("nav"), field="nav", gt_zero=True)
+    nav = cached_nav_for_date(scheme_code=scheme_code, nav_date=nav_date)
+    if nav is None:
+        raise TransactionValidationError(
+            f"Exact-date cached NAV is required for scheme {scheme_code} on {nav_date}. "
+            "Refresh NAV history before saving or importing this transaction."
+        )
     units_allotted = _require_decimal(data.get("units_allotted"), field="units_allotted", gt_zero=True)
     paid_value = _require_decimal(data.get("paid_value"), field="paid_value", ge_zero=True)
     market_value = _require_decimal(data.get("market_value"), field="market_value", ge_zero=True)
@@ -134,6 +139,8 @@ def validate_mutual_fund_transaction_payload(data: dict[str, Any]) -> MutualFund
     fees = _resolve_fees(fees=fees, paid_value=paid_value, market_value=market_value)
 
     currency = (data.get("currency") or "INR").strip().upper() or "INR"
+    if currency != "INR":
+        raise TransactionValidationError("Mutual fund transactions must use INR with cached NAV.")
 
     parsed_actual = _parse_optional_positive_decimal(
         data.get("actual_cash_received"), field="actual_cash_received"
@@ -324,6 +331,29 @@ def update_mutual_fund_transaction(
     else:
         portfolio_id = transaction.portfolio_id
 
+    old_detail = transaction.mutual_fund_detail
+    # Correcting a recorded BUY price is not authorization to backfill historical
+    # broker cash. Only this unchanged-statement, NAV-only path skips missing cash.
+    nav_only_buy_correction = (
+        transaction.type == payload.txn_type == TransactionType.BUY
+        and transaction.price_per_share != payload.nav
+        and transaction.portfolio_id == portfolio_id
+        and transaction.asset_symbol == payload.scheme_code
+        and transaction.currency == payload.currency
+        and transaction.fees == payload.fees
+        and transaction.quantity == payload.units_allotted
+        and transaction.date == payload.nav_date
+        and transaction.actual_cash_received == payload.actual_cash_received
+        and (transaction.settlement_note or "") == (payload.settlement_note or "")
+        and old_detail.investment_date == payload.investment_date
+        and old_detail.nav_date == payload.nav_date
+        and old_detail.units_allotted == payload.units_allotted
+        and old_detail.paid_value == payload.paid_value
+        and old_detail.market_value == payload.market_value
+        and old_detail.folio.folio_number == payload.folio_number
+        and not transaction.cash_ledger_entries.exists()
+    )
+
     asset = _ensure_mf_asset(payload)
     profile = _ensure_mf_profile(asset, payload)
     maybe_apply_inferred_asset_class(asset, profile)
@@ -359,5 +389,6 @@ def update_mutual_fund_transaction(
     detail.nav_verification_message = nav_message
     detail.save()
 
-    sync_mutual_fund_settlement(transaction, detail)
+    if not nav_only_buy_correction:
+        sync_mutual_fund_settlement(transaction, detail)
     return get_transaction(user, transaction.id)

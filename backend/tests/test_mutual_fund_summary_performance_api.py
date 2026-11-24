@@ -7,6 +7,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
+from tests.conftest import cached_mf_nav, historical_mf_transaction
 
 from fx.services import upsert_fx_rate
 from market_data.models import AssetType, HistoricalPrice
@@ -33,17 +34,21 @@ def _mf_payload(**overrides):
 
 
 def _mf_buy(api_client, **kwargs):
+    payload = _mf_payload(type="BUY", **kwargs)
+    cached_mf_nav(payload["scheme_code"], payload["nav_date"], payload["nav"])
     return api_client.post(
         "/api/v1/transactions",
-        _mf_payload(type="BUY", **kwargs),
+        payload,
         format="json",
     )
 
 
 def _mf_sell(api_client, **kwargs):
+    payload = _mf_payload(type="SELL", **kwargs)
+    cached_mf_nav(payload["scheme_code"], payload["nav_date"], payload["nav"])
     return api_client.post(
         "/api/v1/transactions",
-        _mf_payload(type="SELL", **kwargs),
+        payload,
         format="json",
     )
 
@@ -74,13 +79,11 @@ def _stock_price(symbol: str, d: str, close: str, *, currency: str = "EUR"):
 
 
 def _mf_nav(scheme: str, d: str, close: str):
-    HistoricalPrice.objects.create(
+    HistoricalPrice.objects.update_or_create(
         asset_symbol=scheme,
         date=date.fromisoformat(d),
-        close_price=Decimal(close),
-        currency="INR",
-        source="test",
         asset_type=AssetType.MUTUAL_FUND,
+        defaults={"close_price": Decimal(close), "currency": "INR", "source": "test"},
     )
 
 
@@ -166,8 +169,8 @@ def test_summary_stock_plus_mf_mixed(api_client, legacy_seeded, monkeypatch, tes
 
 
 @pytest.mark.django_db
-def test_summary_mf_missing_nav_warning_and_zero_value(api_client, legacy_seeded):
-    _mf_buy(api_client)
+def test_summary_mf_missing_nav_warning_and_zero_value(api_client, legacy_seeded, test_user):
+    historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload())
     data = api_client.get(
         "/api/v1/portfolio/summary?include_timeseries=false"
     ).json()
@@ -263,7 +266,8 @@ def test_summary_mf_sell_affects_realized_pl(api_client, legacy_seeded):
         "/api/v1/portfolio/summary?include_timeseries=false"
     ).json()
     assert data["realized_pl"] != 0.0
-    assert data["current_value"] == pytest.approx(2500.0, rel=1e-2)
+    # The exact-date SELL NAV is now also the latest cached valuation: 50 units * 60.
+    assert data["current_value"] == pytest.approx(3000.0, rel=1e-2)
 
 
 @pytest.mark.django_db

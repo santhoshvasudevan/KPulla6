@@ -7,6 +7,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from tests.conftest import cached_mf_nav
 
 from cash.models import CashEntryType, CashLedgerEntry
 from portfolios.models import Portfolio
@@ -203,6 +204,7 @@ def test_stock_split_no_cash_effect_in_preview(api_client, seeded, test_user):
 
 @pytest.mark.django_db
 def test_mf_buy_uses_paid_value_and_investment_date(api_client, seeded, test_user):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     _enable_cash_aware(ensure_default_portfolio(test_user))
     mf_row = (
         "BUY,120503,Test Fund,F1,03/10/26,03/15/26,42.50,100,4255.00,4250.00,5.00,INR\n"
@@ -217,6 +219,7 @@ def test_mf_buy_uses_paid_value_and_investment_date(api_client, seeded, test_use
 
 @pytest.mark.django_db
 def test_confirmed_mf_import_with_distinct_nav_date(api_client, seeded, test_user):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     portfolio = _enable_cash_aware(ensure_default_portfolio(test_user))
     csv_text = MF_HEADER + (
         "BUY,120503,Test Fund,F1,03/10/26,03/15/26,42.50,100,4255,4250,5,INR\n"
@@ -245,6 +248,7 @@ def test_confirmed_mf_import_with_distinct_nav_date(api_client, seeded, test_use
 def test_confirmed_mf_import_rounds_cash_preview_to_ledger_precision(
     api_client, seeded, test_user, paid, expected
 ):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     portfolio = _enable_cash_aware(ensure_default_portfolio(test_user))
     csv_text = MF_HEADER + (
         f"BUY,120503,Test Fund,F1,03/10/26,03/15/26,42.50,100,{paid},4250,5,INR\n"

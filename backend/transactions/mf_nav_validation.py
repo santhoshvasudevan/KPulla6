@@ -21,11 +21,12 @@ class MutualFundNavValidationResult:
     message: str
 
 
-def _cached_nav_for_date(*, scheme_code: str, nav_date: Any) -> Decimal | None:
+def cached_nav_for_date(*, scheme_code: str, nav_date: Any) -> Decimal | None:
     row = HistoricalPrice.objects.filter(
         asset_symbol=normalize_scheme_code(scheme_code),
         asset_type=AssetType.MUTUAL_FUND,
         date=nav_date,
+        currency="INR",
     ).first()
     if row is None:
         return None
@@ -50,7 +51,7 @@ def verify_mutual_fund_nav_inputs(
     Does not raise when cache is missing; returns NAV_MISSING status instead.
     """
     scheme = normalize_scheme_code(scheme_code)
-    cached_nav = _cached_nav_for_date(scheme_code=scheme, nav_date=nav_date)
+    cached_nav = cached_nav_for_date(scheme_code=scheme, nav_date=nav_date)
 
     if cached_nav is None:
         return MutualFundNavValidationResult(

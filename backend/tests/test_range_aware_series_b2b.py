@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
+from tests.conftest import cached_mf_nav
 
 from finance.performance_range import resolve_performance_range_start
 from finance.twror import compute_twror_series
@@ -41,9 +42,11 @@ def _mf_payload(**overrides):
 
 
 def _mf_buy(api_client, **kwargs):
+    payload = _mf_payload(type="BUY", **kwargs)
+    cached_mf_nav(payload["scheme_code"], payload["nav_date"], payload["nav"])
     return api_client.post(
         "/api/v1/transactions",
-        _mf_payload(type="BUY", **kwargs),
+        payload,
         format="json",
     )
 
@@ -60,7 +63,7 @@ def _price(symbol: str, d: str, close: str, *, currency: str = "EUR", asset_type
 
 
 def _mf_nav(scheme: str, d: str, close: str):
-    _price(scheme, d, close, currency="INR", asset_type=AssetType.MUTUAL_FUND)
+    cached_mf_nav(scheme, d, close)
 
 
 def _reference_value_series(

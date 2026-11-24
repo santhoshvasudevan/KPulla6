@@ -5,6 +5,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
+from tests.conftest import cached_mf_nav
 
 from cash.models import CashEntryType, CashLedgerEntry
 from fx.models import FXRate
@@ -510,21 +511,21 @@ def _mf_payload(**overrides):
 
 
 def _mf_buy(api_client, **kwargs):
+    payload = _mf_payload(type="BUY", **kwargs)
+    cached_mf_nav(payload["scheme_code"], payload["nav_date"], payload["nav"])
     return api_client.post(
         "/api/v1/transactions",
-        _mf_payload(type="BUY", **kwargs),
+        payload,
         format="json",
     )
 
 
 def _mf_nav(scheme: str, d: str, close: str):
-    HistoricalPrice.objects.create(
+    HistoricalPrice.objects.update_or_create(
         asset_symbol=scheme,
         date=date.fromisoformat(d),
-        close_price=Decimal(close),
-        currency="INR",
-        source="test",
         asset_type=AssetType.MUTUAL_FUND,
+        defaults={"close_price": Decimal(close), "currency": "INR", "source": "test"},
     )
 
 

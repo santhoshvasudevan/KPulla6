@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import TransactionModal from './TransactionModal';
@@ -12,10 +12,17 @@ vi.mock('../api', async (importOriginal) => {
     ...actual,
     createTransaction: vi.fn(),
     updateTransaction: vi.fn(),
+    getCachedMutualFundNav: vi.fn(),
     createCashDeposit: vi.fn(),
     createCashWithdrawal: vi.fn(),
     fetchPortfolios: vi.fn(),
   };
+});
+
+beforeEach(() => {
+  api.getCachedMutualFundNav.mockReset().mockImplementation(async (schemeCode, navDate) => ({
+    scheme_code: schemeCode, nav_date: navDate, nav: '42.5000', status: 'available',
+  }));
 });
 
 describe('TransactionModal record type selector', () => {
@@ -218,6 +225,143 @@ describe('TransactionModal MUTUAL_FUND behavior', () => {
       </PortfolioProvider>
     );
 
+  const editTransaction = {
+    id: 99, asset_type: 'MUTUAL_FUND', scheme_code: '120503', scheme_name: 'Test Fund',
+    folio_number: 'F1', type: 'SELL', investment_date: '2026-03-10', nav_date: '2026-03-15',
+    nav: '42.5', units_allotted: '100.125', paid_value: '4255.25', market_value: '4250.75',
+    fees: '4.25', currency: 'INR', portfolio_id: 1, actual_cash_received: '4200',
+    settlement_note: 'Statement settlement', fund_house: 'Test AMC', scheme_type: 'Open Ended',
+    scheme_category: 'Equity', direct_or_regular: 'Direct', growth_or_idcw: 'Growth',
+  };
+
+  it('blocks loading and missing NAV without falling back to the original, then retries', async () => {
+    let resolveLookup;
+    api.getCachedMutualFundNav.mockImplementationOnce(() => new Promise((resolve) => { resolveLookup = resolve; }));
+    const { container } = renderModal({ initialData: editTransaction });
+    const save = screen.getByRole('button', { name: 'Save' });
+    expect(screen.getByLabelText('NAV')).toHaveAttribute('readonly');
+    expect(screen.getByLabelText('NAV')).toHaveValue(null);
+    expect(save).toBeDisabled();
+    fireEvent.submit(container.querySelector('form'));
+    expect(api.updateTransaction).not.toHaveBeenCalled();
+    await act(async () => resolveLookup({ scheme_code: '120503', nav_date: '2026-03-15', nav: null, status: 'missing' }));
+    expect(screen.getByText('No cached NAV for this exact date.')).toBeInTheDocument();
+    expect(save).toBeDisabled();
+    fireEvent.submit(container.querySelector('form'));
+    expect(api.updateTransaction).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry NAV lookup' }));
+    await waitFor(() => expect(save).toBeEnabled());
+    expect(api.getCachedMutualFundNav).toHaveBeenLastCalledWith('120503', '2026-03-15');
+    expect(screen.getByLabelText('NAV')).toHaveValue(42.5);
+  });
+
+  it('blocks lookup errors and permits a retry', async () => {
+    api.getCachedMutualFundNav.mockRejectedValueOnce(new Error('Offline'));
+    const { container } = renderModal({ initialData: editTransaction });
+    await screen.findByText('Cached NAV lookup failed.');
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    fireEvent.submit(container.querySelector('form'));
+    expect(api.updateTransaction).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry NAV lookup' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled());
+  });
+
+  it('looks up NAV again when switching edit records with the same scheme and date', async () => {
+    const view = (initialData) => (
+      <PortfolioProvider initialPortfolios={[
+        { id: 1, name: 'Default Portfolio', is_default: true, is_active: true, base_currency: 'EUR' },
+      ]} disableFetch>
+        <TransactionModal isOpen onClose={vi.fn()} onSuccess={vi.fn()} initialData={initialData} />
+      </PortfolioProvider>
+    );
+    const { rerender } = render(view(editTransaction));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled());
+    rerender(view({ ...editTransaction, id: 100, folio_number: 'F2' }));
+    await waitFor(() => expect(api.getCachedMutualFundNav).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled());
+    expect(screen.getByDisplayValue('F2')).toBeInTheDocument();
+  });
+
+  it('ignores stale lookup responses after scheme and date changes', async () => {
+    const pending = [];
+    api.getCachedMutualFundNav.mockImplementation((scheme_code, nav_date) => new Promise((resolve, reject) => {
+      pending.push({ scheme_code, nav_date, resolve, reject });
+    }));
+    const { container } = renderModal();
+    fireEvent.change(screen.getByLabelText('record type'), { target: { value: 'MUTUAL_FUND' } });
+    const change = (name, value) => fireEvent.change(container.querySelector(`input[name="${name}"]`), { target: { value } });
+    change('scheme_code', '120503');
+    change('nav_date', '2026-03-15');
+    change('scheme_code', '120504');
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    const latest = pending.at(-1);
+    await act(async () => latest.resolve({ ...latest, status: 'available', nav: '50.1234' }));
+    expect(screen.getByLabelText('NAV')).toHaveValue(50.1234);
+    await act(async () => {
+      pending[0].reject(new Error('Stale error'));
+      pending.slice(1, -1).forEach((p) => p.resolve({ ...p, status: 'available', nav: '10' }));
+    });
+    expect(screen.getByLabelText('NAV')).toHaveValue(50.1234);
+    expect(screen.queryByText('Cached NAV lookup failed.')).not.toBeInTheDocument();
+    change('nav_date', '');
+    expect(screen.getByLabelText('NAV')).toHaveValue(null);
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('requires explicit replacement confirmation and preserves statement fields in an edit PUT', async () => {
+    api.getCachedMutualFundNav.mockImplementation(async (scheme_code, nav_date) => ({
+      scheme_code, nav_date, nav: '43.1250', status: 'available',
+    }));
+    const actual = await vi.importActual('../api');
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: 99 }) });
+    vi.stubGlobal('fetch', fetchMock);
+    api.updateTransaction.mockImplementationOnce(actual.updateTransaction);
+    try {
+      const { container } = renderModal({ initialData: editTransaction });
+      const confirmation = await screen.findByRole('checkbox', { name: /Apply cached NAV 43.1250 instead of original NAV 42.5/ });
+      expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+      fireEvent.submit(container.querySelector('form'));
+      expect(api.updateTransaction).not.toHaveBeenCalled();
+      fireEvent.click(confirmation);
+      expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+      fireEvent.change(container.querySelector('input[name="nav_date"]'), { target: { value: '2026-03-16' } });
+      await waitFor(() => expect(screen.getByLabelText('NAV')).toHaveValue(43.125));
+      expect(screen.getByRole('checkbox')).not.toBeChecked();
+      fireEvent.click(screen.getByRole('checkbox'));
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/transactions/99');
+      const request = fetchMock.mock.calls[0][1];
+      expect(request.method).toBe('PUT');
+      expect(JSON.parse(request.body)).toEqual({
+        asset_type: 'MUTUAL_FUND', scheme_code: '120503', scheme_name: 'Test Fund', folio_number: 'F1',
+        type: 'SELL', investment_date: '2026-03-10', nav_date: '2026-03-16', nav: 43.125,
+        units_allotted: 100.125, paid_value: 4255.25, market_value: 4250.75, fees: 4.25,
+        currency: 'INR', portfolio_id: 1, actual_cash_received: 4200, settlement_note: 'Statement settlement',
+        fund_house: 'Test AMC', scheme_type: 'Open Ended', scheme_category: 'Equity',
+        direct_or_regular: 'Direct', growth_or_idcw: 'Growth',
+      });
+      expect(api.createTransaction).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('uses the authenticated exact-date lookup API with encoded parameters', async () => {
+    const actual = await vi.importActual('../api');
+    const result = { scheme_code: '120503', nav_date: '2026-03-15', nav: '42.5000', status: 'available' };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => result });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      expect(await actual.getCachedMutualFundNav('120503', '2026-03-15')).toEqual(result);
+      expect(fetchMock).toHaveBeenCalledWith('/api/v1/nav/lookup?scheme_code=120503&nav_date=2026-03-15',
+        expect.objectContaining({ credentials: 'include' }));
+      expect(fetchMock.mock.calls[0][1].method ?? 'GET').toBe('GET');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('switches to mutual fund form mode', () => {
     const { container } = renderModal();
     fireEvent.change(screen.getByLabelText('record type'), { target: { value: 'MUTUAL_FUND' } });
@@ -234,7 +378,7 @@ describe('TransactionModal MUTUAL_FUND behavior', () => {
     fireEvent.change(container.querySelector('input[name="folio_number"]'), { target: { value: 'F1' } });
     fireEvent.change(container.querySelector('input[name="investment_date"]'), { target: { value: '2026-03-10' } });
     fireEvent.change(container.querySelector('input[name="nav_date"]'), { target: { value: '2026-03-15' } });
-    fireEvent.change(container.querySelector('input[name="nav"]'), { target: { value: '42.5' } });
+    await waitFor(() => expect(container.querySelector('input[name="nav"]')).toHaveValue(42.5));
     fireEvent.change(container.querySelector('input[name="units_allotted"]'), { target: { value: '100' } });
     fireEvent.change(container.querySelector('input[name="paid_value"]'), { target: { value: '4255' } });
     fireEvent.change(container.querySelector('input[name="market_value"]'), { target: { value: '4250' } });
@@ -276,6 +420,7 @@ describe('TransactionModal MUTUAL_FUND behavior', () => {
     expect(screen.getByDisplayValue('120503')).toBeDisabled();
 
     fireEvent.change(container.querySelector('input[name="paid_value"]'), { target: { value: '4300' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => {
@@ -486,7 +631,7 @@ describe('TransactionModal stock/MF BUY insufficient cash', () => {
     fireEvent.change(container.querySelector('input[name="folio_number"]'), { target: { value: 'F1' } });
     fireEvent.change(container.querySelector('input[name="investment_date"]'), { target: { value: '2026-03-10' } });
     fireEvent.change(container.querySelector('input[name="nav_date"]'), { target: { value: '2026-03-15' } });
-    fireEvent.change(container.querySelector('input[name="nav"]'), { target: { value: '42.5' } });
+    await waitFor(() => expect(container.querySelector('input[name="nav"]')).toHaveValue(42.5));
     fireEvent.change(container.querySelector('input[name="units_allotted"]'), { target: { value: '100' } });
     fireEvent.change(container.querySelector('input[name="paid_value"]'), { target: { value: '4255' } });
     fireEvent.change(container.querySelector('input[name="market_value"]'), { target: { value: '4250' } });
@@ -637,7 +782,7 @@ describe('TransactionModal stock/MF BUY insufficient cash', () => {
     fireEvent.change(container.querySelector('input[name="folio_number"]'), { target: { value: 'F1' } });
     fireEvent.change(container.querySelector('input[name="investment_date"]'), { target: { value: '2026-03-10' } });
     fireEvent.change(container.querySelector('input[name="nav_date"]'), { target: { value: '2026-03-15' } });
-    fireEvent.change(container.querySelector('input[name="nav"]'), { target: { value: '42.5' } });
+    await waitFor(() => expect(container.querySelector('input[name="nav"]')).toHaveValue(42.5));
     fireEvent.change(container.querySelector('input[name="units_allotted"]'), { target: { value: '100' } });
     fireEvent.change(container.querySelector('input[name="paid_value"]'), { target: { value: '4255' } });
     fireEvent.change(container.querySelector('input[name="market_value"]'), { target: { value: '4250' } });

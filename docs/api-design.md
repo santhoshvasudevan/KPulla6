@@ -1442,7 +1442,7 @@ Full design: [mutual-funds.md](./mutual-funds.md).
 | `type` | Yes | `BUY` or `SELL` only |
 | `investment_date` | Yes | Stored on `MutualFundTransactionDetail` |
 | `nav_date` | Yes | Primary valuation date → `Transaction.date` |
-| `nav` | Yes | Per-unit NAV → `Transaction.price_per_share` |
+| `nav` | No override | Canonical positive exact-date INR cached NAV → `Transaction.price_per_share`; submitted value cannot override cache |
 | `units_allotted` | Yes | → `Transaction.quantity` |
 | `paid_value` | Yes | Actual cash amount |
 | `market_value` | Yes | Reference amount |
@@ -1453,7 +1453,9 @@ Full design: [mutual-funds.md](./mutual-funds.md).
 
 **Validation:**
 - No external NAV provider calls on create/update/read
-- Cached NAV compare on create/update (MF-6): `scheme_code` + `nav_date` vs `HistoricalPrice` (`MUTUAL_FUND`); no external provider; mismatch does not block save
+- Strict cached NAV on create/update/import (2026-11-24): exact `scheme_code` + `nav_date`, `HistoricalPrice` typed `MUTUAL_FUND`, positive NAV, `currency=INR`. Missing usable cache blocks until explicit refresh supplies that date: transaction `POST`/`PUT` return **400**; CSV row validation retains **200** with `success: false`, `imported_count: 0`, and `errors: [{row, field, message}]` (all-or-nothing). No adjacent-date fallback or date substitution; cached NAV is canonical, not user-overridable. MF transactions must use INR.
+- Preserve statement units, fees, market value, and paid value; do not recalculate them to match canonical NAV. `VALUE_MISMATCH` remains a warning. No silent bulk historical rewrite on reads or refresh.
+- Only a NAV-changing existing BUY with no linked cash and all statement/cash fields unchanged skips historical settlement backfill. Creates, SELLs, no-op saves, and other edits retain normal cash validation. [Exact cash guard](./cash-ledger.md#nav-only-mf-buy-correction-2026-11-24).
 - Atomic create/update: `Transaction` + `MutualFundTransactionDetail` in one transaction
 - DELETE hard-deletes transaction; detail cascades; Asset/Profile/Folio retained
 
@@ -1472,15 +1474,25 @@ verification. A real missing exact-date NAV or mismatch remains visible.
 | Status | Meaning |
 |--------|---------|
 | `VERIFIED` | Cached NAV matches entered NAV (±0.01 INR) and `market_value` matches `nav×units` (±1 INR) |
-| `NAV_MISSING` | No cached NAV row for scheme + `nav_date` — transaction still saved |
-| `NAV_MISMATCH` | Cached NAV exists but entered NAV outside tolerance |
+| `NAV_MISSING` | Historical row has no usable positive exact-date INR cache; new writes are blocked, existing row remains readable |
+| `NAV_MISMATCH` | Historical NAV outside cache tolerance; new writes use canonical cache, not an override |
 | `VALUE_MISMATCH` | NAV matches cache but `market_value` outside tolerance vs `nav×units` |
 | `NOT_VERIFIED` | Default on manual DB rows only |
 | `OK` / `WARNING` / `UNCHECKED` | Legacy MF-3 values on older rows |
 
-Structural invalid input (missing fields, non-positive nav/units, negative values, negative computed fees) → **400**.
+For transaction `POST`/`PUT`, structural invalid input (missing required fields, non-positive units, negative values, negative computed fees) or missing usable exact-date cached NAV → **400**. CSV row validation failures instead retain the existing **200** `success: false` response above. NAV is backend-resolved, not a manual input authority.
 
 **PUT:** Existing MF transactions auto-route to MF handler (or send `asset_type=MUTUAL_FUND`).
+
+### Exact-date NAV lookup
+
+`GET /api/v1/nav/lookup?scheme_code=CODE&nav_date=YYYY-MM-DD` requires
+authentication and both query parameters. Reads DB only, with no provider calls
+or writes. **200**: `{ "scheme_code": "120503", "nav_date": "2026-11-20", "nav": "123.456789", "status": "available" }`
+(illustrative). When no positive exact-date INR MF cache exists, `nav` is `null`
+and `status` is `missing` (still **200**). `nav` is a decimal string or null.
+Missing/invalid parameters return **400**. See
+[transaction API reference](./reference/api-transactions.md#get-navlookup).
 
 ### Planned: Scheme lookup (MF-4+)
 

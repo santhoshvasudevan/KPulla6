@@ -7,6 +7,9 @@ from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
+from tests.conftest import historical_mf_transaction
+from portfolios.seed import ensure_default_portfolio
+from transactions.serializers import TransactionSerializer
 
 from market_data.models import AssetType, HistoricalPrice
 from transactions.mf_nav_validation import (
@@ -45,6 +48,11 @@ def _cached_nav(scheme: str, d: str, close: str):
         source="test",
         asset_type=AssetType.MUTUAL_FUND,
     )
+
+
+def _historical_mf(test_user):
+    txn = historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload())
+    return TransactionSerializer(txn).data
 
 
 @pytest.mark.django_db
@@ -126,16 +134,15 @@ def test_create_mf_with_matching_cached_nav_verified(api_client, legacy_seeded):
 
 
 @pytest.mark.django_db
-def test_create_mf_without_cached_nav_nav_missing(api_client, legacy_seeded):
+def test_create_mf_without_cached_nav_is_rejected(api_client, legacy_seeded):
     response = api_client.post("/api/v1/transactions", _mf_payload(), format="json")
-    assert response.status_code == 201
-    data = response.json()
-    assert data["nav_verification_status"] == "NAV_MISSING"
-    assert data["nav_verification_message"]
+    assert response.status_code == 400
+    from transactions.models import Transaction
+    assert not Transaction.objects.exists()
 
 
 @pytest.mark.django_db
-def test_create_mf_nav_mismatch_still_saves(api_client, legacy_seeded):
+def test_create_mf_nav_mismatch_saves_cached_nav(api_client, legacy_seeded):
     _cached_nav("120503", "2026-03-15", "42.500000")
     response = api_client.post(
         "/api/v1/transactions",
@@ -144,8 +151,9 @@ def test_create_mf_nav_mismatch_still_saves(api_client, legacy_seeded):
     )
     assert response.status_code == 201
     data = response.json()
-    assert data["nav_verification_status"] == "NAV_MISMATCH"
-    assert "nav_verification_message" in data
+    assert data["nav"] == 42.5
+    assert data["price_per_share"] == 42.5
+    assert data["nav_verification_status"] == "VALUE_MISMATCH"
 
 
 @pytest.mark.django_db
@@ -161,8 +169,8 @@ def test_create_mf_value_mismatch_still_saves(api_client, legacy_seeded):
 
 
 @pytest.mark.django_db
-def test_list_rechecks_nav_after_cache_is_populated(api_client, legacy_seeded):
-    created = api_client.post("/api/v1/transactions", _mf_payload(), format="json").json()
+def test_list_rechecks_nav_after_cache_is_populated(api_client, legacy_seeded, test_user):
+    created = _historical_mf(test_user)
     assert created["nav_verification_status"] == "NAV_MISSING"
     _cached_nav("120503", "2026-03-15", "42.500000")
     with patch(
@@ -189,9 +197,9 @@ def test_list_rechecks_nav_after_cache_is_populated(api_client, legacy_seeded):
      ("2026-03-15", "43", "NAV_MISMATCH")],
 )
 def test_list_does_not_hide_real_nav_gaps_or_mismatches(
-    api_client, legacy_seeded, cache_date, nav, expected
+    api_client, legacy_seeded, test_user, cache_date, nav, expected
 ):
-    created = api_client.post("/api/v1/transactions", _mf_payload(), format="json").json()
+    created = _historical_mf(test_user)
     _cached_nav("120503", cache_date, nav)
     response = api_client.get("/api/v1/transactions")
     assert response.status_code == 200
@@ -200,11 +208,11 @@ def test_list_does_not_hide_real_nav_gaps_or_mismatches(
 
 
 @pytest.mark.django_db
-def test_refresh_then_list_updates_nav_label_without_transaction_edits(api_client, legacy_seeded):
+def test_refresh_then_list_updates_nav_label_without_transaction_edits(api_client, legacy_seeded, test_user):
     from market_data.providers.mutual_fund_nav_provider import NavPoint
     from tests.test_mutual_fund_nav_sync import MockNavProvider
 
-    created = api_client.post("/api/v1/transactions", _mf_payload(), format="json").json()
+    created = _historical_mf(test_user)
     provider = MockNavProvider({"120503": [NavPoint(date(2026, 3, 15), Decimal("42.5"), "INR")]})
     with patch(
         "market_data.services.mutual_fund_nav_sync.default_mutual_fund_nav_provider",
@@ -225,8 +233,8 @@ def test_refresh_then_list_updates_nav_label_without_transaction_edits(api_clien
 
 
 @pytest.mark.django_db
-def test_update_mf_recomputes_verification_status(api_client, legacy_seeded):
-    created = api_client.post("/api/v1/transactions", _mf_payload(), format="json").json()
+def test_update_mf_recomputes_verification_status(api_client, legacy_seeded, test_user):
+    created = _historical_mf(test_user)
     assert created["nav_verification_status"] == "NAV_MISSING"
 
     _cached_nav("120503", "2026-03-15", "42.500000")

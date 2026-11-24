@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   createTransaction,
   updateTransaction,
+  getCachedMutualFundNav,
   createCashDeposit,
   createCashWithdrawal,
   ApiError,
@@ -309,6 +310,9 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
   const [cashAction, setCashAction] = useState('deposit');
   const [stockForm, setStockForm] = useState(emptyStockForm());
   const [mfForm, setMfForm] = useState(emptyMutualFundForm());
+  const [navLookup, setNavLookup] = useState(null);
+  const [navRetry, setNavRetry] = useState(0);
+  const [navConfirmed, setNavConfirmed] = useState(false);
   const [cashForm, setCashForm] = useState(emptyCashForm());
 
   const [error, setError] = useState('');
@@ -353,6 +357,8 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
       setCashAction('deposit');
     }
     setError('');
+    setNavLookup(null);
+    setNavConfirmed(false);
     setPartialWarning('');
     setShortfall(null);
     setFutureImpact(null);
@@ -362,10 +368,46 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
     addAndContinueInFlight.current = false;
   }, [isOpen, initialData, selectedPortfolioMode, selectedPortfolioId, defaultPortfolioId]);
 
+  const schemeCode = mfForm.scheme_code.trim();
+  const navDate = mfForm.nav_date;
+  useEffect(() => {
+    if (!isOpen || recordType !== 'MUTUAL_FUND' || !schemeCode || !navDate) return;
+    let active = true;
+    setNavConfirmed(false);
+    setNavLookup({ schemeCode, navDate, status: 'loading' });
+    getCachedMutualFundNav(schemeCode, navDate).then(
+      (result) => {
+        if (!active) return;
+        const matches = String(result?.scheme_code) === schemeCode && result?.nav_date === navDate;
+        const available = matches && result.status === 'available' &&
+          typeof result.nav === 'string' && Number.isFinite(Number(result.nav)) && Number(result.nav) > 0;
+        setNavLookup({
+          schemeCode, navDate,
+          status: available ? 'available' : matches && result.status === 'missing' ? 'missing' : 'error',
+          nav: available ? result.nav : '',
+        });
+      },
+      () => {
+        if (active) setNavLookup({ schemeCode, navDate, status: 'error' });
+      }
+    );
+    return () => { active = false; };
+  }, [isOpen, recordType, schemeCode, navDate, navRetry, initialData,
+    selectedPortfolioMode, selectedPortfolioId, defaultPortfolioId]);
+
   if (!isOpen) return null;
 
   const isCash = recordType === 'CASH';
   const isMutualFund = recordType === 'MUTUAL_FUND';
+  const lookupStatus = navLookup?.schemeCode === schemeCode && navLookup?.navDate === navDate
+    ? navLookup.status : 'loading';
+  const cachedNav = lookupStatus === 'available' ? navLookup.nav : '';
+  const effectiveMfForm = { ...mfForm, nav: cachedNav };
+  const originalNav = initialData?.nav ?? initialData?.price_per_share;
+  const needsNavConfirmation = isMutualFund && isEditing && cachedNav !== '' &&
+    Number(originalNav) !== Number(cachedNav);
+  const navBlocked = isMutualFund &&
+    (!cachedNav || (needsNavConfirmation && !navConfirmed));
 
   const handleStockChange = (e) => {
     const { name, value } = e.target;
@@ -374,6 +416,12 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
 
   const handleMfChange = (e) => {
     const { name, value } = e.target;
+    if (name === 'nav') return;
+    if (name === 'scheme_code' || name === 'nav_date') {
+      setNavConfirmed(false);
+      setShortfall(null);
+      setPendingAssetSubmit(null);
+    }
     setMfForm((prev) => ({ ...prev, [name]: value }));
   };
 
@@ -439,6 +487,7 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (navBlocked) return;
     setError('');
     setPartialWarning('');
     setShortfall(null);
@@ -469,13 +518,13 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
           onSuccess?.({ kind: 'cash', message: 'Withdrawal recorded.' });
         }
       } else if (isMutualFund) {
-        const validationError = validateMutualFundForm(mfForm);
+        const validationError = validateMutualFundForm(effectiveMfForm);
         if (validationError) {
           setError(validationError);
           setSubmitting(false);
           return;
         }
-        const payload = buildMutualFundPayload(mfForm);
+        const payload = buildMutualFundPayload(effectiveMfForm);
         if (isEditing) {
           await updateTransaction(initialData.id, payload);
         } else {
@@ -521,7 +570,7 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
           ? {
               mode: isEditing ? 'update' : 'create',
               transactionId: initialData?.id,
-              payload: buildMutualFundPayload(mfForm),
+              payload: buildMutualFundPayload(effectiveMfForm),
               isMutualFund: true,
             }
           : {
@@ -554,6 +603,7 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
   };
 
   const handleAddMissingCashAndContinue = async () => {
+    if (navBlocked) return;
     if (addAndContinueInFlight.current || !shortfall || !pendingAssetSubmit) return;
     addAndContinueInFlight.current = true;
     setAddAndContinueLoading(true);
@@ -626,13 +676,13 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
   const mfSellPreview =
     isMutualFund && mfForm.type === 'SELL'
       ? {
-          calculated: previewMfCalculatedProceeds(mfForm),
+          calculated: previewMfCalculatedProceeds(effectiveMfForm),
           withheld: previewTaxWithheld(
-            previewMfCalculatedProceeds(mfForm),
+            previewMfCalculatedProceeds(effectiveMfForm),
             mfForm.actual_cash_received
           ),
           released: previewTaxReleased(
-            previewMfCalculatedProceeds(mfForm),
+            previewMfCalculatedProceeds(effectiveMfForm),
             mfForm.actual_cash_received
           ),
           currency: mfForm.currency,
@@ -794,15 +844,34 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
 
                   <div className="form-row">
                     <div className="form-group">
-                      <label>NAV</label>
+                      <label htmlFor="cached-mf-nav">NAV</label>
                       <input
                         type="number"
                         step="any"
                         name="nav"
-                        value={mfForm.nav}
-                        onChange={handleMfChange}
+                        id="cached-mf-nav"
+                        value={cachedNav}
+                        readOnly
                         required
                       />
+                      <p role="status" className="modal-form__hint">
+                        {!schemeCode || !navDate ? 'Select a scheme and NAV date.' :
+                          lookupStatus === 'loading' ? 'Loading cached NAV...' :
+                          lookupStatus === 'missing' ? 'No cached NAV for this exact date.' :
+                          lookupStatus === 'error' ? 'Cached NAV lookup failed.' : 'Cached NAV available.'}
+                      </p>
+                      {(lookupStatus === 'missing' || lookupStatus === 'error') && (
+                        <Button type="button" variant="secondary" onClick={() => setNavRetry((n) => n + 1)}>
+                          Retry NAV lookup
+                        </Button>
+                      )}
+                      {needsNavConfirmation && (
+                        <label>
+                          <input type="checkbox" checked={navConfirmed}
+                            onChange={(e) => setNavConfirmed(e.target.checked)} />
+                          Apply cached NAV {cachedNav} instead of original NAV {originalNav ?? 'unavailable'}
+                        </label>
+                      )}
                     </div>
                     <div className="form-group">
                       <label>Units allotted</label>
@@ -1208,7 +1277,7 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
                       }
                       onConfirm={handleAddMissingCashAndContinue}
                       loading={addAndContinueLoading}
-                      disabled={busy}
+                      disabled={busy || navBlocked}
                     />
                   ) : null}
                   <p className="modal-form__hint">
@@ -1223,7 +1292,7 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
             <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>
               Cancel
             </Button>
-            <Button type="submit" variant="primary" disabled={busy}>
+            <Button type="submit" variant="primary" disabled={busy || navBlocked}>
               {submitLabel}
             </Button>
           </div>

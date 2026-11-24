@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from tests.conftest import cached_mf_nav
 
 from fx.services import upsert_fx_rate
 from market_data.models import AssetType, HistoricalPrice
@@ -33,9 +34,11 @@ def _mf_payload(**overrides):
 
 
 def _mf_buy(api_client, **kwargs):
+    payload = _mf_payload(type="BUY", **kwargs)
+    cached_mf_nav(payload["scheme_code"], payload["nav_date"], payload["nav"])
     return api_client.post(
         "/api/v1/transactions",
-        _mf_payload(type="BUY", **kwargs),
+        payload,
         format="json",
     )
 
@@ -66,13 +69,11 @@ def _stock_price(symbol: str, d: str, close: str, *, currency: str = "EUR"):
 
 
 def _mf_nav(scheme: str, d: str, close: str):
-    HistoricalPrice.objects.create(
+    HistoricalPrice.objects.update_or_create(
         asset_symbol=scheme,
         date=date.fromisoformat(d),
-        close_price=Decimal(close),
-        currency="INR",
-        source="test",
         asset_type=AssetType.MUTUAL_FUND,
+        defaults={"close_price": Decimal(close), "currency": "INR", "source": "test"},
     )
 
 

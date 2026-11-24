@@ -1,5 +1,12 @@
 # Architecture Decisions — KPulla6
 
+## 2026-11-24 — Strict cached MF NAV writes and explicit correction review
+
+- **Supersedes write policy only:** The original MF-3/MF-6 optional, warning-only NAV validation decisions below describe their historical phases. MF create/update/import now require a positive exact-date INR `HistoricalPrice` row typed `MUTUAL_FUND`. Cached NAV is canonical; submitted NAV cannot override it. Missing cache blocks until explicit refresh supplies that date; no adjacent-date/date fallback or provider calls during writes/lookup.
+- **Statement preservation:** Units, fees, market value, and paid value are not recalculated on NAV correction. `VALUE_MISMATCH` remains a warning. Reads and refreshes do not silently rewrite historical transactions; valuation-series forward-fill remains separate from strict write validation.
+- **Cash boundary:** Only an existing BUY with no linked cash rows, an actual NAV change, and all statement/cash fields unchanged skips historical settlement backfill. Creates, SELLs, no-op saves, and other edits retain normal cash validation. Full guard: [cash-ledger.md](./cash-ledger.md#nav-only-mf-buy-correction-2026-11-24).
+- **Review tools:** Authenticated DB-only `GET /api/v1/nav/lookup` exposes exact-date availability. `preview_mf_nav_corrections --user-id ID` emits read-only review rows, has no apply mode, and must not publish personal portfolio output. See [MF validation and preview](./mutual-funds.md#nav-validation-strategy).
+
 ## 2026-06-26 — MILESTONE-CLOSEOUT-1: Cash unification + FD tax reporting (docs closeout)
 
 - **Cash stream complete:** CASH-UNIFY-0..4B, 4A audit, CASH-CORR-1A broker reversal — documented in [cash-unification.md](./cash-unification.md), [current-state.md](./current-state.md), backlog index.

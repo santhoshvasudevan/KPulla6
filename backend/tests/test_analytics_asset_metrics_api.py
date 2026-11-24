@@ -5,6 +5,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
+from tests.conftest import cached_mf_nav, historical_mf_transaction
 
 from fx.services import upsert_fx_rate
 from market_data.models import AssetType, BenchmarkIndexConfig, HistoricalPrice
@@ -89,21 +90,21 @@ def _mf_payload(**overrides):
 
 
 def _mf_buy(api_client, **kwargs):
+    payload = _mf_payload(type="BUY", **kwargs)
+    cached_mf_nav(payload["scheme_code"], payload["nav_date"], payload["nav"])
     return api_client.post(
         "/api/v1/transactions",
-        _mf_payload(type="BUY", **kwargs),
+        payload,
         format="json",
     )
 
 
 def _mf_nav(scheme: str, d: str, close: str):
-    HistoricalPrice.objects.create(
+    HistoricalPrice.objects.update_or_create(
         asset_symbol=scheme,
         date=date.fromisoformat(d),
-        close_price=Decimal(close),
-        currency="INR",
-        source="test",
         asset_type=AssetType.MUTUAL_FUND,
+        defaults={"close_price": Decimal(close), "currency": "INR", "source": "test"},
     )
 
 
@@ -226,8 +227,11 @@ def test_asset_missing_stock_price_warning(api_client, legacy_seeded, today_patc
 
 
 @pytest.mark.django_db
-def test_asset_missing_mf_nav_warning(api_client, legacy_seeded, today_patch):
-    _mf_buy(api_client, investment_date="2026-03-01", nav_date="2026-03-01")
+def test_asset_missing_mf_nav_warning(api_client, legacy_seeded, today_patch, test_user):
+    historical_mf_transaction(
+        ensure_default_portfolio(test_user),
+        _mf_payload(investment_date="2026-03-01", nav_date="2026-03-01"),
+    )
     data = api_client.get(
         _asset_metrics_url(
             "120503",

@@ -7,20 +7,34 @@ import pytest
 from fx.services import upsert_fx_rate
 from market_data.models import AssetType, HistoricalPrice
 from tests.test_cash_aware_transactions_api import _deposit, _mf_payload
+from tests.conftest import cached_mf_nav, historical_mf_transaction
 
 
-def _buy(client, portfolio, *, payment="2026-03-12", recognition="2026-03-16"):
-    response = client.post("/api/v1/transactions", _mf_payload(
+def _buy(client, portfolio, *, payment="2026-03-12", recognition="2026-03-16", historical=False):
+    payload = _mf_payload(
         portfolio_id=portfolio.id, investment_date=payment, nav_date=recognition,
         paid_value="4250", market_value="4250", fees="0",
-    ), format="json")
+    )
+    if historical:
+        from cash.models import CashEntryType, CashLedgerEntry
+
+        txn = historical_mf_transaction(portfolio, payload)
+        CashLedgerEntry.objects.create(
+            portfolio=portfolio, date=date.fromisoformat(payment), currency="INR",
+            entry_type=CashEntryType.BUY_SETTLEMENT, amount=Decimal("-4250"),
+            linked_transaction=txn,
+        )
+        return
+    cached_mf_nav("120503", recognition, "42.5")
+    response = client.post("/api/v1/transactions", payload, format="json")
     assert response.status_code == 201, response.json()
 
 
 def _nav(day, value="42.5"):
-    HistoricalPrice.objects.create(
+    HistoricalPrice.objects.update_or_create(
         asset_symbol="120503", asset_type=AssetType.MUTUAL_FUND,
-        date=date.fromisoformat(day), close_price=Decimal(value), currency="INR",
+        date=date.fromisoformat(day),
+        defaults={"close_price": Decimal(value), "currency": "INR"},
     )
 
 
@@ -66,7 +80,7 @@ def test_missing_nav_after_recognition_stays_unknown_not_pending_cash(
     monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 17))
     portfolio = cash_aware_portfolio
     _deposit(portfolio, day="2026-03-10", amount="10000", currency="INR")
-    _buy(api_client, portfolio)
+    _buy(api_client, portfolio, historical=True)
     values, _ = _performance(api_client, portfolio)
     assert values["2026-03-13"] == pytest.approx(10000)
     assert values["2026-03-16"] is None
@@ -97,15 +111,17 @@ def test_all_portfolios_preserves_missing_nav_beside_valued_holdings(
     )
     for portfolio in (missing, known):
         _deposit(portfolio, day="2026-03-10", amount="10000", currency="INR")
-    _buy(api_client, missing)
+    _buy(api_client, missing, historical=True)
+    cached_mf_nav("119062", "2026-03-16", "42.5")
     response = api_client.post("/api/v1/transactions", _mf_payload(
         portfolio_id=known.id, scheme_code="119062", investment_date="2026-03-12",
         nav_date="2026-03-16", paid_value="4250", market_value="4250", fees="0",
     ), format="json")
     assert response.status_code == 201, response.json()
-    HistoricalPrice.objects.create(
+    HistoricalPrice.objects.update_or_create(
         asset_symbol="119062", asset_type=AssetType.MUTUAL_FUND,
-        date=date(2026, 3, 16), close_price=Decimal("42.5"), currency="INR",
+        date=date(2026, 3, 16),
+        defaults={"close_price": Decimal("42.5"), "currency": "INR"},
     )
     response = api_client.get("/api/v1/portfolio/performance", {
         "portfolio_scope": "all", "display_currency": "INR",

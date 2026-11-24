@@ -7,6 +7,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
+from tests.conftest import cached_mf_nav
 
 from market_data.models import Asset, AssetType, HistoricalPrice, MutualFundProfile
 from portfolios.models import Portfolio
@@ -35,6 +36,7 @@ def _mf_payload(**overrides):
 
 @pytest.mark.django_db
 def test_create_mf_buy_success(api_client, legacy_seeded, test_user):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     default = ensure_default_portfolio(test_user)
     response = api_client.post(
         "/api/v1/transactions",
@@ -72,6 +74,7 @@ def test_create_mf_buy_success(api_client, legacy_seeded, test_user):
 
 @pytest.mark.django_db
 def test_create_mf_sell_success(api_client, seeded):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     response = api_client.post(
         "/api/v1/transactions",
         _mf_payload(type="SELL"),
@@ -83,6 +86,7 @@ def test_create_mf_sell_success(api_client, seeded):
 
 @pytest.mark.django_db
 def test_mf_folio_number_required(api_client, seeded):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     payload = _mf_payload()
     del payload["folio_number"]
     response = api_client.post("/api/v1/transactions", payload, format="json")
@@ -91,6 +95,7 @@ def test_mf_folio_number_required(api_client, seeded):
 
 @pytest.mark.django_db
 def test_mf_scheme_code_required(api_client, seeded):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     payload = _mf_payload(scheme_code="")
     response = api_client.post("/api/v1/transactions", payload, format="json")
     assert response.status_code == 400
@@ -98,6 +103,7 @@ def test_mf_scheme_code_required(api_client, seeded):
 
 @pytest.mark.django_db
 def test_mf_nav_date_and_investment_date_required(api_client, seeded):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     r1 = api_client.post(
         "/api/v1/transactions",
         _mf_payload(nav_date=None),
@@ -114,13 +120,15 @@ def test_mf_nav_date_and_investment_date_required(api_client, seeded):
 
 
 @pytest.mark.django_db
-def test_mf_nav_and_units_must_be_positive(api_client, seeded):
+def test_mf_nav_is_canonical_and_units_must_be_positive(api_client, legacy_seeded):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     r1 = api_client.post(
         "/api/v1/transactions",
         _mf_payload(nav="0"),
         format="json",
     )
-    assert r1.status_code == 400
+    assert r1.status_code == 201
+    assert r1.json()["nav"] == 42.5
 
     r2 = api_client.post(
         "/api/v1/transactions",
@@ -132,6 +140,7 @@ def test_mf_nav_and_units_must_be_positive(api_client, seeded):
 
 @pytest.mark.django_db
 def test_mf_fees_computed_from_paid_and_market_value(api_client, legacy_seeded):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     response = api_client.post(
         "/api/v1/transactions",
         _mf_payload(paid_value="4300.00", market_value="4250.00"),
@@ -143,6 +152,7 @@ def test_mf_fees_computed_from_paid_and_market_value(api_client, legacy_seeded):
 
 @pytest.mark.django_db
 def test_mf_rejects_negative_computed_fees(api_client, seeded):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     response = api_client.post(
         "/api/v1/transactions",
         _mf_payload(paid_value="4200.00", market_value="4250.00"),
@@ -153,6 +163,7 @@ def test_mf_rejects_negative_computed_fees(api_client, seeded):
 
 @pytest.mark.django_db
 def test_mf_list_includes_detail_fields(api_client, legacy_seeded):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     api_client.post("/api/v1/transactions", _mf_payload(), format="json")
     response = api_client.get("/api/v1/transactions?page_size=50")
     mf_items = [i for i in response.json()["items"] if i.get("asset_type") == "MUTUAL_FUND"]
@@ -175,7 +186,9 @@ def test_mf_list_includes_detail_fields(api_client, legacy_seeded):
 
 @pytest.mark.django_db
 def test_mf_update_updates_transaction_and_detail(api_client, legacy_seeded):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     created = api_client.post("/api/v1/transactions", _mf_payload(), format="json").json()
+    cached_mf_nav("120503", "2026-03-15", "43")
     response = api_client.put(
         f"/api/v1/transactions/{created['id']}",
         _mf_payload(
@@ -201,6 +214,7 @@ def test_mf_update_updates_transaction_and_detail(api_client, legacy_seeded):
 
 @pytest.mark.django_db
 def test_mf_delete_removes_detail_keeps_asset_profile_folio(api_client, legacy_seeded):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     created = api_client.post("/api/v1/transactions", _mf_payload(), format="json").json()
     asset_id = Asset.objects.get(symbol="120503").id
     profile_id = MutualFundProfile.objects.get(scheme_code="120503").id
@@ -217,6 +231,7 @@ def test_mf_delete_removes_detail_keeps_asset_profile_folio(api_client, legacy_s
 
 @pytest.mark.django_db
 def test_mf_create_atomic_rollback_on_detail_failure(api_client, seeded):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     with patch(
         "transactions.mutual_fund_services.MutualFundTransactionDetail.objects.create",
         side_effect=RuntimeError("detail failed"),
@@ -228,6 +243,7 @@ def test_mf_create_atomic_rollback_on_detail_failure(api_client, seeded):
 
 @pytest.mark.django_db
 def test_mf_create_does_not_call_external_nav_provider(api_client, legacy_seeded):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     with patch(
         "market_data.providers.mutual_fund_nav_provider.AmfiNavProvider.get_nav_history",
         side_effect=AssertionError("external NAV provider must not be called"),
@@ -257,6 +273,7 @@ def test_mf_nav_verification_uses_cached_db_only(api_client, legacy_seeded):
 
 @pytest.mark.django_db
 def test_mf_put_portfolio_change_resolves_folio(api_client, seeded, test_user):
+    cached_mf_nav("120503", "2026-03-15", "42.5")
     p1 = Portfolio.objects.create(user=test_user, name="MF-P1", base_currency="INR", is_active=True)
     p2 = Portfolio.objects.create(user=test_user, name="MF-P2", base_currency="INR", is_active=True)
     created = api_client.post(

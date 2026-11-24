@@ -4,12 +4,36 @@ from rest_framework import status
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework import serializers
 
 from market_data.nav_refresh import market_data_sync_response_payload, run_mutual_fund_nav_refresh
 from market_data.price_lookup import normalize_asset_symbol
 from market_data.services.benchmark_sync import list_enabled_benchmark_indices
 from market_data.services.market_data_sync import sync_all_market_data
 from market_data.services.price_sync import sync_stock_prices
+
+
+class NavLookupView(APIView):
+    """Read an exact-date INR NAV from cache; never contact a provider."""
+
+    def get(self, request: Request) -> Response:
+        from transactions.mf_nav_validation import cached_nav_for_date
+        from market_data.nav_lookup import normalize_scheme_code
+
+        class Query(serializers.Serializer):
+            scheme_code = serializers.CharField(max_length=32)
+            nav_date = serializers.DateField()
+
+        query = Query(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        scheme = normalize_scheme_code(query.validated_data["scheme_code"])
+        if not scheme:
+            return Response({"detail": "scheme_code is required"}, status=400)
+        day = query.validated_data["nav_date"]
+        nav = cached_nav_for_date(scheme_code=scheme, nav_date=day)
+        return Response({"scheme_code": scheme, "nav_date": day.isoformat(),
+                         "nav": str(nav) if nav is not None else None,
+                         "status": "available" if nav is not None else "missing"})
 
 
 class PricesRefreshView(APIView):

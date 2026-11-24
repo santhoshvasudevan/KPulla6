@@ -12,6 +12,8 @@ from analytics.services import (
     _mf_nav_freshness_issue,
 )
 from market_data.models import AssetType, HistoricalPrice
+from tests.conftest import historical_mf_transaction
+from portfolios.seed import ensure_default_portfolio
 
 FIXED_TODAY = date(2026, 3, 15)
 
@@ -33,7 +35,7 @@ def _mf_nav(scheme: str, d: str, close: str):
     )
 
 
-def _mf_buy(api_client, **kwargs):
+def _historical_mf_buy(test_user, **kwargs):
     payload = {
         "asset_type": "MUTUAL_FUND",
         "scheme_code": "120503",
@@ -49,11 +51,11 @@ def _mf_buy(api_client, **kwargs):
         "fund_house": "Test AMC",
     }
     payload.update(kwargs)
-    return api_client.post("/api/v1/transactions", payload, format="json")
+    return historical_mf_transaction(ensure_default_portfolio(test_user), payload)
 
 
-def _mf_txns(api_client):
-    _mf_buy(api_client, investment_date="2026-03-01", nav_date="2026-03-01")
+def _mf_txns(test_user):
+    _historical_mf_buy(test_user, investment_date="2026-03-01", nav_date="2026-03-01")
     from transactions.models import Transaction as TransactionModel
 
     return list(
@@ -63,9 +65,9 @@ def _mf_txns(api_client):
 
 @pytest.mark.django_db
 def test_mf_nav_freshness_no_warning_for_recent_friday_nav_on_sunday_end(
-    api_client, legacy_seeded, today_patch
+    api_client, legacy_seeded, today_patch, test_user
 ):
-    txns = _mf_txns(api_client)
+    txns = _mf_txns(test_user)
     _mf_nav("120503", "2026-03-13", "44.00")
 
     assert (
@@ -75,9 +77,9 @@ def test_mf_nav_freshness_no_warning_for_recent_friday_nav_on_sunday_end(
 
 @pytest.mark.django_db
 def test_mf_nav_freshness_no_warning_within_five_calendar_days(
-    api_client, legacy_seeded, today_patch
+    api_client, legacy_seeded, today_patch, test_user
 ):
-    txns = _mf_txns(api_client)
+    txns = _mf_txns(test_user)
     _mf_nav("120503", "2026-03-11", "44.00")
 
     assert (
@@ -87,9 +89,9 @@ def test_mf_nav_freshness_no_warning_within_five_calendar_days(
 
 @pytest.mark.django_db
 def test_mf_nav_freshness_stale_warning_when_latest_nav_older_than_five_days(
-    api_client, legacy_seeded, today_patch
+    api_client, legacy_seeded, today_patch, test_user
 ):
-    txns = _mf_txns(api_client)
+    txns = _mf_txns(test_user)
     _mf_nav("120503", "2026-03-01", "42.00")
 
     assert (
@@ -100,9 +102,9 @@ def test_mf_nav_freshness_stale_warning_when_latest_nav_older_than_five_days(
 
 @pytest.mark.django_db
 def test_mf_nav_freshness_missing_warning_when_no_cached_nav(
-    api_client, legacy_seeded, today_patch
+    api_client, legacy_seeded, today_patch, test_user
 ):
-    txns = _mf_txns(api_client)
+    txns = _mf_txns(test_user)
 
     assert (
         _mf_nav_freshness_issue("120503", txns, date(2026, 3, 1), FIXED_TODAY)

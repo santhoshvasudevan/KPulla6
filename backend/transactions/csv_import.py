@@ -674,7 +674,8 @@ def parse_mutual_fund_transaction_csv(
                 payload["currency"] = currency_raw.upper()
 
         try:
-            validate_mutual_fund_transaction_payload(payload)
+            validated = validate_mutual_fund_transaction_payload(payload)
+            payload["nav"] = validated.nav
         except TransactionValidationError as exc:
             errors.append(
                 {

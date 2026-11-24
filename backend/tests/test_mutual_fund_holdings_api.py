@@ -7,6 +7,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
+from tests.conftest import cached_mf_nav, historical_mf_transaction
 
 from market_data.models import AssetType, HistoricalPrice
 from portfolios.seed import ensure_default_portfolio
@@ -32,29 +33,31 @@ def _mf_payload(**overrides):
 
 
 def _mf_buy(api_client, **kwargs):
+    payload = _mf_payload(type="BUY", **kwargs)
+    cached_mf_nav(payload["scheme_code"], payload["nav_date"], payload["nav"])
     return api_client.post(
         "/api/v1/transactions",
-        _mf_payload(type="BUY", **kwargs),
+        payload,
         format="json",
     )
 
 
 def _mf_sell(api_client, **kwargs):
+    payload = _mf_payload(type="SELL", **kwargs)
+    cached_mf_nav(payload["scheme_code"], payload["nav_date"], payload["nav"])
     return api_client.post(
         "/api/v1/transactions",
-        _mf_payload(type="SELL", **kwargs),
+        payload,
         format="json",
     )
 
 
 def _nav(scheme: str, close: str, *, d: str = "2026-03-20"):
-    HistoricalPrice.objects.create(
+    HistoricalPrice.objects.update_or_create(
         asset_symbol=scheme,
         date=date.fromisoformat(d),
-        close_price=Decimal(close),
-        currency="INR",
-        source="test",
         asset_type=AssetType.MUTUAL_FUND,
+        defaults={"close_price": Decimal(close), "currency": "INR", "source": "test"},
     )
 
 
@@ -128,8 +131,8 @@ def test_fully_sold_mf_holding_closed(api_client, legacy_seeded):
 
 
 @pytest.mark.django_db
-def test_missing_nav_nav_missing_and_zero_current_value(api_client, legacy_seeded):
-    _mf_buy(api_client)
+def test_missing_nav_nav_missing_and_zero_current_value(api_client, legacy_seeded, test_user):
+    historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload())
     row = [h for h in api_client.get("/api/v1/portfolio/holdings").json()["holdings"] if h.get("asset_type") == "MUTUAL_FUND"][0]
     assert row["nav_status"] == "nav_missing"
     assert row["price_status"] == "price_missing"
@@ -319,8 +322,10 @@ def test_assets_reporting_groups_folios_and_uses_visible_fund_value(api_client, 
 
 
 @pytest.mark.django_db
-def test_assets_breakdowns_keep_unknown_and_unvalued_funds_visible(api_client, legacy_seeded):
-    assert _mf_buy(api_client, fund_house="", scheme_name="Test Fund").status_code == 201
+def test_assets_breakdowns_keep_unknown_and_unvalued_funds_visible(api_client, legacy_seeded, test_user):
+    historical_mf_transaction(
+        ensure_default_portfolio(test_user), _mf_payload(fund_house="", scheme_name="Test Fund"),
+    )
     url = "/api/v1/portfolio/holdings?display_currency=INR"
     report = api_client.get(url).json()["assets_reports"]["all"]
     assert report["allocation"] == {"scheme": [], "incomplete": True}
