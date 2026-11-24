@@ -576,6 +576,52 @@ describe('Dashboard Component', () => {
     });
   });
 
+  it('presents provisional NAV quality from the API and follows scope changes', async () => {
+    const folioWarning =
+      'Mutual fund 120503 folio F1 is valued with an unverified provisional NAV from 2026-03-12';
+    const seriesWarning =
+      'Some portfolio values in this range use unverified provisional mutual fund NAVs; results are not fully verified.';
+    const banner = /Current value uses unverified provisional mutual fund NAVs/;
+    api.fetchDashboardSummary.mockImplementation((query) => Promise.resolve(
+      query.portfolio_id === 2
+        ? mockSummary
+        : { ...mockSummary, nav_provisional: true, warnings: [folioWarning] }
+    ));
+    api.fetchPortfolioPerformance.mockImplementation((metric, bench, range, query) => Promise.resolve(
+      query.portfolio_id === 2 ? mockPerf : { points: mockPerf, warnings: [seriesWarning] }
+    ));
+    function ScopeSwitch() {
+      const { selectPortfolio } = usePortfolio();
+      return <button type="button" onClick={() => selectPortfolio(2, 'Growth')}>Select Growth</button>;
+    }
+    render(
+      <PortfolioProvider
+        initialPortfolios={[{ id: 2, name: 'Growth', is_active: true, is_default: false }]}
+        disableFetch
+      >
+        <ScopeSwitch />
+        <Dashboard />
+      </PortfolioProvider>
+    );
+
+    expect(await screen.findByText(banner)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText(seriesWarning).length).toBeGreaterThan(0));
+    expect(screen.getByText(folioWarning)).toBeInTheDocument();
+    expect(within(screen.getByTestId('dashboard-kpi-strip')).getByText('Review')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select Growth' }));
+    await waitFor(() => {
+      expect(api.fetchDashboardSummary).toHaveBeenCalledWith(
+        { portfolio_id: 2, display_currency: 'EUR' },
+        DASHBOARD_SUMMARY_OPTS
+      );
+    });
+    await waitFor(() => expect(screen.queryByText(banner)).toBeNull());
+    await waitFor(() => expect(screen.queryByText(seriesWarning)).toBeNull());
+    expect(screen.queryByText(folioWarning)).toBeNull();
+    expect(within(screen.getByTestId('dashboard-kpi-strip')).getByText('Good')).toBeInTheDocument();
+  });
+
   it('renders an empty performance state safely when performance series is empty', async () => {
     api.fetchDashboardSummary.mockResolvedValueOnce({
       ...mockSummary,

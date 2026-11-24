@@ -1,10 +1,13 @@
 """
-Scoped mutual fund valuation with user-confirmed provisional NAV overlays (#50, #51).
+Scoped mutual fund valuation with user-confirmed provisional NAV overlays (#50–#52).
 
 Provider NAVs come from cached HistoricalPrice rows. A provisional NAV recorded on
 a BUY or SELL applies only to that transaction's folio (portfolio + scheme + folio
 number) from its NAV date until the next cached provider NAV. Reads loaded
 transactions only.
+
+Holdings, Summary and value history share this decision; series consumers report
+``PROVISIONAL_SERIES_WARNING`` when an emitted point used a provisional NAV.
 """
 
 from __future__ import annotations
@@ -24,6 +27,10 @@ from finance.types import TransactionType
 from transactions.models import MutualFundNavSource
 
 MIXED = "MIXED"
+PROVISIONAL_SERIES_WARNING = (
+    "Some portfolio values in this range use unverified provisional mutual fund NAVs; "
+    "results are not fully verified."
+)
 
 
 def provisional_navs_by_folio(db_txns) -> dict[int, dict[date, Decimal | None]]:
@@ -129,3 +136,13 @@ def provisional_valuation_warnings(
         for d in valuation.conflict_dates
     ]
     return warnings
+
+
+def provisional_series_warnings(points, *, start_iso: str | None = None) -> list[str]:
+    """Quality warning when any emitted value-series point used a provisional NAV."""
+    if any(
+        p.get("nav_provisional") and (start_iso is None or p["date"] >= start_iso)
+        for p in points
+    ):
+        return [PROVISIONAL_SERIES_WARNING]
+    return []

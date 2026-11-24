@@ -29,6 +29,7 @@ from portfolios.external_flows_service import (
     portfolio_external_flows_for_scope,
     portfolio_flows_known_on_date,
 )
+from portfolios.mf_valuation import PROVISIONAL_SERIES_WARNING, provisional_series_warnings
 from portfolios.models import Portfolio
 from portfolios.scope import ResolvedPortfolioScope
 from portfolios.summary_service import (
@@ -718,6 +719,7 @@ def build_portfolio_performance(
     range_start = resolve_performance_range_start(range_code, today, series_inception)
     range_start_iso = range_start.isoformat()
     emit_start = None if range_code == "ALL" else range_start
+    emit_start_iso = None if emit_start is None else range_start_iso
     value_warnings: list[str] = []
 
     if use_all_scope_display:
@@ -811,6 +813,7 @@ def build_portfolio_performance(
                     date=p["date"], value=float(pv), metric="value", currency=disp_ccy
                 )
             )
+        value_warnings += provisional_series_warnings(timeseries_full, start_iso=emit_start_iso)
         return PerformanceSeriesResult(points=out, warnings=value_warnings)
 
     timeseries_full, return_warnings = build_return_value_timeseries(
@@ -850,6 +853,7 @@ def build_portfolio_performance(
     metric_warnings = list(return_warnings)
     if flows_unknown_from is not None:
         metric_warnings.append(RETURN_FLOWS_FX_WARNING)
+    metric_warnings += provisional_series_warnings(timeseries_full, start_iso=emit_start_iso)
 
     if metric == "cumulative_return":
         return PerformanceSeriesResult(
@@ -933,10 +937,11 @@ def build_portfolio_performance_with_benchmarks(
         benchmark_display_name=cfg.display_name,
         benchmark_price_series=bench_series,
     )
+    quality = [w for w in result.warnings if w == PROVISIONAL_SERIES_WARNING]
     return PerformanceComparisonResult(
         metric=raw["metric"],
         series=raw["series"],
-        warnings=raw["warnings"],
+        warnings=list(dict.fromkeys(list(raw["warnings"]) + quality)),
     )
 
 

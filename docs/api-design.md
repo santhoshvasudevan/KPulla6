@@ -715,7 +715,7 @@ Portfolio-level Quantitative Statistics. Wired in `analytics/services.py`, `anal
 | `portfolio_scope` | `all` | Portfolio-level endpoints only |
 | `portfolio_id` | — | Single active portfolio |
 
-Validation mirrors performance/summary (400/404/422). Response includes `warnings: string[]` for data-quality issues, including: missing cached stock prices (`Cached prices are missing for one or more dates…`), missing MF NAVs (`No cached NAV is available…`; suggests NAV sync), stale MF NAVs (`Latest cached NAV is older than 5 days…`; warns only when latest cached NAV is more than 5 calendar days older than the valuation end date — weekend/holiday gaps without forward-fill from a recent NAV do not trigger this), FX gaps, benchmark coverage, split-adjusted price inconsistency, or insufficient history. Generic fallback when values are wholly unavailable remains.
+Validation mirrors performance/summary (400/404/422). Response includes `warnings: string[]` for data-quality issues, including: missing cached stock prices (`Cached prices are missing for one or more dates…`), missing MF NAVs (`No cached NAV is available…`; suggests NAV sync), stale MF NAVs (`Latest cached NAV is older than 5 days…`; warns only when latest cached NAV is more than 5 calendar days older than the valuation end date — weekend/holiday gaps without forward-fill from a recent NAV do not trigger this), provisional MF NAVs used in the range (`Some portfolio values in this range use unverified provisional mutual fund NAVs…`, #52), FX gaps, benchmark coverage, split-adjusted price inconsistency, or insufficient history. Generic fallback when values are wholly unavailable remains.
 
 ### `GET /api/v1/analytics/performance-metrics` (implemented)
 
@@ -1566,13 +1566,38 @@ with a warning (never averaged). Holdings rows add `nav_source`
 `nav_provisional: true` where a provisional NAV contributes. See
 [transaction API reference](./reference/api-transactions.md#provisional-mf-buy-50).
 
+Scope and quality contract (#52):
+
+- Summary headline, holdings/allocation, Asset Detail, XIRR terminal value, and
+  value history use the same per-folio decision. Today's history point equals the
+  headline for the same scope, currency, and components; history is never
+  overwritten to force that.
+- Only the per-unit NAV is carried. Recorded units, broker cash, pending
+  purchases, fixed deposits, bank cash, and cached FX keep their existing rules.
+  MF FX conversion keeps its existing NAV-date (headline) and point-date
+  (history) policy, applied once.
+- A folio whose newest observation is a same-date conflict is unavailable
+  (`nav_status: nav_missing`, `latest_nav: null`, `xirr: null`). An older
+  provider NAV does not take over until a newer cached NAV exists.
+- All scope keeps each portfolio's folio separate. Merged holdings rows report
+  `nav_source: MIXED` with `latest_nav: null`; values are summed, never averaged.
+- `GET /api/v1/portfolio/holdings` adds top-level `nav_provisional: true` when an
+  open row uses a provisional NAV.
+- `GET /api/v1/portfolio/performance` (all metrics, with or without benchmark) and
+  `GET /api/v1/analytics/performance-metrics` add the warning *"Some portfolio
+  values in this range use unverified provisional mutual fund NAVs; results are
+  not fully verified."* when a point in the selected range used a provisional
+  NAV. Return formulas are unchanged.
+- Missing NAV or FX stays `null` in history; reads never call providers or write
+  `historical_prices`.
+
 ### Planned: Scheme lookup (MF-4+)
 
 `GET /api/v1/mutual-funds/schemes?q={search}` — search by scheme name, return `scheme_code` + metadata from DB profile table. DB only; no live AMFI on read.
 
 ### Holdings (`GET /api/v1/portfolio/holdings`) — MF-4 implemented
 
-Response includes **`holdings`** (investment rows only — stocks/MF) and **`allocation`** (Cash-6A: active investment slices plus cash rows). Optional **`warnings`** when cash FX conversion is partial.
+Response includes **`holdings`** (investment rows only — stocks/MF) and **`allocation`** (Cash-6A: active investment slices plus cash rows). Optional **`warnings`** when cash FX conversion is partial. Optional **`nav_provisional: true`** when an open MF row uses a provisional NAV (#52).
 
 Mutual fund positions appear as additional holding rows (stock rows unchanged — no `asset_type` on stock rows):
 

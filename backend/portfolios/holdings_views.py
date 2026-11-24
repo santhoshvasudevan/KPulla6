@@ -59,6 +59,8 @@ class PortfolioHoldingsView(APIView):
         }
         if result.warnings:
             payload["warnings"] = result.warnings
+        if result.nav_provisional:
+            payload["nav_provisional"] = True
         return Response(payload)
 
 

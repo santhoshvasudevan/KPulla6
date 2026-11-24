@@ -87,6 +87,7 @@ from portfolios import dates as portfolio_dates
 from portfolios.holdings_service import (
     AssetDetailValidationError, AssetNotFoundError, cached_mutual_fund_holding_xirr,
 )
+from portfolios.mf_valuation import provisional_series_warnings
 from portfolios.models import Portfolio
 from portfolios.external_flows_service import portfolio_external_flows_for_scope
 from portfolios.performance_service import (
@@ -1656,6 +1657,7 @@ def build_portfolio_performance_metrics(
     ts_use, window_start, window_end, _range_start = _slice_timeseries_for_range(
         timeseries_full, range_code=range_code, today=today, inception=inception
     )
+    warnings.extend(provisional_series_warnings(ts_use))
 
     warnings.extend(
         _split_adjusted_price_inconsistency_warnings(

@@ -333,17 +333,8 @@ def _calculate_mf_holdings(
     for nav in latest_navs.values():
         if nav.date is not None:
             nav_dates.append(nav.date)
-    fx_start = min(nav_dates) - timedelta(days=7) if nav_dates else today - timedelta(days=7)
-    fx_pairs = {(MF_BASE_CURRENCY, portfolio_base)}
-    fx_maps = load_fx_rate_maps(fx_pairs, fx_start, today)
 
-    total_invested = Decimal("0")
-    current_value = Decimal("0")
-    realized_pl = Decimal("0")
-    any_fx_missing = False
-    warnings: list[str] = []
-
-    nav_provisional = False
+    valued: list[tuple[str, list[TransactionModel], list, Decimal, object]] = []
     for _key, txns in by_mf.items():
         scheme = normalize_scheme_code(txns[0].asset_symbol)
         nav_result = latest_navs.get(scheme)
@@ -355,6 +346,22 @@ def _calculate_mf_holdings(
         fifo_txns = _to_fifo_dtos(txns)
         qty = calculate_fifo_cost_basis_metrics(fifo_txns, current_price=None).cumulative_qty
         valuation = value_mutual_fund_holding(txns, provider_point=provider_point, qty=qty)
+        if valuation.nav_date is not None:
+            nav_dates.append(valuation.nav_date)
+        valued.append((scheme, txns, fifo_txns, qty, valuation))
+
+    fx_start = min(nav_dates) - timedelta(days=7) if nav_dates else today - timedelta(days=7)
+    fx_pairs = {(MF_BASE_CURRENCY, portfolio_base)}
+    fx_maps = load_fx_rate_maps(fx_pairs, fx_start, today)
+
+    total_invested = Decimal("0")
+    current_value = Decimal("0")
+    realized_pl = Decimal("0")
+    any_fx_missing = False
+    warnings: list[str] = []
+
+    nav_provisional = False
+    for scheme, txns, fifo_txns, qty, valuation in valued:
         nav_date = valuation.nav_date or today
         if valuation.current_value is None:
             if not valuation.conflict_dates:

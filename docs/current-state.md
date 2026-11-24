@@ -168,6 +168,11 @@ See [performance/dashboard-read-paths.md](./performance/dashboard-read-paths.md)
   - Cash-aware MF edits that change linked cash rows are rechecked for future negative balances (`transactions/cash_settlement.py`, 409); preview returns SELL proceeds/tax
   - Tests: `backend/tests/test_mf_provisional_sell_edit_api.py`, `frontend/src/components/TransactionModal.test.jsx`
   - **Deferred:** the same future-impact recheck for stock/ETF edits
+- **Provisional MF valuation across scopes** (#52):
+  - Summary, holdings/allocation, Asset Detail, and value history share one per-folio decision in single and All Portfolios scope, native and display currency; a newer same-date conflict is never replaced by an older cached NAV
+  - Holdings `nav_provisional`; performance (all metrics, benchmark) and portfolio Metric Sheet add a provisional-NAV quality warning for affected ranges; Dashboard/Assets banners and badges
+  - Tests: `backend/tests/test_mf_provisional_valuation_scopes_api.py`, `frontend/src/pages/Dashboard.test.jsx`, `frontend/src/pages/Assets.test.jsx`
+  - **Deferred:** per-point provenance on performance points (range-level warning only); MF value-history days with zero MF value still need INR FX in non-INR base portfolios (existing policy); oversell with provisional folios
 - **Mutual fund classification** (Phase MF-7):
   - `finance/mutual_fund_classification.py` — metadata inference (HYBRID ≠ EQUITY)
   - MF holdings/asset detail: `primary_asset_class`, `classification_source`, optional `classification_notes`

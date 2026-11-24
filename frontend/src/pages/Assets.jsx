@@ -168,6 +168,13 @@ function HoldingSymbolCell({ holding: h }) {
           </span>
         </div>
       ) : null}
+      {h.nav_provisional ? (
+        <div className="assets-table__badges">
+          <span title={h.warnings?.join(' ') || 'Valued with an unverified provisional NAV'}>
+            <StatusBadge status="warning" label="Provisional NAV" />
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -214,6 +221,8 @@ function renderHoldingRow(h, navigate) {
           />
         ) : h.current_price != null ? (
           <CurrencyValue value={h.current_price} currency={currency} />
+        ) : h.nav_source === 'MIXED' ? (
+          <StatusBadge status="info" label="Mixed NAVs" />
         ) : (
           <StatusBadge status="warning" label="Price unavailable" />
         )}
@@ -258,6 +267,7 @@ export default function Assets() {
 
   const [fxStatus, setFxStatus] = useState('ok');
   const [apiWarnings, setApiWarnings] = useState([]);
+  const [navProvisional, setNavProvisional] = useState(false);
 
   const scopedInvestments = useMemo(
     () => holdings.filter((h) => isActiveHolding(h) && !isBankCashHolding(h)),
@@ -373,6 +383,7 @@ export default function Assets() {
         setAllocation(data.allocation || data.holdings || []);
         setFxStatus(data.fx_status || 'ok');
         setApiWarnings(data.warnings || []);
+        setNavProvisional(Boolean(data.nav_provisional));
         setLoading(false);
       })
       .catch((err) => {
@@ -442,6 +453,14 @@ export default function Assets() {
         <WarningBanner
           severity="warning"
           message="FX unavailable for display currency conversion. Values are shown in each asset's transaction currency."
+          className="assets-page__banner"
+        />
+      ) : null}
+
+      {navProvisional ? (
+        <WarningBanner
+          severity="warning"
+          message="Some mutual fund holdings are valued with unverified provisional NAVs until cached provider NAVs are available."
           className="assets-page__banner"
         />
       ) : null}

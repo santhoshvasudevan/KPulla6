@@ -703,3 +703,40 @@ it('sorts folios by value and expands schemes without mixing fund houses', async
   expect(within(pane).getByText('AMC A fund')).toBeVisible();
   expect(within(pane).getByText('AMC B fund')).not.toBeVisible();
 });
+
+it('shows provisional NAV quality from the API and clears it on scope change', async () => {
+  api.fetchPortfolios.mockResolvedValue([]);
+  api.getSettings.mockResolvedValue({ display_currency: 'EUR' });
+  const fund = (overrides) => ({
+    asset_type: 'MUTUAL_FUND', asset_symbol: '120503', scheme_code: '120503',
+    scheme_name: 'Provisional Fund', folio_number: 'F1', holding_key: '120503:F1',
+    quantity: 110, currency: 'INR', current_value: 9405, holding_status: 'ok',
+    price_status: 'ok', ...overrides,
+  });
+  api.fetchHoldings.mockImplementation((query) => Promise.resolve(query?.portfolio_id === 2
+    ? { holdings: [fund({ current_price: 45, current_value: 4950 })] }
+    : {
+      nav_provisional: true,
+      holdings: [fund({
+        current_price: null, nav_source: 'MIXED', nav_provisional: true,
+        warnings: ['Mutual fund 120503 folio F1 is valued with an unverified provisional NAV from 2026-03-12'],
+      })],
+    }));
+  renderAssets();
+  expect(await screen.findByText(/valued with unverified provisional NAVs/)).toBeInTheDocument();
+  const badge = screen.getByRole('status', { name: 'Provisional NAV' });
+  expect(badge.parentElement).toHaveAttribute('title', expect.stringContaining('folio F1'));
+  expect(screen.getByRole('status', { name: 'Mixed NAVs' })).toBeInTheDocument();
+  expect(screen.queryByRole('status', { name: 'Price unavailable' })).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Select Second' }));
+  await waitFor(() => {
+    expect(api.fetchHoldings).toHaveBeenCalledWith(
+      expect.objectContaining({ portfolio_id: 2, display_currency: 'EUR' }),
+    );
+  });
+  await waitFor(() => {
+    expect(screen.queryByText(/valued with unverified provisional NAVs/)).toBeNull();
+  });
+  expect(screen.queryByRole('status', { name: 'Provisional NAV' })).toBeNull();
+});

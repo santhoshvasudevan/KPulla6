@@ -212,7 +212,9 @@ def _mf_current_value(
     )
     qty = calculate_fifo_cost_basis_metrics(finance_txns, current_price=None).cumulative_qty
     valuation = value_mutual_fund_holding(db_txns, provider_point=provider_point, qty=qty)
-    overlaid = valuation.source not in (None, PROVIDER_CACHE)
+    # A newer conflicting provisional date leaves the folio unvalued; the older
+    # provider NAV must not take over.
+    overlaid = valuation.source not in (None, PROVIDER_CACHE) or bool(valuation.conflict_dates)
     current_nav = valuation.nav if overlaid else (provider_point[1] if provider_point else None)
     known = valuation.current_value is not None if overlaid else current_nav is not None
 
@@ -235,7 +237,7 @@ def _mf_current_value(
         else []
     )
     today = portfolio_dates.current_date()
-    if valuation.provisional:
+    if overlaid:
         xirr = mutual_fund_holding_xirr(db_txns, current_nav, today=today)
     else:
         xirr = cached_mutual_fund_holding_xirr(scheme_code, db_txns, today=today)
@@ -515,6 +517,7 @@ class HoldingsResult:
     display_currency: str = "EUR"
     warnings: list[str] = field(default_factory=list)
     assets_overview: dict[str, float | None] = field(default_factory=dict)
+    nav_provisional: bool = False
 
 
 def build_holdings(
@@ -626,6 +629,7 @@ def build_holdings(
         display_currency=display_currency,
         warnings=list(cash_display.warnings),
         assets_overview=assets_overview,
+        nav_provisional=any(item.get("nav_provisional") for item in holdings),
     )
 
 

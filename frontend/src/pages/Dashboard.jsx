@@ -329,6 +329,7 @@ export default function Dashboard() {
 
   const dataStatusLabel =
     summary.fx_status === 'fx_unavailable' ||
+    summary.nav_provisional ||
     (summary.warnings?.length ?? 0) > 0 ||
     comparisonWarnings.length > 0
       ? 'Review'
@@ -504,6 +505,14 @@ export default function Dashboard() {
         <WarningBanner
           severity="warning"
           message="FX unavailable for one or more dates."
+          className="dashboard-banner"
+        />
+      ) : null}
+
+      {summary.nav_provisional ? (
+        <WarningBanner
+          severity="warning"
+          message="Current value uses unverified provisional mutual fund NAVs until cached provider NAVs are available."
           className="dashboard-banner"
         />
       ) : null}

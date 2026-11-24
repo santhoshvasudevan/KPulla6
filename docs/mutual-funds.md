@@ -279,6 +279,19 @@ NAV and saving converts the row to `PROVIDER_CACHE`. Rejected edits stay in the
 form with the error for review. See
 [provisional SELL and edits](./reference/api-transactions.md#provisional-mf-sell-and-edits-51).
 
+### Provisional valuation across scopes and currencies (#52)
+
+Single-portfolio and All Portfolios views use one per-folio decision for the
+headline, holdings, allocation, and value history, so they agree on the same date.
+A newer provisional NAV beats an older cached NAV. The next cached NAV takes over
+from its own date. Earlier history is not rewritten. Only the per-unit NAV is
+carried: unit changes, cash, pending purchases, fixed deposits, and cached FX
+still apply. Folios with conflicting same-date NAVs are shown as unavailable.
+Performance, Metric Sheet, Dashboard, and Assets show a warning when provisional
+NAVs affect the selected range or holdings. Fund NAV-only analytics stay
+provider-only. See the
+[scope and quality contract](./api-design.md#provisional-mutual-fund-sell-and-edits-51).
+
 ### Historical correction preview (read-only)
 
 From the backend environment, `python manage.py preview_mf_nav_corrections --user-id ID`

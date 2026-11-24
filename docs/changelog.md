@@ -1,5 +1,14 @@
 # Changelog — KPulla6
 
+## 2026-11-24 — Provisional MF valuation across scopes, folios, and currencies (#52)
+
+- Fix: holdings and Asset Detail no longer fall back to an older cached NAV when a folio's newest provisional observation is a same-date conflict. The folio is unavailable (`nav_missing`, `latest_nav: null`, `xirr: null`), as in Summary and value history.
+- Fix: the Summary headline loads cached FX for provisional NAV dates. A provisionally valued fund in a non-INR base portfolio is no longer reported `fx_unavailable` and zero when its NAV date fell outside the FX window loaded for provider NAV dates (for example a first-time fund with no cached NAV and a provisional NAV older than 7 days).
+- `GET /api/v1/portfolio/holdings` adds top-level `nav_provisional: true` when an open holding uses a provisional NAV (additive).
+- Portfolio performance (value, cumulative return, TWROR, benchmark comparison) and the portfolio Metric Sheet add a provisional-NAV quality warning when a point in the selected range used one. Return formulas are unchanged.
+- Dashboard shows a provisional-NAV banner and marks Data status **Review**. Assets shows a banner, a per-row **Provisional NAV** badge, and **Mixed NAVs** (instead of "Price unavailable") for merged all-scope rows.
+- New HTTP suite `test_mf_provisional_valuation_scopes_api.py` covers boundaries, leading gaps, weekends, range starts, BUY/SELL timing, closed folios, user/portfolio/folio isolation, conflicts, cash/pending/FD components, native/display currency, missing FX, and read-only reads.
+
 ## 2026-11-24 — Provisional mutual-fund SELLs and transaction edits (#51)
 
 - Manual MF **SELL** may use a provisional NAV under the same eligibility as BUY: attempt-bound, same user/scheme/date, cache still missing, explicit confirmations and fees. `confirm_paid_value` confirms the actual redemption proceeds. Backend calculates `market_value`. Proceeds and `TAX_WITHHELD`/`TAX_RELEASED` reuse the existing SELL path, and a zero `paid_value` falls back to units × the provisional NAV − fees. CSV import stays strict.
