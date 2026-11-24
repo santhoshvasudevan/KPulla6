@@ -73,7 +73,7 @@ function emptyReport() {
   };
 }
 
-export default function FixedDepositInterestReport() {
+export default function FixedDepositInterestReport({ refreshRevision = 0 }) {
   const defaults = defaultReportFilters();
   const { apiQuery, selectedDisplayCurrency } = usePortfolio();
   const [startDate, setStartDate] = useState(defaults.startDate);
@@ -125,7 +125,7 @@ export default function FixedDepositInterestReport() {
 
   useEffect(() => {
     loadReport();
-  }, [loadReport]);
+  }, [loadReport, refreshRevision]);
 
   const resetFilters = () => {
     const next = defaultReportFilters();

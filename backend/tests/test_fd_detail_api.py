@@ -6,6 +6,7 @@ import pytest
 from debt.interest_payment_services import create_fixed_deposit_interest_payment
 from debt.models import CashMovement, CashMovementType, FixedDepositStatus
 from debt.services import create_fixed_deposit
+from fx.services import upsert_fx_rate
 from portfolios.seed import ensure_default_portfolio
 from tests.debt_test_helpers import create_test_bank_account, fund_bank_account
 
@@ -121,6 +122,12 @@ def test_update_interest_payment_adjusts_cash_movement(api_client, seeded, test_
         tax_withheld=Decimal("100"),
     ).payment
     movement_id = payment.cash_movement_id
+    other_payment = create_fixed_deposit_interest_payment(
+        test_user,
+        fd.id,
+        payment_date=payment.payment_date,
+        gross_interest=Decimal("250"),
+    ).payment
     bank.refresh_from_db()
     balance_before = bank.current_balance
 
@@ -144,6 +151,12 @@ def test_update_interest_payment_adjusts_cash_movement(api_client, seeded, test_
     assert movement.movement_date == date(2024, 4, 2)
     bank.refresh_from_db()
     assert bank.current_balance == balance_before + Decimal("180")
+    other_payment.refresh_from_db()
+    assert other_payment.payment_date == date(2024, 4, 1)
+    assert other_payment.net_interest == Decimal("250")
+    other_payment.cash_movement.refresh_from_db()
+    assert other_payment.cash_movement.amount == Decimal("250")
+    assert other_payment.cash_movement.movement_date == date(2024, 4, 1)
 
 
 @pytest.mark.django_db
@@ -268,6 +281,20 @@ def test_partial_rollover_detail_includes_maturity_interest_once(api_client, see
     assert renewal_rows[0]["interest_cash_amount"] == 2500.0
     assert renewal_rows[0]["reinvested_interest_amount"] == 2000.0
     assert not any(r["fixed_deposit_id"] == new_id for r in report["rows"])
+
+    upsert_fx_rate(
+        from_currency="INR", to_currency="EUR", row_date=date(2026, 1, 1), rate=Decimal("0.01")
+    )
+    converted = api_client.get("/api/v1/reports/fixed-deposit-interest?display_currency=EUR")
+    assert converted.status_code == 200
+    converted_report = converted.json()
+    assert len(converted_report["rows"]) == 1
+    converted_row = converted_report["rows"][0]
+    assert converted_report["totals"]["net_interest"] == 45.0
+    assert converted_row["display_currency"] == "EUR"
+    assert converted_row["currency"] == "INR"
+    assert converted_row["interest_cash_amount"] == 2500.0
+    assert converted_row["reinvested_interest_amount"] == 2000.0
 
     successor = api_client.get(f"/api/v1/fixed-deposits/{new_id}/detail").json()
     assert successor["term_totals"]["actual_gross_interest"] == 0.0

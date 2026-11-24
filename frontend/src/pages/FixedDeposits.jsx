@@ -20,6 +20,7 @@ import {
   seedBankAccountHistoricalBalance,
   settleFixedDeposit,
   updateFixedDeposit,
+  updateFixedDepositInterestPayment,
 } from '../api';
 import { usePortfolio } from '../portfolioContext';
 import {
@@ -349,11 +350,13 @@ export default function FixedDeposits() {
   const [maturityPreviewLoading, setMaturityPreviewLoading] = useState(false);
   const formErrorRef = useRef(null);
   const [interestFd, setInterestFd] = useState(null);
+  const [interestEditingId, setInterestEditingId] = useState(null);
   const [interestForm, setInterestForm] = useState(emptyInterestForm);
   const [interestClientRequestId, setInterestClientRequestId] = useState('');
   const [interestModalOpen, setInterestModalOpen] = useState(false);
   const [interestSubmitting, setInterestSubmitting] = useState(false);
   const [interestFormError, setInterestFormError] = useState('');
+  const [interestReportRevision, setInterestReportRevision] = useState(0);
   const [expandedFdId, setExpandedFdId] = useState(null);
   const [interestReverseTarget, setInterestReverseTarget] = useState(null);
   const [interestReverseFd, setInterestReverseFd] = useState(null);
@@ -756,10 +759,16 @@ export default function FixedDeposits() {
     }
   };
 
-  const openInterestModal = (fd) => {
+  const openInterestModal = (fd, payment = null) => {
     setInterestFd(fd);
-    setInterestForm(emptyInterestForm());
-    setInterestClientRequestId(newInterestClientRequestId());
+    setInterestEditingId(payment?.id ?? null);
+    setInterestForm(payment ? {
+      payment_date: payment.payment_date,
+      gross_interest: String(payment.gross_interest),
+      tax_withheld: String(payment.tax_withheld),
+      comment: payment.comment ?? '',
+    } : emptyInterestForm());
+    setInterestClientRequestId(payment ? '' : newInterestClientRequestId());
     setInterestFormError('');
     setInterestModalOpen(true);
   };
@@ -767,6 +776,7 @@ export default function FixedDeposits() {
   const closeInterestModal = () => {
     setInterestModalOpen(false);
     setInterestFd(null);
+    setInterestEditingId(null);
     setInterestClientRequestId('');
     setInterestFormError('');
   };
@@ -824,21 +834,26 @@ export default function FixedDeposits() {
       payment_date: interestForm.payment_date,
       gross_interest: interestForm.gross_interest,
       tax_withheld: interestForm.tax_withheld || '0',
-      client_request_id: interestClientRequestId || newInterestClientRequestId(),
     };
-    if (interestForm.comment.trim()) {
-      payload.comment = interestForm.comment.trim();
-    }
+    const comment = interestForm.comment.trim();
+    if (interestEditingId != null || comment) payload.comment = comment;
 
     setInterestSubmitting(true);
     try {
-      const result = await createFixedDepositInterestPayment(interestFd.id, payload);
-      closeInterestModal();
-      setStatus(
-        result.warning
+      if (interestEditingId != null) {
+        await updateFixedDepositInterestPayment(interestEditingId, payload);
+        setStatus('Interest payment updated.');
+      } else {
+        const result = await createFixedDepositInterestPayment(interestFd.id, {
+          ...payload,
+          client_request_id: interestClientRequestId || newInterestClientRequestId(),
+        });
+        setStatus(result.warning
           ? `Interest payment recorded. ${result.warning}`
-          : 'Interest payment recorded.'
-      );
+          : 'Interest payment recorded.');
+      }
+      closeInterestModal();
+      setInterestReportRevision((revision) => revision + 1);
       if (expandedFdId === interestFd.id) {
         await loadInterestPayments(interestFd.id);
       } else {
@@ -850,7 +865,9 @@ export default function FixedDeposits() {
       }
       await loadData();
     } catch (err) {
-      setInterestFormError(err.message || 'Failed to record interest payment.');
+      setInterestFormError(err.message || (interestEditingId != null
+        ? 'Failed to update interest payment.'
+        : 'Failed to record interest payment.'));
     } finally {
       setInterestSubmitting(false);
     }
@@ -897,6 +914,7 @@ export default function FixedDeposits() {
       });
       closeInterestReverseModal();
       setStatus('Interest payment reversed. Net interest bank credit was reversed.');
+      setInterestReportRevision((revision) => revision + 1);
       await loadInterestPayments(interestReverseFd.id);
       await loadData();
     } catch (err) {
@@ -1727,14 +1745,25 @@ export default function FixedDeposits() {
                                       {p.is_reversed ? 'Reversed' : 'Active'}
                                     </AppTableCell>
                                     <AppTableCell>
-                                      {canReverseInterestPayment(fd, p) ? (
-                                        <Button
-                                          variant="secondary"
-                                          type="button"
-                                          onClick={() => openInterestReverseModal(fd, p)}
-                                        >
-                                          Reverse interest
-                                        </Button>
+                                      {!historyTerm && canReverseInterestPayment(fd, p) ? (
+                                        <div className="fd-interest-table__actions">
+                                          {p.cash_movement_id != null && (
+                                            <Button
+                                              variant="secondary"
+                                              type="button"
+                                              onClick={() => openInterestModal(fd, p)}
+                                            >
+                                              Edit payment
+                                            </Button>
+                                          )}
+                                          <Button
+                                            variant="secondary"
+                                            type="button"
+                                            onClick={() => openInterestReverseModal(fd, p)}
+                                          >
+                                            Reverse interest
+                                          </Button>
+                                        </div>
                                       ) : (
                                         '—'
                                       )}
@@ -1759,7 +1788,7 @@ export default function FixedDeposits() {
       </DataTableShell>
       </div>
 
-      <FixedDepositInterestReport />
+      <FixedDepositInterestReport refreshRevision={interestReportRevision} />
 
       {modalOpen ? (
         <div className="fd-modal-backdrop" role="presentation" onClick={() => setModalOpen(false)}>
@@ -2346,12 +2375,13 @@ export default function FixedDeposits() {
             className="fd-modal"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="fd-interest-modal-title"
+            aria-label={interestEditingId != null ? 'Edit interest payment' : 'Record interest payment'}
             onClick={(e) => e.stopPropagation()}
           >
             <FixedDepositInterestPaymentForm
-              title="Record interest payment"
-              submitLabel="Record payment"
+              title={interestEditingId != null ? 'Edit interest payment' : 'Record interest payment'}
+              submitLabel={interestEditingId != null ? 'Save changes' : 'Record payment'}
+              showUnscheduledHint={interestEditingId == null}
               form={interestForm}
               onChange={setInterestForm}
               onSubmit={handleInterestSubmit}

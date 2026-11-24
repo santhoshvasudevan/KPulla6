@@ -1,5 +1,10 @@
 # Changelog — KPulla6
 
+## 2026-11-23 — Fixed deposit payment corrections and release verification
+
+- Open **Interest payments** on a current fixed deposit to edit or reverse an eligible payment by row. Reversed payments stay visible for audit. The interest report refreshes after a successful correction.
+- Pull requests run the full test suites, frontend build, and documentation consistency checks. The development workflow now describes release preflight and pinned review handoffs.
+
 ## 2026-11-23 — FD detail maturity interest and renewal split reporting (#43 review)
 
 - `GET /fixed-deposits/{id}/detail` term totals and financial-year summary include confirmed maturity settlement / renewal interest on the originating term once (event date drives FY attribution). Pending estimates stay out of actuals; confirmed delayed payouts remain once-only.
