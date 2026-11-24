@@ -1,8 +1,8 @@
 """
-Authority checks for a user-confirmed provisional mutual-fund NAV (#50).
+Authority checks for a user-confirmed provisional mutual-fund NAV (#50, #51).
 
-A provisional NAV may only be recorded on a manual BUY after this user's own
-explicit exact-date fetch for the same scheme/date was unsuccessful, and only
+A provisional NAV may only be recorded on a manual BUY or SELL after this user's
+own explicit exact-date fetch for the same scheme/date was unsuccessful, and only
 while the exact-date provider cache is still missing. Reads the DB only.
 """
 
@@ -25,6 +25,7 @@ from transactions.services import TransactionValidationError
 # Mirrors market_data.services.missing_nav_fetch.UNSUCCESSFUL_OUTCOMES.
 UNSUCCESSFUL_FETCH_OUTCOMES = frozenset({"date_unavailable", "timeout", "provider_failure"})
 ATTEMPT_MAX_AGE = timedelta(hours=24)
+PROVISIONAL_TYPES = frozenset({"BUY", "SELL"})
 
 PROVISIONAL_FIELDS = (
     "provisional_nav",
@@ -131,11 +132,12 @@ def _reusable_existing(
     scheme_code: str,
     nav_date: date,
     nav: Decimal,
+    txn_type: str,
 ) -> bool:
     return (
         existing is not None
         and existing.nav_source == MutualFundNavSource.PROVISIONAL_USER
-        and existing.transaction.type == "BUY"
+        and existing.transaction.type == txn_type
         and normalize_scheme_code(existing.transaction.asset_symbol) == scheme_code
         and existing.nav_date == nav_date
         and Decimal(existing.nav) == nav
@@ -154,25 +156,27 @@ def resolve_provisional_authority(
     lock: bool = False,
 ) -> ProvisionalAuthority:
     """
-    Validate a provisional NAV request. An existing provisional BUY keeps its authority
-    while scheme, NAV date and provisional NAV are unchanged; any change needs a fresh
-    unsuccessful attempt. The exact-date cache always wins.
+    Validate a provisional NAV request. An existing provisional row keeps its authority
+    while type, scheme, NAV date and provisional NAV are unchanged; any change needs a
+    fresh unsuccessful attempt. The exact-date cache always wins.
     """
-    if txn_type != "BUY":
-        raise ProvisionalNavError("A provisional NAV can only be recorded on a mutual fund BUY.")
+    if txn_type not in PROVISIONAL_TYPES:
+        raise ProvisionalNavError(
+            "A provisional NAV can only be recorded on a mutual fund BUY or SELL."
+        )
     nav = parse_provisional_nav(data.get("provisional_nav"))
     if require_confirmations and not (
         data.get("confirm_provisional_nav") is True and data.get("confirm_paid_value") is True
     ):
         raise ProvisionalNavError(
             "Confirm that the NAV is provisional and unverified, and that paid value is the "
-            "actual payment.",
+            "actual payment (BUY) or redemption proceeds (SELL).",
             code="confirmation_required",
         )
     reject_if_cache_available(scheme_code, nav_date)
 
     if data.get("provisional_attempt_id") in (None, "") and _reusable_existing(
-        existing, scheme_code=scheme_code, nav_date=nav_date, nav=nav
+        existing, scheme_code=scheme_code, nav_date=nav_date, nav=nav, txn_type=txn_type
     ):
         return ProvisionalAuthority(
             nav=nav,

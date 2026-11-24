@@ -105,6 +105,26 @@ describe('API Service', () => {
     });
   });
 
+  it('previewProvisionalMutualFundNav sends type and SELL settlement inputs only for SELL', async () => {
+    global.fetch.mockResolvedValue({ ok: true, json: async () => ({}) });
+    await api.previewProvisionalMutualFundNav({
+      schemeCode: '120503', navDate: '2026-03-15', provisionalNav: '42.5', unitsAllotted: '40',
+      attemptId: null, transactionId: 99, type: 'SELL', paidValue: '0', fees: '2', actualCashReceived: '',
+    });
+    expect(JSON.parse(global.fetch.mock.calls[0][1].body)).toEqual({
+      scheme_code: '120503', nav_date: '2026-03-15', provisional_nav: '42.5', units_allotted: '40',
+      type: 'SELL', transaction_id: 99, paid_value: '0', fees: '2',
+    });
+    await api.previewProvisionalMutualFundNav({
+      schemeCode: '120503', navDate: '2026-03-15', provisionalNav: '42.5', unitsAllotted: '40',
+      attemptId: 'att-1', type: 'BUY', paidValue: '1700', fees: '2',
+    });
+    expect(JSON.parse(global.fetch.mock.calls[1][1].body)).toEqual({
+      scheme_code: '120503', nav_date: '2026-03-15', provisional_nav: '42.5', units_allotted: '40',
+      type: 'BUY', attempt_id: 'att-1',
+    });
+  });
+
   it('fetchMissingMutualFundNav surfaces request errors', async () => {
     global.fetch.mockResolvedValueOnce({
       ok: false, status: 409, json: async () => ({ detail: 'A non-mutual-fund price row already exists' }),

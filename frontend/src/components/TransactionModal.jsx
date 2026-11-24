@@ -455,12 +455,15 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
     ? navFetch : null;
   const provisionalAttemptId = currentNavFetch && PROVISIONAL_FETCH_OUTCOMES.has(currentNavFetch.status)
     ? currentNavFetch.attemptId : null;
-  const editingProvisional = isEditing && initialData?.nav_source === 'PROVISIONAL_USER' &&
+  const savedProvisional = isEditing && initialData?.nav_source === 'PROVISIONAL_USER';
+  const editingProvisional = savedProvisional && initialData?.type === mfForm.type &&
     String(initialData?.scheme_code ?? '') === schemeCode && initialData?.nav_date === navDate;
-  const provisionalMode = isMutualFund && mfForm.type === 'BUY' && lookupStatus === 'missing' &&
+  const isMfSell = mfForm.type === 'SELL';
+  const provisionalMode = isMutualFund && lookupStatus === 'missing' &&
     (Boolean(provisionalAttemptId) || editingProvisional);
-  const provisionalKey = [schemeCode, navDate, provisional.nav, mfForm.units_allotted,
-    provisionalAttemptId ?? ''].join('|');
+  const provisionalKey = [mfForm.type, schemeCode, navDate, provisional.nav, mfForm.units_allotted,
+    provisionalAttemptId ?? '',
+    ...(isMfSell ? [mfForm.paid_value, mfForm.fees, mfForm.actual_cash_received] : [])].join('|');
   const currentPreview = provisionalPreview?.key === provisionalKey ? provisionalPreview : null;
   const provisionalMarketValue = currentPreview?.status === 'ready' ? currentPreview.marketValue : '';
   const provisionalReady = provisionalMode && provisionalMarketValue !== '' &&
@@ -529,11 +532,24 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
         unitsAllotted: mfForm.units_allotted,
         attemptId: provisionalAttemptId,
         transactionId: provisionalAttemptId ? null : initialData?.id,
+        type: mfForm.type,
+        ...(isMfSell ? {
+          paidValue: mfForm.paid_value,
+          fees: mfForm.fees,
+          actualCashReceived: mfForm.actual_cash_received,
+        } : {}),
       });
       const matches = String(result?.scheme_code) === schemeCode && result?.nav_date === navDate &&
         typeof result?.market_value === 'string';
       setProvisionalPreview((prev) => (prev?.key !== key ? prev : matches
-        ? { key, status: 'ready', marketValue: result.market_value }
+        ? {
+            key,
+            status: 'ready',
+            marketValue: result.market_value,
+            calculatedProceeds: result.calculated_proceeds ?? null,
+            taxWithheld: result.tax_withheld ?? null,
+            taxReleased: result.tax_released ?? null,
+          }
         : { key, status: 'error', message: 'Market value preview failed.' }));
     } catch (err) {
       setProvisionalPreview((prev) => (prev?.key !== key ? prev
@@ -559,9 +575,11 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
   const handleMfChange = (e) => {
     const { name, value } = e.target;
     if (name === 'nav') return;
+    if (name === 'scheme_code' || name === 'nav_date' || name === 'type') {
+      setProvisional((prev) => ({ ...prev, confirmNav: false, confirmPaid: false }));
+    }
     if (name === 'scheme_code' || name === 'nav_date') {
       setNavConfirmed(false);
-      setProvisional((prev) => ({ ...prev, confirmNav: false, confirmPaid: false }));
       setShortfall(null);
       setPendingAssetSubmit(null);
     }
@@ -818,8 +836,17 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
         }
       : null;
 
+  const serverAmount = (value) => (value == null ? null : Number(value));
   const mfSellPreview =
-    isMutualFund && mfForm.type === 'SELL'
+    isMutualFund && mfForm.type === 'SELL' && provisionalMode
+      ? {
+          calculated: currentPreview?.status === 'ready'
+            ? serverAmount(currentPreview.calculatedProceeds) : null,
+          withheld: currentPreview?.status === 'ready' ? serverAmount(currentPreview.taxWithheld) : null,
+          released: currentPreview?.status === 'ready' ? serverAmount(currentPreview.taxReleased) : null,
+          currency: mfForm.currency,
+        }
+      : isMutualFund && mfForm.type === 'SELL'
       ? {
           calculated: previewMfCalculatedProceeds(effectiveMfForm),
           withheld: previewTaxWithheld(
@@ -1058,9 +1085,16 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
                           <label>
                             <input type="checkbox" checked={provisional.confirmPaid}
                               onChange={(e) => setProvisional((prev) => ({ ...prev, confirmPaid: e.target.checked }))} />
-                            Paid value is the actual amount I paid.
+                            {isMfSell
+                              ? 'Paid value is the actual redemption proceeds (0 to use units × NAV − fees).'
+                              : 'Paid value is the actual amount I paid.'}
                           </label>
                         </div>
+                      )}
+                      {savedProvisional && cachedNav !== '' && (
+                        <p className="modal-form__hint" role="note">
+                          Cached NAV is now available; saving replaces the provisional NAV with the cached NAV.
+                        </p>
                       )}
                       {needsNavConfirmation && (
                         <label>
@@ -1137,7 +1171,8 @@ export default function TransactionModal({ isOpen, onClose, onSuccess, initialDa
                     <div className="modal-sell-settlement">
                       {mfSellPreview?.calculated != null ? (
                         <p className="modal-sell-settlement__preview">
-                          Calculated proceeds: {mfSellPreview.calculated.toFixed(2)}{' '}
+                          {provisionalMode ? 'Calculated proceeds from server' : 'Calculated proceeds'}:{' '}
+                          {mfSellPreview.calculated.toFixed(2)}{' '}
                           {mfSellPreview.currency}
                         </p>
                       ) : null}

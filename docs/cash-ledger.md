@@ -290,6 +290,8 @@ Gate: `portfolio.cash_aware_enabled == true` only. No auto-enable.
 - Update/delete: settlement row updated or removed with the transaction; BUY updates re-check cash excluding the old settlement.
 - Delete: settlement removed first; deleting a SELL settlement blocked if later cash would go negative.
 - **TXN-AUDIT-2:** `PUT`/`DELETE /transactions/{id}` return structured **409** future-impact payload (`currency`, `earliest_negative_date`, `lowest_balance`, `affected_entries`) when settlement sync would break later balances — same shape as manual cash ledger edit/delete.
+- **MF edits (#51):** when a cash-aware MF `PUT` changes its linked cash rows (amount, date, type, portfolio, or currency, including `TAX_WITHHELD`/`TAX_RELEASED`), every affected portfolio/currency is rechecked from the earliest old or new row date — including the source portfolio when the transaction moves. A negative later balance returns the **409** payload above and the whole edit rolls back. Unchanged linked rows skip this recheck. Stock edits are unchanged.
+- **Provisional MF SELL (#51):** proceeds and tax rows use the same rules as cached SELLs. A zero `paid_value` falls back to units × the stored provisional NAV − fees. A provisional NAV never authorizes funding backfill, ignoring later negative balances, or editing protected linked rows.
 - **Legacy → cash-aware edit:** transactions created while legacy may gain a linked settlement on first `PUT` after enable; fails with **400** shortfall if funding is missing (no retroactive auto-deposit). The NAV-only MF BUY correction exception below does not create historical cash rows.
 - Linked settlements remain **protected** from `PUT`/`DELETE /cash/ledger/{id}` (409).
 - **Cash-6A (done):** Summary `current_value` and holdings `allocation` include native cash converted to `display_currency` via cached FX.
@@ -309,8 +311,8 @@ cash, only if NAV actually changes and **all** statement/cash fields are unchang
 - Units (transaction quantity and detail units), fees, market value, and paid value.
 - `actual_cash_received` and `settlement_note`.
 
-Provisional-NAV BUY payloads (#50) never qualify; they always use normal cash
-sufficiency and settlement with the user-confirmed `paid_value`.
+Provisional-NAV payloads (#50 BUY, #51 BUY/SELL edits) never qualify; they always
+use normal cash sufficiency and settlement with the user-confirmed `paid_value`.
 
 This is not a general cash-validation bypass. Creates, SELLs, no-op NAV saves,
 edits with existing linked cash, or any change to those fields retain normal

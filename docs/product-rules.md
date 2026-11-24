@@ -60,10 +60,11 @@ Missing cache blocks until explicit refresh supplies that date. Preserve stateme
 units/fees/market/paid values and `VALUE_MISMATCH`; never silently bulk-rewrite
 history. Only a NAV-changing BUY correction with no linked cash and all
 statement/cash fields unchanged skips historical settlement backfill; other
-writes retain normal cash validation. Sole exception: a manual BUY may use a
+writes retain normal cash validation. Sole exception: a manual BUY or SELL may use a
 user-confirmed provisional NAV after the same user's unsuccessful exact-date
 fetch; it stays off the NAV cache and fund metrics. See
-[provisional BUY](./mutual-funds.md#provisional-buy-nav-manual-only-exception-50).
+[provisional BUY](./mutual-funds.md#provisional-buy-nav-manual-only-exception-50)
+and [provisional SELL](./mutual-funds.md#provisional-sell-nav-and-edits-51).
 See [MF validation](./mutual-funds.md#nav-validation-strategy)
 and [cash exception](./cash-ledger.md#nav-only-mf-buy-correction-2026-11-24).
 

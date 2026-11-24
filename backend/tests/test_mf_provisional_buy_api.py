@@ -156,10 +156,9 @@ def _later_fetch_succeeded(api_client, other_user):
     (lambda c, o: failed_attempt(c), {"confirm_provisional_nav": "yes-please"}),
     (lambda c, o: failed_attempt(c), {"fees": None}),
     (lambda c, o: failed_attempt(c), {"provisional_nav": "0"}),
-    (lambda c, o: failed_attempt(c), {"type": "SELL"}),
 ], ids=["no-attempt", "forged-attempt", "malformed-attempt", "other-user", "superseded",
         "later-success", "wrong-date", "wrong-scheme", "no-nav-confirmation",
-        "no-paid-confirmation", "non-boolean-confirmation", "fees-inferred", "zero-nav", "sell"])
+        "no-paid-confirmation", "non-boolean-confirmation", "fees-inferred", "zero-nav"])
 def test_ineligible_provisional_writes_leave_no_artifacts(
     api_client, legacy_seeded, other_user, make_attempt, overrides
 ):

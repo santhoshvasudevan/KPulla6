@@ -80,7 +80,7 @@ make bootstrap  # db + migrate + seed
 - `nav_verification_status`: `NOT_VERIFIED` (default), `VERIFIED`, `NAV_MISSING`, `NAV_MISMATCH`, `VALUE_MISMATCH`, `WARNING_ACCEPTED`; legacy `OK`, `WARNING`, `UNCHECKED`.
 - `nav_verification_message`: human-readable detail when status is not `VERIFIED`.
 - MF-6 validation on write compares entered `nav` and `market_value` to cached `historical_prices` (`MUTUAL_FUND`, same `scheme_code` + `nav_date`); DB only, no external provider.
-- NAV provenance (#50, migration `transactions.0006`, additive and reversible): `nav_source` (`PROVIDER_CACHE`, `PROVISIONAL_USER`, `UNKNOWN` default — existing rows are not backfilled), `provisional_confirmed_at`, `provisional_confirmed_by` (FK user, `SET_NULL`), `provisional_failure_reason`, `provisional_attempt_id`. New cache-path writes set `PROVIDER_CACHE`; a provisional BUY sets `PROVISIONAL_USER`. Provisional NAVs are never copied into `historical_prices`.
+- NAV provenance (#50, migration `transactions.0006`, additive and reversible): `nav_source` (`PROVIDER_CACHE`, `PROVISIONAL_USER`, `UNKNOWN` default — existing rows are not backfilled), `provisional_confirmed_at`, `provisional_confirmed_by` (FK user, `SET_NULL`), `provisional_failure_reason`, `provisional_attempt_id`. New cache-path writes set `PROVIDER_CACHE` (and clear `provisional_*` on an edited provisional row, #51); a provisional BUY or SELL sets `PROVISIONAL_USER`. Provisional NAVs are never copied into `historical_prices`.
 
 ## MF-7 — Classification (implemented)
 
@@ -153,7 +153,7 @@ make bootstrap  # db + migrate + seed
 | Display metadata | `MutualFundProfile.scheme_name` via `Folio.asset` |
 | Latest valuation | `latest_nav_for_asset(scheme_code)` → latest `HistoricalPrice` where `asset_type=MUTUAL_FUND` |
 | Missing NAV | `nav_status=nav_missing`, `price_status=price_missing`, `current_value=0` when units remain |
-| Provisional overlay (#50) | `portfolios/mf_valuation.py`: a folio's `PROVISIONAL_USER` BUY NAV wins over an older provider NAV until the next cached NAV (same-date provider wins); per folio, so other folios/portfolios/users are unaffected |
+| Provisional overlay (#50/#51) | `portfolios/mf_valuation.py`: a folio's `PROVISIONAL_USER` BUY or SELL NAV wins over an older provider NAV until the next cached NAV (same-date provider wins); per folio, so other folios/portfolios/users are unaffected |
 | Currency | INR on MF holding rows; `fx_status` follows display vs holding currency (same rules as stocks) |
 
 Stock holdings continue to use `Transaction.asset_symbol` grouping and `latest_historical_price` (`asset_type=STOCK`).

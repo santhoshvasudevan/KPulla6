@@ -85,6 +85,32 @@ def _mf_calculated_proceeds(
     return _quantize_cash_amount(proceeds)
 
 
+def mf_sell_settlement_preview(
+    *,
+    paid_value: Decimal,
+    units_allotted: Decimal,
+    nav: Decimal,
+    fees: Decimal,
+    actual_cash_received: Decimal | None,
+) -> dict[str, Decimal] | None:
+    """Calculated MF SELL proceeds and tax gap as settlement would record them; None when not positive."""
+    proceeds = mf_sell_cash_proceeds(
+        paid_value=paid_value, units_allotted=units_allotted, nav=nav, fees=fees
+    )
+    if proceeds <= 0:
+        return None
+    calculated = _quantize_cash_amount(proceeds)
+    return {
+        "calculated_proceeds": calculated,
+        "tax_withheld": _quantize_cash_amount(
+            sell_tax_withheld_amount(calculated, actual_cash_received)
+        ),
+        "tax_released": _quantize_cash_amount(
+            sell_tax_released_amount(calculated, actual_cash_received)
+        ),
+    }
+
+
 def _sell_settlement_specs(
     txn: Transaction,
     *,
@@ -414,6 +440,34 @@ def sync_stock_settlement(txn: Transaction) -> None:
     _sync_settlement_specs(txn, portfolio, specs)
 
 
+def _linked_entry_snapshot(txn: Transaction) -> list[tuple]:
+    return list(
+        CashLedgerEntry.objects.filter(linked_transaction_id=txn.pk)
+        .order_by("id")
+        .values_list("portfolio_id", "currency", "date", "entry_type", "amount")
+    )
+
+
+def _assert_changed_settlements_non_negative(
+    before: list[tuple], after: list[tuple]
+) -> None:
+    """Reject a settlement replacement that drives any affected later balance negative."""
+    if sorted(before) == sorted(after):
+        return
+    earliest: dict[tuple[int, str], date] = {}
+    for portfolio_id, currency, entry_date, _type, _amount in [*before, *after]:
+        key = (portfolio_id, currency)
+        earliest[key] = min(entry_date, earliest.get(key, entry_date))
+    for (portfolio_id, currency), from_date in earliest.items():
+        assert_proposed_ledger_non_negative(
+            Portfolio.objects.get(pk=portfolio_id),
+            currency,
+            exclude_entry_ids=set(),
+            proposed_points=[],
+            from_date=from_date,
+        )
+
+
 def sync_mutual_fund_settlement(
     txn: Transaction, detail: MutualFundTransactionDetail
 ) -> None:
@@ -421,7 +475,10 @@ def sync_mutual_fund_settlement(
     if not portfolio.cash_aware_enabled:
         return
     specs = _mf_settlement_specs(txn, detail)
+    before = _linked_entry_snapshot(txn)
     _sync_settlement_specs(txn, portfolio, specs)
+    if before:
+        _assert_changed_settlements_non_negative(before, _linked_entry_snapshot(txn))
 
 
 def delete_linked_settlement_before_transaction(txn: Transaction) -> None:

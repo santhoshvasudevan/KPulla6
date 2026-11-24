@@ -118,7 +118,7 @@ def validate_mutual_fund_transaction_payload(
 ) -> MutualFundValidatedPayload:
     """
     Validate a mutual fund write. NAV comes from the exact-date cache; only manual
-    API writes (``allow_provisional``) may carry a user-confirmed provisional BUY NAV.
+    API writes (``allow_provisional``) may carry a user-confirmed provisional BUY/SELL NAV.
     """
     scheme_code = normalize_scheme_code(data.get("scheme_code") or "")
     if not scheme_code:
@@ -229,7 +229,13 @@ def validate_mutual_fund_transaction_payload(
 
 def _provenance_fields(payload: MutualFundValidatedPayload, user) -> dict[str, Any]:
     if payload.provisional is None:
-        return {"nav_source": MutualFundNavSource.PROVIDER_CACHE}
+        return {
+            "nav_source": MutualFundNavSource.PROVIDER_CACHE,
+            "provisional_confirmed_at": None,
+            "provisional_confirmed_by": None,
+            "provisional_failure_reason": "",
+            "provisional_attempt_id": None,
+        }
     fields: dict[str, Any] = {"nav_source": MutualFundNavSource.PROVISIONAL_USER}
     if not payload.provisional.reused:
         fields.update(

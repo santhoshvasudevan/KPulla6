@@ -1510,12 +1510,13 @@ and `attempt_id` (opaque; recorded for unsuccessful attempts and bound to the
 user). Unsuccessful attempts start a 60s cooldown; a cache hit wins during
 cooldown. **400** invalid body, **409** conflicting non-MF price row. No
 transaction or cash writes. An unsuccessful `attempt_id` can authorize a
-provisional manual BUY (#50, below). See
+provisional manual BUY or SELL (#50/#51, below). See
 [transaction API reference](./reference/api-transactions.md#post-navfetch-missing).
 
 ### Provisional mutual-fund BUY (#50)
 
-Manual API exception only; CSV import, bulk refresh, and SELL stay strict.
+Manual API exception only; CSV import and bulk refresh stay strict. SELL uses
+the same rules since #51 (below).
 `POST`/`PUT /api/v1/transactions` (BUY, `asset_type=MUTUAL_FUND`) may send
 `provisional_nav`, `provisional_attempt_id`, `confirm_provisional_nav: true`,
 `confirm_paid_value: true`, and explicit `fees` (never inferred). The backend
@@ -1534,10 +1535,28 @@ must use the cache path. The provisional NAV is never written to
 
 `POST /api/v1/nav/provisional-preview` (session + CSRF) returns the backend
 `market_value` for `{scheme_code, nav_date, provisional_nav, units_allotted,
-attempt_id | transaction_id}`; **400** ineligible (`code`), **409** cache available.
+type?, attempt_id | transaction_id}`; for `type=SELL` with `paid_value` and
+`fees` (optional `actual_cash_received`) it also returns `calculated_proceeds`,
+`tax_withheld`, `tax_released`. **400** ineligible (`code`), **409** cache available.
+
+### Provisional mutual-fund SELL and edits (#51)
+
+A manual MF SELL may carry the same provisional fields and passes the same
+attempt-bound eligibility; `confirm_paid_value` confirms `paid_value` is the
+actual redemption proceeds. Proceeds/tax reuse `finance.cash.mf_sell_cash_proceeds`
+and the existing `TAX_WITHHELD`/`TAX_RELEASED` settlement path; a zero
+`paid_value` falls back to units × the stored (provisional) NAV − fees.
+Edits keep the transaction id and update linked cash rows in place. Stored
+authority is reused only while type, scheme, NAV date, and provisional NAV are
+unchanged. A cache-path edit of a provisional row sets `nav_source=PROVIDER_CACHE`
+and clears `provisional_*` provenance. Cash-aware MF edits that change linked
+cash rows are rechecked for every affected portfolio/currency from the earliest
+old or new row date (`transactions/cash_settlement.py`); a negative later
+balance returns **409** future impact and rolls back. The NAV-only BUY exception
+is unchanged and never applies to provisional payloads or SELLs.
 
 Valuation overlay (`portfolios/mf_valuation.py`): for a folio with a provisional
-BUY, the latest observation on or before the valuation date wins, with a provider
+BUY or SELL, the latest observation on or before the valuation date wins, with a provider
 NAV on the same date winning; so the provisional per-unit NAV carries from its
 date until the next cached NAV. Other folios, portfolios, and users keep the
 provider NAV. Same-date conflicting provisional NAVs make the value unavailable
@@ -1568,7 +1587,7 @@ Mutual fund positions appear as additional holding rows (stock rows unchanged �
 | `latest_nav` | Cached NAV (MF); stocks keep `latest_price` |
 | `latest_price` | Also set to latest NAV on MF rows (backward compatibility) |
 | `nav_status` | `ok` \| `nav_missing` (MF); stocks keep `price_status` |
-| `nav_source`, `nav_date`, `nav_provisional` | Only when a provisional NAV (#50) affects the row: `PROVISIONAL_USER` or `MIXED` (folios merged in all scope) |
+| `nav_source`, `nav_date`, `nav_provisional` | Only when a provisional NAV (#50/#51, BUY or SELL) affects the row: `PROVISIONAL_USER` or `MIXED` (folios merged in all scope) |
 | `price_status` | `ok` \| `price_missing`; MF mirrors NAV (`nav_missing` → `price_missing`) |
 | `primary_asset_class` | `EQUITY`, `DEBT`, `HYBRID`, `LIQUID`, `COMMODITY`, `OTHER`, `UNKNOWN` (MF-7) |
 | `classification_source` | `EXPLICIT`, `INFERRED`, `UNKNOWN` (MF-7) |

@@ -451,7 +451,7 @@ describe('TransactionModal MUTUAL_FUND behavior', () => {
     expect(await screen.findByText('Market value from server: 1000.3587 INR (unverified).')).toBeInTheDocument();
     expect(api.previewProvisionalMutualFundNav).toHaveBeenCalledWith({
       schemeCode: '120503', navDate: '2026-03-15', provisionalNav: '15.2885',
-      unitsAllotted: '65.4321', attemptId: 'att-1', transactionId: null,
+      unitsAllotted: '65.4321', attemptId: 'att-1', transactionId: null, type: 'BUY',
     });
     const marketValue = container.querySelector('input[name="market_value"]');
     expect(marketValue).toHaveValue(1000.3587);
@@ -534,6 +534,136 @@ describe('TransactionModal MUTUAL_FUND behavior', () => {
       attemptId: null, transactionId: 99, provisionalNav: '42.5',
     }));
     expect(api.fetchMissingMutualFundNav).not.toHaveBeenCalled();
+  });
+
+  const fillProvisionalSell = async () => {
+    const utils = await fillProvisionalBuy({ fees: '2' });
+    fireEvent.change(utils.container.querySelector('select[name="type"]'), { target: { value: 'SELL' } });
+    utils.set('units_allotted', '40');
+    utils.set('paid_value', '1700');
+    utils.set('actual_cash_received', '1650');
+    utils.set('provisional_nav', '42.5');
+    return utils;
+  };
+  const sellPreviewOk = (overrides = {}) => previewOk({
+    nav: '42.500000', units_allotted: '40.00000000', market_value: '1700.0000', type: 'SELL',
+    calculated_proceeds: '1700.0000', tax_withheld: '50.0000', tax_released: '0.0000', ...overrides,
+  });
+
+  it('saves a provisional SELL with server market value, proceeds and tax gap', async () => {
+    api.previewProvisionalMutualFundNav.mockResolvedValueOnce(sellPreviewOk());
+    api.createTransaction.mockResolvedValueOnce({ id: 8 });
+    const { container } = await fillProvisionalSell();
+    expect(screen.getByRole('group', { name: 'Provisional NAV entry' })).toBeInTheDocument();
+    expect(screen.queryByText(/Calculated proceeds/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Get market value' }));
+    expect(await screen.findByText('Market value from server: 1700.0000 INR (unverified).')).toBeInTheDocument();
+    expect(api.previewProvisionalMutualFundNav).toHaveBeenCalledWith({
+      schemeCode: '120503', navDate: '2026-03-15', provisionalNav: '42.5', unitsAllotted: '40',
+      attemptId: 'att-1', transactionId: null, type: 'SELL', paidValue: '1700', fees: '2',
+      actualCashReceived: '1650',
+    });
+    expect(screen.getByText(/Calculated proceeds from server: 1700.00 INR/)).toBeInTheDocument();
+    expect(screen.getByText(/Tax withheld \/ broker adjustment: 50.00 INR/)).toBeInTheDocument();
+    expect(container.querySelector('input[name="market_value"]')).toHaveValue(1700);
+    const save = screen.getByRole('button', { name: 'Save' });
+    fireEvent.click(screen.getByRole('checkbox', { name: /provisional and unverified/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /actual redemption proceeds/ }));
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+    await waitFor(() => expect(api.createTransaction).toHaveBeenCalledTimes(1));
+    expect(api.createTransaction).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'SELL', units_allotted: 40, paid_value: 1700, fees: 2, actual_cash_received: 1650,
+      market_value: 1700, provisional_nav: '42.5', provisional_attempt_id: 'att-1',
+      confirm_provisional_nav: true, confirm_paid_value: true,
+    }));
+  });
+
+  it('invalidates the SELL server preview when settlement inputs change', async () => {
+    api.previewProvisionalMutualFundNav.mockResolvedValueOnce(sellPreviewOk());
+    const { set } = await fillProvisionalSell();
+    fireEvent.click(screen.getByRole('button', { name: 'Get market value' }));
+    await screen.findByText(/Calculated proceeds from server/);
+    fireEvent.click(screen.getByRole('checkbox', { name: /provisional and unverified/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /actual redemption proceeds/ }));
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
+    set('actual_cash_received', '1600');
+    expect(screen.queryByText(/Calculated proceeds/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Tax withheld/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('keeps an existing provisional SELL editable without a fetch, but not after a type change', async () => {
+    missingLookup();
+    api.previewProvisionalMutualFundNav.mockResolvedValueOnce(sellPreviewOk({
+      market_value: '4255.3125', calculated_proceeds: '4255.2500', tax_withheld: '55.2500',
+    }));
+    const { container } = renderModal({ initialData: {
+      ...editTransaction, nav_source: 'PROVISIONAL_USER', nav_provisional: true,
+      nav_verification_status: 'NAV_MISSING',
+    } });
+    await screen.findByRole('group', { name: 'Provisional NAV entry' });
+    expect(screen.getAllByText('Provisional NAV (unverified)').length).toBeGreaterThan(1);
+    expect(screen.getByLabelText('Provisional NAV')).toHaveValue(42.5);
+    fireEvent.click(screen.getByRole('button', { name: 'Get market value' }));
+    await screen.findByText(/Calculated proceeds from server: 4255.25 INR/);
+    expect(api.previewProvisionalMutualFundNav).toHaveBeenCalledWith(expect.objectContaining({
+      attemptId: null, transactionId: 99, type: 'SELL', paidValue: '4255.25', fees: '4.25',
+      actualCashReceived: '4200',
+    }));
+    fireEvent.change(container.querySelector('select[name="type"]'), { target: { value: 'BUY' } });
+    expect(screen.queryByRole('group', { name: 'Provisional NAV entry' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fetch missing NAV' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    expect(api.fetchMissingMutualFundNav).not.toHaveBeenCalled();
+  });
+
+  it('keeps a rejected provisional SELL edit on screen for review', async () => {
+    missingLookup();
+    api.previewProvisionalMutualFundNav.mockResolvedValueOnce(sellPreviewOk({
+      market_value: '4255.3125', calculated_proceeds: '4000.0000', tax_withheld: '0.0000',
+      tax_released: '200.0000',
+    }));
+    api.updateTransaction.mockRejectedValueOnce(
+      new Error('This transaction change would make future cash balance negative.'));
+    const onClose = vi.fn();
+    const { container } = render(
+      <PortfolioProvider initialPortfolios={[
+        { id: 1, name: 'Default Portfolio', is_default: true, is_active: true, base_currency: 'EUR' },
+      ]} disableFetch>
+        <TransactionModal isOpen onClose={onClose} onSuccess={vi.fn()} initialData={{
+          ...editTransaction, nav_source: 'PROVISIONAL_USER', nav_provisional: true,
+        }} />
+      </PortfolioProvider>
+    );
+    await screen.findByRole('group', { name: 'Provisional NAV entry' });
+    fireEvent.change(container.querySelector('input[name="paid_value"]'), { target: { value: '4000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Get market value' }));
+    await screen.findByText(/Calculated proceeds from server: 4000.00 INR/);
+    fireEvent.click(screen.getByRole('checkbox', { name: /provisional and unverified/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /actual redemption proceeds/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText('This transaction change would make future cash balance negative.'))
+      .toBeInTheDocument();
+    expect(api.updateTransaction).toHaveBeenCalledWith(99, expect.objectContaining({
+      type: 'SELL', paid_value: 4000, provisional_nav: '42.5', confirm_provisional_nav: true,
+    }));
+    expect(api.updateTransaction.mock.calls[0][1]).not.toHaveProperty('provisional_attempt_id');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(container.querySelector('input[name="paid_value"]')).toHaveValue(4000);
+    expect(screen.getByLabelText('Provisional NAV')).toHaveValue(42.5);
+    expect(screen.getByText(/Withheld tax released: 200.00 INR/)).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /provisional and unverified/ })).toBeChecked();
+  });
+
+  it('tells the user a cached NAV now replaces the provisional NAV on edit', async () => {
+    renderModal({ initialData: {
+      ...editTransaction, nav: '42.5', nav_source: 'PROVISIONAL_USER', nav_provisional: true,
+      nav_verification_status: 'NAV_MISMATCH', provisional_superseded_by_cache: true,
+    } });
+    expect(await screen.findByText(/saving replaces the provisional NAV with the cached NAV/)).toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Provisional NAV entry' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('NAV')).toHaveValue(42.5);
   });
 
   it('requires explicit replacement confirmation and preserves statement fields in an edit PUT', async () => {

@@ -45,12 +45,18 @@ Lookup does not refresh providers or change data. Keep session cookies private.
    again after `retry_after_seconds` (60-second cooldown); `in_flight` means another
    request is already fetching it. Bulk `POST /api/v1/nav/refresh` with
    `scheme_codes` remains available for profiled schemes. If lookup still says
-   `missing`, leave CSV imports and SELLs blocked and investigate coverage. Never
+   `missing`, leave CSV imports blocked and investigate coverage. Never
    substitute an investment date or nearby NAV.
-   For a manual **BUY** only, after `date_unavailable`, `timeout`, or
+   For a manual **BUY or SELL**, after `date_unavailable`, `timeout`, or
    `provider_failure`, the form offers a provisional NAV: enter the statement NAV,
    click **Get market value**, enter fees, and confirm both the unverified NAV and
-   the actual paid value. See [provisional BUY](../reference/api-transactions.md#provisional-mf-buy-50).
+   the actual paid value (BUY) or redemption proceeds (SELL). See
+   [provisional BUY](../reference/api-transactions.md#provisional-mf-buy-50) and
+   [provisional SELL and edits](../reference/api-transactions.md#provisional-mf-sell-and-edits-51).
+   Editing a provisional row with a changed type, NAV date, or NAV needs a new
+   **Fetch missing NAV**. If the edit returns "would make future cash balance
+   negative", later cash entries depend on the old proceeds or date; the form keeps
+   your values for review and nothing was saved.
 2. Retry only after exact-date cache is available. The backend supplies canonical
    NAV. Preserve statement units, fees, market value, and paid value; do not alter
    them to suppress `VALUE_MISMATCH`.

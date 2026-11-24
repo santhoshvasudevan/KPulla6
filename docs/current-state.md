@@ -161,7 +161,13 @@ See [performance/dashboard-read-paths.md](./performance/dashboard-read-paths.md)
   - Provenance on `MutualFundTransactionDetail` (`nav_source`, `provisional_*`; migration `transactions.0006`); never in `historical_prices` or fund metrics
   - Per-folio valuation overlay in holdings, summary, XIRR terminal, value history (`portfolios/mf_valuation.py`)
   - Tests: `backend/tests/test_mf_provisional_buy_api.py`, `backend/tests/test_finance_mutual_fund_valuation.py`
-  - **Deferred:** provisional SELL (#51); deeper valuation edges such as merged all-scope folios, oversell, per-point provenance on performance responses (#52)
+  - **Deferred:** deeper valuation edges such as merged all-scope folios, oversell, per-point provenance on performance responses (#52)
+- **Provisional MF SELL and edits** (#51):
+  - Manual SELL uses the same attempt-bound provisional NAV. Proceeds/tax use the existing SELL settlement path, with a zero-`paid_value` fallback on the provisional NAV
+  - Edits keep transaction id and settlements; authority is reused only while type, scheme, date, and NAV are unchanged; cache-path edits clear provisional provenance
+  - Cash-aware MF edits that change linked cash rows are rechecked for future negative balances (`transactions/cash_settlement.py`, 409); preview returns SELL proceeds/tax
+  - Tests: `backend/tests/test_mf_provisional_sell_edit_api.py`, `frontend/src/components/TransactionModal.test.jsx`
+  - **Deferred:** the same future-impact recheck for stock/ETF edits
 - **Mutual fund classification** (Phase MF-7):
   - `finance/mutual_fund_classification.py` — metadata inference (HYBRID ≠ EQUITY)
   - MF holdings/asset detail: `primary_asset_class`, `classification_source`, optional `classification_notes`

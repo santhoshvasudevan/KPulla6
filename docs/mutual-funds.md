@@ -259,8 +259,25 @@ PROVISIONAL_USER`), never in `historical_prices`, and never used by fund NAV-onl
 metrics. Holdings, summary, allocation, and value history value that folio with
 the provisional per-unit NAV from its date until the next cached provider NAV,
 and label it unverified. Other folios, portfolios, and users are not repriced.
-CSV import, bulk refresh, and MF SELL keep the strict cache requirement. See
+CSV import and bulk refresh keep the strict cache requirement. See
 [provisional BUY contract](./reference/api-transactions.md#provisional-mf-buy-50).
+
+### Provisional SELL NAV and edits (#51)
+
+A manual **SELL** uses the same flow and checks. Paid value is the actual
+redemption proceeds; enter `0` to use units × provisional NAV − fees. The form
+shows the backend market value, calculated proceeds, and any tax withheld or
+released (from `POST /api/v1/nav/provisional-preview`); it does not calculate
+them itself. A provisional SELL NAV is a valuation observation for that folio,
+like a provisional BUY, so remaining units carry it until the next cached NAV;
+a full redemption leaves no provisional value.
+
+Editing a provisional row keeps its id and settlements. The form reuses the saved
+authority while type, scheme, NAV date, and NAV are unchanged; otherwise fetch
+the missing NAV again. Once the exact-date cache exists, the form uses the cached
+NAV and saving converts the row to `PROVIDER_CACHE`. Rejected edits stay in the
+form with the error for review. See
+[provisional SELL and edits](./reference/api-transactions.md#provisional-mf-sell-and-edits-51).
 
 ### Historical correction preview (read-only)
 

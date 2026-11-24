@@ -1,9 +1,10 @@
 """
-Scoped mutual fund valuation with user-confirmed provisional NAV overlays (#50).
+Scoped mutual fund valuation with user-confirmed provisional NAV overlays (#50, #51).
 
 Provider NAVs come from cached HistoricalPrice rows. A provisional NAV recorded on
-a BUY applies only to that BUY's folio (portfolio + scheme + folio number) from its
-NAV date until the next cached provider NAV. Reads loaded transactions only.
+a BUY or SELL applies only to that transaction's folio (portfolio + scheme + folio
+number) from its NAV date until the next cached provider NAV. Reads loaded
+transactions only.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ def provisional_navs_by_folio(db_txns) -> dict[int, dict[date, Decimal | None]]:
     observations: dict[int, list[tuple[date, Decimal]]] = {}
     for txn in db_txns:
         detail = txn.mutual_fund_detail
-        if txn.type != TransactionType.BUY.value:
+        if txn.type not in (TransactionType.BUY.value, TransactionType.SELL.value):
             continue
         if detail.nav_source != MutualFundNavSource.PROVISIONAL_USER:
             continue

@@ -202,7 +202,7 @@ def _mf_current_value(
     finance_txns,
     display_currency: str,
 ) -> _MfCurrentValue:
-    """Latest cached NAV, overlaid by a newer provisional NAV recorded on the holding's own BUY."""
+    """Latest cached NAV, overlaid by a newer provisional NAV recorded on the holding's own BUY/SELL."""
     display_fx_unavailable = display_currency != MF_BASE_CURRENCY
     provider = latest_nav_for_asset(scheme_code)
     provider_point = (

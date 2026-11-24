@@ -50,6 +50,7 @@ export async function fetchMissingMutualFundNav(schemeCode, navDate) {
 
 export async function previewProvisionalMutualFundNav({
   schemeCode, navDate, provisionalNav, unitsAllotted, attemptId, transactionId,
+  type, paidValue, fees, actualCashReceived,
 }) {
   const body = {
     scheme_code: schemeCode,
@@ -57,8 +58,16 @@ export async function previewProvisionalMutualFundNav({
     provisional_nav: provisionalNav,
     units_allotted: unitsAllotted,
   };
+  if (type) body.type = type;
   if (attemptId) body.attempt_id = attemptId;
   if (transactionId != null) body.transaction_id = transactionId;
+  if (type === 'SELL') {
+    if (paidValue !== undefined && paidValue !== '') body.paid_value = paidValue;
+    if (fees !== undefined && fees !== '') body.fees = fees;
+    if (actualCashReceived !== undefined && actualCashReceived !== '') {
+      body.actual_cash_received = actualCashReceived;
+    }
+  }
   return fetchWithHandling('/nav/provisional-preview', {
     method: 'POST',
     body: JSON.stringify(body),

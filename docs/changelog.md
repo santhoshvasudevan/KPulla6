@@ -1,5 +1,14 @@
 # Changelog — KPulla6
 
+## 2026-11-24 — Provisional mutual-fund SELLs and transaction edits (#51)
+
+- Manual MF **SELL** may use a provisional NAV under the same eligibility as BUY: attempt-bound, same user/scheme/date, cache still missing, explicit confirmations and fees. `confirm_paid_value` confirms the actual redemption proceeds. Backend calculates `market_value`. Proceeds and `TAX_WITHHELD`/`TAX_RELEASED` reuse the existing SELL path, and a zero `paid_value` falls back to units × the provisional NAV − fees. CSV import stays strict.
+- Edits keep the transaction id and update linked cash rows in place. Stored provisional authority is reused only while type, scheme, NAV date, and NAV are unchanged; other changes need a fresh attempt. A cache-path edit of a provisional row sets `PROVIDER_CACHE` and clears `provisional_*` provenance.
+- Cash-aware MF edits that change linked cash rows now recheck every affected portfolio/currency from the earliest old or new row date. That includes the source portfolio on a move. A negative later balance returns **409** future impact and rolls back. Previously, lowering SELL proceeds, increasing withheld tax, or moving a SELL later or to another portfolio was not rechecked. The NAV-only BUY exception is unchanged.
+- `POST /api/v1/nav/provisional-preview` accepts optional `type` (`BUY` default). For SELL with `paid_value`/`fees` (optional `actual_cash_received`), it also returns `calculated_proceeds`, `tax_withheld`, and `tax_released`. Existing-row reuse requires the same type.
+- Valuation overlay also uses provisional SELL NAVs for that folio's remaining units until the next cached NAV.
+- Transaction form: provisional entry for SELL, with server-calculated proceeds and tax gap and SELL-specific proceeds confirmation. Type changes need a fresh fetch. A hint appears when a provisional row's cache has arrived. Rejected edits stay in the form.
+
 ## 2026-11-24 — Confirmed provisional mutual-fund BUY (#50)
 
 - Manual MF **BUY** may be saved with a user-entered provisional NAV after the same user's unsuccessful exact-date fetch (`date_unavailable`, `timeout`, `provider_failure`) for that scheme/date, while the exact-date cache is still missing. Requires `provisional_attempt_id`, explicit `confirm_provisional_nav` and `confirm_paid_value`, and explicit fees. Forged, stale (>24h), superseded, other-user, wrong scheme/date attempts and an available cache are rejected. CSV import, bulk refresh, and SELL stay strict.

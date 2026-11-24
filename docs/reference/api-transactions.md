@@ -101,7 +101,7 @@ with no linked settlement/cash rows and **all** statement/cash fields unchanged,
 skips historical settlement backfill. This includes unchanged portfolio, scheme,
 folio, type, currency, both dates, units, fees, market/paid values,
 `actual_cash_received`, and `settlement_note`. No-op updates, other edits, creates,
-and SELLs retain normal cash validation and settlement handling. See
+SELLs, and provisional payloads retain normal cash validation and settlement handling. See
 [cash settlement rules](../cash-ledger.md#8-cash-aware-buysell-settlements-cash-4a-implemented).
 
 ### Provisional MF BUY (#50)
@@ -124,7 +124,7 @@ settlement (atomic rollback on failure). If exact-date cache now exists the writ
 is rejected (`400`); save with the cached NAV instead. Editing an existing
 provisional BUY keeps its authority without a new attempt only while scheme,
 NAV date, and provisional NAV are unchanged; other changes need a fresh attempt.
-SELL with a provisional NAV is rejected (#51).
+SELL follows the same rules ([provisional SELL and edits](#provisional-mf-sell-and-edits-51)).
 
 MF transaction responses add `nav_source` (`PROVIDER_CACHE`, `PROVISIONAL_USER`,
 or `UNKNOWN` for rows saved before #50), `nav_provisional`, and for provisional
@@ -132,18 +132,54 @@ rows `provisional_confirmed_at`, `provisional_failure_reason`, and
 `provisional_superseded_by_cache` (exact-date cache has since arrived; the
 transaction is not rewritten).
 
+### Provisional MF SELL and edits (#51)
+
+A manual MF **SELL** may carry the same provisional fields and passes the same
+eligibility checks as a BUY. `confirm_paid_value` confirms that `paid_value` is
+the actual redemption proceeds. The backend computes `market_value`; units, fees,
+`paid_value`, `actual_cash_received`, and `settlement_note` are stored as entered.
+Proceeds use the existing rule: `paid_value` when greater than 0, otherwise
+`units_allotted × provisional NAV − fees`. `TAX_WITHHELD` / `TAX_RELEASED` follow
+`actual_cash_received` exactly as for cached-NAV SELLs.
+
+Edits (`PUT /transactions/{id}`):
+
+- Keep the transaction `id` and update linked cash rows in place (no duplicates);
+  tax rows are added or removed as `actual_cash_received` changes.
+- Reuse the stored authority without a new attempt only while **type**, scheme,
+  NAV date, and provisional NAV are unchanged. Changing any of them needs a fresh
+  unsuccessful attempt (`provisional_attempt_id`).
+- When the exact-date cache arrives, a provisional payload is rejected (`400`);
+  save without provisional fields to use the cached NAV. The row becomes
+  `PROVIDER_CACHE`, its `provisional_*` provenance is cleared, and settlement is
+  recalculated (a zero-`paid_value` SELL uses the cached NAV).
+- A cash-aware MF edit that changes its linked cash rows returns **409** with the
+  future-impact payload if any affected portfolio/currency balance would go
+  negative on or after the earliest old or new row date (including the source
+  portfolio when the transaction moves). The whole write rolls back.
+- BUY edits keep normal sufficiency checks (`400` shortfall). The NAV-only BUY
+  correction exception never applies to provisional payloads or SELLs.
+
+Saving never contacts a provider. CSV import stays strict.
+
 ## `POST /nav/provisional-preview`
 
 **Auth:** Session + CSRF. **Purpose:** Backend market value for a provisional BUY
-before saving; read-only, no provider calls. Full path:
+or SELL before saving; read-only, no provider calls. Full path:
 `/api/v1/nav/provisional-preview`.
 
 **Body:** `{"scheme_code":"120503","nav_date":"2026-11-20","provisional_nav":"15.2885",
-"units_allotted":"65.4321","attempt_id":"…"}`. For an existing provisional BUY,
-send `transaction_id` instead of `attempt_id`.
+"units_allotted":"65.4321","attempt_id":"…"}`. Optional `type` (`BUY` default, or
+`SELL`). For an existing provisional row of the same type, send `transaction_id`
+instead of `attempt_id`.
 
 **200:** `{"scheme_code":"120503","nav_date":"2026-11-20","nav":"15.288500",
 "units_allotted":"65.43210000","market_value":"1000.3587","nav_source":"PROVISIONAL_USER","status":"provisional"}`.
+
+For `type: "SELL"` with `paid_value` and `fees` (and optional
+`actual_cash_received`), the response also has `type`, `calculated_proceeds`,
+`tax_withheld`, and `tax_released` (4 dp strings, as settlement would record them;
+all `null` when proceeds would not be positive).
 **400** ineligible or invalid (`detail`, `code`), **404** unknown transaction,
 **409** exact-date cache available (`code: cache_available`).
 
@@ -211,7 +247,8 @@ one positive exact-date INR observation. Adjacent dates are never cached.
 For unsuccessful outcomes `failure_category` equals `outcome`. Failed attempts
 start a 60-second cooldown and return an opaque `attempt_id` bound to the
 requesting user, scheme, and date (`cooldown` returns it only to that user); it
-can authorize a [provisional BUY](#provisional-mf-buy-50).
+can authorize a [provisional BUY](#provisional-mf-buy-50) or
+[SELL](#provisional-mf-sell-and-edits-51).
 In-flight claims expire after 30 seconds. **400:** invalid body. **409:** a
 non-mutual-fund price row already occupies that symbol/date. Database errors are
 server errors, never a cache miss.

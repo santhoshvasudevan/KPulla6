@@ -66,7 +66,10 @@ class NavFetchMissingView(APIView):
 
 
 class NavProvisionalPreviewView(APIView):
-    """Backend Market Value for an eligible provisional BUY NAV; read-only, never contacts a provider."""
+    """
+    Backend Market Value for an eligible provisional BUY/SELL NAV, plus SELL proceeds and
+    tax gap when paid value and fees are given; read-only, never contacts a provider.
+    """
 
     def post(self, request: Request) -> Response:
         from finance.mutual_fund_valuation import (
@@ -74,6 +77,7 @@ class NavProvisionalPreviewView(APIView):
             calculate_mutual_fund_market_value,
         )
         from market_data.nav_lookup import normalize_scheme_code
+        from transactions.cash_settlement import mf_sell_settlement_preview
         from transactions.mf_provisional import ProvisionalNavError, resolve_provisional_authority
         from transactions.services import TransactionNotFoundError, get_transaction
 
@@ -82,6 +86,16 @@ class NavProvisionalPreviewView(APIView):
             nav_date = serializers.DateField()
             provisional_nav = serializers.DecimalField(max_digits=18, decimal_places=6)
             units_allotted = serializers.DecimalField(max_digits=18, decimal_places=8)
+            type = serializers.ChoiceField(choices=["BUY", "SELL"], required=False, default="BUY")
+            paid_value = serializers.DecimalField(
+                max_digits=18, decimal_places=4, required=False, allow_null=True, min_value=0
+            )
+            fees = serializers.DecimalField(
+                max_digits=18, decimal_places=4, required=False, allow_null=True, min_value=0
+            )
+            actual_cash_received = serializers.DecimalField(
+                max_digits=18, decimal_places=4, required=False, allow_null=True, min_value=0
+            )
             attempt_id = serializers.UUIDField(required=False, allow_null=True)
             transaction_id = serializers.IntegerField(required=False, allow_null=True)
 
@@ -109,7 +123,7 @@ class NavProvisionalPreviewView(APIView):
                 user_id=request.user.id,
                 scheme_code=scheme,
                 nav_date=data["nav_date"],
-                txn_type="BUY",
+                txn_type=data["type"],
                 existing=existing,
                 require_confirmations=False,
             )
@@ -117,7 +131,7 @@ class NavProvisionalPreviewView(APIView):
             code = status.HTTP_409_CONFLICT if exc.code == "cache_available" else status.HTTP_400_BAD_REQUEST
             return Response({"detail": str(exc), "code": exc.code}, status=code)
         market_value = calculate_mutual_fund_market_value(authority.nav, units)
-        return Response({
+        payload = {
             "scheme_code": scheme,
             "nav_date": data["nav_date"].isoformat(),
             "nav": str(authority.nav),
@@ -125,7 +139,21 @@ class NavProvisionalPreviewView(APIView):
             "market_value": str(market_value),
             "nav_source": PROVISIONAL_USER,
             "status": "provisional",
-        })
+        }
+        if data["type"] == "SELL" and data.get("paid_value") is not None and data.get("fees") is not None:
+            actual = data.get("actual_cash_received") or None
+            sell = mf_sell_settlement_preview(
+                paid_value=data["paid_value"],
+                units_allotted=units,
+                nav=authority.nav,
+                fees=data["fees"],
+                actual_cash_received=actual,
+            )
+            payload["type"] = "SELL"
+            payload["calculated_proceeds"] = str(sell["calculated_proceeds"]) if sell else None
+            payload["tax_withheld"] = str(sell["tax_withheld"]) if sell else None
+            payload["tax_released"] = str(sell["tax_released"]) if sell else None
+        return Response(payload)
 
 
 class PricesRefreshView(APIView):

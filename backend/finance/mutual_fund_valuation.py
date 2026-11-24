@@ -1,7 +1,7 @@
 """Mutual fund per-unit NAV resolution and market value (no Django imports).
 
 Provider NAVs come from the cached history. Provisional NAVs are user-confirmed
-per-unit values recorded on a specific holding's BUY when the exact-date provider
+per-unit values recorded on a specific holding's BUY or SELL when the exact-date provider
 NAV was unavailable. They never enter the provider history; valuation overlays
 them only for the holding that recorded them.
 """
