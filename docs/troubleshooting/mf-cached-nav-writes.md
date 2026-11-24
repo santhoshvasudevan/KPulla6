@@ -85,6 +85,10 @@ Lookup does not refresh providers or change data. Keep session cookies private.
 
 Do not perform live-data edits merely to verify documentation. Use synthetic
 records for write acceptance checks and follow [data safety](../data-safety.md).
+The synthetic SQLite harness, migration rollout, and rollback steps are in the
+[provisional MF NAV release note](../maintenance/mf-nav-48-release.md). If
+**Fetch missing NAV** or provisional saves fail with a missing table or column, the
+`market_data.0007` / `transactions.0006` migrations have not been applied yet.
 
 ## Related
 

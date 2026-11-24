@@ -180,6 +180,12 @@ See [performance/dashboard-read-paths.md](./performance/dashboard-read-paths.md)
   - Asset Detail/Compare label provider fund performance apart from **Your Position** (**Includes provisional NAV**); Transactions list/form show review states
   - Tests: `backend/tests/test_mf_provisional_analytics_csv_api.py`, `frontend/src/pages/{AssetDetail,Compare,Transactions}.test.jsx`, `frontend/src/components/TransactionModal.test.jsx`, `frontend/src/utils/transactionDisplay.test.js`
   - **Deferred:** Metric Sheet/Compare `personal_metrics.xirr` values open units at the latest cached NAV, while the holdings/Asset Detail header XIRR uses the #52 provisional overlay; they can differ while a provisional NAV is newer than the latest cache
+- **Release evidence for cache-first provisional MF NAV** (#54):
+  - [Release note](./maintenance/mf-nav-48-release.md): pinned lineage (baseline `9d5237f` → #49 `8e2eecf` → #50 `28dff3a` → #51 `c73e188` → #52 `c9b3553` → #53 `49a3fd3`, integration branch `codex/mf-nav-48`), frozen-tree results, migration rollout and rollback
+  - Synthetic SQLite browser acceptance harness `scripts/acceptance/mf_nav_48_*` (98/98 checks); no live database, portfolio, or provider used
+  - Baseline is not on `main`; merging conflicts only in `docs/changelog.md`
+  - **Pending, manual:** live migration of `market_data.0007` and `transactions.0006` after backup, safety counts, and explicit approval. Code older than #50 cannot write MF rows once `transactions.0006` is applied
+  - **Deferred:** summary headline `current_value` falls back to the unconverted base subtotal when display FX is missing (pre-existing; `fx_status` is still `fx_unavailable`)
 - **Mutual fund classification** (Phase MF-7):
   - `finance/mutual_fund_classification.py` — metadata inference (HYBRID ≠ EQUITY)
   - MF holdings/asset detail: `primary_asset_class`, `classification_source`, optional `classification_notes`

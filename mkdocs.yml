@@ -139,6 +139,7 @@ nav:
     - Docs visual backlog: maintenance/docs-visual-backlog.md
     - Obsolete backend code audit: maintenance/obsolete-code-audit.md
     - Release checklist: maintenance/release-checklist.md
+    - MF provisional NAV release (#48): maintenance/mf-nav-48-release.md
   - Troubleshooting:
     - Overview: troubleshooting/index.md
     - Login issues: troubleshooting/login-issues.md

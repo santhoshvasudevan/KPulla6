@@ -1,5 +1,10 @@
 # Changelog — KPulla6
 
+## 2026-11-25 — Release evidence for cache-first provisional MF NAV (#54)
+
+- New [release note](./maintenance/mf-nav-48-release.md) pins the strict-NAV baseline `9d5237f` and the five ticket commits #49 `8e2eecf`, #50 `28dff3a`, #51 `c73e188`, #52 `c9b3553`, and #53 `49a3fd3` (integration branch `codex/mf-nav-48`). It records the integration diff and how it relates to `main`: the baseline is not on `main`, and a trial merge conflicts only in this changelog. It also records frozen-tree results for the backend, frontend, build, docs, and migrations, an API/security review, and rollout and rollback steps for `market_data.0007` and `transactions.0006`. Code older than #50 cannot write MF rows once `transactions.0006` is applied.
+- New synthetic acceptance harness `scripts/acceptance/`. The server wrapper uses a fresh SQLite file database, a file-driven MF NAV provider stub with a call log, and blocks non-loopback network access. It refuses to start when `DATABASE_URL` is set. A Vite launcher points the proxy at that backend, and a Playwright driver checks cache hit, fetch success, unavailable/timeout with cooldown, provisional BUY/SELL/edit, later cached valuation and review, scope/FX quality, provider-only analytics, and auth/CSRF/cross-user isolation. The driver also verifies the served PIDs' working directories and commit. No application code, migration, or API change.
+
 ## 2026-11-24 — Provider-only fund analytics, historical NAV review, strict CSV (#53)
 
 - Fund NAV performance on Asset Detail and Compare remains provider-cache-only: returns, risk, drawdowns, monthly/yearly heatmaps, benchmark pairing, and normalized series. New HTTP tests prove that adding, editing, or deleting a provisional transaction leaves them unchanged and creates no fund or benchmark history, and that Compare and Asset Detail use the same series. Additive `fund_nav_source: "PROVIDER_CACHE"`. `personal_metrics.nav_provisional` and a warning flag positions that include provisional rows. No formula changes.

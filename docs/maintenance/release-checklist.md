@@ -6,6 +6,10 @@ Pre-release verification:
 
 Includes API smoke tests, migration review, and manual UI checks.
 
+Feature releases with their own evidence and rollout steps:
+
+- [Cache-first provisional MF NAV (#48)](mf-nav-48-release.md)
+
 ## Documentation (before release)
 
 1. Read [Documentation update policy](documentation-update-policy.md) — confirm user-visible changes have changelog entries.
