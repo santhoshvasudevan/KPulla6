@@ -93,17 +93,21 @@ Prefer forward fix. Same backup/count/approval gate as rollout.
 
 ## Frozen-tree verification
 
-_Worktree:_ `/Users/santhosh/Documents/Projects/Ganesha/worktrees/kpulla6-mf-nav-61`
+_Worktree used for the gate:_ `/Users/santhosh/Documents/Projects/Ganesha/worktrees/kpulla6-mf-nav-61`  
+_Integration branch tip after doc pin fixes:_ `codex/mf-nav-55-corrections` / `codex/61-main-integration-candidate`
 
-_Recorded after the verification commit; invalidate if the candidate SHA changes._
+_Recorded on the verification commit below. Two later commits only edited this release note
+(incorrect SHA pins). Treat **`18c2ef4`** as the frozen evidence SHA for rollout approval.
+If you deploy the branch tip instead, re-run the frozen verification on that tip first._
 
 | Field | Value |
 |-------|--------|
-| Candidate SHA | `a4289405e2a0f2b8c4d6e1f3a9b7c5d2e8f0a1b2c` |
+| **Frozen verification SHA (approve/deploy)** | `18c2ef4c588e2a0033a92f49929e83399b914293` |
 | Pre-verification tip | `4a72378885bf043139549fb1a736e2f99a838591` (merge + acceptance handoff) |
-| `origin/main` | `25419fa89…` (PR #47) |
+| Branch tip after doc-only pin commits | `52c38de1b7fb4e5f53e1a70420a7dbbe5e6b49f5` (and subsequent release-doc fix commits) |
+| `origin/main` at merge | `25419fa8b1575369958eb442f6d48ec0305e6c8a` (PR #47) |
 | Merge base | `6ffe63fd8b25f1d8c2ece8cfdca35ac62d6126d9` |
-| Integration diff | `git diff --stat 6ffe63f..HEAD` → 108 files, +9400/−473 (21 commits) |
+| Integration diff at freeze | `git diff --stat 6ffe63f..18c2ef4` → 108 files, +9400/−473 (21 commits) |
 
 | Check | Command | Result |
 |-------|---------|--------|
