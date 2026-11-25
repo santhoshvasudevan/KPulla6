@@ -131,13 +131,14 @@ def test_fully_sold_mf_holding_closed(api_client, legacy_seeded):
 
 
 @pytest.mark.django_db
-def test_missing_nav_nav_missing_and_zero_current_value(api_client, legacy_seeded, test_user):
+def test_missing_nav_nav_missing_and_unavailable_current_value(api_client, legacy_seeded, test_user):
     historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload())
     row = [h for h in api_client.get("/api/v1/portfolio/holdings").json()["holdings"] if h.get("asset_type") == "MUTUAL_FUND"][0]
     assert row["nav_status"] == "nav_missing"
     assert row["price_status"] == "price_missing"
     assert row["latest_nav"] is None
-    assert row["current_value"] == 0.0
+    assert row["current_value"] is None
+    assert row["unrealized_pl"] is None
     assert any("nav" in w.lower() for w in row["warnings"])
 
 

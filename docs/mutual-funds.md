@@ -491,7 +491,7 @@ Extend `build_portfolio_value_timeseries` and holdings aggregation to include MF
 | Daily valuation | Forward-fill NAV from `HistoricalPrice` (`MUTUAL_FUND`) on `nav_date` calendar |
 | Mixed portfolio | Sum stock values (price × qty) + MF values (nav × units) in base currency |
 | FX | MF INR → display currency via cached `FXRate` (same 7-day fill rules) |
-| Missing NAV | `nav_missing` → value `0` for that holding on that day; warnings in response |
+| Missing NAV | `nav_missing` → holding `current_value` `null` (not `0`) while units remain; same-date history `portfolio_value` `null`; warnings in response |
 | XIRR | Include MF terminal values; cash-flow dates — align with investment_date vs nav_date decision |
 | TWROR / cumulative return | No change to formulas; input series includes MF values |
 | Benchmark overlay | Unaffected (indices remain `asset_type=INDEX`) |

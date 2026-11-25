@@ -85,7 +85,9 @@ from market_data.price_lookup import normalize_asset_symbol
 from market_data.price_repository import list_index_prices_in_range, list_stock_prices_in_range
 from portfolios import dates as portfolio_dates
 from portfolios.holdings_service import (
-    AssetDetailValidationError, AssetNotFoundError, cached_mutual_fund_holding_xirr,
+    AssetDetailValidationError,
+    AssetNotFoundError,
+    scoped_mutual_fund_holding_xirr,
 )
 from portfolios.mf_valuation import provisional_series_warnings
 from portfolios.models import Portfolio
@@ -1071,7 +1073,7 @@ def _prepare_asset_daily_metrics_inputs(
         daily_pts, values, coverage, warnings = load_nav_performance(
             ctx.asset_symbol, range_code, today
         )
-        xirr_val = cached_mutual_fund_holding_xirr(ctx.asset_symbol, ctx.asset_txns, today=today)
+        xirr_val = scoped_mutual_fund_holding_xirr(ctx.asset_symbol, ctx.asset_txns, today=today)
         return AssetDailyMetricsInputs(
             ctx=ctx, daily_pts=daily_pts,
             daily_fracs=[p.return_fraction for p in daily_pts], ts_use=values,

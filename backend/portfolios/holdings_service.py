@@ -186,8 +186,8 @@ class _MfCurrentValue:
     price_status: str
     fx_missing: bool
     fifo: object
-    current_value: Decimal
-    unrealized_pl: Decimal
+    current_value: Decimal | None
+    unrealized_pl: Decimal | None
     valuation: object
     warnings: list[str]
     xirr: Optional[float]
@@ -217,20 +217,15 @@ def _mf_current_value(
         else []
     )
     today = portfolio_dates.current_date()
-    if scoped.overlaid:
-        xirr = mutual_fund_holding_xirr(db_txns, scoped.nav, today=today)
-    else:
-        xirr = cached_mutual_fund_holding_xirr(scheme_code, db_txns, today=today)
+    xirr = scoped_mutual_fund_holding_xirr(scheme_code, db_txns, today=today)
     return _MfCurrentValue(
         nav=scoped.nav,
         nav_status="ok" if scoped.nav_available else "nav_missing",
         price_status="ok" if scoped.nav_available else "price_missing",
         fx_missing=display_fx_unavailable,
         fifo=fifo,
-        current_value=scoped.current_value if scoped.current_value is not None else Decimal("0"),
-        unrealized_pl=(
-            scoped.unrealized_pl if scoped.unrealized_pl is not None else fifo.unrealized_pl
-        ),
+        current_value=scoped.current_value,
+        unrealized_pl=scoped.unrealized_pl,
         valuation=scoped.valuation,
         warnings=warnings,
         xirr=xirr,
@@ -241,6 +236,21 @@ def _float_or_none(value: Decimal | None) -> float | None:
     if value is None:
         return None
     return float(value)
+
+
+def _mf_serialized_values(
+    *,
+    qty: Decimal,
+    nav_status: str,
+    current_value: Decimal | None,
+    unrealized_pl: Decimal | None,
+    fifo_unrealized: Decimal,
+) -> tuple[float | None, float | None]:
+    if qty <= 0:
+        return float(current_value or 0), float(unrealized_pl if unrealized_pl is not None else fifo_unrealized)
+    if nav_status == "nav_missing":
+        return None, None
+    return _float_or_none(current_value), _float_or_none(unrealized_pl)
 
 
 def mutual_fund_holding_xirr(db_txns, current_nav, *, today):
@@ -275,14 +285,29 @@ def mutual_fund_holding_xirr(db_txns, current_nav, *, today):
     )
 
 
-def cached_mutual_fund_holding_xirr(scheme_code, db_txns, *, today):
-    nav_result = latest_nav_for_asset(scheme_code, as_of=today)
-    nav = (
-        nav_result.nav
-        if nav_result is not None and nav_result.status == "ok" and nav_result.nav is not None
+def scoped_mutual_fund_holding_xirr(scheme_code, db_txns, *, today):
+    """Personal XIRR terminal NAV matches holdings valuation (provider + provisional overlay)."""
+    if not db_txns:
+        return None
+    provider = latest_nav_for_asset(scheme_code, as_of=today)
+    provider_point = (
+        (provider.date, provider.nav)
+        if provider is not None and provider.status == "ok" and provider.nav is not None
         else None
     )
-    return mutual_fund_holding_xirr(db_txns, nav, today=today)
+    finance_txns = _to_finance_dtos(db_txns)
+    scoped = scoped_mutual_fund_valuation(db_txns, finance_txns, provider_point=provider_point)
+    terminal_nav = (
+        scoped.nav
+        if scoped.fifo.cumulative_qty <= 0 or scoped.nav_available
+        else None
+    )
+    return mutual_fund_holding_xirr(db_txns, terminal_nav, today=today)
+
+
+def cached_mutual_fund_holding_xirr(scheme_code, db_txns, *, today):
+    """Deprecated alias — use ``scoped_mutual_fund_holding_xirr`` for parity across surfaces."""
+    return scoped_mutual_fund_holding_xirr(scheme_code, db_txns, today=today)
 
 
 def _build_holding_item(
@@ -379,9 +404,6 @@ def _build_mf_holding_item(
     qty = fifo_metrics.cumulative_qty
     invested = fifo_metrics.cumulative_invested_amount
     avg_cost = fifo_metrics.avg_cost_per_share if qty > 0 else Decimal("0")
-    current_value = cur.current_value
-    unrealized = cur.unrealized_pl
-
     warnings: list[str] = []
     status = _holding_status(qty=qty, oversold=oversold)
     if oversold:
@@ -390,6 +412,13 @@ def _build_mf_holding_item(
         warnings.append("Latest cached NAV is missing")
     warnings += cur.warnings
     xirr = cur.xirr
+    current_value, unrealized = _mf_serialized_values(
+        qty=qty,
+        nav_status=nav_status,
+        current_value=cur.current_value,
+        unrealized_pl=cur.unrealized_pl,
+        fifo_unrealized=fifo_metrics.unrealized_pl,
+    )
 
     portfolio_units = {}
     for txn in db_txns:
@@ -411,13 +440,13 @@ def _build_mf_holding_item(
         "latest_price": _float_or_none(current_nav),
         "latest_nav": _float_or_none(current_nav),
         "current_price": _float_or_none(current_nav),
-        "current_value": float(current_value),
+        "current_value": current_value,
         "invested_amount": float(invested),
         "invested": float(invested),
         "realized_gain_loss": float(fifo_metrics.realized_pl),
         "realized_pl": float(fifo_metrics.realized_pl),
-        "unrealized_gain_loss": float(unrealized),
-        "unrealized_pl": float(unrealized),
+        "unrealized_gain_loss": unrealized,
+        "unrealized_pl": unrealized,
         "currency": MF_BASE_CURRENCY,
         "price_status": price_status,
         "nav_status": nav_status,
@@ -471,7 +500,9 @@ def _assets_overview(
 
         raw_value = item.get("current_value")
         value = Decimal(str(raw_value)) if raw_value is not None else None
-        if item.get("price_status") == "price_missing":
+        if item.get("price_status") == "price_missing" or (
+            item.get("nav_status") == "nav_missing" and item.get("quantity", 0) > 0
+        ):
             value = None
         elif item.get("display_currency"):
             # FD and bank cash rows already carry display-currency current value.
@@ -588,7 +619,8 @@ def build_holdings(
     allocation: list[dict] = []
     for item in holdings:
         qty = Decimal(str(item.get("quantity") or 0))
-        cv = Decimal(str(item.get("current_value") or 0))
+        raw_cv = item.get("current_value")
+        cv = Decimal(str(raw_cv)) if raw_cv is not None else None
         if item.get("asset_type") == "FIXED_DEPOSIT":
             if item.get("holding_status") == "closed" or cv <= 0:
                 continue
@@ -599,7 +631,13 @@ def build_holdings(
                 continue
             allocation.append({k: v for k, v in item.items() if not k.startswith("_")})
             continue
-        if item.get("holding_status") == "closed" or qty <= 0 or cv <= 0:
+        if item.get("holding_status") == "closed" or qty <= 0:
+            continue
+        if item.get("nav_status") == "nav_missing" and qty > 0:
+            continue
+        if item.get("price_status") == "price_missing" and qty > 0:
+            continue
+        if cv is None or cv <= 0:
             continue
         allocation.append({k: v for k, v in item.items() if not k.startswith("_")})
     allocation.extend(cash_rows)
@@ -621,7 +659,7 @@ class AssetDetailResult:
     currency: str
     current_price: Optional[float]
     price_status: str
-    current_value: float
+    current_value: float | None
     cumulative_qty: float
     cumulative_invested_amount: float
     avg_cost_per_share: float
@@ -780,7 +818,6 @@ def _build_mf_asset_detail(
 
     fifo_metrics = cur.fifo
     qty = fifo_metrics.cumulative_qty
-    current_value = cur.current_value
 
     warnings: list[str] = []
     status = _holding_status(qty=qty, oversold=oversold)
@@ -790,6 +827,13 @@ def _build_mf_asset_detail(
         warnings.append("Latest cached NAV is missing")
     warnings += cur.warnings
     xirr = cur.xirr
+    current_value, unrealized = _mf_serialized_values(
+        qty=qty,
+        nav_status=nav_status,
+        current_value=cur.current_value,
+        unrealized_pl=cur.unrealized_pl,
+        fifo_unrealized=fifo_metrics.unrealized_pl,
+    )
 
     asset, profile = _mf_asset_and_profile(db_txns)
     cls_fields = classification_fields_for_asset(asset, profile)
@@ -799,14 +843,14 @@ def _build_mf_asset_detail(
         currency=MF_BASE_CURRENCY,
         current_price=_float_or_none(current_nav),
         price_status=price_status,
-        current_value=float(current_value),
+        current_value=current_value,
         cumulative_qty=float(qty),
         cumulative_invested_amount=float(fifo_metrics.cumulative_invested_amount),
         avg_cost_per_share=float(
             fifo_metrics.avg_cost_per_share if qty > 0 else Decimal("0")
         ),
         realized_pl=float(fifo_metrics.realized_pl),
-        unrealized_pl=float(cur.unrealized_pl),
+        unrealized_pl=unrealized,
         xirr=xirr,
         holding_status=status,
         fx_status="fx_unavailable" if fx_missing else "ok",

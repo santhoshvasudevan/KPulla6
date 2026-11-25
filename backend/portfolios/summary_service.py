@@ -232,13 +232,30 @@ def _to_fifo_dtos(db_txns: list[TransactionModel]):
 @dataclass(frozen=True)
 class HoldingsCalcResult:
     total_invested: Decimal
-    current_value: Decimal
+    current_value: Decimal | None
     realized_pl: Decimal
-    unrealized_pl: Decimal
-    total_pl: Decimal
+    unrealized_pl: Decimal | None
+    total_pl: Decimal | None
     any_fx_missing: bool
     warnings: list[str]
     nav_provisional: bool = False
+
+
+def _derived_pl(
+    current_value: Decimal | None, total_invested: Decimal, realized_pl: Decimal
+) -> tuple[Decimal | None, Decimal | None]:
+    if current_value is None:
+        return None, None
+    unrealized = current_value - total_invested
+    return unrealized, realized_pl + unrealized
+
+
+def _merge_optional_current(
+    left: Decimal | None, right: Decimal | None
+) -> Decimal | None:
+    if left is None or right is None:
+        return None
+    return left + right
 
 
 def _calculate_holdings(
@@ -299,8 +316,7 @@ def _calculate_holdings(
         current_value += cv
         realized_pl += fifo_metrics.realized_pl
 
-    unrealized_pl = current_value - total_invested
-    total_pl = realized_pl + unrealized_pl
+    unrealized_pl, total_pl = _derived_pl(current_value, total_invested, realized_pl)
 
     return HoldingsCalcResult(
         total_invested=total_invested,
@@ -365,6 +381,7 @@ def _calculate_mf_holdings(
     warnings: list[str] = []
 
     nav_provisional = False
+    any_value_missing = False
     for scheme, txns, fifo_txns, scoped in valued:
         valuation = scoped.valuation
         nav_date = valuation.nav_date or today
@@ -381,29 +398,41 @@ def _calculate_mf_holdings(
             warnings.append(f"Oversell detected for mutual fund {scheme}")
 
         fifo_metrics = scoped.fifo
-        cv_inr = scoped.current_value if scoped.current_value is not None else Decimal("0")
         inv_inr = fifo_metrics.cumulative_invested_amount
         real_inr = fifo_metrics.realized_pl
+        if fifo_metrics.cumulative_qty > 0 and scoped.current_value is None:
+            any_value_missing = True
 
-        cv_base, cv_fx = _convert_mf_amount_to_base(
-            cv_inr, conv_date=today, portfolio_base=portfolio_base, fx_maps=fx_maps
-        )
         inv_base, inv_fx = _convert_mf_amount_to_base(
             inv_inr, conv_date=nav_date, portfolio_base=portfolio_base, fx_maps=fx_maps
         )
         real_base, real_fx = _convert_mf_amount_to_base(
             real_inr, conv_date=nav_date, portfolio_base=portfolio_base, fx_maps=fx_maps
         )
-        if cv_fx == "fx_unavailable" or inv_fx == "fx_unavailable" or real_fx == "fx_unavailable":
+        if inv_fx == "fx_unavailable" or real_fx == "fx_unavailable":
             any_fx_missing = True
-            cv_base = Decimal("0") if cv_fx == "fx_unavailable" else cv_base
 
         total_invested += inv_base
-        current_value += cv_base
         realized_pl += real_base
 
-    unrealized_pl = current_value - total_invested
-    total_pl = realized_pl + unrealized_pl
+        if fifo_metrics.cumulative_qty > 0 and scoped.current_value is None:
+            continue
+
+        cv_inr = scoped.current_value or Decimal("0")
+        # Current value uses the portfolio valuation date so carried provisional
+        # per-unit NAV does not freeze headline FX (#58).
+        cv_base, cv_fx = _convert_mf_amount_to_base(
+            cv_inr, conv_date=today, portfolio_base=portfolio_base, fx_maps=fx_maps
+        )
+        if cv_fx == "fx_unavailable":
+            any_fx_missing = True
+            any_value_missing = True
+            continue
+        current_value += cv_base
+
+    if any_value_missing:
+        current_value = None
+    unrealized_pl, total_pl = _derived_pl(current_value, total_invested, realized_pl)
 
     return HoldingsCalcResult(
         total_invested=total_invested,
@@ -420,15 +449,15 @@ def _calculate_mf_holdings(
 def _merge_holdings_results(
     stock: HoldingsCalcResult, mf: HoldingsCalcResult
 ) -> HoldingsCalcResult:
-    unrealized = (stock.current_value + mf.current_value) - (
-        stock.total_invested + mf.total_invested
-    )
-    total_pl = stock.realized_pl + mf.realized_pl + unrealized
+    total_invested = stock.total_invested + mf.total_invested
+    current_value = _merge_optional_current(stock.current_value, mf.current_value)
+    realized_pl = stock.realized_pl + mf.realized_pl
+    unrealized_pl, total_pl = _derived_pl(current_value, total_invested, realized_pl)
     return HoldingsCalcResult(
-        total_invested=stock.total_invested + mf.total_invested,
-        current_value=stock.current_value + mf.current_value,
-        realized_pl=stock.realized_pl + mf.realized_pl,
-        unrealized_pl=unrealized,
+        total_invested=total_invested,
+        current_value=current_value,
+        realized_pl=realized_pl,
+        unrealized_pl=unrealized_pl,
         total_pl=total_pl,
         any_fx_missing=stock.any_fx_missing or mf.any_fx_missing,
         warnings=stock.warnings + mf.warnings,
@@ -439,15 +468,15 @@ def _merge_holdings_results(
 def _merge_with_bank_cash(
     base: HoldingsCalcResult, bank: BankCashHoldingsCalc
 ) -> HoldingsCalcResult:
-    unrealized = (base.current_value + bank.current_value) - (
-        base.total_invested + bank.total_invested
-    )
-    total_pl = base.realized_pl + bank.realized_pl + unrealized
+    total_invested = base.total_invested + bank.total_invested
+    current_value = _merge_optional_current(base.current_value, bank.current_value)
+    realized_pl = base.realized_pl + bank.realized_pl
+    unrealized_pl, total_pl = _derived_pl(current_value, total_invested, realized_pl)
     return HoldingsCalcResult(
-        total_invested=base.total_invested + bank.total_invested,
-        current_value=base.current_value + bank.current_value,
-        realized_pl=base.realized_pl + bank.realized_pl,
-        unrealized_pl=unrealized,
+        total_invested=total_invested,
+        current_value=current_value,
+        realized_pl=realized_pl,
+        unrealized_pl=unrealized_pl,
         total_pl=total_pl,
         any_fx_missing=base.any_fx_missing or bank.any_fx_missing,
         warnings=base.warnings + bank.warnings,
@@ -457,15 +486,15 @@ def _merge_with_bank_cash(
 def _merge_with_fd(
     base: HoldingsCalcResult, fd: FixedDepositHoldingsCalc
 ) -> HoldingsCalcResult:
-    unrealized = (base.current_value + fd.current_value) - (
-        base.total_invested + fd.total_invested
-    )
-    total_pl = base.realized_pl + fd.realized_pl + unrealized
+    total_invested = base.total_invested + fd.total_invested
+    current_value = _merge_optional_current(base.current_value, fd.current_value)
+    realized_pl = base.realized_pl + fd.realized_pl
+    unrealized_pl, total_pl = _derived_pl(current_value, total_invested, realized_pl)
     return HoldingsCalcResult(
-        total_invested=base.total_invested + fd.total_invested,
-        current_value=base.current_value + fd.current_value,
-        realized_pl=base.realized_pl + fd.realized_pl,
-        unrealized_pl=unrealized,
+        total_invested=total_invested,
+        current_value=current_value,
+        realized_pl=realized_pl,
+        unrealized_pl=unrealized_pl,
         total_pl=total_pl,
         any_fx_missing=base.any_fx_missing or fd.any_fx_missing,
         warnings=base.warnings + fd.warnings,
@@ -724,10 +753,10 @@ def _build_portfolio_value_timeseries(
 @dataclass
 class PortfolioSummaryResult:
     total_invested: float
-    current_value: float
+    current_value: float | None
     realized_pl: float
-    unrealized_pl: float
-    total_pl: float
+    unrealized_pl: float | None
+    total_pl: float | None
     xirr: Optional[float]
     base_currency: str
     display_currency: str
@@ -742,6 +771,10 @@ class PortfolioSummaryResult:
 
 def _float(v: Decimal) -> float:
     return float(v)
+
+
+def _float_optional(v: Decimal | None) -> float | None:
+    return None if v is None else float(v)
 
 
 def _combine_fx_status(statuses: list[str]) -> str:
@@ -948,18 +981,26 @@ def _build_single_portfolio_summary(
         + fd_holdings.total_invested
         + bank_cash_holdings.total_invested
     )
-    current_value = (
-        _conv_monetary(investment_holdings.current_value, today)
-        + fd_holdings.current_value
-        + bank_cash_holdings.current_value
-    )
+    inv_cv = investment_holdings.current_value
+    if inv_cv is None:
+        headline_cv: Decimal | None = None
+    else:
+        headline_cv = (
+            _conv_monetary(inv_cv, today)
+            + fd_holdings.current_value
+            + bank_cash_holdings.current_value
+        )
     realized_pl = (
         _conv_monetary(investment_holdings.realized_pl, today)
         + fd_holdings.realized_pl
         + bank_cash_holdings.realized_pl
     )
-    unrealized_pl = current_value - total_invested
-    total_pl = realized_pl + unrealized_pl
+    if headline_cv is None:
+        unrealized_pl = None
+        total_pl = None
+    else:
+        unrealized_pl = headline_cv - total_invested
+        total_pl = realized_pl + unrealized_pl
 
     timeseries: list[dict] = []
     if include_timeseries:
@@ -1049,9 +1090,10 @@ def _build_single_portfolio_summary(
         else None
     )
     if cash_display is not None:
-        current_value = _float(
-            Decimal(str(current_value)) + cash_display.total_display_value
-        )
+        if headline_cv is not None:
+            headline_cv = headline_cv + cash_display.total_display_value
+            unrealized_pl = headline_cv - total_invested
+            total_pl = realized_pl + unrealized_pl
         fx_status = _combine_fx_status([fx_status, cash_display.fx_status])
         summary_warnings = (
             list(investment_holdings.warnings)
@@ -1083,10 +1125,10 @@ def _build_single_portfolio_summary(
 
     return PortfolioSummaryResult(
         total_invested=_float(total_invested),
-        current_value=_float(current_value),
+        current_value=_float_optional(headline_cv),
         realized_pl=_float(realized_pl),
-        unrealized_pl=_float(unrealized_pl),
-        total_pl=_float(total_pl),
+        unrealized_pl=_float_optional(unrealized_pl),
+        total_pl=_float_optional(total_pl),
         xirr=xirr,
         base_currency=portfolio_base,
         display_currency=disp_ccy,
@@ -1175,24 +1217,32 @@ def _build_all_active_portfolio_summary(
             has_fixed_deposits=scope_has_contributing_fixed_deposits(scope),
         )
 
-    total_invested = sum(c.total_invested for c in child_summaries)
-    current_value = sum(c.current_value for c in child_summaries)
-    realized_pl = sum(c.realized_pl for c in child_summaries)
-    unrealized_pl = sum(c.unrealized_pl for c in child_summaries)
-    total_pl = sum(c.total_pl for c in child_summaries)
-
     all_cash = build_cash_display_summary(scope, disp_ccy)
-    current_value += _float(all_cash.total_display_value)
-
     if user is not None:
         bank_cash = calculate_bank_cash_for_scope(user, scope, display_currency=disp_ccy)
-        current_value += _float(bank_cash.current_value)
-        total_invested += _float(bank_cash.total_invested)
         bank_warnings = bank_cash.warnings
         bank_fx = "fx_unavailable" if bank_cash.any_fx_missing else "ok"
     else:
+        bank_cash = None
         bank_warnings = []
         bank_fx = "ok"
+
+    total_invested = sum(c.total_invested for c in child_summaries)
+    realized_pl = sum(c.realized_pl for c in child_summaries)
+    if any(c.current_value is None for c in child_summaries):
+        current_value = None
+        unrealized_pl = None
+        total_pl = None
+        if bank_cash is not None:
+            total_invested += _float(bank_cash.total_invested)
+    else:
+        current_value = sum(c.current_value for c in child_summaries)
+        current_value += _float(all_cash.total_display_value)
+        if bank_cash is not None:
+            current_value += _float(bank_cash.current_value)
+            total_invested += _float(bank_cash.total_invested)
+        unrealized_pl = current_value - total_invested
+        total_pl = realized_pl + unrealized_pl
 
     warnings: list[str] = []
     for portfolio_id, child in zip(scope.portfolio_ids, child_summaries):

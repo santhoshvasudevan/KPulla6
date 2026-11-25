@@ -169,12 +169,14 @@ def test_summary_stock_plus_mf_mixed(api_client, legacy_seeded, monkeypatch, tes
 
 
 @pytest.mark.django_db
-def test_summary_mf_missing_nav_warning_and_zero_value(api_client, legacy_seeded, test_user):
+def test_summary_mf_missing_nav_warning_and_unavailable_value(api_client, legacy_seeded, test_user):
     historical_mf_transaction(ensure_default_portfolio(test_user), _mf_payload())
     data = api_client.get(
         "/api/v1/portfolio/summary?include_timeseries=false"
     ).json()
-    assert data["current_value"] == 0.0
+    assert data["current_value"] is None
+    assert data["unrealized_pl"] is None
+    assert data["total_pl"] is None
     assert any("NAV" in w for w in data["warnings"])
 
 

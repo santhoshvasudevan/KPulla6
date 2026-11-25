@@ -90,6 +90,29 @@ The synthetic SQLite harness, migration rollout, and rollback steps are in the
 **Fetch missing NAV** or provisional saves fail with a missing table or column, the
 `market_data.0007` / `transactions.0006` migrations have not been applied yet.
 
+## Conflicting provisional NAV shows unavailable (not zero)
+
+### Symptom
+
+Holdings, Asset Detail, or Summary show `—` / `null` for **Current value** and
+**Unrealized P/L** on an open mutual-fund row with warnings about **conflicting
+provisional NAVs** on the same date. History and performance charts omit that
+day's portfolio total (`portfolio_value: null`). Allocation may show
+`incomplete: true`.
+
+### Expected behavior
+
+Two different provisional NAVs for the same folio on the same date cannot be
+averaged. The backend marks the position **unavailable** until you edit or
+delete one row or provider cache supersedes the conflict. This is not a zero-value
+holding; invested amount and realized P/L remain visible.
+
+### Fix
+
+Resolve the duplicate provisional entries (Transactions list or edit form) or wait
+for a cached provider NAV after the conflict date. Do not expect Dashboard totals
+to sum other portfolios while any scoped active holding in that total is unknown.
+
 ## Related
 
 - [Transaction API](../reference/api-transactions.md)

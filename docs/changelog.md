@@ -6,9 +6,18 @@
 - MF INR conversion in Summary treats eligible seven-day FX lookback as usable (`filled`) instead of `fx_unavailable`, including current value and value-history days. True missing FX still surfaces `fx_unavailable` and null history points.
 - New HTTP regressions cover varying INR/EUR (0.010 → 0.012), single and All scopes, holdings/allocation reconciliation, and valuation-date lookback without future rates.
 
+## 2026-11-25 — Unavailable provisional MF valuation surfaces (#57)
+
+- Fix: open mutual-fund holdings with conflicting provisional NAVs (or otherwise unvalued active positions) now serialize `current_value`, `unrealized_pl`, and dependent summary totals as `null` instead of `0`. Genuine closed or zero-unit positions stay `0`. Invested amounts and realized P/L remain available; portfolio totals and allocation mark `incomplete` when any active component is unknown. Same-date history continues to emit `null` `portfolio_value` so current and history agree. No frontend finance math added.
+
+## 2026-11-25 — Unified personal Holding XIRR terminal valuation (#59)
+
+- Fix: holdings, Asset Detail, Metric Sheet and Compare now share `scoped_mutual_fund_holding_xirr`, which values open units at the same scoped per-folio NAV as holdings valuation (provider cache plus provisional overlay), not cached-only on analytics surfaces. Conflicted or missing active NAV makes personal XIRR unavailable on every surface. Fund NAV performance, heatmaps and Compare fund series remain provider-cache-only.
+- Tests: `test_personal_xirr_cashflow_scope.py` adds an independent pyxirr oracle for a provisional-overlay vs stale-cache mismatch and conflict unavailable parity.
+
 ## 2026-11-25 — Scoped MF valuation arithmetic moved to finance (#56)
 
-- Per-folio unit replay, provider/provisional NAV resolution, NAV × units, scoped current value and the daily value series now live in framework-independent `finance/mutual_fund_valuation.py` (`value_scoped_mutual_fund_holding`, `daily_mutual_fund_values`, both built on `valuation_legs`). `portfolios/mf_valuation.py` only adapts loaded transactions and formats warnings. Holdings, Summary and value history consume the same result instead of recomputing it. The finance result reports an unavailable value as `None`; holdings and Summary still render it as zero, which #57 will correct.
+- Per-folio unit replay, provider/provisional NAV resolution, NAV × units, scoped current value and the daily value series now live in framework-independent `finance/mutual_fund_valuation.py` (`value_scoped_mutual_fund_holding`, `daily_mutual_fund_values`, both built on `valuation_legs`). `portfolios/mf_valuation.py` only adapts loaded transactions and formats warnings. Holdings, Summary and value history consume the same result instead of recomputing it. Unavailable scoped values propagate as `null` on read APIs (#57).
 - Behavior-preserving prefactor: no API, schema, FX, XIRR or fetch change. The only arithmetic difference is in a pathological case: a holding with a provisional NAV in which one portfolio's folio sells more units than it holds while another portfolio holds the same folio number. Its holdings value now matches Summary and history (per-folio units) instead of whole-holding FIFO units.
 
 ## 2026-11-25 — Fence stale successful MF NAV fetch finalization (#60)

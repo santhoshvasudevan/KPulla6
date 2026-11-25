@@ -276,25 +276,32 @@ def test_portfolios_folios_and_users_are_isolated_without_averaging(
     assert summary(api_client, portfolio_id=p1.id)["current_value"] == 4675  # 110×42.5
     assert summary(api_client, portfolio_id=p2.id)["current_value"] == 4730  # 110×43
     third = summary(api_client, portfolio_id=p3.id)
-    assert third["current_value"] == 0
+    assert third["current_value"] is None
+    assert third["unrealized_pl"] is None
+    assert third["total_pl"] is None
+    assert third["allocation_buckets"].get("incomplete") is True
     assert history(third)["2026-03-11"] == 4000
     assert history(third)["2026-03-12"] is None and history(third)["2026-03-20"] is None
     assert any("conflicting provisional NAVs on 2026-03-12" in w for w in third["warnings"])
     conflicted = holding(api_client, folio="F3", portfolio_id=p3.id)
     # The older 03-10 provider NAV (40) must not take over the conflicted interval.
     assert (conflicted["nav_status"], conflicted["latest_nav"], conflicted["current_value"]) == (
-        "nav_missing", None, 0)
+        "nav_missing", None, None)
+    assert conflicted["unrealized_pl"] is None
     assert conflicted["xirr"] is None
     detail = get(api_client, f"/api/v1/portfolio/assets/{SCHEME}", folio_number="F3",
                  portfolio_id=p3.id)
     assert (detail["nav_status"], detail["latest_nav"], detail["current_value"]) == (
-        "nav_missing", None, 0)
+        "nav_missing", None, None)
+    assert detail["unrealized_pl"] is None
     assert summary(other_client)["current_value"] == 5500  # 110×50, own folio only
 
     merged = holding(api_client, portfolio_scope="all")
     assert (merged["current_value"], merged["nav_source"], merged["latest_nav"]) == (9405, "MIXED", None)
     everything = summary(api_client, portfolio_scope="all")
-    assert everything["current_value"] == 9405  # 4675 + 4730; conflicted folio unavailable
+    assert everything["current_value"] is None
+    assert everything["unrealized_pl"] is None
+    assert everything["allocation_buckets"].get("incomplete") is True
     assert any(w.startswith("Third: ") and "conflicting" in w for w in everything["warnings"])
     assert history(everything)["2026-03-11"] == 12000
     assert history(everything)["2026-03-12"] is None  # no silent averaging or zero fill
@@ -523,3 +530,25 @@ def test_reads_across_scopes_never_contact_providers_or_write(api_client, legacy
     factory.assert_not_called()
     history_call.assert_not_called()
     assert ledger_and_cache_state() == before
+
+
+@pytest.mark.django_db
+def test_conflicted_provisional_nav_preserves_unavailable_across_surfaces(
+    api_client, legacy_seeded, test_user,
+):
+    """#57 — active conflicted folio must not invent zero on holdings, detail, or summary."""
+    portfolio = inr_portfolio(test_user, "Conflict")
+    cached(portfolio, "2026-03-10", "100", "40")
+    provisional(portfolio, "2026-03-12", "10", "42.5")
+    provisional(portfolio, "2026-03-12", "10", "43")
+    row = holding(api_client, portfolio_id=portfolio.id)
+    s = summary(api_client, portfolio_id=portfolio.id)
+    detail = get(api_client, f"/api/v1/portfolio/assets/{SCHEME}", folio_number="F1",
+                 portfolio_id=portfolio.id)
+    for block in (row, s, detail):
+        assert block.get("current_value") is None
+        assert block.get("unrealized_pl") is None
+    assert s["total_pl"] is None
+    assert history(s)["2026-03-12"] is None
+    assert row["nav_status"] == "nav_missing"
+    assert row["invested_amount"] > 0

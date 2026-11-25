@@ -458,7 +458,8 @@ def test_conflicting_same_date_provisional_navs_are_reported_not_averaged(api_cl
     assert response.status_code == 201, response.json()
     holding, _ = _holding(api_client)
     assert holding["nav_status"] == "nav_missing"
-    assert holding["current_value"] == 0
+    assert holding["current_value"] is None
+    assert holding["unrealized_pl"] is None
     assert any("conflicting provisional NAVs" in w for w in holding["warnings"])
     summary = _summary(api_client)
     assert any("conflicting provisional NAVs" in w for w in summary["warnings"])
