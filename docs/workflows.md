@@ -33,6 +33,14 @@ Do **not** use `docker compose down -v` unless you intend to delete local databa
 
 See **`docs/data-safety.md`** for the 2026-05-26 incident, forbidden commands, and backup/restore workflow.
 
+### Release and local rollout
+
+Before committing to a local rollout, confirm the expected GitHub branch and commit. Run `git status --short --branch`, `git rev-parse HEAD`, and `git ls-remote origin refs/heads/<branch>`. Check write access to the checkout and its Git metadata, and check Docker access with `docker compose ps`. Record local work that needs preserving before changing branches. Use `make ports` to identify the backend, frontend, and docs processes. On macOS, `lsof -a -p <pid> -d cwd` identifies which checkout each process is serving.
+
+Update the intended checkout to the approved commit and verify `git rev-parse HEAD`. Follow the database safety steps below before pending migrations. `make dev` applies migrations as part of startup. Restart the stack from the updated checkout and verify the process working directories, `curl -fsS http://127.0.0.1:8000/api/v1/health`, and the frontend at `http://127.0.0.1:5173`. Check the affected workflow in the running app. Use synthetic data for acceptance scenarios that write records.
+
+Record three results independently: **published commit**, **local checkout commit**, and **running app verified**. For the last result, include the health and feature checks and identify any blocked or unverified steps.
+
 ## Data-sensitive phases
 
 Before migration-heavy work, schema experiments, or any task that might touch live transaction data:
@@ -159,6 +167,10 @@ Same discipline as KPulla5 (`../KPulla5/docs/workflows.md`):
 6. Run `make test`, frontend tests, `make dev` smoke check
 7. Update docs and `docs/changelog.md`
 
+### Implementation and review handoffs
+
+Include the issue IDs, worktree path, branch, base commit, and tip commit. State which actions are authorized: implementation in the worktree, publication, merge, or local rollout. Review the pinned diff (`git diff <base>...<tip>`) and attach the acceptance results, exact commands, and any open findings to that tip. If the tip changes, identify the new commit and recheck the affected acceptance criteria.
+
 ## Graphify Usage
 
 Graphify is an **optional navigation aid**, not source of truth. Code, tests, migrations, and docs are authoritative.
@@ -200,6 +212,10 @@ AST-only rebuild; no LLM/API cost.
    - `cd frontend && npm test -- --run`
    - `cd frontend && npm run build` when UI changes affect build
 8. Every Cursor implementation summary must **report tests run and pass/fail**.
+
+For accounting changes, check the same synthetic event at the ledger, API, and rendered UI boundaries that the change touches. For FD rollovers, include a partial reinvestment, a display currency different from the deposit currency, and an explicit zero versus an unavailable value. Assert amounts, currency labels, and warnings.
+
+Pull requests run `make test-all` and `make docs-check` in GitHub Actions. The backend suite uses SQLite and the workflow requires no live Postgres or project secrets.
 
 ### Test Makefile targets (STAB-3)
 

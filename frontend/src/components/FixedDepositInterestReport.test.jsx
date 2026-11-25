@@ -355,10 +355,11 @@ describe('FixedDepositInterestReport', () => {
     // Legacy unknown split → Unavailable (distinct from full-rollover confirmed ₹0)
     expect(screen.getByTestId('fd-split-unavailable-interest_cash_amount')).toBeInTheDocument();
     expect(screen.getByTestId('fd-split-unavailable-reinvested_interest_amount')).toBeInTheDocument();
-    const table = screen.getByRole('table');
-    expect(within(table).getAllByText('Unavailable').length).toBe(2);
-    // Full rollover row keeps numeric zero bank payout (not Unavailable)
-    expect(within(table).getByText('FD-FULL')).toBeInTheDocument();
+    const legacyRow = screen.getByText('FD-LEGACY').closest('tr');
+    const fullRolloverRow = screen.getByText('FD-FULL').closest('tr');
+    expect(within(legacyRow).getAllByText('Unavailable')).toHaveLength(2);
+    expect(within(fullRolloverRow).getByText('₹0.00')).toBeInTheDocument();
+    expect(within(fullRolloverRow).queryByText('Unavailable')).not.toBeInTheDocument();
   });
 
   it('shows rollover splits in deposit currency when report totals are converted', async () => {
@@ -367,6 +368,10 @@ describe('FixedDepositInterestReport', () => {
         ...sampleRow,
         source_type: 'RENEWAL',
         deposit_account_number: 'FD-INR-EUR',
+        gross_interest: 5000,
+        gross_interest_display: 50,
+        tax_withheld: 500,
+        tax_withheld_display: 5,
         net_interest: 4500,
         net_interest_display: 45,
         display_currency: 'EUR',

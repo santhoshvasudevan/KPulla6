@@ -125,7 +125,7 @@ Approved decisions (FD-ACC-0.1): see accounting doc § Approved product decision
 | **Indian FY filter** | April–March; `financial_year=2025-26` or `fy_start`/`fy_end` |
 | **Maturity interest** | Confirmed settlement / renewal interest (and confirmed delayed payouts) counted once on the originating term; pending estimates excluded from actuals |
 | **Paid vs reinvested** | Detail KPIs and interest report show `interest_cash_amount` / `reinvested_interest_amount` (Unavailable when null; distinct from confirmed zero) |
-| **Edit actual** | `PATCH /fixed-deposit-interest-payments/{id}` updates payment + linked cash movement |
+| **Edit actual** | Open **Interest payments** on a current FD and select **Edit payment** on the intended row. FD Detail also offers **Edit actual** for matched schedule rows. Both use `PATCH /fixed-deposit-interest-payments/{id}` to update the payment and linked cash movement. |
 | **Estimates** | Not settlement, not tax advice, not auto interest accrual |
 
 ### Portfolio value rules (MVP; extended by accounting design)
@@ -199,6 +199,8 @@ Use the action that matches the real-world event. These are **not** interchangea
 Renewal does **not** clear `is_active` on the predecessor. Cancelled / soft-deactivated rows stay out of both views. Response fields: `lifecycle_view`, `is_renewed`, `next_term_id`, `renewal_of_id`. Value History still attributes each term’s principal through the day before settlement and the successor from its investment date.
 
 **Blocked:** `DELETE` on ledger-backed FD with unreversed `FD_OPENING` → **409** (“Use Cancel FD”). Cancel rejected when interest payments, settlement, or renewal exist.
+
+To void a duplicate interest credit, select **Reverse interest** on the extra row in **Interest payments**. The reversed record remains visible with status **Reversed** and is excluded from actual interest totals and the interest report. The History list presents recorded payments for review.
 
 | **Reverse interest** | `POST .../fixed-deposit-interest-payments/{id}/reverse` | Mistaken interest payment | `FD_INTEREST_REVERSAL` DEBIT | Bank cash reduced; payment `is_reversed`; not allowed after settlement |
 | **Reverse cash movement** | `POST .../cash-movements/{id}/reverse` | Mistaken manual deposit/withdrawal/adjustment/opening seed | `REVERSAL` opposite direction | Original marked reversed; bank balance updated |
