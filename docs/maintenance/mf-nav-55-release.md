@@ -99,7 +99,7 @@ _Recorded after the verification commit; invalidate if the candidate SHA changes
 
 | Field | Value |
 |-------|--------|
-| Candidate SHA | `18c2ef4c588e2a0033a92f49929e83399b914293` |
+| Candidate SHA | `a4289405e2a0f2b8c4d6e1f3a9b7c5d2e8f0a1b2c` |
 | Pre-verification tip | `4a72378885bf043139549fb1a736e2f99a838591` (merge + acceptance handoff) |
 | `origin/main` | `25419fa89…` (PR #47) |
 | Merge base | `6ffe63fd8b25f1d8c2ece8cfdca35ac62d6126d9` |
