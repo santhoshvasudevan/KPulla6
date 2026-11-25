@@ -217,10 +217,7 @@ def _mf_current_value(
         else []
     )
     today = portfolio_dates.current_date()
-    if scoped.overlaid:
-        xirr = mutual_fund_holding_xirr(db_txns, scoped.nav, today=today)
-    else:
-        xirr = cached_mutual_fund_holding_xirr(scheme_code, db_txns, today=today)
+    xirr = scoped_mutual_fund_holding_xirr(scheme_code, db_txns, today=today)
     return _MfCurrentValue(
         nav=scoped.nav,
         nav_status="ok" if scoped.nav_available else "nav_missing",
@@ -275,14 +272,29 @@ def mutual_fund_holding_xirr(db_txns, current_nav, *, today):
     )
 
 
-def cached_mutual_fund_holding_xirr(scheme_code, db_txns, *, today):
-    nav_result = latest_nav_for_asset(scheme_code, as_of=today)
-    nav = (
-        nav_result.nav
-        if nav_result is not None and nav_result.status == "ok" and nav_result.nav is not None
+def scoped_mutual_fund_holding_xirr(scheme_code, db_txns, *, today):
+    """Personal XIRR terminal NAV matches holdings valuation (provider + provisional overlay)."""
+    if not db_txns:
+        return None
+    provider = latest_nav_for_asset(scheme_code, as_of=today)
+    provider_point = (
+        (provider.date, provider.nav)
+        if provider is not None and provider.status == "ok" and provider.nav is not None
         else None
     )
-    return mutual_fund_holding_xirr(db_txns, nav, today=today)
+    finance_txns = _to_finance_dtos(db_txns)
+    scoped = scoped_mutual_fund_valuation(db_txns, finance_txns, provider_point=provider_point)
+    terminal_nav = (
+        scoped.nav
+        if scoped.fifo.cumulative_qty <= 0 or scoped.nav_available
+        else None
+    )
+    return mutual_fund_holding_xirr(db_txns, terminal_nav, today=today)
+
+
+def cached_mutual_fund_holding_xirr(scheme_code, db_txns, *, today):
+    """Deprecated alias — use ``scoped_mutual_fund_holding_xirr`` for parity across surfaces."""
+    return scoped_mutual_fund_holding_xirr(scheme_code, db_txns, today=today)
 
 
 def _build_holding_item(

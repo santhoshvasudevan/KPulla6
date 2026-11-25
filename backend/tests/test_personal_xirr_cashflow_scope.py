@@ -7,15 +7,19 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 import pyxirr
 from tests.conftest import cached_mf_nav, historical_mf_transaction
 from portfolios.seed import ensure_default_portfolio
+from tests.test_mutual_fund_nav_sync import MockNavProvider
 
-from market_data.models import AssetType, HistoricalPrice
+from market_data.models import AssetType, HistoricalPrice, MutualFundNavFetchState
 from portfolios.models import Portfolio
 from tests.test_analytics_asset_metrics_api import _mf_payload
+
+MF_NAV_FETCH_FACTORY = "market_data.services.missing_nav_fetch.default_mutual_fund_nav_provider"
 
 
 SCHEME = "120503"
@@ -359,10 +363,12 @@ def test_personal_xirr_independent_of_display_currency_and_range(
     assert eur_all["metrics"] != inr_1y["metrics"] or eur_all["range"] != inr_1y["range"]
 
 
-def _personal_returns_across_surfaces(client):
-    asset = _metrics(client, folio_number=FOLIO)["personal_metrics"]
+def _personal_returns_across_surfaces(client, *, folio: str = FOLIO):
+    asset = _metrics(client, folio_number=folio)["personal_metrics"]
     response = client.get("/api/v1/analytics/compare", {
-        "subjects": f"asset:{SCHEME},asset:120504", "range": "ALL",
+        "subjects": f"asset:{SCHEME},asset:120504",
+        "range": "ALL",
+        "folio_number": folio,
     })
     assert response.status_code == 200, response.json()
     compared = next(s for s in response.json()["subjects"] if s["asset_symbol"] == SCHEME)
@@ -422,3 +428,133 @@ def test_future_nav_and_future_only_cache_have_http_parity_on_every_surface(
     future_only, blocks = _personal_returns_across_surfaces(api_client)
     assert future_only == dict.fromkeys(future_only)
     assert all(block["status"] == "unavailable" for block in blocks)
+
+
+def _failed_provisional_attempt(client, *, scheme=SCHEME, day="2026-03-12"):
+    provider = MockNavProvider()
+    with patch(MF_NAV_FETCH_FACTORY, return_value=provider):
+        data = client.post(
+            "/api/v1/nav/fetch-missing",
+            {"scheme_code": scheme, "nav_date": day},
+            format="json",
+        ).json()
+    assert data["outcome"] == "date_unavailable", data
+    return data["attempt_id"]
+
+
+def _provisional_payload(attempt_id, **overrides):
+    body = {
+        "asset_type": "MUTUAL_FUND",
+        "scheme_code": SCHEME,
+        "scheme_name": "Test Fund",
+        "folio_number": FOLIO,
+        "type": "BUY",
+        "investment_date": "2026-03-12",
+        "nav_date": "2026-03-12",
+        "units_allotted": "10",
+        "paid_value": "500",
+        "fees": "0",
+        "currency": "INR",
+        "provisional_nav": "42.5",
+        "provisional_attempt_id": attempt_id,
+        "confirm_provisional_nav": True,
+        "confirm_paid_value": True,
+    }
+    body.update(overrides)
+    return {k: v for k, v in body.items() if v is not None}
+
+
+@pytest.mark.django_db
+def test_provisional_overlay_xirr_parity_across_surfaces_independent_oracle(
+    api_client, legacy_seeded, monkeypatch,
+):
+    """Reproduces #59: Metric Sheet used cached-only terminal while holdings used provisional."""
+    monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
+    cached_mf_nav(SCHEME, "2024-01-01", "100")
+    assert api_client.post("/api/v1/transactions", _mf_payload(
+        investment_date="2024-01-01", nav_date="2024-01-01", nav="100",
+        units_allotted="100", paid_value="10000", market_value="10000",
+        folio_number=FOLIO,
+    ), format="json").status_code == 201
+    cached_mf_nav(SCHEME, "2025-06-01", "80")
+    attempt = _failed_provisional_attempt(api_client)
+    assert api_client.post(
+        "/api/v1/transactions",
+        _provisional_payload(attempt),
+        format="json",
+    ).status_code == 201
+    cached_mf_nav("120504", "2024-01-01", "100")
+    assert api_client.post("/api/v1/transactions", _mf_payload(
+        scheme_code="120504", scheme_name="Compare Peer Fund",
+        investment_date="2024-01-01", nav_date="2024-01-01", nav="100",
+        units_allotted="10", paid_value="1000", market_value="1000",
+        folio_number=FOLIO,
+    ), format="json").status_code == 201
+
+    overlay_nav = 42.5
+    remaining = 110.0
+    terminal = remaining * overlay_nav
+    scoped_oracle = _oracle([
+        (date(2024, 1, 1), -10000.0),
+        (date(2026, 3, 12), -500.0),
+        (date(2026, 3, 20), terminal),
+    ])
+    cached_only_oracle = _oracle([
+        (date(2024, 1, 1), -10000.0),
+        (date(2026, 3, 12), -500.0),
+        (date(2026, 3, 20), remaining * 80.0),
+    ])
+    assert scoped_oracle is not None and cached_only_oracle is not None
+    assert scoped_oracle != pytest.approx(cached_only_oracle, abs=1e-4)
+
+    surfaces, blocks = _personal_returns_across_surfaces(api_client)
+    assert surfaces["holdings"] == pytest.approx(scoped_oracle, abs=1e-9)
+    assert surfaces["detail"] == pytest.approx(scoped_oracle, abs=1e-9)
+    assert surfaces["metrics"] == pytest.approx(scoped_oracle, abs=1e-9)
+    assert surfaces["compare"] == pytest.approx(scoped_oracle, abs=1e-9)
+    for surface, value in surfaces.items():
+        assert value != pytest.approx(cached_only_oracle, abs=1e-4), surface
+    for block in blocks:
+        assert block["status"] == "calculated"
+        assert block["basis"] == "native_inr"
+
+
+@pytest.mark.django_db
+def test_provisional_nav_conflict_makes_personal_xirr_unavailable_on_every_surface(
+    api_client, legacy_seeded, monkeypatch,
+):
+    monkeypatch.setattr("portfolios.dates.current_date", lambda: date(2026, 3, 20))
+    cached_mf_nav(SCHEME, "2024-01-01", "100")
+    assert api_client.post("/api/v1/transactions", _mf_payload(
+        investment_date="2024-01-01", nav_date="2024-01-01", nav="100",
+        units_allotted="100", paid_value="10000", market_value="10000",
+        folio_number=FOLIO,
+    ), format="json").status_code == 201
+    cached_mf_nav(SCHEME, "2025-06-01", "80")
+    attempt = _failed_provisional_attempt(api_client, day="2026-03-12")
+    assert api_client.post(
+        "/api/v1/transactions",
+        _provisional_payload(attempt, provisional_nav="42.5", units_allotted="5"),
+        format="json",
+    ).status_code == 201
+    reused_attempt = str(MutualFundNavFetchState.objects.get().last_attempt_id)
+    assert api_client.post(
+        "/api/v1/transactions",
+        _provisional_payload(
+            reused_attempt, provisional_nav="43.0", units_allotted="5", paid_value="215",
+        ),
+        format="json",
+    ).status_code == 201
+    cached_mf_nav("120504", "2024-01-01", "100")
+    assert api_client.post("/api/v1/transactions", _mf_payload(
+        scheme_code="120504", scheme_name="Compare Peer Fund",
+        investment_date="2024-01-01", nav_date="2024-01-01", nav="100",
+        units_allotted="10", paid_value="1000", market_value="1000",
+        folio_number=FOLIO,
+    ), format="json").status_code == 201
+
+    surfaces, blocks = _personal_returns_across_surfaces(api_client)
+    assert surfaces == dict.fromkeys(surfaces)
+    for block in blocks:
+        assert block["status"] == "unavailable"
+        assert block["basis"] == "native_inr"
