@@ -159,7 +159,7 @@ See [performance/dashboard-read-paths.md](./performance/dashboard-read-paths.md)
 - **Provisional MF BUY** (#50):
   - Manual BUY may carry a user-confirmed provisional NAV after the same user's unsuccessful exact-date fetch (`transactions/mf_provisional.py`); backend market value via `finance/mutual_fund_valuation.py`; `POST /api/v1/nav/provisional-preview`
   - Provenance on `MutualFundTransactionDetail` (`nav_source`, `provisional_*`; migration `transactions.0006`); never in `historical_prices` or fund metrics
-  - Per-folio valuation overlay in holdings, summary, XIRR terminal, value history (`portfolios/mf_valuation.py`)
+  - Per-folio valuation overlay in holdings, summary, XIRR terminal, value history (`finance/mutual_fund_valuation.py`; ORM adapter `portfolios/mf_valuation.py`)
   - Tests: `backend/tests/test_mf_provisional_buy_api.py`, `backend/tests/test_finance_mutual_fund_valuation.py`
   - **Deferred:** deeper valuation edges such as merged all-scope folios, oversell, per-point provenance on performance responses (#52)
 - **Provisional MF SELL and edits** (#51):

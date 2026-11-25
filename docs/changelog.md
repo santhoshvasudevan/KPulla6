@@ -1,5 +1,10 @@
 # Changelog — KPulla6
 
+## 2026-11-25 — Scoped MF valuation arithmetic moved to finance (#56)
+
+- Per-folio unit replay, provider/provisional NAV resolution, NAV × units, scoped current value and the daily value series now live in framework-independent `finance/mutual_fund_valuation.py` (`value_scoped_mutual_fund_holding`, `daily_mutual_fund_values`, both built on `valuation_legs`). `portfolios/mf_valuation.py` only adapts loaded transactions and formats warnings. Holdings, Summary and value history consume the same result instead of recomputing it. The finance result reports an unavailable value as `None`; holdings and Summary still render it as zero, which #57 will correct.
+- Behavior-preserving prefactor: no API, schema, FX, XIRR or fetch change. The only arithmetic difference is in a pathological case: a holding with a provisional NAV in which one portfolio's folio sells more units than it holds while another portfolio holds the same folio number. Its holdings value now matches Summary and history (per-folio units) instead of whole-holding FIFO units.
+
 ## 2026-11-25 — Release evidence for cache-first provisional MF NAV (#54)
 
 - New [release note](./maintenance/mf-nav-48-release.md) pins the strict-NAV baseline `9d5237f` and the five ticket commits #49 `8e2eecf`, #50 `28dff3a`, #51 `c73e188`, #52 `c9b3553`, and #53 `49a3fd3` (integration branch `codex/mf-nav-48`). It records the integration diff and how it relates to `main`: the baseline is not on `main`, and a trial merge conflicts only in this changelog. It also records frozen-tree results for the backend, frontend, build, docs, and migrations, an API/security review, and rollout and rollback steps for `market_data.0007` and `transactions.0006`. Code older than #50 cannot write MF rows once `transactions.0006` is applied.
