@@ -179,7 +179,7 @@ See [performance/dashboard-read-paths.md](./performance/dashboard-read-paths.md)
   - CSV rejects provisional/consent columns; a row failing after parsing rolls back the whole batch (including confirmed deposits) with a row-numbered `success: false`
   - Asset Detail/Compare label provider fund performance apart from **Your Position** (**Includes provisional NAV**); Transactions list/form show review states
   - Tests: `backend/tests/test_mf_provisional_analytics_csv_api.py`, `frontend/src/pages/{AssetDetail,Compare,Transactions}.test.jsx`, `frontend/src/components/TransactionModal.test.jsx`, `frontend/src/utils/transactionDisplay.test.js`
-  - **Deferred:** Metric Sheet/Compare `personal_metrics.xirr` values open units at the latest cached NAV, while the holdings/Asset Detail header XIRR uses the #52 provisional overlay; they can differ while a provisional NAV is newer than the latest cache
+  - **Done (#59):** personal `xirr` on holdings, Asset Detail, Metric Sheet and Compare shares scoped terminal valuation with the holdings overlay; fund metrics stay provider-only
 - **Release evidence for cache-first provisional MF NAV** (#54):
   - [Release note](./maintenance/mf-nav-48-release.md): pinned lineage (baseline `9d5237f` → #49 `8e2eecf` → #50 `28dff3a` → #51 `c73e188` → #52 `c9b3553` → #53 `49a3fd3`, integration branch `codex/mf-nav-48`), frozen-tree results, migration rollout and rollback
   - Synthetic SQLite browser acceptance harness `scripts/acceptance/mf_nav_48_*` (98/98 checks); no live database, portfolio, or provider used
