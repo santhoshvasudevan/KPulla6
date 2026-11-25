@@ -1508,7 +1508,13 @@ expiry), calls MFAPI for that single day, and caches only one positive INR
 `retry_after_seconds`, `failure_category` (equals `outcome` when unsuccessful),
 and `attempt_id` (opaque; recorded for unsuccessful attempts and bound to the
 user). Unsuccessful attempts start a 60s cooldown; a cache hit wins during
-cooldown. **400** invalid body, **409** conflicting non-MF price row. No
+cooldown. Finalization is fenced by the claim token under the state-row lock
+(#60): a request whose expired claim was replaced discards its provider
+response and returns the current `cache_hit`, `in_flight`, or `cooldown` state
+(or `in_flight` with `retry_after_seconds: 1` if the replacement's claim also
+lapsed). It never overwrites the replacement's cache row, claim, cooldown, or
+attempt evidence, and never issues a new `attempt_id`. The provider call runs
+outside any transaction. **400** invalid body, **409** conflicting non-MF price row. No
 transaction or cash writes. An unsuccessful `attempt_id` can authorize a
 provisional manual BUY or SELL (#50/#51, below). See
 [transaction API reference](./reference/api-transactions.md#post-navfetch-missing).

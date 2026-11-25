@@ -256,7 +256,16 @@ start a 60-second cooldown and return an opaque `attempt_id` bound to the
 requesting user, scheme, and date (`cooldown` returns it only to that user); it
 can authorize a [provisional BUY](#provisional-mf-buy-50) or
 [SELL](#provisional-mf-sell-and-edits-51).
-In-flight claims expire after 30 seconds. **400:** invalid body. **409:** a
+In-flight claims expire after 30 seconds. A request finalizes (caches a NAV, or
+starts cooldown and records `attempt_id`) only while it still holds its claim.
+If its claim expired and another request claimed the scheme/date, the late
+provider response is discarded: it never overwrites the cache, claim, cooldown,
+or attempt evidence. The late request instead returns the current state:
+`cache_hit` with the cached NAV, the replacement's `in_flight` or `cooldown`
+(`attempt_id` only to the user who made that attempt), or `in_flight` with
+`retry_after_seconds: 1` when the replacement's claim also expired without a
+result. A late failure never returns a new `attempt_id`. A claim that expired
+without being replaced still finalizes normally. **400:** invalid body. **409:** a
 non-mutual-fund price row already occupies that symbol/date. Database errors are
 server errors, never a cache miss.
 
