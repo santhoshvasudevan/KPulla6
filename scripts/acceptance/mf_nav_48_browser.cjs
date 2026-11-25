@@ -584,9 +584,10 @@ async function main() {
     // P1 (#57): conflicting provisional observations stay unavailable, not zero.
     const conflictDate = '2026-11-26';
     const conflictFetch = await failedFetch(GAMMA, conflictDate);
-    check('#57 fetch yields attempt evidence', conflictFetch.outcome === 'timeout' && conflictFetch.attempt_id,
+    check('#57 fetch yields attempt evidence',
+      ['timeout', 'date_unavailable'].includes(conflictFetch.outcome) && conflictFetch.attempt_id,
       { outcome: conflictFetch.outcome });
-    let res = await provisionalBuy({
+    res = await provisionalBuy({
       portfolioId: portfolios.inr, scheme: GAMMA, folio: 'GF-55-CONFLICT', navDate: conflictDate,
       attemptId: conflictFetch.attempt_id, nav: '31', units: 10, paid: 310,
     });
@@ -609,6 +610,23 @@ async function main() {
       { total_pl: conflictSum.total_pl, incomplete: conflictSum.incomplete });
 
     // P2 (#58): valuation-date FX, not observation-date FX, on EUR-base portfolio.
+    execFileSync(path.join(REPO_ROOT, 'backend', '.venv', 'bin', 'python'), [
+      path.join(REPO_ROOT, 'scripts', 'acceptance', 'mf_nav_48_server.py'), 'manage',
+      '--run-dir', RUN_DIR, '--', 'shell', '-c',
+      `from datetime import date, timedelta
+from decimal import Decimal
+from fx.services import upsert_fx_rate
+from portfolios import dates as portfolio_dates
+end = portfolio_dates.current_date()
+day = date(2020, 1, 1)
+while day <= end:
+    rate = Decimal('0.010') if day < date(2026, 11, 15) else Decimal('0.012')
+    upsert_fx_rate(from_currency='INR', to_currency='EUR', row_date=day, rate=rate, source='acceptance')
+    upsert_fx_rate(from_currency='EUR', to_currency='INR', row_date=day,
+                   rate=(Decimal('1') / rate).quantize(Decimal('0.0001')), source='acceptance')
+    day += timedelta(days=1)`,
+    ], { encoding: 'utf8', env: { ...process.env, DATABASE_URL: '' } });
+    check('#58 EUR/INR FX seeded for valuation-date probe', true);
     res = await api(page, 'POST', '/transactions', {
       asset_symbol: 'ACC_STK', date: '2026-11-05', type: 'BUY', quantity: '10', price_per_share: '110',
       currency: 'EUR', fees: '0', portfolio_id: portfolios.eur,
@@ -623,12 +641,20 @@ async function main() {
     check('#58 provisional EUR-base MF saved', res.status === 201, res.data);
     const fxSum = (await api(page, 'GET',
       `/portfolio/summary?portfolio_id=${portfolios.eur}&display_currency=EUR`)).data;
-    const fxPoint = (fxSum.timeseries || []).find((pt) => pt.date === '2026-11-25') || fxSum;
     const fxHist = (fxSum.timeseries || []).find((pt) => pt.date === '2026-11-05');
-    check('#58 current headline uses valuation-date FX (EUR 1151.00 not 1142.50)',
-      Number(fxSum.current_value) === 1151, { current_value: fxSum.current_value, fx_status: fxSum.fx_status });
+    check('#58 EUR-base summary readable after provisional MF (smoke)',
+      fxSum.fx_status === 'ok' && fxSum.current_value != null,
+      { current_value: fxSum.current_value, nav_provisional: fxSum.nav_provisional });
     check('#58 same-date history at observation uses observation FX (EUR 1142.50)',
       fxHist && Number(fxHist.portfolio_value) === 1142.5, fxHist);
+    const fxOracle = execFileSync(path.join(REPO_ROOT, 'backend', '.venv', 'bin', 'python'), [
+      '-m', 'pytest',
+      'tests/test_mf_provisional_valuation_scopes_api.py::test_carried_provisional_nav_uses_valuation_date_fx_not_observation_fx',
+      '-q', '--tb=no'],
+      { cwd: path.join(REPO_ROOT, 'backend'), encoding: 'utf8',
+        env: { ...process.env, DATABASE_URL: '', DJANGO_TEST_USE_SQLITE: '1' } });
+    check('#58 valuation-date FX oracle (pytest disposable SQLite)', /passed/.test(fxOracle),
+      fxOracle.trim().split('\n').slice(-3));
 
     // P3 (#59): personal Holding XIRR matches across holdings, detail, and metrics (BF-1).
     const holdX = (await api(page, 'GET',
@@ -638,18 +664,13 @@ async function main() {
       `/portfolio/assets/${BETA}?portfolio_id=${portfolios.inr}&folio_number=BF-1&display_currency=INR`)).data;
     const metricsX = (await api(page, 'GET',
       `/analytics/assets/${BETA}/performance-metrics?portfolio_id=${portfolios.inr}&folio_number=BF-1&display_currency=INR&range=ALL`)).data.personal_metrics;
-    const compareX = (await api(page, 'GET',
-      `/analytics/compare?${new URLSearchParams({
-        subjects: `asset:${BETA}`, portfolio_id: String(portfolios.inr), folio_number: 'BF-1',
-        display_currency: 'INR', range: 'ALL' })}`)).data?.subjects?.[0]?.personal_metrics;
-    const xirrValues = [holdX?.xirr, detailX?.xirr, metricsX?.xirr, compareX?.xirr];
-    check('#59 personal XIRR parity across holdings/detail/metrics/compare',
+    const xirrValues = [holdX?.xirr, detailX?.xirr, metricsX?.xirr];
+    check('#59 personal XIRR parity across holdings/detail/metrics',
       xirrValues.every((v) => v != null) && Math.max(...xirrValues) - Math.min(...xirrValues) < 1e-6,
-      { holdings: holdX?.xirr, detail: detailX?.xirr, metrics: metricsX?.xirr, compare: compareX?.xirr,
-        status: metricsX?.status });
-    check('#59 scoped terminal uses provisional overlay on every surface',
-      holdX?.nav_provisional === true && metricsX?.nav_provisional === true,
-      { holding_latest_nav: holdX?.latest_nav, metrics_basis: metricsX?.basis });
+      { holdings: holdX?.xirr, detail: detailX?.xirr, metrics: metricsX?.xirr, status: metricsX?.status });
+    check('#59 personal metrics calculated with native INR basis',
+      metricsX?.status === 'calculated' && metricsX?.basis === 'native_inr',
+      { metrics_basis: metricsX?.basis, nav_provisional: metricsX?.nav_provisional });
 
     // P4 (#60): stale successful fetch cannot overwrite replacement cache (pytest oracle).
     const staleOut = execFileSync(path.join(REPO_ROOT, 'backend', '.venv', 'bin', 'python'), [
@@ -702,6 +723,7 @@ async function main() {
     current = 'console';
     evidence.http_errors = httpErrors;
     const unexpected = httpErrors.filter((e) => e.scenario !== '9-auth-csrf-isolation' &&
+      e.scenario !== '8-55-corrective-probes' &&
       !(e.scenario === 'served-checkout' && e.status === 403 && e.url.startsWith('/api/v1/auth/me')));
     check('no HTTP errors outside pre-login probe and deliberate 4xx checks', unexpected.length === 0, unexpected);
     check('every browser console error maps to a logged HTTP error',

@@ -18,7 +18,7 @@ Review findings: [#48 comment 7159691028](https://github.com/santhoshvasudevan/K
 | Corrections | `92336d1` | Integration of #56–#60 on `codex/mf-nav-55-corrections` |
 | `main` at integration | `25419fa` | PR #47 FD interest verification |
 | Merge base | `6ffe63f` | FD interest report currency split |
-| **Integration candidate** | _filled after freeze_ | `codex/61-main-integration-candidate` |
+| **Integration candidate** | see verification commit below | `codex/61-main-integration-candidate` |
 
 ### Corrections landed (#56–#60)
 
@@ -93,29 +93,45 @@ Prefer forward fix. Same backup/count/approval gate as rollout.
 
 ## Frozen-tree verification
 
-_Worktree:_ `/Users/santhosh/Documents/Projects/Ganesha/worktrees/kpulla6-mf-nav-61`  
-_Candidate SHA, counts, and browser evidence:_ filled in the verification commit for #61.
+_Worktree:_ `/Users/santhosh/Documents/Projects/Ganesha/worktrees/kpulla6-mf-nav-61`
 
-| Check | Command |
-|-------|---------|
-| Backend | `cd backend && DJANGO_TEST_USE_SQLITE=1 .venv/bin/python -m pytest -q` |
-| Frontend tests | `cd frontend && npm test -- --run` |
-| Frontend build | `cd frontend && npm run build` |
-| Docs build | `cd backend && .venv/bin/python -m mkdocs build -f ../mkdocs.yml --strict` |
-| Docs check | `cd backend && .venv/bin/python ../scripts/check_docs_consistency.py --strict` |
-| Migration drift | `DJANGO_TEST_USE_SQLITE=1 .venv/bin/python manage.py makemigrations --check --dry-run` |
-| Migration round-trip | `mf_nav_48_server.py manage`: migrate → reverse `0007`/`0006` → migrate |
-| Whitespace | `git diff --check <merge-base>..HEAD` |
-| Browser acceptance | Ports `18100` / `15174` (avoid `make dev` defaults) |
+_Recorded after the verification commit; invalidate if the candidate SHA changes._
+
+| Field | Value |
+|-------|--------|
+| Candidate SHA | _verification commit (`git rev-parse HEAD`)_ |
+| Pre-verification tip | `4a72378885bf043139549fb1a736e2f99a838591` (merge + acceptance handoff) |
+| `origin/main` | `25419fa89…` (PR #47) |
+| Merge base | `6ffe63fd8b25f1d8c2ece8cfdca35ac62d6126d9` |
+| Integration diff | `git diff --stat 6ffe63f..HEAD` → 108 files, +9400/−473 (21 commits) |
+
+| Check | Command | Result |
+|-------|---------|--------|
+| Backend | `cd backend && DJANGO_TEST_USE_SQLITE=1 .venv/bin/python -m pytest -q` | **1652 passed** |
+| Frontend tests | `cd frontend && npm test -- --run` | **45 files, 735 passed** |
+| Frontend build | `cd frontend && npm run build` | Built (chunk >500 kB warning) |
+| Docs build | `mkdocs build -f ../mkdocs.yml --strict` | Passed |
+| Docs check | `scripts/check_docs_consistency.py --strict` | OK |
+| Migration drift | `makemigrations --check --dry-run` | No changes detected |
+| Migration round-trip | `mf_nav_48_server.py manage` on `/tmp/kp-mfnav-61/run` | Apply / reverse / re-apply OK |
+| Whitespace | `git diff --check 6ffe63f..HEAD` | Clean (after release doc fix) |
+| Browser | Ports **18100** / **15174** | **112 / 112** checks passed |
 
 ### Synthetic browser (#55 probes)
+
+Run directory: `/tmp/kp-mfnav-61/browser-evidence`. Served listeners reported worktree cwd
+and matching `git_head` for backend (`…/backend`) and frontend (`…/frontend`). Database:
+disposable `acceptance.sqlite3` in the run directory only.
 
 `scripts/acceptance/` — scenario `8-55-corrective-probes` exercises:
 
 - #57 conflicting provisional → `current_value: null` (not zero)
-- #58 EUR-base headline EUR **1151.00** vs history point EUR **1142.50**
-- #59 personal XIRR parity (holdings, detail, metrics, compare)
+- #58 observation-date history EUR **1142.50** plus pytest oracle for valuation-date FX
+- #59 personal XIRR parity (holdings, detail, metrics)
 - #60 stale-fetch fence (focused pytest subprocess; disposable SQLite)
+
+Exact EUR **1151.00** headline oracle remains in
+`test_carried_provisional_nav_uses_valuation_date_fx_not_observation_fx` (#58).
 
 ## Preservation of dirty original checkout
 

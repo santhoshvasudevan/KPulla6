@@ -172,6 +172,10 @@ def configure_django(run_dir: Path, *, frontend_origin: str | None, fresh: bool)
     django.setup()
     from django.db import connection
 
+    import portfolios.dates as portfolio_dates
+
+    portfolio_dates.current_date = lambda: date(2026, 11, 25)
+
     if connection.vendor != "sqlite" or Path(connection.settings_dict["NAME"]) != db_path:
         sys.exit(f"Refusing to run: unexpected database {connection.vendor} "
                  f"{connection.settings_dict['NAME']}")
@@ -237,12 +241,6 @@ def seed() -> dict:
                        rate=Decimal("0.0119"), source="acceptance")
         upsert_fx_rate(from_currency="USD", to_currency="INR", row_date=day,
                        rate=Decimal("84.0336"), source="acceptance")
-        inr_eur = Decimal("0.010") if day < date(2026, 11, 15) else Decimal("0.012")
-        upsert_fx_rate(from_currency="INR", to_currency="EUR", row_date=day,
-                       rate=inr_eur, source="acceptance")
-        upsert_fx_rate(from_currency="EUR", to_currency="INR", row_date=day,
-                       rate=(Decimal("1") / inr_eur).quantize(Decimal("0.0001")),
-                       source="acceptance")
         day += timedelta(days=1)
     return {
         "users": {"acceptance": {"id": user.id, "username": user.username},

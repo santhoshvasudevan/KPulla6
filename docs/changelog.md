@@ -1,5 +1,11 @@
 # Changelog — KPulla6
 
+## 2026-11-25 — MF NAV corrective main-integration gate (#61)
+
+- Merged `origin/main` (`25419fa`) into the #56–#60 corrective tip on branch `codex/61-main-integration-candidate`; resolved `docs/changelog.md` by keeping both FD payment-correction and MF corrective entries.
+- Added [corrected release handoff](./maintenance/mf-nav-55-release.md) with quiesce-before-migrate rollout ordering, probe regression index, and frozen verification table (1652 backend, 735 frontend, build/docs/migrations, 112/112 browser checks on ports 18100/15174).
+- Extended `scripts/acceptance/` with #55 API probes, fixed acceptance valuation date, and EUR-base smoke fixture without breaking #48 missing-EUR FX scenario.
+
 ## 2026-11-25 — Valuation-date FX for carried provisional MF NAV (#58)
 
 - Fix: Summary MF current value in a non-INR portfolio base now converts with the portfolio valuation date (today), not the provisional NAV observation date. Carrying a per-unit provisional NAV no longer freezes headline FX. Cost basis and realized amounts still convert on the observation/investment dates.
