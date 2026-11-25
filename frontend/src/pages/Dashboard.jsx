@@ -313,7 +313,10 @@ export default function Dashboard() {
 
   const axisDateFormatter = shortChartRange ? formatAxisDayMonth : formatAxisMonthYear;
 
-  const plDiff = Number(summary.current_value) - Number(summary.total_invested);
+  const plDiff =
+    summary.current_value == null
+      ? null
+      : Number(summary.current_value) - Number(summary.total_invested);
 
   const headerSubtitle = [
     selectedPortfolioName || 'All Portfolios',
@@ -727,7 +730,9 @@ export default function Dashboard() {
                   name,
                 ]}
                 labelFormatter={() =>
-                  `Δ ${plDiff >= 0 ? '+' : ''}${formatCurrency(plDiff, displayCurrency)}`
+                  plDiff == null
+                    ? 'Δ —'
+                    : `Δ ${plDiff >= 0 ? '+' : ''}${formatCurrency(plDiff, displayCurrency)}`
                 }
               />
               <Legend wrapperStyle={getChartLegendStyle()} />

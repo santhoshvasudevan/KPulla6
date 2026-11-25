@@ -214,7 +214,7 @@ function renderHoldingRow(h, navigate) {
       <AppTableCell numeric>
         {isFd || isBankCash ? (
           '—'
-        ) : h.price_status === 'price_missing' ? (
+        ) : h.price_status === 'price_missing' || h.nav_status === 'nav_missing' ? (
           <StatusBadge
             status="price_missing"
             label="Price missing — run refresh to fetch latest price"

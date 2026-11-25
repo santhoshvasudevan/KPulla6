@@ -422,6 +422,7 @@ class AllocationBuckets:
     other: Decimal
     currency: str
     fx_status: str
+    incomplete: bool = False
 
 
 def calculate_allocation_buckets(
@@ -445,6 +446,7 @@ def calculate_allocation_buckets(
     cash = Decimal("0")
     other = Decimal("0")
     any_fx_missing = False
+    value_incomplete = False
 
     today = portfolio_dates.current_date()
     fx_pairs = {
@@ -465,10 +467,21 @@ def calculate_allocation_buckets(
                 if item.get("fx_status") == "fx_unavailable":
                     any_fx_missing = True
             continue
-        cv = Decimal(str(item.get("current_value") or 0))
-        if cv <= 0:
+        qty = Decimal(str(item.get("quantity") or 0))
+        if qty <= 0 or item.get("holding_status") == "closed":
             continue
-        if item.get("holding_status") == "closed":
+        if item.get("nav_status") == "nav_missing" and qty > 0:
+            value_incomplete = True
+            continue
+        if item.get("price_status") == "price_missing" and qty > 0:
+            value_incomplete = True
+            continue
+        raw_cv = item.get("current_value")
+        if raw_cv is None:
+            value_incomplete = True
+            continue
+        cv = Decimal(str(raw_cv))
+        if cv <= 0:
             continue
         # Stock/MF holdings are native-currency amounts; buckets are display-currency.
         cv, fx_st = convert_amount_with_fill_from_maps(
@@ -506,6 +519,7 @@ def calculate_allocation_buckets(
         other=other,
         currency=disp_ccy,
         fx_status=fx_status,
+        incomplete=value_incomplete,
     )
 
 
@@ -517,11 +531,14 @@ def allocation_buckets_payload(buckets: AllocationBuckets) -> dict:
     if buckets.cash > 0:
         bucket_rows.append({"label": "Cash / Bank Cash", "value": float(buckets.cash)})
     bucket_rows.append({"label": "Other", "value": float(buckets.other)})
-    return {
+    payload = {
         "currency": buckets.currency,
         "fx_status": buckets.fx_status,
         "buckets": bucket_rows,
     }
+    if buckets.incomplete:
+        payload["incomplete"] = True
+    return payload
 
 
 def _date_range_inclusive(start: date, end: date):
