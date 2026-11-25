@@ -180,8 +180,6 @@ Prefer fixing forward. A rollback needs the same backup, counts, and approval as
 - Oversell with provisional folios; MF value-history days with zero MF value still need
   INR FX in non-INR base portfolios (existing policy) (#52).
 - Future-impact recheck for stock/ETF edits (#51).
-- Metric Sheet/Compare `personal_metrics.xirr` uses the latest cached NAV, while the
-  holdings/Asset Detail header XIRR uses the provisional overlay (#53).
 - Observed during acceptance, **pre-existing** since the initial commit: when display FX
   is missing, `GET /portfolio/summary` reports `fx_status: fx_unavailable`, but the
   headline `current_value` falls back to the unconverted base-currency investment subtotal
