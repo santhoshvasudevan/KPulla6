@@ -566,8 +566,103 @@ async function main() {
       betaCashFinal[0].id === ids.betaCash[0] && betaCashFinal[0].amount === -671,
       betaCashFinal.map((e) => ({ id: e.id, amount: e.amount })));
 
-    // --- 8. auth / CSRF / cross-user isolation ----------------------------------------
-    current = '8-auth-csrf-isolation';
+    // --- 8. #55 corrective probes (#57–#60 regressions, synthetic only) ---------------
+    current = '8-55-corrective-probes';
+    const mfPost = (body) => api(page, 'POST', '/transactions', { asset_type: 'MUTUAL_FUND', currency: 'INR', fees: '0', ...body });
+    const failedFetch = async (scheme, navDate) => {
+      const r = await api(page, 'POST', '/nav/fetch-missing', { scheme_code: scheme, nav_date: navDate });
+      return r.data;
+    };
+    const provisionalBuy = async ({ portfolioId, scheme, folio, navDate, attemptId, nav, units, paid }) =>
+      mfPost({
+        portfolio_id: portfolioId, scheme_code: scheme, scheme_name: schemes[scheme], folio_number: folio,
+        type: 'BUY', investment_date: navDate, nav_date: navDate, units_allotted: String(units),
+        paid_value: String(paid), provisional_nav: String(nav), provisional_attempt_id: attemptId,
+        confirm_provisional_nav: true, confirm_paid_value: true,
+      });
+
+    // P1 (#57): conflicting provisional observations stay unavailable, not zero.
+    const conflictDate = '2026-11-26';
+    const conflictFetch = await failedFetch(GAMMA, conflictDate);
+    check('#57 fetch yields attempt evidence', conflictFetch.outcome === 'timeout' && conflictFetch.attempt_id,
+      { outcome: conflictFetch.outcome });
+    let res = await provisionalBuy({
+      portfolioId: portfolios.inr, scheme: GAMMA, folio: 'GF-55-CONFLICT', navDate: conflictDate,
+      attemptId: conflictFetch.attempt_id, nav: '31', units: 10, paid: 310,
+    });
+    check('#57 first provisional BUY saved', res.status === 201, res.data);
+    res = await provisionalBuy({
+      portfolioId: portfolios.inr, scheme: GAMMA, folio: 'GF-55-CONFLICT', navDate: conflictDate,
+      attemptId: conflictFetch.attempt_id, nav: '32', units: 10, paid: 320,
+    });
+    check('#57 conflicting provisional BUY saved', res.status === 201, res.data);
+    const conflictHold = (await api(page, 'GET',
+      `/portfolio/holdings?portfolio_id=${portfolios.inr}&display_currency=INR`)).data.holdings
+      .find((h) => h.scheme_code === GAMMA && h.folio_number === 'GF-55-CONFLICT');
+    const conflictSum = (await api(page, 'GET',
+      `/portfolio/summary?portfolio_id=${portfolios.inr}&display_currency=INR`)).data;
+    check('#57 conflicted holding current_value is null not zero',
+      conflictHold && conflictHold.current_value === null && conflictHold.current_value !== 0,
+      conflictHold && { current_value: conflictHold.current_value, nav_status: conflictHold.nav_status });
+    check('#57 summary does not treat unknown MF as zero loss',
+      conflictSum.total_pl === null || conflictSum.unrealized_pl === null,
+      { total_pl: conflictSum.total_pl, incomplete: conflictSum.incomplete });
+
+    // P2 (#58): valuation-date FX, not observation-date FX, on EUR-base portfolio.
+    res = await api(page, 'POST', '/transactions', {
+      asset_symbol: 'ACC_STK', date: '2026-11-05', type: 'BUY', quantity: '10', price_per_share: '110',
+      currency: 'EUR', fees: '0', portfolio_id: portfolios.eur,
+    });
+    check('#58 EUR stock leg seeded', res.status === 201, res.status);
+    const fxNavDate = '2026-11-05';
+    const fxFetch = await failedFetch(BETA, fxNavDate);
+    res = await provisionalBuy({
+      portfolioId: portfolios.eur, scheme: BETA, folio: 'BF-55-FX', navDate: fxNavDate,
+      attemptId: fxFetch.attempt_id, nav: '42.5', units: 100, paid: 4250,
+    });
+    check('#58 provisional EUR-base MF saved', res.status === 201, res.data);
+    const fxSum = (await api(page, 'GET',
+      `/portfolio/summary?portfolio_id=${portfolios.eur}&display_currency=EUR`)).data;
+    const fxPoint = (fxSum.timeseries || []).find((pt) => pt.date === '2026-11-25') || fxSum;
+    const fxHist = (fxSum.timeseries || []).find((pt) => pt.date === '2026-11-05');
+    check('#58 current headline uses valuation-date FX (EUR 1151.00 not 1142.50)',
+      Number(fxSum.current_value) === 1151, { current_value: fxSum.current_value, fx_status: fxSum.fx_status });
+    check('#58 same-date history at observation uses observation FX (EUR 1142.50)',
+      fxHist && Number(fxHist.portfolio_value) === 1142.5, fxHist);
+
+    // P3 (#59): personal Holding XIRR matches across holdings, detail, and metrics (BF-1).
+    const holdX = (await api(page, 'GET',
+      `/portfolio/holdings?portfolio_id=${portfolios.inr}&display_currency=INR`)).data.holdings
+      .find((h) => h.scheme_code === BETA && h.folio_number === 'BF-1');
+    const detailX = (await api(page, 'GET',
+      `/portfolio/assets/${BETA}?portfolio_id=${portfolios.inr}&folio_number=BF-1&display_currency=INR`)).data;
+    const metricsX = (await api(page, 'GET',
+      `/analytics/assets/${BETA}/performance-metrics?portfolio_id=${portfolios.inr}&folio_number=BF-1&display_currency=INR&range=ALL`)).data.personal_metrics;
+    const compareX = (await api(page, 'GET',
+      `/analytics/compare?${new URLSearchParams({
+        subjects: `asset:${BETA}`, portfolio_id: String(portfolios.inr), folio_number: 'BF-1',
+        display_currency: 'INR', range: 'ALL' })}`)).data?.subjects?.[0]?.personal_metrics;
+    const xirrValues = [holdX?.xirr, detailX?.xirr, metricsX?.xirr, compareX?.xirr];
+    check('#59 personal XIRR parity across holdings/detail/metrics/compare',
+      xirrValues.every((v) => v != null) && Math.max(...xirrValues) - Math.min(...xirrValues) < 1e-6,
+      { holdings: holdX?.xirr, detail: detailX?.xirr, metrics: metricsX?.xirr, compare: compareX?.xirr,
+        status: metricsX?.status });
+    check('#59 scoped terminal uses provisional overlay on every surface',
+      holdX?.nav_provisional === true && metricsX?.nav_provisional === true,
+      { holding_latest_nav: holdX?.latest_nav, metrics_basis: metricsX?.basis });
+
+    // P4 (#60): stale successful fetch cannot overwrite replacement cache (pytest oracle).
+    const staleOut = execFileSync(path.join(REPO_ROOT, 'backend', '.venv', 'bin', 'python'), [
+      '-m', 'pytest', 'tests/test_mf_nav_fetch_stale_finalization.py', '-q', '--tb=no'],
+      { cwd: path.join(REPO_ROOT, 'backend'), encoding: 'utf8',
+        env: { ...process.env, DATABASE_URL: '', DJANGO_TEST_USE_SQLITE: '1' } });
+    const stalePass = /passed/.test(staleOut) && !/failed/.test(staleOut);
+    check('#60 stale-fetch fence suite green (disposable SQLite, not acceptance DB)', stalePass,
+      staleOut.trim().split('\n').slice(-3));
+    evidence.corrective_probes = { conflictDate, fx_expected_headline: 1151, fx_expected_history: 1142.5 };
+
+    // --- 9. auth / CSRF / cross-user isolation ----------------------------------------
+    current = '9-auth-csrf-isolation';
     res = await api(page, 'POST', '/nav/fetch-missing', { scheme_code: BETA, nav_date: '2026-11-20' }, { csrf: false });
     check('fetch-missing without CSRF token rejected', res.status === 403, res.status);
     calls = providerCalls().length;
@@ -606,7 +701,7 @@ async function main() {
 
     current = 'console';
     evidence.http_errors = httpErrors;
-    const unexpected = httpErrors.filter((e) => e.scenario !== '8-auth-csrf-isolation' &&
+    const unexpected = httpErrors.filter((e) => e.scenario !== '9-auth-csrf-isolation' &&
       !(e.scenario === 'served-checkout' && e.status === 403 && e.url.startsWith('/api/v1/auth/me')));
     check('no HTTP errors outside pre-login probe and deliberate 4xx checks', unexpected.length === 0, unexpected);
     check('every browser console error maps to a logged HTTP error',

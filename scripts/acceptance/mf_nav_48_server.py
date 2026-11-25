@@ -203,6 +203,8 @@ def seed() -> dict:
                                    is_default=True, is_active=True, cash_aware_enabled=True)
     usd = Portfolio.objects.create(user=user, name="Acceptance USD", base_currency="USD",
                                    is_default=False, is_active=True, cash_aware_enabled=False)
+    eur = Portfolio.objects.create(user=user, name="Acceptance EUR", base_currency="EUR",
+                                   is_default=False, is_active=True, cash_aware_enabled=False)
     other_portfolio = Portfolio.objects.create(user=other, name="Other user INR",
                                                base_currency="INR", is_default=True,
                                                is_active=True, cash_aware_enabled=False)
@@ -212,6 +214,12 @@ def seed() -> dict:
     for code, name in SCHEMES.items():
         Asset.objects.get_or_create(asset_type=AssetType.MUTUAL_FUND, symbol=code,
                                     defaults={"display_name": name, "currency": "INR"})
+    Asset.objects.get_or_create(asset_type=AssetType.STOCK, symbol="ACC_STK",
+                                defaults={"display_name": "Acceptance EUR Stock", "currency": "EUR"})
+    for stock_day in (date(2026, 11, 5), date(2026, 11, 25)):
+        HistoricalPrice.objects.create(asset_symbol="ACC_STK", asset_type=AssetType.STOCK,
+                                       date=stock_day, close_price=Decimal("110"),
+                                       currency="EUR", source="acceptance")
     book = initial_provider_book()
     # Provider cache before acceptance: Alpha up to 2026-11-17 (not 11-19), Gamma to 11-10.
     cache = {"990101": {d: v for d, v in book["990101"]["rows"].items() if d <= "2026-11-17"},
@@ -229,12 +237,18 @@ def seed() -> dict:
                        rate=Decimal("0.0119"), source="acceptance")
         upsert_fx_rate(from_currency="USD", to_currency="INR", row_date=day,
                        rate=Decimal("84.0336"), source="acceptance")
+        inr_eur = Decimal("0.010") if day < date(2026, 11, 15) else Decimal("0.012")
+        upsert_fx_rate(from_currency="INR", to_currency="EUR", row_date=day,
+                       rate=inr_eur, source="acceptance")
+        upsert_fx_rate(from_currency="EUR", to_currency="INR", row_date=day,
+                       rate=(Decimal("1") / inr_eur).quantize(Decimal("0.0001")),
+                       source="acceptance")
         day += timedelta(days=1)
     return {
         "users": {"acceptance": {"id": user.id, "username": user.username},
                   "other": {"id": other.id, "username": other.username}},
         "password": ACCEPTANCE_PASSWORD,
-        "portfolios": {"inr": inr.id, "usd": usd.id, "other": other_portfolio.id},
+        "portfolios": {"inr": inr.id, "usd": usd.id, "eur": eur.id, "other": other_portfolio.id},
         "schemes": SCHEMES,
     }
 
