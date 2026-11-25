@@ -26,9 +26,8 @@ from market_data.nav_lookup import latest_nav_for_asset, normalize_scheme_code
 from market_data.price_lookup import latest_historical_price, normalize_asset_symbol
 from portfolios import dates as portfolio_dates
 from portfolios.mf_valuation import (
-    MIXED,
     provisional_valuation_warnings,
-    value_mutual_fund_holding,
+    scoped_mutual_fund_valuation,
 )
 from portfolios.scope import ResolvedPortfolioScope
 from settings_app.models import DisplayCurrency
@@ -210,46 +209,29 @@ def _mf_current_value(
         if provider is not None and provider.status == "ok" and provider.nav is not None
         else None
     )
-    qty = calculate_fifo_cost_basis_metrics(finance_txns, current_price=None).cumulative_qty
-    valuation = value_mutual_fund_holding(db_txns, provider_point=provider_point, qty=qty)
-    # A newer conflicting provisional date leaves the folio unvalued; the older
-    # provider NAV must not take over.
-    overlaid = valuation.source not in (None, PROVIDER_CACHE) or bool(valuation.conflict_dates)
-    current_nav = valuation.nav if overlaid else (provider_point[1] if provider_point else None)
-    known = valuation.current_value is not None if overlaid else current_nav is not None
-
-    fifo = calculate_fifo_cost_basis_metrics(finance_txns, current_price=current_nav)
-    qty = fifo.cumulative_qty
-    if valuation.source == MIXED and valuation.current_value is not None and qty > 0:
-        current_value = valuation.current_value
-    elif current_nav is not None and qty > 0:
-        current_value = current_nav * qty
-    else:
-        current_value = Decimal("0")
-    unrealized = (
-        current_value - fifo.cumulative_invested_amount
-        if valuation.source == MIXED
-        else fifo.unrealized_pl
-    )
+    scoped = scoped_mutual_fund_valuation(db_txns, finance_txns, provider_point=provider_point)
+    fifo = scoped.fifo
     warnings = (
-        provisional_valuation_warnings(valuation, scheme=scheme_code, folio_number=folio_number)
-        if qty > 0
+        provisional_valuation_warnings(scoped.valuation, scheme=scheme_code, folio_number=folio_number)
+        if fifo.cumulative_qty > 0
         else []
     )
     today = portfolio_dates.current_date()
-    if overlaid:
-        xirr = mutual_fund_holding_xirr(db_txns, current_nav, today=today)
+    if scoped.overlaid:
+        xirr = mutual_fund_holding_xirr(db_txns, scoped.nav, today=today)
     else:
         xirr = cached_mutual_fund_holding_xirr(scheme_code, db_txns, today=today)
     return _MfCurrentValue(
-        nav=current_nav,
-        nav_status="ok" if known else "nav_missing",
-        price_status="ok" if known else "price_missing",
+        nav=scoped.nav,
+        nav_status="ok" if scoped.nav_available else "nav_missing",
+        price_status="ok" if scoped.nav_available else "price_missing",
         fx_missing=display_fx_unavailable,
         fifo=fifo,
-        current_value=current_value,
-        unrealized_pl=unrealized,
-        valuation=valuation,
+        current_value=scoped.current_value if scoped.current_value is not None else Decimal("0"),
+        unrealized_pl=(
+            scoped.unrealized_pl if scoped.unrealized_pl is not None else fifo.unrealized_pl
+        ),
+        valuation=scoped.valuation,
         warnings=warnings,
         xirr=xirr,
     )

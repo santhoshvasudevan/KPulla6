@@ -110,6 +110,7 @@ Most technical metrics (Sharpe, Sortino, annualized volatility, max drawdown, be
 |---------------|------|---------------------|
 | **XIRR** | Money-weighted IRR on BUY/SELL (+ terminal value) | `finance/xirr.py`, `finance/mutual_fund_cashflows.py`; summary + holdings; **`compute_scope_xirr`** in `summary_service` for cross-module reuse |
 | **FIFO** | Cost basis, realized/unrealized P/L | `finance/fifo.py`; holdings, summary |
+| **MF scoped valuation** | Per-folio unit replay, provider/provisional NAV resolution, NAV × units, current value and daily value series | `finance/mutual_fund_valuation.py` (`value_scoped_mutual_fund_holding`, `daily_mutual_fund_values`, shared `valuation_legs`); `portfolios/mf_valuation.py` only adapts loaded rows; holdings, summary, value history |
 | **TWROR time series** | Cumulative chain-linked % for charts | `finance/twror.py`; `GET /portfolio/performance?metric=twror` |
 | **cumulative_return** | Contribution-adjusted headline % | performance API |
 

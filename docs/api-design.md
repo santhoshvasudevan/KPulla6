@@ -1561,7 +1561,8 @@ old or new row date (`transactions/cash_settlement.py`); a negative later
 balance returns **409** future impact and rolls back. The NAV-only BUY exception
 is unchanged and never applies to provisional payloads or SELLs.
 
-Valuation overlay (`portfolios/mf_valuation.py`): for a folio with a provisional
+Valuation overlay (`finance/mutual_fund_valuation.py`, adapted from loaded rows by
+`portfolios/mf_valuation.py`): for a folio with a provisional
 BUY or SELL, the latest observation on or before the valuation date wins, with a provider
 NAV on the same date winning; so the provisional per-unit NAV carries from its
 date until the next cached NAV. Other folios, portfolios, and users keep the

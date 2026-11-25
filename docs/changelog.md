@@ -1,5 +1,10 @@
 # Changelog — KPulla6
 
+## 2026-11-25 — Scoped MF valuation arithmetic moved to finance (#56)
+
+- Per-folio unit replay, provider/provisional NAV resolution, NAV × units, scoped current value and the daily value series now live in framework-independent `finance/mutual_fund_valuation.py` (`value_scoped_mutual_fund_holding`, `daily_mutual_fund_values`, both built on `valuation_legs`). `portfolios/mf_valuation.py` only adapts loaded transactions and formats warnings. Holdings, Summary and value history consume the same result instead of recomputing it. The finance result reports an unavailable value as `None`; holdings and Summary still render it as zero, which #57 will correct.
+- Behavior-preserving prefactor: no API, schema, FX, XIRR or fetch change. The only arithmetic difference is in a pathological case: a holding with a provisional NAV in which one portfolio's folio sells more units than it holds while another portfolio holds the same folio number. Its holdings value now matches Summary and history (per-folio units) instead of whole-holding FIFO units.
+
 ## 2026-11-25 — Fence stale successful MF NAV fetch finalization (#60)
 
 - Fix: a `POST /api/v1/nav/fetch-missing` request whose 30-second claim expired and was replaced no longer writes its late provider result. Previously, a late success overwrote the replacement's cached NAV (for example NAV 20 replaced by 10). Success and failure finalization now both require the current claim token under the state-row lock. A superseded request leaves the cache row, claim, cooldown, and attempt evidence unchanged and returns the current `cache_hit`, `in_flight`, or `cooldown` state. It returns `in_flight` with `retry_after_seconds: 1` when the replacement's claim also lapsed. A late failure now returns that state instead of `provider_failure` and never issues an `attempt_id`. No new outcome values, migration, or frontend change. See [fetch-missing contract](./reference/api-transactions.md#post-navfetch-missing).

@@ -153,7 +153,7 @@ make bootstrap  # db + migrate + seed
 | Display metadata | `MutualFundProfile.scheme_name` via `Folio.asset` |
 | Latest valuation | `latest_nav_for_asset(scheme_code)` → latest `HistoricalPrice` where `asset_type=MUTUAL_FUND` |
 | Missing NAV | `nav_status=nav_missing`, `price_status=price_missing`, `current_value=0` when units remain |
-| Provisional overlay (#50/#51) | `portfolios/mf_valuation.py`: a folio's `PROVISIONAL_USER` BUY or SELL NAV wins over an older provider NAV until the next cached NAV (same-date provider wins); per folio, so other folios/portfolios/users are unaffected |
+| Provisional overlay (#50/#51) | `finance/mutual_fund_valuation.py` (rows adapted by `portfolios/mf_valuation.py`): a folio's `PROVISIONAL_USER` BUY or SELL NAV wins over an older provider NAV until the next cached NAV (same-date provider wins); per folio, so other folios/portfolios/users are unaffected |
 | Currency | INR on MF holding rows; `fx_status` follows display vs holding currency (same rules as stocks) |
 
 Stock holdings continue to use `Transaction.asset_symbol` grouping and `latest_historical_price` (`asset_type=STOCK`).
