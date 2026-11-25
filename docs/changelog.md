@@ -1,5 +1,11 @@
 # Changelog — KPulla6
 
+## 2026-11-25 — Valuation-date FX for carried provisional MF NAV (#58)
+
+- Fix: Summary MF current value in a non-INR portfolio base now converts with the portfolio valuation date (today), not the provisional NAV observation date. Carrying a per-unit provisional NAV no longer freezes headline FX. Cost basis and realized amounts still convert on the observation/investment dates.
+- MF INR conversion in Summary treats eligible seven-day FX lookback as usable (`filled`) instead of `fx_unavailable`, including current value and value-history days. True missing FX still surfaces `fx_unavailable` and null history points.
+- New HTTP regressions cover varying INR/EUR (0.010 → 0.012), single and All scopes, holdings/allocation reconciliation, and valuation-date lookback without future rates.
+
 ## 2026-11-25 — Scoped MF valuation arithmetic moved to finance (#56)
 
 - Per-folio unit replay, provider/provisional NAV resolution, NAV × units, scoped current value and the daily value series now live in framework-independent `finance/mutual_fund_valuation.py` (`value_scoped_mutual_fund_holding`, `daily_mutual_fund_values`, both built on `valuation_legs`). `portfolios/mf_valuation.py` only adapts loaded transactions and formats warnings. Holdings, Summary and value history consume the same result instead of recomputing it. The finance result reports an unavailable value as `None`; holdings and Summary still render it as zero, which #57 will correct.

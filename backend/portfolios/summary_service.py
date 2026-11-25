@@ -204,15 +204,16 @@ def _convert_mf_amount_to_base(
     conv_date: date,
     portfolio_base: str,
     fx_maps: dict,
-) -> tuple[Decimal, bool]:
+) -> tuple[Decimal, str]:
+    """Convert MF INR amounts into the portfolio base; status follows fx_lookup_from_maps."""
     if portfolio_base == MF_BASE_CURRENCY:
-        return amount, False
+        return amount, "ok"
     converted, fx_st = fx_lookup_from_maps(
         fx_maps, MF_BASE_CURRENCY, portfolio_base, conv_date
     )
     if converted is None:
-        return Decimal("0"), True
-    return amount * converted, fx_st == "filled"
+        return Decimal("0"), "fx_unavailable"
+    return amount * converted, fx_st
 
 
 def _to_fifo_dtos(db_txns: list[TransactionModel]):
@@ -384,8 +385,8 @@ def _calculate_mf_holdings(
         inv_inr = fifo_metrics.cumulative_invested_amount
         real_inr = fifo_metrics.realized_pl
 
-        cv_base, fx_fill = _convert_mf_amount_to_base(
-            cv_inr, conv_date=nav_date, portfolio_base=portfolio_base, fx_maps=fx_maps
+        cv_base, cv_fx = _convert_mf_amount_to_base(
+            cv_inr, conv_date=today, portfolio_base=portfolio_base, fx_maps=fx_maps
         )
         inv_base, inv_fx = _convert_mf_amount_to_base(
             inv_inr, conv_date=nav_date, portfolio_base=portfolio_base, fx_maps=fx_maps
@@ -393,9 +394,9 @@ def _calculate_mf_holdings(
         real_base, real_fx = _convert_mf_amount_to_base(
             real_inr, conv_date=nav_date, portfolio_base=portfolio_base, fx_maps=fx_maps
         )
-        if fx_fill or inv_fx or real_fx:
+        if cv_fx == "fx_unavailable" or inv_fx == "fx_unavailable" or real_fx == "fx_unavailable":
             any_fx_missing = True
-            cv_base = Decimal("0") if fx_fill else cv_base
+            cv_base = Decimal("0") if cv_fx == "fx_unavailable" else cv_base
 
         total_invested += inv_base
         current_value += cv_base
@@ -545,23 +546,23 @@ def _mf_timeseries_by_date(
 
         value_base: Decimal | None = Decimal("0")
         if daily_value_inr > 0:
-            converted, fx_miss = _convert_mf_amount_to_base(
+            converted, fx_st = _convert_mf_amount_to_base(
                 daily_value_inr,
                 conv_date=d,
                 portfolio_base=portfolio_base,
                 fx_maps=fx_maps,
             )
-            if fx_miss:
+            if fx_st == "fx_unavailable":
                 daily_fx_missing = True
                 value_base = None
             else:
                 value_base = converted
 
-        inv_conv, inv_miss = _convert_mf_amount_to_base(
+        inv_conv, inv_fx_st = _convert_mf_amount_to_base(
             daily_inv_inr, conv_date=d, portfolio_base=portfolio_base, fx_maps=fx_maps
         )
         inv_base = Decimal("0")
-        if inv_miss:
+        if inv_fx_st == "fx_unavailable":
             daily_fx_missing = True
         else:
             inv_base = inv_conv

@@ -433,6 +433,59 @@ def test_eur_base_portfolio_values_first_time_provisional_fund_with_cached_fx(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("scope_kind", ["single", "all"])
+def test_carried_provisional_nav_uses_valuation_date_fx_not_observation_fx(
+    api_client, legacy_seeded, test_user, scope_kind
+):
+    """#58 — carrying a per-unit NAV must not freeze the INR→EUR rate of its observation date."""
+    portfolio = _eur_base_portfolio(api_client, test_user)  # real EUR 1,100 stock position
+    scope = {"portfolio_id": portfolio.id} if scope_kind == "single" else {"portfolio_scope": "all"}
+    provisional(portfolio, "2026-03-05", "100", "42.5")  # 4250 INR, no provider NAV afterwards
+    for d in range(1, 21):
+        _fx(f"2026-03-{d:02d}", "0.010" if d < 15 else "0.012")
+
+    data = summary(api_client, display_currency="EUR", **scope)
+    values = history(data)
+    assert data["base_currency"] == "EUR" if scope_kind == "single" else True
+    assert data["fx_status"] == "ok"
+    assert data["current_value"] == pytest.approx(1151.0)    # 1100 + 4250×0.012, not 1142.50
+    assert values["2026-03-20"] == pytest.approx(data["current_value"])
+    assert values["2026-03-05"] == values["2026-03-14"] == pytest.approx(1142.5)  # 1100 + 4250×0.010
+    assert values["2026-03-15"] == pytest.approx(1151.0)    # each history date uses its own FX
+    assert data["total_invested"] == pytest.approx(1042.5)  # 1000 EUR stock + 4250 INR at 03-05 FX
+    assert sum(b["value"] for b in data["allocation_buckets"]["buckets"]) == pytest.approx(1151.0)
+    perf, _ = performance(api_client, display_currency="EUR", **scope)
+    assert perf["2026-03-14"] == pytest.approx(1142.5) and perf["2026-03-20"] == pytest.approx(1151.0)
+
+    rows = holdings(api_client, display_currency="EUR", **scope)
+    fund = next(h for h in rows["holdings"] if h.get("scheme_code") == SCHEME)
+    assert fund["currency"] == "INR" and fund["current_value"] == 4250  # native amount
+    assert fund["display_current_value"] == pytest.approx(51.0)
+    assert sum(h["display_current_value"] for h in rows["holdings"]) == pytest.approx(1151.0)
+
+    inr = summary(api_client, display_currency="INR", **scope)  # EUR base → INR display, once
+    assert inr["current_value"] == pytest.approx(1151 / 0.012)
+    assert history(inr)["2026-03-20"] == pytest.approx(inr["current_value"])
+    inr_rows = holdings(api_client, display_currency="INR", **scope)
+    assert sum(h["display_current_value"] for h in inr_rows["holdings"]) == pytest.approx(
+        inr["current_value"])
+
+
+@pytest.mark.django_db
+def test_current_mf_value_uses_eligible_prior_fx_but_never_a_future_rate(
+    api_client, legacy_seeded, test_user
+):
+    portfolio = _eur_base_portfolio(api_client, test_user)
+    provisional(portfolio, "2026-03-05", "100", "42.5")
+    for d in range(1, 15):
+        _fx(f"2026-03-{d:02d}", "0.010")
+    _fx("2026-03-21", "0.020")  # after the valuation date: never eligible
+    data = summary(api_client, display_currency="EUR", portfolio_id=portfolio.id)
+    assert data["fx_status"] == "ok"
+    assert data["current_value"] == pytest.approx(1142.5)  # 03-14 rate within the 7-day lookback
+
+
+@pytest.mark.django_db
 def test_missing_fx_is_reported_not_zero_filled_in_history(api_client, legacy_seeded, test_user):
     portfolio = _eur_base_portfolio(api_client, test_user)
     provisional(portfolio, "2026-03-12", "100", "42.5")
@@ -443,7 +496,7 @@ def test_missing_fx_is_reported_not_zero_filled_in_history(api_client, legacy_se
     _fx("2026-03-12", "0.01")
     data = summary(api_client, display_currency="EUR", portfolio_id=portfolio.id)
     assert history(data)["2026-03-12"] == pytest.approx(1142.5)
-    assert history(data)["2026-03-13"] is None  # filled FX keeps the established MF policy
+    assert history(data)["2026-03-13"] == pytest.approx(1142.5)  # 7-day lookback to 2026-03-12
 
 
 # --- read safety ---------------------------------------------------------------------
