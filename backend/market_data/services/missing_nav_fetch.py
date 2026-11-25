@@ -4,7 +4,9 @@ Explicit exact-date MFAPI fetch for a confirmed missing mutual-fund NAV (#49).
 Only the POST /nav/fetch-missing path calls this. It rechecks the cache, claims a
 DB-backed in-flight slot per scheme/date, asks the provider for that single day,
 and caches only a positive exact-date INR observation. Unsuccessful attempts start
-a cooldown and record attempt evidence bound to the requesting user.
+a cooldown and record attempt evidence bound to the requesting user. Finalization
+(success or failure) only applies while the request still holds the claim token;
+a superseded request reports the current cache/claim/cooldown instead (#60).
 """
 
 from __future__ import annotations
@@ -116,25 +118,36 @@ def _locked_state(scheme: str, nav_date: date) -> MutualFundNavFetchState:
     )
 
 
+def _current_result(
+    state: MutualFundNavFetchState, user_id: int | None, now: datetime,
+) -> MissingNavFetchResult | None:
+    """Cache, live in-flight claim, or active cooldown for a locked state row; else None."""
+    scheme, nav_date = state.scheme_code, state.nav_date
+    cached = cached_nav_for_date(scheme_code=scheme, nav_date=nav_date)
+    if cached is not None:
+        return MissingNavFetchResult(scheme, nav_date, CACHE_HIT, nav=cached)
+    if state.in_flight_until and state.in_flight_until > now:
+        return MissingNavFetchResult(
+            scheme, nav_date, IN_FLIGHT,
+            retry_after_seconds=_seconds_until(state.in_flight_until, now),
+        )
+    if state.cooldown_until and state.cooldown_until > now:
+        own = user_id is not None and state.last_attempt_user_id == user_id
+        return MissingNavFetchResult(
+            scheme, nav_date, COOLDOWN,
+            retry_after_seconds=_seconds_until(state.cooldown_until, now),
+            attempt_id=state.last_attempt_id if own else None,
+        )
+    return None
+
+
 def _claim(scheme: str, nav_date: date, user_id: int | None, now: datetime):
     """Return (claim_token, None) when this caller may fetch, else (None, result)."""
     with transaction.atomic():
         state = _locked_state(scheme, nav_date)
-        cached = cached_nav_for_date(scheme_code=scheme, nav_date=nav_date)
-        if cached is not None:
-            return None, MissingNavFetchResult(scheme, nav_date, CACHE_HIT, nav=cached)
-        if state.in_flight_until and state.in_flight_until > now:
-            return None, MissingNavFetchResult(
-                scheme, nav_date, IN_FLIGHT,
-                retry_after_seconds=_seconds_until(state.in_flight_until, now),
-            )
-        if state.cooldown_until and state.cooldown_until > now:
-            own = user_id is not None and state.last_attempt_user_id == user_id
-            return None, MissingNavFetchResult(
-                scheme, nav_date, COOLDOWN,
-                retry_after_seconds=_seconds_until(state.cooldown_until, now),
-                attempt_id=state.last_attempt_id if own else None,
-            )
+        current = _current_result(state, user_id, now)
+        if current is not None:
+            return None, current
         token = uuid.uuid4()
         state.in_flight_until = now + timedelta(seconds=IN_FLIGHT_TTL_SECONDS)
         state.in_flight_token = token
@@ -177,37 +190,35 @@ def _finalize(scheme, nav_date, token, outcome, nav, user_id, now) -> MissingNav
         state = MutualFundNavFetchState.objects.select_for_update().get(
             scheme_code=scheme, nav_date=nav_date
         )
-        owns_claim = state.in_flight_token == token
+        if state.in_flight_token != token:
+            # Superseded: the provider response is discarded and the replacement's
+            # cache, claim, cooldown and evidence are left untouched.
+            return _current_result(state, user_id, now) or MissingNavFetchResult(
+                scheme, nav_date, IN_FLIGHT, retry_after_seconds=1,
+            )
+        state.in_flight_until = None
+        state.in_flight_token = None
         if outcome == FETCHED:
             asset = Asset.objects.filter(asset_type=AssetType.MUTUAL_FUND, symbol=scheme).first()
             upsert_mutual_fund_nav(
                 scheme_code=scheme, row_date=nav_date, nav=nav,
                 currency=MF_NAV_CURRENCY, asset=asset,
             )
+            state.cooldown_until = None
+            state.last_outcome = FETCHED
+            state.last_failure_category = ""
+            state.save()
             stored = cached_nav_for_date(scheme_code=scheme, nav_date=nav_date)
-            if owns_claim:
-                state.in_flight_until = None
-                state.in_flight_token = None
-                state.cooldown_until = None
-                state.last_outcome = FETCHED
-                state.last_failure_category = ""
-                state.save()
             return MissingNavFetchResult(scheme, nav_date, FETCHED, nav=stored)
 
         attempt_id = uuid.uuid4()
-        cooldown_until = now + timedelta(seconds=COOLDOWN_SECONDS)
-        if owns_claim:
-            state.in_flight_until = None
-            state.in_flight_token = None
-            state.cooldown_until = cooldown_until
-            state.last_outcome = outcome
-            state.last_failure_category = outcome
-            state.last_attempt_id = attempt_id
-            state.last_attempt_user_id = user_id
-            state.last_attempt_at = now
-            state.save()
-        else:
-            attempt_id = None
+        state.cooldown_until = now + timedelta(seconds=COOLDOWN_SECONDS)
+        state.last_outcome = outcome
+        state.last_failure_category = outcome
+        state.last_attempt_id = attempt_id
+        state.last_attempt_user_id = user_id
+        state.last_attempt_at = now
+        state.save()
         return MissingNavFetchResult(
             scheme, nav_date, outcome,
             retry_after_seconds=COOLDOWN_SECONDS,

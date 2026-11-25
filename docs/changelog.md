@@ -1,5 +1,9 @@
 # Changelog — KPulla6
 
+## 2026-11-25 — Fence stale successful MF NAV fetch finalization (#60)
+
+- Fix: a `POST /api/v1/nav/fetch-missing` request whose 30-second claim expired and was replaced no longer writes its late provider result. Previously, a late success overwrote the replacement's cached NAV (for example NAV 20 replaced by 10). Success and failure finalization now both require the current claim token under the state-row lock. A superseded request leaves the cache row, claim, cooldown, and attempt evidence unchanged and returns the current `cache_hit`, `in_flight`, or `cooldown` state. It returns `in_flight` with `retry_after_seconds: 1` when the replacement's claim also lapsed. A late failure now returns that state instead of `provider_failure` and never issues an `attempt_id`. No new outcome values, migration, or frontend change. See [fetch-missing contract](./reference/api-transactions.md#post-navfetch-missing).
+
 ## 2026-11-25 — Release evidence for cache-first provisional MF NAV (#54)
 
 - New [release note](./maintenance/mf-nav-48-release.md) pins the strict-NAV baseline `9d5237f` and the five ticket commits #49 `8e2eecf`, #50 `28dff3a`, #51 `c73e188`, #52 `c9b3553`, and #53 `49a3fd3` (integration branch `codex/mf-nav-48`). It records the integration diff and how it relates to `main`: the baseline is not on `main`, and a trial merge conflicts only in this changelog. It also records frozen-tree results for the backend, frontend, build, docs, and migrations, an API/security review, and rollout and rollback steps for `market_data.0007` and `transactions.0006`. Code older than #50 cannot write MF rows once `transactions.0006` is applied.

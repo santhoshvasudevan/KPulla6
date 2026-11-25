@@ -320,10 +320,11 @@ def test_expired_claim_finishing_late_does_not_clobber_new_claim(api_client, clo
     provider.get_nav_history = late_failure
     with use_provider(provider):
         data = post(api_client).json()
-    assert data["outcome"] == "provider_failure"
+    assert data["outcome"] == "in_flight"
+    assert data["attempt_id"] is None and data["retry_after_seconds"] == 30
     state = MutualFundNavFetchState.objects.get()
     assert str(state.in_flight_token) == "00000000-0000-0000-0000-000000000001"
-    assert state.cooldown_until is None
+    assert state.cooldown_until is None and state.last_attempt_id is None
 
 
 @pytest.mark.django_db

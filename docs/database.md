@@ -194,7 +194,7 @@ Nullable FK from `Transaction` → `Asset` for MF rows — not added in MF-1. St
 |------|----------------|-------|
 | `sync_mutual_fund_navs` command | Provider in sync only | Incremental upsert to `historical_prices` (`asset_type=MUTUAL_FUND`) |
 | `POST /api/v1/nav/refresh` | Provider in sync only | Optional `scheme_codes` filter |
-| `POST /api/v1/nav/fetch-missing` | Provider for one scheme/date | Rechecks cache; upserts only that exact-date INR row. `mutual_fund_nav_fetch_states` (unique `scheme_code`+`nav_date`) stores in-flight claim (30s), 60s cooldown, and last unsuccessful `attempt_id`/user (#49) |
+| `POST /api/v1/nav/fetch-missing` | Provider for one scheme/date | Rechecks cache; upserts only that exact-date INR row. `mutual_fund_nav_fetch_states` (unique `scheme_code`+`nav_date`) stores in-flight claim (30s), 60s cooldown, and last unsuccessful `attempt_id`/user (#49). Only the current `in_flight_token` holder may write the cache row or state; a superseded request changes nothing (#60) |
 | `sync_market_data` / `force-sync` | Provider in sync only | MF NAV included by default; `--skip-mutual-funds` opts out |
 | Holdings / summary / performance / transactions reads | **None** | `latest_nav_for_asset`, `list_mutual_fund_navs_*` — DB only |
 
