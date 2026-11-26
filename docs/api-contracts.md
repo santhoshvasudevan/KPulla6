@@ -13,7 +13,7 @@
 | Shape | HTTP | Fields | Used by |
 |-------|------|--------|---------|
 | **Insufficient cash (shortfall)** | 400 | `detail`, `required`, `available`, `shortfall`, `currency` | Cash-aware BUY, withdrawal, transfer source, bulk apply |
-| **Future cash impact** | 409 | `detail`, `currency`, `earliest_negative_date`, `lowest_balance`, `affected_entries[]` (`id`, `date`, `entry_type`, `amount`, …) | `PUT`/`DELETE` `/cash/ledger/{id}`, `PUT`/`DELETE` `/transactions/{id}` when settlement sync breaks future balance |
+| **Future cash impact** | 409 | `detail`, `currency`, `earliest_negative_date`, `lowest_balance`, `affected_entries[]` (`id`, `date`, `entry_type`, `amount`, …) | `PUT`/`DELETE` `/cash/ledger/{id}`, `PUT`/`DELETE` `/transactions/{id}` when settlement sync breaks future balance; `PUT`/`PATCH` `/fixed-deposit-interest-payments/{id}` when a correction would underfund a later bank movement (#64) |
 | **Protected cash row** | 409 | `detail` (linked/system entry) | Manual edit/delete of settlement or transfer legs |
 | **Missing FX** | 200 + warnings | `fx_status: "fx_unavailable"`, `warnings[]` (summary/performance/holdings) | Display currency ≠ native; partial cash conversion |
 | **Missing NAV (MF)** | 200 + warnings | NAV freshness / missing messages in `warnings[]` | Asset/portfolio Metric Sheet, holdings |

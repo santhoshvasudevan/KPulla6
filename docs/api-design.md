@@ -1294,7 +1294,7 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 | DELETE | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | **405** — use the reversal endpoint to void an eligible payment. |
 | POST | `/api/v1/fixed-deposit-interest-payments/{payment_id}/reverse` | **Done** — `{ reversal_date?, reason }`; `FD_INTEREST_REVERSAL` DEBIT; `is_reversed=true` |
 
-**Interest correction Bank Cash conflict (409):** when reducing or re-dating a linked `FD_INTEREST` credit would make a later bank running balance negative, the endpoint returns the same structured future-impact payload as portfolio cash (`detail`, `currency`, `earliest_negative_date`, `lowest_balance`, `affected_entries` up to 10 bank movements from that date). Payment, linked credit, and stored bank balance are unchanged. Edits and reversals for the same payment are serialized (payment row then linked credit under `select_for_update`).
+**Interest correction Bank Cash conflict (409):** when reducing or re-dating a linked `FD_INTEREST` credit would make a later bank running balance negative, the endpoint returns the same structured future-impact payload as portfolio cash (`detail`, `currency`, `earliest_negative_date`, `lowest_balance`, `affected_entries` up to 10 bank movements from that date). Payment, linked credit, and stored bank balance are unchanged. Bank Cash writers share lock order bank account → interest payment → linked credit (`select_for_update`); withdrawals and corrections both lock the account before reading balances. Future-impact validation sweeps movement dates plus the validation start date.
 
 **Rejected:** interest payment on `CLOSED` FD (**400**). `ACTIVE` and `MATURED` allowed. Bank account taken from FD (not client-supplied).
 
