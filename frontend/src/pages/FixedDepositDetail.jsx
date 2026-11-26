@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import {
   createFixedDepositInterestPayment,
   fetchFixedDepositDetail,
+  futureImpactFromApiError,
   updateFixedDepositInterestPayment,
 } from '../api';
 import {
@@ -82,6 +83,7 @@ export default function FixedDepositDetail() {
   const [actualModalOpen, setActualModalOpen] = useState(false);
   const [actualForm, setActualForm] = useState(emptyActualForm);
   const [actualFormError, setActualFormError] = useState('');
+  const [actualFormFutureImpact, setActualFormFutureImpact] = useState(null);
   const [actualSaving, setActualSaving] = useState(false);
   const [editingPaymentId, setEditingPaymentId] = useState(null);
   const [scheduleContext, setScheduleContext] = useState(null);
@@ -135,6 +137,7 @@ export default function FixedDepositDetail() {
       comment: '',
     });
     setActualFormError('');
+    setActualFormFutureImpact(null);
     setActualModalOpen(true);
   };
 
@@ -149,6 +152,7 @@ export default function FixedDepositDetail() {
       comment: payment.comment || '',
     });
     setActualFormError('');
+    setActualFormFutureImpact(null);
     setActualModalOpen(true);
   };
 
@@ -158,6 +162,7 @@ export default function FixedDepositDetail() {
     setScheduleContext(null);
     setActualClientRequestId('');
     setActualFormError('');
+    setActualFormFutureImpact(null);
   };
 
   const saveActual = async (e) => {
@@ -195,6 +200,7 @@ export default function FixedDepositDetail() {
 
     setActualSaving(true);
     setActualFormError('');
+    setActualFormFutureImpact(null);
     try {
       if (editingPaymentId) {
         await updateFixedDepositInterestPayment(editingPaymentId, payload);
@@ -204,6 +210,7 @@ export default function FixedDepositDetail() {
       closeActualModal();
       loadData();
     } catch (err) {
+      setActualFormFutureImpact(futureImpactFromApiError(err));
       setActualFormError(err.message);
     } finally {
       setActualSaving(false);
@@ -583,6 +590,7 @@ export default function FixedDepositDetail() {
               onCancel={closeActualModal}
               submitting={actualSaving}
               error={actualFormError}
+              futureImpact={actualFormFutureImpact}
               currency={currency}
               bankAccountName={fd.bank_account_name}
               suggested={

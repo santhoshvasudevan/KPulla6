@@ -1290,9 +1290,11 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 | GET | `/api/v1/fixed-deposits/{id}/interest-payments` | **Done** — list payments for FD (user-scoped) |
 | POST | `/api/v1/fixed-deposits/{id}/interest-payments` | **Done** — `{ payment_date, gross_interest, tax_withheld?, comment? }`; atomically creates `FixedDepositInterestPayment` + `FD_INTEREST` CREDIT for **net**; optional `warning` for COMPOUNDED FD |
 | GET | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | **Done** |
-| PUT/PATCH | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | Update the credited date, gross interest, tax withheld, or note. Updates the selected payment and its linked bank movement atomically. Reversed payments and missing or reversed bank movements are rejected. |
+| PUT/PATCH | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | Update the credited date, gross interest, tax withheld, or note. Updates the selected payment and its linked bank movement atomically after validating the proposed dated Bank Cash running balance. Reversed payments and missing or reversed bank movements are rejected. |
 | DELETE | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | **405** — use the reversal endpoint to void an eligible payment. |
 | POST | `/api/v1/fixed-deposit-interest-payments/{payment_id}/reverse` | **Done** — `{ reversal_date?, reason }`; `FD_INTEREST_REVERSAL` DEBIT; `is_reversed=true` |
+
+**Interest correction Bank Cash conflict (409):** when reducing or re-dating a linked `FD_INTEREST` credit would make a later bank running balance negative, the endpoint returns the same structured future-impact payload as portfolio cash (`detail`, `currency`, `earliest_negative_date`, `lowest_balance`, `affected_entries` up to 10 bank movements from that date). Payment, linked credit, and stored bank balance are unchanged. Bank Cash writers share lock order bank account → interest payment → linked credit (`select_for_update`); withdrawals and corrections both lock the account before reading balances. Future-impact validation sweeps movement dates plus the validation start date.
 
 **Rejected:** interest payment on `CLOSED` FD (**400**). `ACTIVE` and `MATURED` allowed. Bank account taken from FD (not client-supplied).
 

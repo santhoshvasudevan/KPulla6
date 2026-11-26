@@ -6,6 +6,8 @@ import pytest
 from finance.bank_cash import (
     BankCashMovementPoint,
     bank_cash_balance,
+    bank_cash_balance_timeseries,
+    bank_cash_balances_on_event_dates,
     signed_movement_amount,
 )
 
@@ -24,6 +26,43 @@ def test_bank_cash_balance_as_of_date():
     assert bank_cash_balance(points) == Decimal("850")
     assert bank_cash_balance(points, as_of_date=date(2026, 1, 4)) == Decimal("1000")
     assert bank_cash_balance(points, as_of_date=date(2026, 1, 5)) == Decimal("800")
+
+
+def test_bank_cash_balance_timeseries_carries_forward():
+    points = [
+        BankCashMovementPoint(date(2026, 1, 1), "INR", Decimal("1000"), "CREDIT"),
+        BankCashMovementPoint(date(2026, 1, 3), "INR", Decimal("100"), "DEBIT"),
+    ]
+    series = bank_cash_balance_timeseries(points, date(2026, 1, 1), date(2026, 1, 4))
+    assert series == [
+        (date(2026, 1, 1), Decimal("1000")),
+        (date(2026, 1, 2), Decimal("1000")),
+        (date(2026, 1, 3), Decimal("900")),
+        (date(2026, 1, 4), Decimal("900")),
+    ]
+
+
+def test_bank_cash_balances_on_event_dates_matches_same_day_semantics():
+    points = [
+        BankCashMovementPoint(date(2026, 1, 1), "INR", Decimal("1000"), "CREDIT"),
+        BankCashMovementPoint(date(2026, 1, 3), "INR", Decimal("40"), "DEBIT"),
+        BankCashMovementPoint(date(2026, 1, 3), "INR", Decimal("60"), "DEBIT"),
+    ]
+    series = bank_cash_balances_on_event_dates(points, from_date=date(2026, 1, 2))
+    assert series == [
+        (date(2026, 1, 2), Decimal("1000")),
+        (date(2026, 1, 3), Decimal("900")),
+    ]
+
+
+def test_bank_cash_balances_on_event_dates_handles_calendar_boundaries():
+    points = [
+        BankCashMovementPoint(date.min, "INR", Decimal("10"), "CREDIT"),
+        BankCashMovementPoint(date.max, "INR", Decimal("1"), "DEBIT"),
+    ]
+    series = bank_cash_balances_on_event_dates(points, from_date=date.min)
+    assert series[0] == (date.min, Decimal("10"))
+    assert series[-1] == (date.max, Decimal("9"))
 
 
 def test_bank_funding_balance_excludes_reversed_opening():

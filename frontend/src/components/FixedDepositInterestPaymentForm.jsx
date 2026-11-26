@@ -1,5 +1,10 @@
 import { useMemo } from 'react';
+import CashFutureImpactDisplay from './CashFutureImpactDisplay';
+import './CashFutureImpactDisplay.css';
 import { Button, WarningBanner } from './ui';
+
+const BANK_FUTURE_IMPACT_HELPER =
+  'Add another bank deposit, edit later withdrawals, or reverse the conflicting movement before saving this interest correction.';
 
 function parseMoney(value) {
   const n = parseFloat(value);
@@ -30,6 +35,7 @@ export default function FixedDepositInterestPaymentForm({
   onCancel,
   submitting = false,
   error = '',
+  futureImpact = null,
   currency = 'INR',
   bankAccountName = '',
   title = 'Record interest payment',
@@ -88,7 +94,11 @@ export default function FixedDepositInterestPaymentForm({
           Unscheduled payout — enter the actual credit from the bank statement.
         </p>
       ) : null}
-      {error ? <WarningBanner severity="error" message={error} /> : null}
+      {futureImpact ? (
+        <CashFutureImpactDisplay impact={futureImpact} helperText={BANK_FUTURE_IMPACT_HELPER} />
+      ) : error ? (
+        <WarningBanner severity="error" message={error} />
+      ) : null}
       <div className="form-group">
         <label htmlFor="fd-interest-payment-date">Actual credited date</label>
         <input

@@ -96,7 +96,7 @@ Updates metadata; after opening, principal/bank/currency/portfolio are locked. I
 | `DELETE` | `/fixed-deposits/{id}` | Soft deactivate (legacy / no-ledger) |
 | `POST` | `/fixed-deposits/{id}/cancel` | Reverse opening debit |
 | `POST` | `/fixed-deposits/{id}/interest-payments` | Record interest (`client_request_id` optional for retry safety, #42) |
-| `PATCH` | `/fixed-deposit-interest-payments/{payment_id}` | Correct the selected interest payment and its linked bank credit |
+| `PATCH` | `/fixed-deposit-interest-payments/{payment_id}` | Correct the selected interest payment and its linked bank credit; **409** structured future-impact when the proposed dated Bank Cash ledger would go negative |
 | `POST` | `/fixed-deposit-interest-payments/{payment_id}/reverse` | Reverse an eligible payment and retain it in the audit history |
 | `POST` | `/fixed-deposits/{id}/settle` | Maturity settlement (`final_interest_pending` / `pending_expected_date` optional, #45) |
 | `POST` | `/fixed-deposits/{id}/renew` | Renewal (`final_interest_pending` / `pending_expected_date` optional, #45) |

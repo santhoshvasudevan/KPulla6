@@ -33,12 +33,14 @@ from debt.bank_ledger_services import (
     CashMovementNotFoundError,
     CashMovementValidationError,
     DuplicateHistoricalSeedError,
+    FutureBankCashImpactError,
     InsufficientBankBalanceError,
     OpeningBalanceAlreadySeededError,
     bank_account_has_ledger,
     compute_bank_account_balance,
     compute_bank_funding_balance,
     create_manual_cash_movement,
+    future_bank_cash_impact_payload,
     get_cash_movement,
     latest_ledger_movement_date,
     list_cash_movements,
@@ -345,6 +347,11 @@ class FixedDepositInterestPaymentDetailView(APIView):
             )
         except InterestPaymentNotFoundError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except FutureBankCashImpactError as exc:
+            return Response(
+                future_bank_cash_impact_payload(exc.impact),
+                status=status.HTTP_409_CONFLICT,
+            )
         except InterestPaymentValidationError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(FixedDepositInterestPaymentSerializer(payment).data)
