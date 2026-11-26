@@ -14,6 +14,7 @@ from django.db.models import QuerySet
 from debt.bank_ledger_services import (
     assert_proposed_bank_ledger_non_negative,
     create_fd_interest_cash_movement,
+    lock_bank_account_for_update,
     movement_has_been_reversed,
     refresh_bank_account_balance,
 )
@@ -165,7 +166,6 @@ def _interest_payment_queryset(user: AbstractBaseUser, *, for_update: bool = Fal
         "fixed_deposit",
     )
     if for_update:
-        # Lock order for edit/reverse: payment row first, then linked credit.
         qs = qs.select_for_update()
     return qs
 
@@ -176,13 +176,37 @@ def get_fixed_deposit_interest_payment(
     *,
     for_update: bool = False,
 ) -> FixedDepositInterestPayment:
-    payment = _interest_payment_queryset(user, for_update=for_update).filter(pk=payment_id).first()
-    if not payment:
+    """Load an interest payment.
+
+    When ``for_update`` is true, locks follow the Bank Cash writer order:
+    bank account → payment → linked credit, then re-reads eligibility fields.
+    """
+    if not for_update:
+        payment = _interest_payment_queryset(user).filter(pk=payment_id).first()
+        if not payment:
+            raise InterestPaymentNotFoundError(
+                f"Fixed deposit interest payment not found: {payment_id}"
+            )
+        return payment
+
+    # Resolve bank_account_id without locking payment first (account cannot change).
+    seed = (
+        FixedDepositInterestPayment.objects.filter(user=user, pk=payment_id)
+        .only("id", "bank_account_id", "cash_movement_id")
+        .first()
+    )
+    if seed is None:
         raise InterestPaymentNotFoundError(
             f"Fixed deposit interest payment not found: {payment_id}"
         )
-    if for_update and payment.cash_movement_id is not None:
-        # Lock order continues with the linked credit, then re-read both rows.
+
+    lock_bank_account_for_update(user, seed.bank_account_id)
+    payment = _interest_payment_queryset(user, for_update=True).filter(pk=payment_id).first()
+    if payment is None:
+        raise InterestPaymentNotFoundError(
+            f"Fixed deposit interest payment not found: {payment_id}"
+        )
+    if payment.cash_movement_id is not None:
         CashMovement.objects.select_for_update().filter(pk=payment.cash_movement_id).get()
         payment = (
             FixedDepositInterestPayment.objects.select_related(
@@ -205,6 +229,7 @@ def update_fixed_deposit_interest_payment(
     comment: str | None = None,
 ) -> FixedDepositInterestPayment:
     payment = get_fixed_deposit_interest_payment(user, payment_id, for_update=True)
+    # Re-check eligibility under lock after bank account + payment + credit locks.
     if payment.is_reversed:
         raise InterestPaymentValidationError(
             "Reversed interest payments cannot be edited. Record a new payment instead."

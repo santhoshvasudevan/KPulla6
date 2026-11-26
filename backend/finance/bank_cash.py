@@ -71,6 +71,39 @@ def bank_cash_balance_timeseries(
     return series.get(currency, [])
 
 
+def bank_cash_balances_on_event_dates(
+    movements: Iterable[BankCashMovementPoint],
+    *,
+    from_date: date,
+) -> list[tuple[date, Decimal]]:
+    """End-of-day balances on ``from_date`` and each movement date on/after it.
+
+    Same-day movements are applied together before the day's balance is recorded,
+    matching dense daily timeseries semantics without scanning every calendar day.
+    Safe for endpoint boundary dates (e.g. year 0001 / 9999).
+    """
+    points = list(movements)
+    if not points:
+        return []
+
+    by_date: dict[date, Decimal] = {}
+    opening = _ZERO
+    for movement in points:
+        delta = signed_movement_amount(movement.amount, movement.direction)
+        if movement.movement_date < from_date:
+            opening += delta
+            continue
+        by_date[movement.movement_date] = by_date.get(movement.movement_date, _ZERO) + delta
+
+    check_dates = sorted({from_date, *by_date.keys()})
+    running = opening
+    series: list[tuple[date, Decimal]] = []
+    for day in check_dates:
+        running += by_date.get(day, _ZERO)
+        series.append((day, running))
+    return series
+
+
 def bank_cash_balance(
     movements: Iterable[BankCashMovementPoint],
     *,

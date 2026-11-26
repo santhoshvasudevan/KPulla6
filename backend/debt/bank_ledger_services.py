@@ -26,7 +26,7 @@ from finance.bank_cash import (
     BankCashMovementPoint,
     BankFundingMovementPoint,
     bank_cash_balance,
-    bank_cash_balance_timeseries,
+    bank_cash_balances_on_event_dates,
     bank_funding_balance,
     signed_movement_amount,
 )
@@ -37,6 +37,12 @@ from debt.services import (
     BankAccountValidationError,
     get_bank_account,
 )
+
+# Bank Cash write lock order (all ledger writers):
+# 1. BankAccount.select_for_update()
+# 2. FixedDepositInterestPayment (interest edit/reverse only)
+# 3. linked CashMovement credit (interest edit/reverse only)
+# Then re-read eligibility / balances and mutate.
 
 FUTURE_BANK_CASH_IMPACT_DETAIL = (
     "This cash change would make future cash balance negative."
@@ -253,18 +259,13 @@ def analyze_future_bank_cash_impact(
     if not points:
         return None
 
-    dates = [point.movement_date for point in points]
-    start = min(from_date, min(dates))
-    end = max(dates)
-    day_balances = bank_cash_balance_timeseries(points, start, end)
+    day_balances = bank_cash_balances_on_event_dates(points, from_date=from_date)
     if not day_balances:
         return None
 
     earliest_negative: date | None = None
     lowest = Decimal("0")
     for day, balance in day_balances:
-        if day < from_date:
-            continue
         if balance < lowest:
             lowest = balance
         if balance < 0 and earliest_negative is None:
@@ -283,6 +284,23 @@ def analyze_future_bank_cash_impact(
             exclude_movement_ids=exclude_movement_ids,
         ),
     )
+
+
+def lock_bank_account_for_update(
+    user: AbstractBaseUser,
+    bank_account_id: int,
+) -> BankAccount:
+    """Acquire the bank-account row lock used by all Bank Cash writers."""
+    # Do not select_related nullable portfolio: PostgreSQL rejects
+    # FOR UPDATE on the nullable side of an outer join.
+    account = (
+        BankAccount.objects.select_for_update()
+        .filter(user=user, pk=bank_account_id)
+        .first()
+    )
+    if account is None:
+        raise BankAccountNotFoundError(f"Bank account not found: {bank_account_id}")
+    return account
 
 
 def assert_proposed_bank_ledger_non_negative(
@@ -619,7 +637,8 @@ def create_cash_movement(
     if movement_type == CashMovementType.OPENING_BALANCE and not is_reversal:
         pass  # validated after account load
 
-    account = get_bank_account(user, bank_account_id)
+    # Lock order step 1: bank account before any balance read or write.
+    account = lock_bank_account_for_update(user, bank_account_id)
     if not account.is_active:
         raise CashMovementValidationError("Bank account must be active.")
 

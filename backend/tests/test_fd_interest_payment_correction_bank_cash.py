@@ -204,3 +204,34 @@ def test_valid_interest_correction_updates_payment_credit_and_balance(
     assert other.payment_date == date(2024, 3, 1)
     assert other.comment == "Unrelated payment"
     assert CashMovement.objects.filter(id=other.cash_movement_id, amount=Decimal("500")).exists()
+
+
+@pytest.mark.django_db
+def test_interest_correction_accepts_minimum_and_maximum_payment_dates(
+    api_client, seeded, test_user
+):
+    """Boundary dates must validate without HTTP 500 (event-date sweep, not dense scan)."""
+    portfolio = ensure_default_portfolio(test_user)
+    bank = create_test_bank_account(user=test_user, portfolio=portfolio, account_number="BOUND-64")
+    fund_bank_account(test_user, bank, "200000", movement_date=date(2023, 12, 31))
+    fd = create_fixed_deposit(test_user, **_fd_payload(portfolio.id, bank.id))
+    payment = create_fixed_deposit_interest_payment(
+        test_user,
+        fd.id,
+        payment_date=date(2024, 4, 1),
+        gross_interest=Decimal("100"),
+        tax_withheld=Decimal("0"),
+    ).payment
+
+    for boundary in (date.min, date.max):
+        response = api_client.patch(
+            f"/api/v1/fixed-deposit-interest-payments/{payment.id}",
+            {"payment_date": boundary.isoformat()},
+            format="json",
+        )
+        assert response.status_code == 200, response.content
+        assert response.json()["payment_date"] == boundary.isoformat()
+        payment.refresh_from_db()
+        assert payment.payment_date == boundary
+        payment.cash_movement.refresh_from_db()
+        assert payment.cash_movement.movement_date == boundary

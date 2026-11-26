@@ -4,9 +4,9 @@
 
 - `PUT`/`PATCH /fixed-deposit-interest-payments/{id}` now validates the proposed dated Bank Cash running balance (exclude original `FD_INTEREST` credit, include the corrected credit) from the earlier of the old/new dates through the last movement. Incompatible reductions or date moves return **409** with `earliest_negative_date`, `lowest_balance`, and `affected_entries`; payment, linked credit, and stored bank balance stay unchanged.
 - Valid corrections still update the payment and linked credit atomically and refresh `BankAccount.current_balance`.
-- Edit and reverse serialize on the same payment (lock payment row, then linked credit; re-read eligibility under lock).
+- Bank Cash writers share one lock order: bank account → interest payment → linked credit. Withdrawals and interest corrections both lock the bank account before reading balances. Future-impact validation sweeps movement dates (plus the validation start date) instead of every calendar day, so endpoint boundary dates do not HTTP 500.
 - Interest edit UI keeps the entered correction and surfaces the structured future-impact rejection.
-- Tests: SQLite API regressions for reduce/move/valid correction; optional PostgreSQL concurrency file for overlapping edit/reverse on a disposable database.
+- Tests: SQLite API regressions for reduce/move/valid/boundary dates; disposable PostgreSQL contention proofs wait for an ungranted lock before release (edit↔reverse both orders, correction vs withdrawal).
 
 ## 2026-11-26 — Unavailable portfolio valuation release correction (#55 / #62)
 
