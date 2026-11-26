@@ -125,7 +125,7 @@ Approved decisions (FD-ACC-0.1): see accounting doc § Approved product decision
 | **Indian FY filter** | April–March; `financial_year=2025-26` or `fy_start`/`fy_end` |
 | **Maturity interest** | Confirmed settlement / renewal interest (and confirmed delayed payouts) counted once on the originating term; pending estimates excluded from actuals |
 | **Paid vs reinvested** | Detail KPIs and interest report show `interest_cash_amount` / `reinvested_interest_amount` (Unavailable when null; distinct from confirmed zero) |
-| **Edit actual** | `PATCH /fixed-deposit-interest-payments/{id}` updates payment + linked cash movement |
+| **Edit actual** | Open **Interest payments** on a current FD and select **Edit payment** on the intended row. FD Detail also offers **Edit actual** for matched schedule rows. Both use `PATCH /fixed-deposit-interest-payments/{id}` to update the payment and linked cash movement. |
 | **Estimates** | Not settlement, not tax advice, not auto interest accrual |
 
 ### Portfolio value rules (MVP; extended by accounting design)
@@ -200,6 +200,8 @@ Renewal does **not** clear `is_active` on the predecessor. Cancelled / soft-deac
 
 **Blocked:** `DELETE` on ledger-backed FD with unreversed `FD_OPENING` → **409** (“Use Cancel FD”). Cancel rejected when interest payments, settlement, or renewal exist.
 
+To void a duplicate interest credit, select **Reverse interest** on the extra row in **Interest payments**. The reversed record remains visible with status **Reversed** and is excluded from actual interest totals and the interest report. The History list presents recorded payments for review.
+
 | **Reverse interest** | `POST .../fixed-deposit-interest-payments/{id}/reverse` | Mistaken interest payment | `FD_INTEREST_REVERSAL` DEBIT | Bank cash reduced; payment `is_reversed`; not allowed after settlement |
 | **Reverse cash movement** | `POST .../cash-movements/{id}/reverse` | Mistaken manual deposit/withdrawal/adjustment/opening seed | `REVERSAL` opposite direction | Original marked reversed; bank balance updated |
 | **Repair (one-time)** | `manage.py repair_deactivated_fd_openings` | FD deactivated before FD-ACC-10A with stuck `FD_OPENING` | `FD_OPENING_REVERSAL` CREDIT | Not a user API; dry-run by default |
@@ -217,7 +219,7 @@ Renewal does **not** clear `is_active` on the predecessor. Cancelled / soft-deac
 
 **Excludes:** reversed interest payments; zero-interest settlement/renewal rows; `CANCELLED` FD rows; renewal-linked settlement rows (renewal group used instead); unconfirmed pending payout estimates. Confirmed pending payouts appear once as `PENDING_PAYOUT` rows on the originating term (#45).
 
-**UI (FD-TAX-1A / FD-TAX-2):** Fixed Deposits → **Interest & Tax** section — default date range = current calendar year; **Reset filters**; `group_by` includes **Bank account**; KPI cards (gross/tax/net/row count); grouped totals with readable labels; exclusion/disclaimer notes; FX and mixed-currency warnings near totals; improved empty state; **Export CSV** button (current filters; blob download).
+**UI (FD-TAX-1A / FD-TAX-2):** Fixed Deposits → **Interest & Tax** section — default date range = current calendar year; **Reset filters**; `group_by` includes **Bank account**; KPI cards (gross/tax/net/row count); grouped totals with readable labels; exclusion/disclaimer notes; FX and mixed-currency warnings near totals; improved empty state; **Export CSV** button (current filters; blob download). Recording, editing, or reversing an interest payment refreshes the report while keeping the active portfolio and filters; only the latest fetch may update rows, totals, warnings, errors, or loading state (#63).
 
 **CSV columns:** Date, Source Type, Source Label, Portfolio, Bank / Institution, Bank Account, FD Account, Currency, Gross Interest, Tax Withheld, Net Interest, Display Currency, Gross/Tax/Net Interest Display, Comment. Filename includes date range (e.g. `fd-interest-tax-2026-01-01-to-2026-12-31.csv`). Warnings remain UI-only; CSV is rows-only (header when empty).
 

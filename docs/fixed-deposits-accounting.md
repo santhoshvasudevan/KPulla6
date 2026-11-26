@@ -106,7 +106,7 @@ Public `POST .../cancel` rules unchanged.
 
 ---
 
-All bank ledger and FD accounting corrections use **linked reversal rows** (`is_reversal=true`, `reverses_id`). Original movements and interest payments remain visible for audit. PUT/PATCH/DELETE on movements and interest payments remain **405**.
+To void an erroneous bank movement or FD interest payment, use a **linked reversal row** (`is_reversal=true`, `reverses_id`). Original movements and payments remain visible for audit. The interest-payment `PUT` and `PATCH` endpoints also support correcting a credited date, amount, or note by updating the payment and its linked credit together. See [FD interest payment API](./api-design.md#fd-interest-payments-fd-acc-4) for supported methods.
 
 ---
 

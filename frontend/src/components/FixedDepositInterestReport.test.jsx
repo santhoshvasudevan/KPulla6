@@ -1,12 +1,13 @@
-import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { act, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { useEffect, useState } from 'react';
 import FixedDepositInterestReport, {
   currentYearStart,
   defaultReportFilters,
   todayIso,
 } from './FixedDepositInterestReport';
 import * as api from '../api';
-import { PortfolioProvider } from '../portfolioContext';
+import { PortfolioProvider, usePortfolio } from '../portfolioContext';
 
 vi.mock('../api', () => ({
   fetchFixedDepositInterestReport: vi.fn(),
@@ -355,10 +356,11 @@ describe('FixedDepositInterestReport', () => {
     // Legacy unknown split → Unavailable (distinct from full-rollover confirmed ₹0)
     expect(screen.getByTestId('fd-split-unavailable-interest_cash_amount')).toBeInTheDocument();
     expect(screen.getByTestId('fd-split-unavailable-reinvested_interest_amount')).toBeInTheDocument();
-    const table = screen.getByRole('table');
-    expect(within(table).getAllByText('Unavailable').length).toBe(2);
-    // Full rollover row keeps numeric zero bank payout (not Unavailable)
-    expect(within(table).getByText('FD-FULL')).toBeInTheDocument();
+    const legacyRow = screen.getByText('FD-LEGACY').closest('tr');
+    const fullRolloverRow = screen.getByText('FD-FULL').closest('tr');
+    expect(within(legacyRow).getAllByText('Unavailable')).toHaveLength(2);
+    expect(within(fullRolloverRow).getByText('₹0.00')).toBeInTheDocument();
+    expect(within(fullRolloverRow).queryByText('Unavailable')).not.toBeInTheDocument();
   });
 
   it('shows rollover splits in deposit currency when report totals are converted', async () => {
@@ -367,6 +369,10 @@ describe('FixedDepositInterestReport', () => {
         ...sampleRow,
         source_type: 'RENEWAL',
         deposit_account_number: 'FD-INR-EUR',
+        gross_interest: 5000,
+        gross_interest_display: 50,
+        tax_withheld: 500,
+        tax_withheld_display: 5,
         net_interest: 4500,
         net_interest_display: 45,
         display_currency: 'EUR',
@@ -422,5 +428,318 @@ describe('FixedDepositInterestReport', () => {
     await waitFor(() => expect(api.fetchFixedDepositInterestReport).toHaveBeenCalled());
     fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
     expect(await screen.findByText('Export failed')).toBeInTheDocument();
+  });
+
+  it('keeps corrected totals when an older refresh succeeds after the latest', async () => {
+    let resolveStale;
+    let resolveFresh;
+    api.fetchFixedDepositInterestReport
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveStale = () =>
+              resolve({
+                rows: [{ ...sampleRow, net_interest: 900 }],
+                totals: {
+                  gross_interest: 1000,
+                  tax_withheld: 100,
+                  net_interest: 900,
+                  currency: 'INR',
+                  display_currency: 'INR',
+                  row_count: 1,
+                  fx_status: 'ok',
+                },
+                grouped_totals: [],
+                warnings: ['stale warning'],
+              });
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFresh = () =>
+              resolve({
+                rows: [{ ...sampleRow, net_interest: 1080, gross_interest: 1200, tax_withheld: 120 }],
+                totals: {
+                  gross_interest: 1200,
+                  tax_withheld: 120,
+                  net_interest: 1080,
+                  currency: 'INR',
+                  display_currency: 'INR',
+                  row_count: 1,
+                  fx_status: 'ok',
+                },
+                grouped_totals: [],
+                warnings: ['corrected warning'],
+              });
+          })
+      );
+
+    function ReportWithRevisionBump() {
+      const [revision, setRevision] = useState(0);
+      useEffect(() => {
+        setRevision(1);
+      }, []);
+      return <FixedDepositInterestReport refreshRevision={revision} />;
+    }
+
+    render(
+      <PortfolioProvider disableFetch initialDisplayCurrency="INR">
+        <ReportWithRevisionBump />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => expect(api.fetchFixedDepositInterestReport).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      resolveFresh();
+    });
+    const totals = await screen.findByLabelText('Report totals');
+    expect(
+      within(totals).getByText('Net interest').closest('.ui-metric-card')
+    ).toHaveTextContent('₹1,080.00');
+    expect(await screen.findByText('corrected warning')).toBeInTheDocument();
+
+    await act(async () => {
+      resolveStale();
+    });
+    expect(
+      within(screen.getByLabelText('Report totals')).getByText('Net interest').closest('.ui-metric-card')
+    ).toHaveTextContent('₹1,080.00');
+    expect(screen.getByText('corrected warning')).toBeInTheDocument();
+    expect(screen.queryByText('stale warning')).not.toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText('Report totals')).getByText('Net interest').closest('.ui-metric-card')
+    ).not.toHaveTextContent('₹900.00');
+  });
+
+  it('ignores an older failure and keeps latest loading until the current request settles', async () => {
+    let rejectStale;
+    let resolveFresh;
+    api.fetchFixedDepositInterestReport
+      .mockImplementationOnce(
+        () =>
+          new Promise((_, reject) => {
+            rejectStale = () => reject(new Error('stale report failure'));
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFresh = () =>
+              resolve({
+                rows: [sampleRow],
+                totals: {
+                  gross_interest: 1000,
+                  tax_withheld: 100,
+                  net_interest: 900,
+                  currency: 'INR',
+                  display_currency: 'INR',
+                  row_count: 1,
+                  fx_status: 'ok',
+                },
+                grouped_totals: [],
+                warnings: [],
+              });
+          })
+      );
+
+    function ReportWithRevisionBump() {
+      const [revision, setRevision] = useState(0);
+      useEffect(() => {
+        setRevision(1);
+      }, []);
+      return <FixedDepositInterestReport refreshRevision={revision} />;
+    }
+
+    render(
+      <PortfolioProvider disableFetch initialDisplayCurrency="INR">
+        <ReportWithRevisionBump />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => expect(api.fetchFixedDepositInterestReport).toHaveBeenCalledTimes(2));
+    expect(screen.getByText(/loading interest report/i)).toBeInTheDocument();
+
+    await act(async () => {
+      rejectStale();
+    });
+    expect(screen.queryByText('stale report failure')).not.toBeInTheDocument();
+    expect(screen.getByText(/loading interest report/i)).toBeInTheDocument();
+
+    await act(async () => {
+      resolveFresh();
+    });
+    expect(await screen.findByLabelText('Report totals')).toBeInTheDocument();
+    expect(screen.queryByText('stale report failure')).not.toBeInTheDocument();
+    expect(screen.queryByText(/loading interest report/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps the latest filter selection when an older filter request resolves late', async () => {
+    let resolveNone;
+    let resolveYear;
+    api.fetchFixedDepositInterestReport.mockImplementation((params) => {
+      if (params.group_by === 'year') {
+        return new Promise((resolve) => {
+          resolveYear = () =>
+            resolve({
+              rows: [{ ...sampleRow, net_interest: 500 }],
+              totals: {
+                gross_interest: 500,
+                tax_withheld: 0,
+                net_interest: 500,
+                currency: 'INR',
+                display_currency: 'INR',
+                row_count: 1,
+                fx_status: 'ok',
+              },
+              grouped_totals: [
+                {
+                  group_key: '2024',
+                  group_label: '2024',
+                  row_count: 1,
+                  gross_interest: 500,
+                  tax_withheld: 0,
+                  net_interest: 500,
+                },
+              ],
+              warnings: [],
+            });
+        });
+      }
+      return new Promise((resolve) => {
+        resolveNone = () =>
+          resolve({
+            rows: [{ ...sampleRow, net_interest: 900 }],
+            totals: {
+              gross_interest: 1000,
+              tax_withheld: 100,
+              net_interest: 900,
+              currency: 'INR',
+              display_currency: 'INR',
+              row_count: 1,
+              fx_status: 'ok',
+            },
+            grouped_totals: [],
+            warnings: [],
+          });
+      });
+    });
+
+    renderReport();
+    await waitFor(() => expect(api.fetchFixedDepositInterestReport).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByLabelText('Report grouping'), {
+      target: { value: 'year' },
+    });
+    await waitFor(() => expect(api.fetchFixedDepositInterestReport).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText('Report grouping')).toHaveValue('year');
+
+    await act(async () => {
+      resolveYear();
+    });
+    expect(await screen.findByText('Grouped totals')).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText('Report totals')).getByText('Net interest').closest('.ui-metric-card')
+    ).toHaveTextContent('₹500.00');
+
+    await act(async () => {
+      resolveNone();
+    });
+    expect(screen.getByLabelText('Report grouping')).toHaveValue('year');
+    expect(screen.getByText('Grouped totals')).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText('Report totals')).getByText('Net interest').closest('.ui-metric-card')
+    ).toHaveTextContent('₹500.00');
+    expect(
+      within(screen.getByLabelText('Report totals')).getByText('Net interest').closest('.ui-metric-card')
+    ).not.toHaveTextContent('₹900.00');
+  });
+
+  it('keeps the latest portfolio selection when an older portfolio request resolves late', async () => {
+    let resolveAll;
+    let resolveOne;
+    api.fetchFixedDepositInterestReport.mockImplementation((params) => {
+      if (params.portfolio_id === 7) {
+        return new Promise((resolve) => {
+          resolveOne = () =>
+            resolve({
+              rows: [{ ...sampleRow, portfolio_name: 'Only Seven', net_interest: 250 }],
+              totals: {
+                gross_interest: 250,
+                tax_withheld: 0,
+                net_interest: 250,
+                currency: 'INR',
+                display_currency: 'INR',
+                row_count: 1,
+                fx_status: 'ok',
+              },
+              grouped_totals: [],
+              warnings: [],
+            });
+        });
+      }
+      return new Promise((resolve) => {
+        resolveAll = () =>
+          resolve({
+            rows: [{ ...sampleRow, net_interest: 900 }],
+            totals: {
+              gross_interest: 1000,
+              tax_withheld: 100,
+              net_interest: 900,
+              currency: 'INR',
+              display_currency: 'INR',
+              row_count: 1,
+              fx_status: 'ok',
+            },
+            grouped_totals: [],
+            warnings: [],
+          });
+      });
+    });
+
+    function FlipPortfolioAfterMount() {
+      const { selectPortfolio } = usePortfolio();
+      useEffect(() => {
+        void selectPortfolio(7, 'Only Seven', {
+          portfolio: { id: 7, name: 'Only Seven', base_currency: 'INR' },
+        });
+      }, [selectPortfolio]);
+      return <FixedDepositInterestReport />;
+    }
+
+    render(
+      <PortfolioProvider
+        disableFetch
+        initialDisplayCurrency="INR"
+        initialPortfolios={[{ id: 7, name: 'Only Seven', base_currency: 'INR', is_active: true }]}
+      >
+        <FlipPortfolioAfterMount />
+      </PortfolioProvider>
+    );
+
+    await waitFor(() => expect(api.fetchFixedDepositInterestReport).toHaveBeenCalledTimes(2));
+    expect(api.fetchFixedDepositInterestReport.mock.calls.some(
+      ([params]) => params.portfolio_id === 7
+    )).toBe(true);
+
+    await act(async () => {
+      resolveOne();
+    });
+    const totalsAfterFresh = await screen.findByLabelText('Report totals');
+    expect(
+      within(totalsAfterFresh).getByText('Net interest').closest('.ui-metric-card')
+    ).toHaveTextContent('₹250.00');
+    expect(screen.getByText('Only Seven')).toBeInTheDocument();
+
+    await act(async () => {
+      resolveAll();
+    });
+    const totalsAfterStale = screen.getByLabelText('Report totals');
+    expect(
+      within(totalsAfterStale).getByText('Net interest').closest('.ui-metric-card')
+    ).toHaveTextContent('₹250.00');
+    expect(screen.getByText('Only Seven')).toBeInTheDocument();
+    expect(screen.queryByText(/₹900\.00/)).not.toBeInTheDocument();
   });
 });

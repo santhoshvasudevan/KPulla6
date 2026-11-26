@@ -20,6 +20,7 @@ vi.mock('../api', () => ({
   cancelFixedDeposit: vi.fn(),
   fetchFixedDepositInterestPayments: vi.fn(),
   createFixedDepositInterestPayment: vi.fn(),
+  updateFixedDepositInterestPayment: vi.fn(),
   reverseFixedDepositInterestPayment: vi.fn(),
   markFixedDepositMatured: vi.fn(),
   renewFixedDeposit: vi.fn(),
@@ -205,6 +206,10 @@ describe('FixedDeposits page', () => {
       if (params?.lifecycle_view === 'history') return [historyFd];
       return [{ ...sampleFd, lifecycle_view: 'current', is_renewed: false, has_renewal: false }];
     });
+    api.fetchFixedDepositInterestPayments.mockResolvedValueOnce([{
+      id: 40, cash_movement_id: 100, payment_date: '2026-04-14', gross_interest: 200,
+      tax_withheld: 20, net_interest: 180, currency: 'INR', comment: 'Completed term payment',
+    }]);
 
     renderPage();
     await waitFor(() => {
@@ -228,6 +233,9 @@ describe('FixedDeposits page', () => {
     expect(api.fetchFixedDeposits).toHaveBeenCalledWith(
       expect.objectContaining({ lifecycle_view: 'history' })
     );
+    fireEvent.click(screen.getByRole('button', { name: /interest payments/i }));
+    const paymentRow = (await screen.findByText('Completed term payment')).closest('tr');
+    expect(within(paymentRow).queryByRole('button')).not.toBeInTheDocument();
   });
 
   it('renders overview KPI cards and section navigation', async () => {
@@ -723,6 +731,7 @@ describe('FixedDeposits page', () => {
     });
     renderPage();
     await waitFor(() => screen.getByRole('button', { name: /record interest/i }));
+    const reportCalls = api.fetchFixedDepositInterestReport.mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: /record interest/i }));
     fireEvent.change(screen.getByLabelText(/actual credited date/i), { target: { value: '2024-04-01' } });
     fireEvent.change(screen.getByLabelText(/gross interest/i), { target: { value: '1000' } });
@@ -740,6 +749,7 @@ describe('FixedDeposits page', () => {
         })
       );
       expect(screen.getByText(/interest payment recorded/i)).toBeInTheDocument();
+      expect(api.fetchFixedDepositInterestReport.mock.calls.length).toBeGreaterThan(reportCalls);
     });
   });
 
@@ -775,6 +785,50 @@ describe('FixedDeposits page', () => {
     });
   });
 
+  it('edits the selected same-date payment and refreshes both payments and report', async () => {
+    const first = {
+      id: 41, cash_movement_id: 101, payment_date: '2026-04-14', gross_interest: 200,
+      tax_withheld: 20, net_interest: 180, currency: 'INR', comment: 'Keep this payment',
+    };
+    const second = {
+      ...first, id: 42, cash_movement_id: 102, comment: 'Correct this payment',
+    };
+    const reversed = { ...first, id: 43, is_reversed: true, comment: 'Reversed duplicate' };
+    api.fetchFixedDepositInterestPayments
+      .mockResolvedValueOnce([first, second, reversed])
+      .mockResolvedValueOnce([first, { ...second, gross_interest: 250, net_interest: 230, comment: '' }, reversed]);
+    api.updateFixedDepositInterestPayment.mockResolvedValueOnce({ id: 42 });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /interest payments/i }));
+    const firstRow = (await screen.findByText(first.comment)).closest('tr');
+    const secondRow = screen.getByText(second.comment).closest('tr');
+    const reversedRow = screen.getByText(reversed.comment).closest('tr');
+    expect(within(firstRow).getByRole('button', { name: 'Edit payment' })).toBeInTheDocument();
+    expect(within(reversedRow).queryByRole('button')).not.toBeInTheDocument();
+    const reportCalls = api.fetchFixedDepositInterestReport.mock.calls.length;
+
+    fireEvent.click(within(secondRow).getByRole('button', { name: 'Edit payment' }));
+    const dialog = screen.getByRole('dialog', { name: 'Edit interest payment' });
+    expect(within(dialog).getByLabelText('Actual credited date')).toHaveValue('2026-04-14');
+    expect(within(dialog).getByLabelText('Gross interest')).toHaveValue(200);
+    fireEvent.change(within(dialog).getByLabelText('Gross interest'), { target: { value: '250' } });
+    fireEvent.change(within(dialog).getByLabelText('Note'), { target: { value: '' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+
+    expect(await screen.findByText('Interest payment updated.')).toBeInTheDocument();
+    expect(api.updateFixedDepositInterestPayment).toHaveBeenCalledTimes(1);
+    expect(api.updateFixedDepositInterestPayment).toHaveBeenCalledWith(42, {
+      payment_date: '2026-04-14', gross_interest: '250', tax_withheld: '20', comment: '',
+    });
+    expect(api.createFixedDepositInterestPayment).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.getByText(first.comment)).toBeInTheDocument();
+      expect(screen.queryByText(second.comment)).not.toBeInTheDocument();
+      expect(api.fetchFixedDepositInterestReport.mock.calls.length).toBeGreaterThan(reportCalls);
+    });
+  });
+
   it('reverses interest payment from expanded payments table', async () => {
     api.fetchFixedDepositInterestPayments.mockResolvedValueOnce([
       {
@@ -793,6 +847,7 @@ describe('FixedDeposits page', () => {
     });
     renderPage();
     await waitFor(() => screen.getByRole('button', { name: /interest payments/i }));
+    const reportCalls = api.fetchFixedDepositInterestReport.mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: /interest payments/i }));
 
     await waitFor(() => screen.getByRole('button', { name: /reverse interest/i }));
@@ -810,6 +865,7 @@ describe('FixedDeposits page', () => {
         reason: 'Wrong quarter',
       });
       expect(screen.getByText(/interest payment reversed/i)).toBeInTheDocument();
+      expect(api.fetchFixedDepositInterestReport.mock.calls.length).toBeGreaterThan(reportCalls);
     });
   });
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   CurrencyValue,
@@ -73,7 +73,7 @@ function emptyReport() {
   };
 }
 
-export default function FixedDepositInterestReport() {
+export default function FixedDepositInterestReport({ refreshRevision = 0 }) {
   const defaults = defaultReportFilters();
   const { apiQuery, selectedDisplayCurrency } = usePortfolio();
   const [startDate, setStartDate] = useState(defaults.startDate);
@@ -84,6 +84,7 @@ export default function FixedDepositInterestReport() {
   const [error, setError] = useState('');
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
+  const requestIdRef = useRef(0);
 
   const displayCurrency = useMemo(
     () => selectedDisplayCurrency || 'EUR',
@@ -105,10 +106,12 @@ export default function FixedDepositInterestReport() {
   );
 
   const loadReport = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     setError('');
     try {
       const data = await fetchFixedDepositInterestReport(reportQueryParams);
+      if (requestId !== requestIdRef.current) return;
       setReport({
         rows: Array.isArray(data?.rows) ? data.rows : [],
         totals: data?.totals || emptyReport().totals,
@@ -116,16 +119,19 @@ export default function FixedDepositInterestReport() {
         warnings: Array.isArray(data?.warnings) ? data.warnings : [],
       });
     } catch (e) {
+      if (requestId !== requestIdRef.current) return;
       setReport(emptyReport());
       setError(e?.message || 'Failed to load interest report');
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [reportQueryParams]);
 
   useEffect(() => {
     loadReport();
-  }, [loadReport]);
+  }, [loadReport, refreshRevision]);
 
   const resetFilters = () => {
     const next = defaultReportFilters();

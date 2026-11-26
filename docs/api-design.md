@@ -1290,7 +1290,8 @@ Full design: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md).
 | GET | `/api/v1/fixed-deposits/{id}/interest-payments` | **Done** — list payments for FD (user-scoped) |
 | POST | `/api/v1/fixed-deposits/{id}/interest-payments` | **Done** — `{ payment_date, gross_interest, tax_withheld?, comment? }`; atomically creates `FixedDepositInterestPayment` + `FD_INTEREST` CREDIT for **net**; optional `warning` for COMPOUNDED FD |
 | GET | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | **Done** |
-| PUT/PATCH/DELETE | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | **405** — immutable; use reverse (FD-ACC-10B) |
+| PUT/PATCH | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | Update the credited date, gross interest, tax withheld, or note. Updates the selected payment and its linked bank movement atomically. Reversed payments and missing or reversed bank movements are rejected. |
+| DELETE | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | **405** — use the reversal endpoint to void an eligible payment. |
 | POST | `/api/v1/fixed-deposit-interest-payments/{payment_id}/reverse` | **Done** — `{ reversal_date?, reason }`; `FD_INTEREST_REVERSAL` DEBIT; `is_reversed=true` |
 
 **Rejected:** interest payment on `CLOSED` FD (**400**). `ACTIVE` and `MATURED` allowed. Bank account taken from FD (not client-supplied).
@@ -1375,7 +1376,6 @@ Settle and renew accept optional `final_interest_pending` (bool, default `false`
 | GET | `/api/v1/fixed-deposits` | **Done** — list includes maturity fields; **FD-HOLDINGS-UX-1:** `resolve_maturity_display()` fills estimates dynamically when stored values are null (legacy rows). **FD-INTEREST-MATURITY-LOGIC-1:** payout FDs return principal as maturity; `estimate_type`, `estimated_total_interest`, `estimated_periodic_interest`. |
 | GET | `/api/v1/fixed-deposits/maturity-estimate` | **Done** — query: `principal_amount`, `interest_rate_percent`, `interest_payout_frequency`, `investment_date`, `maturity_date`; returns estimate fields for create/edit preview |
 | GET | `/api/v1/fixed-deposits/{id}/detail` | **Done (FD-DETAIL-CALC-1)** — composite detail: estimate summary, `expected_interest_schedule`, actual payments, `financial_year_summary`, `term_totals`, `detailed_calculation`; query `financial_year` or `fy_start`/`fy_end` |
-| PATCH | `/api/v1/fixed-deposit-interest-payments/{payment_id}` | **Done (FD-DETAIL-CALC-1)** — update actual credited date/gross/tax/note; updates linked `FD_INTEREST` cash movement and bank balance |
 
 **Create body:** `bank_account_id` required; `portfolio_id` optional (must match bank account when supplied). Bank account must be **ASSIGNED** before create.
 

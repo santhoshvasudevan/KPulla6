@@ -37,6 +37,7 @@ export default function FixedDepositInterestPaymentForm({
   /** Optional schedule forecast: { expected_payout_date, expected_gross_interest } */
   suggested = null,
   showApplyTaxHelper = true,
+  showUnscheduledHint = true,
 }) {
   const gross = parseMoney(form.gross_interest);
   const tax = parseMoney(form.tax_withheld || '0');
@@ -82,11 +83,11 @@ export default function FixedDepositInterestPaymentForm({
           {expectedGross != null ? ` · ${formatMoney(expectedGross, currency)}` : ''}
           . Confirm the actual bank credit below — forecasts create no ledger entries.
         </p>
-      ) : (
+      ) : showUnscheduledHint ? (
         <p className="fd-interest-payment-form__forecast" data-testid="fd-interest-unscheduled">
           Unscheduled payout — enter the actual credit from the bank statement.
         </p>
-      )}
+      ) : null}
       {error ? <WarningBanner severity="error" message={error} /> : null}
       <div className="form-group">
         <label htmlFor="fd-interest-payment-date">Actual credited date</label>

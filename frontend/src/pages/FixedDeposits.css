@@ -400,6 +400,12 @@
   padding: var(--space-3) var(--space-4);
 }
 
+.fd-interest-table__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .fd-interest-table {
   margin-bottom: var(--space-2);
 }

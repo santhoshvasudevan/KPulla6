@@ -1,9 +1,19 @@
 # Changelog — KPulla6
 
+## 2026-11-26 — Keep FD interest report current after payment changes (#63)
+
+- Interest & Tax Report ignores stale fetches: only the latest request may update rows, totals, warnings, errors, or loading state after overlapping refresh, filter, or portfolio changes.
+- Successful record, edit, and reverse of interest payments bump `refreshRevision`; regressions assert that refresh and out-of-order resolution keep corrected totals and the latest selection.
+
 ## 2026-11-24 — Strict cached mutual-fund NAV writes
 
 - MF create/update/import require positive exact-date INR cached NAV, used canonically without override or provider reads. Missing cache blocks saving until explicit refresh supplies the date. Statement units/fees/market/paid values and `VALUE_MISMATCH` are preserved; history is not silently rewritten.
 - Added authenticated DB-only `GET /api/v1/nav/lookup` and read-only, user-scoped `preview_mf_nav_corrections --user-id ID` (no apply; output must stay private). Only a NAV-changing BUY correction with no linked cash and all statement/cash fields unchanged skips historical settlement backfill; other writes retain cash validation. See [MF rules](./mutual-funds.md#nav-validation-strategy) and [troubleshooting](./troubleshooting/mf-cached-nav-writes.md).
+
+## 2026-11-23 — Fixed deposit payment corrections and release verification
+
+- Open **Interest payments** on a current fixed deposit to edit or reverse an eligible payment by row. Reversed payments stay visible for audit. The interest report refreshes after a successful correction.
+- Pull requests run the full test suites, frontend build, and documentation consistency checks. The development workflow now describes release preflight and pinned review handoffs.
 
 ## 2026-11-23 — FD detail maturity interest and renewal split reporting (#43 review)
 
