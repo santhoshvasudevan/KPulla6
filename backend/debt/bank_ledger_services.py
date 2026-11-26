@@ -26,6 +26,7 @@ from finance.bank_cash import (
     BankCashMovementPoint,
     BankFundingMovementPoint,
     bank_cash_balance,
+    bank_cash_balance_timeseries,
     bank_funding_balance,
     signed_movement_amount,
 )
@@ -37,6 +38,11 @@ from debt.services import (
     get_bank_account,
 )
 
+FUTURE_BANK_CASH_IMPACT_DETAIL = (
+    "This cash change would make future cash balance negative."
+)
+AFFECTED_BANK_ENTRIES_LIMIT = 10
+
 
 class CashMovementNotFoundError(Exception):
     pass
@@ -44,6 +50,32 @@ class CashMovementNotFoundError(Exception):
 
 class CashMovementValidationError(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class AffectedBankCashEntry:
+    id: int
+    date: date
+    entry_type: str
+    amount: Decimal
+    linked_transaction_id: int | None
+    asset_symbol: str | None
+
+
+@dataclass(frozen=True)
+class FutureBankCashImpact:
+    currency: str
+    earliest_negative_date: date
+    lowest_balance: Decimal
+    affected_entries: list[AffectedBankCashEntry]
+
+
+class FutureBankCashImpactError(CashMovementValidationError):
+    """Proposed bank ledger change would make a later running balance negative."""
+
+    def __init__(self, impact: FutureBankCashImpact) -> None:
+        super().__init__(FUTURE_BANK_CASH_IMPACT_DETAIL)
+        self.impact = impact
 
 
 class InsufficientBankBalanceError(CashMovementValidationError):
@@ -118,11 +150,17 @@ class CashMovementListResult:
     pages: int
 
 
-def _movement_points_for_account(bank_account_id: int) -> list[BankCashMovementPoint]:
+def _movement_points_for_account(
+    bank_account_id: int,
+    *,
+    exclude_movement_ids: frozenset[int] | None = None,
+    include_point: BankCashMovementPoint | None = None,
+) -> list[BankCashMovementPoint]:
+    excluded = exclude_movement_ids or frozenset()
     rows = CashMovement.objects.filter(bank_account_id=bank_account_id).only(
-        "movement_date", "currency", "amount", "direction"
+        "id", "movement_date", "currency", "amount", "direction"
     )
-    return [
+    points = [
         BankCashMovementPoint(
             movement_date=row.movement_date,
             currency=row.currency,
@@ -130,7 +168,139 @@ def _movement_points_for_account(bank_account_id: int) -> list[BankCashMovementP
             direction=row.direction,
         )
         for row in rows
+        if row.id not in excluded
     ]
+    if include_point is not None:
+        points.append(include_point)
+    return points
+
+
+def future_bank_cash_impact_payload(
+    impact: FutureBankCashImpact,
+    *,
+    detail: str | None = None,
+) -> dict:
+    return {
+        "detail": detail or FUTURE_BANK_CASH_IMPACT_DETAIL,
+        "currency": impact.currency,
+        "earliest_negative_date": impact.earliest_negative_date.isoformat(),
+        "lowest_balance": float(impact.lowest_balance),
+        "affected_entries": [
+            {
+                "id": row.id,
+                "date": row.date.isoformat(),
+                "entry_type": row.entry_type,
+                "amount": float(row.amount),
+                "linked_transaction_id": row.linked_transaction_id,
+                "asset_symbol": row.asset_symbol,
+            }
+            for row in impact.affected_entries
+        ],
+    }
+
+
+def _collect_affected_bank_entries(
+    bank_account_id: int,
+    earliest_negative_date: date,
+    *,
+    exclude_movement_ids: frozenset[int] | None = None,
+) -> list[AffectedBankCashEntry]:
+    excluded = exclude_movement_ids or frozenset()
+    qs = (
+        CashMovement.objects.filter(
+            bank_account_id=bank_account_id,
+            movement_date__gte=earliest_negative_date,
+        )
+        .order_by("movement_date", "id")
+    )
+    rows: list[AffectedBankCashEntry] = []
+    for movement in qs:
+        if movement.id in excluded:
+            continue
+        rows.append(
+            AffectedBankCashEntry(
+                id=movement.id,
+                date=movement.movement_date,
+                entry_type=movement.movement_type,
+                amount=signed_movement_amount(movement.amount, movement.direction),
+                linked_transaction_id=None,
+                asset_symbol=None,
+            )
+        )
+        if len(rows) >= AFFECTED_BANK_ENTRIES_LIMIT:
+            break
+    return rows
+
+
+def analyze_future_bank_cash_impact(
+    bank_account: BankAccount,
+    *,
+    exclude_movement_ids: frozenset[int] | None = None,
+    proposed_point: BankCashMovementPoint | None = None,
+    from_date: date,
+) -> FutureBankCashImpact | None:
+    """
+    Simulate bank running balances after replacing excluded movements with a proposal.
+
+    Returns impact details when any day on or after ``from_date`` would have a
+    negative running balance; otherwise None.
+    """
+    points = _movement_points_for_account(
+        bank_account.id,
+        exclude_movement_ids=exclude_movement_ids,
+        include_point=proposed_point,
+    )
+    if not points:
+        return None
+
+    dates = [point.movement_date for point in points]
+    start = min(from_date, min(dates))
+    end = max(dates)
+    day_balances = bank_cash_balance_timeseries(points, start, end)
+    if not day_balances:
+        return None
+
+    earliest_negative: date | None = None
+    lowest = Decimal("0")
+    for day, balance in day_balances:
+        if day < from_date:
+            continue
+        if balance < lowest:
+            lowest = balance
+        if balance < 0 and earliest_negative is None:
+            earliest_negative = day
+
+    if earliest_negative is None:
+        return None
+
+    return FutureBankCashImpact(
+        currency=bank_account.currency,
+        earliest_negative_date=earliest_negative,
+        lowest_balance=lowest,
+        affected_entries=_collect_affected_bank_entries(
+            bank_account.id,
+            earliest_negative,
+            exclude_movement_ids=exclude_movement_ids,
+        ),
+    )
+
+
+def assert_proposed_bank_ledger_non_negative(
+    bank_account: BankAccount,
+    *,
+    exclude_movement_ids: frozenset[int],
+    proposed_point: BankCashMovementPoint,
+    from_date: date,
+) -> None:
+    """Block a bank ledger replacement whose running balance would go negative."""
+    impact = analyze_future_bank_cash_impact(
+        bank_account,
+        exclude_movement_ids=exclude_movement_ids,
+        proposed_point=proposed_point,
+        from_date=from_date,
+    )
+    if impact is not None:
+        raise FutureBankCashImpactError(impact)
 
 
 def _funding_movement_points_for_account(bank_account_id: int) -> list[BankFundingMovementPoint]:

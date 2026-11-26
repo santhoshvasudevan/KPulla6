@@ -343,6 +343,8 @@ Design doc: [fixed-deposits-accounting.md](./fixed-deposits-accounting.md). MVP:
 
 **Reversal framework (FD-ACC-10B):** manual cash movements and FD interest payments can be reversed via dedicated POST endpoints; original rows retained. Settlement/renewal/cancel-FD reversal deferred to FD-ACC-10C.
 
+**Interest correction Bank Cash protect (#64):** `PUT`/`PATCH` interest payments validate the proposed dated Bank Cash running balance before mutating the linked `FD_INTEREST` credit. Incompatible corrections return **409** future-impact (`earliest_negative_date`, `affected_entries`) and leave payment, credit, and stored balance unchanged. Edit/reverse serialize on the payment row then linked credit.
+
 **Pre-10A repair (FD-ACC-10A-REPAIR):** `python manage.py repair_deactivated_fd_openings` (dry-run default) fixes inactive FDs with stuck `FD_OPENING` debits. Do not use manual deposits as a workaround.
 
 **Cancel vs deactivate (FD-ACC-10A):** ledger-backed FDs require `POST .../cancel` (reverses `FD_OPENING`, `status=CANCELLED`); `DELETE` returns **409** for unreversed opening debit. Legacy no-ledger FDs still deactivate via `DELETE`. Cancelled FDs excluded from portfolio surfaces; row retained for audit. See [fixed-deposits.md](./fixed-deposits.md) § FD lifecycle actions.

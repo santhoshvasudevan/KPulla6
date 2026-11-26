@@ -12,18 +12,22 @@ from django.db import IntegrityError, transaction as db_transaction
 from django.db.models import QuerySet
 
 from debt.bank_ledger_services import (
+    assert_proposed_bank_ledger_non_negative,
     create_fd_interest_cash_movement,
     movement_has_been_reversed,
     refresh_bank_account_balance,
 )
 from debt.models import (
     COMPOUNDED_FD_INTEREST_WARNING,
+    CashMovement,
+    CashMovementDirection,
     FixedDeposit,
     FixedDepositInterestPayment,
     INTEREST_PAYMENT_BLOCKED_FD_STATUSES,
     InterestPayoutFrequency,
 )
 from debt.services import FixedDepositNotFoundError, FixedDepositValidationError, get_fixed_deposit
+from finance.bank_cash import BankCashMovementPoint
 
 
 class InterestPaymentNotFoundError(Exception):
@@ -154,6 +158,42 @@ def create_fixed_deposit_interest_payment(
     return InterestPaymentCreateResult(payment=payment, warning=warning, created=True)
 
 
+def _interest_payment_queryset(user: AbstractBaseUser, *, for_update: bool = False):
+    qs = FixedDepositInterestPayment.objects.filter(user=user).select_related(
+        "bank_account",
+        "cash_movement",
+        "fixed_deposit",
+    )
+    if for_update:
+        # Lock order for edit/reverse: payment row first, then linked credit.
+        qs = qs.select_for_update()
+    return qs
+
+
+def get_fixed_deposit_interest_payment(
+    user: AbstractBaseUser,
+    payment_id: int,
+    *,
+    for_update: bool = False,
+) -> FixedDepositInterestPayment:
+    payment = _interest_payment_queryset(user, for_update=for_update).filter(pk=payment_id).first()
+    if not payment:
+        raise InterestPaymentNotFoundError(
+            f"Fixed deposit interest payment not found: {payment_id}"
+        )
+    if for_update and payment.cash_movement_id is not None:
+        # Lock order continues with the linked credit, then re-read both rows.
+        CashMovement.objects.select_for_update().filter(pk=payment.cash_movement_id).get()
+        payment = (
+            FixedDepositInterestPayment.objects.select_related(
+                "bank_account",
+                "cash_movement",
+                "fixed_deposit",
+            ).get(pk=payment.pk)
+        )
+    return payment
+
+
 @db_transaction.atomic
 def update_fixed_deposit_interest_payment(
     user: AbstractBaseUser,
@@ -164,7 +204,7 @@ def update_fixed_deposit_interest_payment(
     tax_withheld: Decimal | None = None,
     comment: str | None = None,
 ) -> FixedDepositInterestPayment:
-    payment = get_fixed_deposit_interest_payment(user, payment_id)
+    payment = get_fixed_deposit_interest_payment(user, payment_id, for_update=True)
     if payment.is_reversed:
         raise InterestPaymentValidationError(
             "Reversed interest payments cannot be edited. Record a new payment instead."
@@ -190,6 +230,20 @@ def update_fixed_deposit_interest_payment(
         description = (
             f"Fixed deposit interest: {payment.fixed_deposit.institution_name}/"
             f"{payment.fixed_deposit.deposit_account_number}"
+        )
+
+    if new_date != payment.payment_date or net_interest != payment.net_interest:
+        from_date = min(payment.payment_date, new_date)
+        assert_proposed_bank_ledger_non_negative(
+            payment.bank_account,
+            exclude_movement_ids=frozenset({movement.id}),
+            proposed_point=BankCashMovementPoint(
+                movement_date=new_date,
+                currency=payment.currency,
+                amount=net_interest,
+                direction=CashMovementDirection.CREDIT,
+            ),
+            from_date=from_date,
         )
 
     payment.payment_date = new_date
@@ -225,22 +279,6 @@ def list_fixed_deposit_interest_payments(
         .select_related("bank_account", "cash_movement", "fixed_deposit")
         .order_by("-payment_date", "-created_at", "-id")
     )
-
-
-def get_fixed_deposit_interest_payment(
-    user: AbstractBaseUser,
-    payment_id: int,
-) -> FixedDepositInterestPayment:
-    payment = (
-        FixedDepositInterestPayment.objects.filter(user=user, pk=payment_id)
-        .select_related("bank_account", "cash_movement", "fixed_deposit")
-        .first()
-    )
-    if not payment:
-        raise InterestPaymentNotFoundError(
-            f"Fixed deposit interest payment not found: {payment_id}"
-        )
-    return payment
 
 
 def interest_payments_for_user(user: AbstractBaseUser) -> QuerySet[FixedDepositInterestPayment]:

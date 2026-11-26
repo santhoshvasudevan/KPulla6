@@ -7,6 +7,8 @@ from datetime import date
 from decimal import Decimal
 from typing import Iterable
 
+from finance.cash import CashLedgerPoint, cash_balance_timeseries
+
 _ZERO = Decimal("0")
 
 
@@ -35,6 +37,38 @@ def signed_movement_amount(amount: Decimal, direction: str) -> Decimal:
     if direction == "DEBIT":
         return -amount
     raise ValueError(f"Unsupported direction: {direction}")
+
+
+def bank_cash_to_ledger_points(
+    movements: Iterable[BankCashMovementPoint],
+) -> list[CashLedgerPoint]:
+    """Convert bank movement points to signed cash ledger points."""
+    return [
+        CashLedgerPoint(
+            date=movement.movement_date,
+            currency=movement.currency,
+            amount=signed_movement_amount(movement.amount, movement.direction),
+        )
+        for movement in movements
+    ]
+
+
+def bank_cash_balance_timeseries(
+    movements: Iterable[BankCashMovementPoint],
+    start_date: date,
+    end_date: date,
+) -> list[tuple[date, Decimal]]:
+    """End-of-day bank balances for each calendar day in [start_date, end_date].
+
+    Bank accounts are single-currency; returns the series for the currency present
+    in ``movements`` (empty list when there are no points).
+    """
+    points = bank_cash_to_ledger_points(movements)
+    if not points:
+        return []
+    currency = points[0].currency
+    series = cash_balance_timeseries(points, start_date, end_date)
+    return series.get(currency, [])
 
 
 def bank_cash_balance(

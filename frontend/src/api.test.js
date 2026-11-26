@@ -440,6 +440,39 @@ describe('API Service', () => {
     );
   });
 
+  it('updateFixedDepositInterestPayment preserves future-impact fields on 409', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 409,
+      json: async () => ({
+        detail: 'This cash change would make future cash balance negative.',
+        currency: 'INR',
+        earliest_negative_date: '2024-04-15',
+        lowest_balance: -900,
+        affected_entries: [
+          {
+            id: 9,
+            date: '2024-04-15',
+            entry_type: 'MANUAL_WITHDRAWAL',
+            amount: -1000,
+            linked_transaction_id: null,
+            asset_symbol: null,
+          },
+        ],
+      }),
+    });
+
+    await expect(
+      api.updateFixedDepositInterestPayment(12, { gross_interest: '100' })
+    ).rejects.toMatchObject({
+      name: 'FixedDepositApiError',
+      status: 409,
+      earliest_negative_date: '2024-04-15',
+      lowest_balance: -900,
+      affected_entries: expect.any(Array),
+    });
+  });
+
   it('fetchFixedDepositInterestReport calls report endpoint with filters', async () => {
     global.fetch.mockResolvedValueOnce({
       ok: true,

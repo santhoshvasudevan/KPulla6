@@ -382,6 +382,9 @@ function buildFixedDepositApiError(errorData, status) {
     portfolio_assignment_status: data.portfolio_assignment_status,
     suggested_seed_date: data.suggested_seed_date,
     suggested_seed_amount: data.suggested_seed_amount,
+    earliest_negative_date: data.earliest_negative_date,
+    lowest_balance: data.lowest_balance,
+    affected_entries: data.affected_entries,
     data,
   });
 }
@@ -1006,9 +1009,9 @@ export async function createFixedDepositInterestPayment(fdId, payload) {
 
 /** PATCH /api/v1/fixed-deposit-interest-payments/{payment_id} */
 export async function updateFixedDepositInterestPayment(paymentId, payload) {
-  return fetchWithHandling(`/fixed-deposit-interest-payments/${paymentId}`, {
+  return fixedDepositRequestWithHandling(`/fixed-deposit-interest-payments/${paymentId}`, {
     method: 'PATCH',
-    body: JSON.stringify(payload),
+    body: payload,
   });
 }
 
@@ -1019,9 +1022,9 @@ export async function fetchFixedDepositInterestPayment(paymentId) {
 
 /** POST /api/v1/fixed-deposit-interest-payments/{payment_id}/reverse */
 export async function reverseFixedDepositInterestPayment(paymentId, payload) {
-  return fetchWithHandling(`/fixed-deposit-interest-payments/${paymentId}/reverse`, {
+  return fixedDepositRequestWithHandling(`/fixed-deposit-interest-payments/${paymentId}/reverse`, {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: payload,
   });
 }
 
