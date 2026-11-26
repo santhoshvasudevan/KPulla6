@@ -1,5 +1,10 @@
 # Changelog — KPulla6
 
+## 2026-11-26 — Keep FD interest report current after payment changes (#63)
+
+- Interest & Tax Report ignores stale fetches: only the latest request may update rows, totals, warnings, errors, or loading state after overlapping refresh, filter, or portfolio changes.
+- Successful record, edit, and reverse of interest payments already bump `refreshRevision`; regressions now assert that refresh and out-of-order resolution keep corrected totals and the latest selection.
+
 ## 2026-11-26 — Unavailable portfolio valuation release correction (#55 / #62)
 
 - Portfolio XIRR now preserves an unavailable holdings terminal value through currency conversion and aggregate scopes. All Portfolios in EUR no longer raises HTTP 500 when an active MF has missing or conflicting NAV observations. Unknown is not zero; XIRR stays unavailable with a valuation warning instead of a false missing-FX warning.
