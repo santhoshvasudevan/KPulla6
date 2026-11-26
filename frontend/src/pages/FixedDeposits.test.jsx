@@ -741,6 +741,7 @@ describe('FixedDeposits page', () => {
     });
     renderPage();
     await waitFor(() => screen.getByRole('button', { name: /record interest/i }));
+    const reportCalls = api.fetchFixedDepositInterestReport.mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: /record interest/i }));
     fireEvent.change(screen.getByLabelText(/actual credited date/i), { target: { value: '2024-04-01' } });
     fireEvent.change(screen.getByLabelText(/gross interest/i), { target: { value: '1000' } });
@@ -758,6 +759,7 @@ describe('FixedDeposits page', () => {
         })
       );
       expect(screen.getByText(/interest payment recorded/i)).toBeInTheDocument();
+      expect(api.fetchFixedDepositInterestReport.mock.calls.length).toBeGreaterThan(reportCalls);
     });
   });
 
@@ -909,6 +911,7 @@ describe('FixedDeposits page', () => {
     });
     renderPage();
     await waitFor(() => screen.getByRole('button', { name: /interest payments/i }));
+    const reportCalls = api.fetchFixedDepositInterestReport.mock.calls.length;
     fireEvent.click(screen.getByRole('button', { name: /interest payments/i }));
 
     await waitFor(() => screen.getByRole('button', { name: /reverse interest/i }));
@@ -926,6 +929,7 @@ describe('FixedDeposits page', () => {
         reason: 'Wrong quarter',
       });
       expect(screen.getByText(/interest payment reversed/i)).toBeInTheDocument();
+      expect(api.fetchFixedDepositInterestReport.mock.calls.length).toBeGreaterThan(reportCalls);
     });
   });
 

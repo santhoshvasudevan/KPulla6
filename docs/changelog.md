@@ -7,6 +7,10 @@
 - Bank Cash writers share one lock order: bank account → interest payment → linked credit. Withdrawals and interest corrections both lock the bank account before reading balances. Future-impact validation sweeps movement dates (plus the validation start date) instead of every calendar day, so endpoint boundary dates do not HTTP 500.
 - Interest edit UI keeps the entered correction and surfaces the structured future-impact rejection.
 - Tests: SQLite API regressions for reduce/move/valid/boundary dates; disposable PostgreSQL contention proofs wait for an ungranted lock before release (edit↔reverse both orders, correction vs withdrawal).
+## 2026-11-26 — Keep FD interest report current after payment changes (#63)
+
+- Interest & Tax Report ignores stale fetches: only the latest request may update rows, totals, warnings, errors, or loading state after overlapping refresh, filter, or portfolio changes.
+- Successful record, edit, and reverse of interest payments already bump `refreshRevision`; regressions now assert that refresh and out-of-order resolution keep corrected totals and the latest selection.
 
 ## 2026-11-26 — Unavailable portfolio valuation release correction (#55 / #62)
 
