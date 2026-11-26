@@ -1,5 +1,12 @@
 # Changelog — KPulla6
 
+## 2026-11-26 — Protect Bank Cash on FD interest correction (#64)
+
+- `PUT`/`PATCH /fixed-deposit-interest-payments/{id}` now validates the proposed dated Bank Cash running balance (exclude original `FD_INTEREST` credit, include the corrected credit) from the earlier of the old/new dates through the last movement. Incompatible reductions or date moves return **409** with `earliest_negative_date`, `lowest_balance`, and `affected_entries`; payment, linked credit, and stored bank balance stay unchanged.
+- Valid corrections still update the payment and linked credit atomically and refresh `BankAccount.current_balance`.
+- Bank Cash writers share one lock order: bank account → interest payment → linked credit. Withdrawals and interest corrections both lock the bank account before reading balances. Future-impact validation sweeps movement dates (plus the validation start date) instead of every calendar day, so endpoint boundary dates do not HTTP 500.
+- Interest edit UI keeps the entered correction and surfaces the structured future-impact rejection.
+- Tests: SQLite API regressions for reduce/move/valid/boundary dates; disposable PostgreSQL contention proofs wait for an ungranted lock before release (edit↔reverse both orders, correction vs withdrawal).
 ## 2026-11-26 — Keep FD interest report current after payment changes (#63)
 
 - Interest & Tax Report ignores stale fetches: only the latest request may update rows, totals, warnings, errors, or loading state after overlapping refresh, filter, or portfolio changes.

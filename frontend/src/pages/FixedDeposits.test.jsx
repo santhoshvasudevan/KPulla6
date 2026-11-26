@@ -32,6 +32,16 @@ vi.mock('../api', () => ({
   exportFixedDepositInterestReportCsv: vi.fn(),
   downloadBlobFile: vi.fn(),
   invalidateDashboardSummaryCache: vi.fn(),
+  futureImpactFromApiError: (err) => {
+    if (!err || err.earliest_negative_date == null) return null;
+    return {
+      detail: err.detail ?? err.message,
+      currency: err.currency,
+      earliest_negative_date: err.earliest_negative_date,
+      lowest_balance: err.lowest_balance,
+      affected_entries: err.affected_entries,
+    };
+  },
   FixedDepositApiError: class FixedDepositApiError extends Error {
     constructor(message, extras = {}) {
       super(message);
@@ -827,6 +837,60 @@ describe('FixedDeposits page', () => {
       expect(screen.queryByText(second.comment)).not.toBeInTheDocument();
       expect(api.fetchFixedDepositInterestReport.mock.calls.length).toBeGreaterThan(reportCalls);
     });
+  });
+
+  it('keeps entered interest correction when bank cash future-impact rejects edit', async () => {
+    const payment = {
+      id: 42,
+      payment_date: '2026-04-14',
+      gross_interest: 200,
+      tax_withheld: 20,
+      net_interest: 180,
+      currency: 'INR',
+      comment: 'Correct this payment',
+      is_reversed: false,
+      cash_movement_id: 102,
+    };
+    api.fetchFixedDepositInterestPayments.mockResolvedValueOnce([payment]);
+    const conflict = new api.FixedDepositApiError(
+      'This cash change would make future cash balance negative.',
+      {
+        status: 409,
+        detail: 'This cash change would make future cash balance negative.',
+        currency: 'INR',
+        earliest_negative_date: '2026-05-01',
+        lowest_balance: -500,
+        affected_entries: [
+          {
+            id: 77,
+            date: '2026-05-01',
+            entry_type: 'MANUAL_WITHDRAWAL',
+            amount: -1000,
+            linked_transaction_id: null,
+            asset_symbol: null,
+          },
+        ],
+      },
+    );
+    api.updateFixedDepositInterestPayment.mockRejectedValueOnce(conflict);
+
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: /interest payments/i }));
+    const row = (await screen.findByText(payment.comment)).closest('tr');
+    fireEvent.click(within(row).getByRole('button', { name: 'Edit payment' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Edit interest payment' });
+    fireEvent.change(within(dialog).getByLabelText('Gross interest'), { target: { value: '50' } });
+    fireEvent.change(within(dialog).getByLabelText('Actual credited date'), {
+      target: { value: '2026-04-20' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+
+    expect(await within(dialog).findByText(/Earliest negative balance on/i)).toBeInTheDocument();
+    expect(within(dialog).getByText('2026-05-01')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Gross interest')).toHaveValue(50);
+    expect(within(dialog).getByLabelText('Actual credited date')).toHaveValue('2026-04-20');
+    expect(screen.getByRole('dialog', { name: 'Edit interest payment' })).toBeInTheDocument();
   });
 
   it('reverses interest payment from expanded payments table', async () => {

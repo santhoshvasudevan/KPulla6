@@ -14,6 +14,7 @@ import {
   fetchFixedDepositMaturityEstimate,
   fetchFixedDepositPendingPayouts,
   fetchPortfolios,
+  futureImpactFromApiError,
   markFixedDepositMatured,
   renewFixedDeposit,
   reverseFixedDepositInterestPayment,
@@ -356,6 +357,7 @@ export default function FixedDeposits() {
   const [interestModalOpen, setInterestModalOpen] = useState(false);
   const [interestSubmitting, setInterestSubmitting] = useState(false);
   const [interestFormError, setInterestFormError] = useState('');
+  const [interestFormFutureImpact, setInterestFormFutureImpact] = useState(null);
   const [interestReportRevision, setInterestReportRevision] = useState(0);
   const [expandedFdId, setExpandedFdId] = useState(null);
   const [interestReverseTarget, setInterestReverseTarget] = useState(null);
@@ -770,6 +772,7 @@ export default function FixedDeposits() {
     } : emptyInterestForm());
     setInterestClientRequestId(payment ? '' : newInterestClientRequestId());
     setInterestFormError('');
+    setInterestFormFutureImpact(null);
     setInterestModalOpen(true);
   };
 
@@ -779,6 +782,7 @@ export default function FixedDeposits() {
     setInterestEditingId(null);
     setInterestClientRequestId('');
     setInterestFormError('');
+    setInterestFormFutureImpact(null);
   };
 
   const loadInterestPayments = async (fdId) => {
@@ -810,6 +814,7 @@ export default function FixedDeposits() {
   const handleInterestSubmit = async (e) => {
     e.preventDefault();
     setInterestFormError('');
+    setInterestFormFutureImpact(null);
 
     const gross = parseFloat(interestForm.gross_interest);
     const tax = parseFloat(interestForm.tax_withheld || '0');
@@ -865,6 +870,8 @@ export default function FixedDeposits() {
       }
       await loadData();
     } catch (err) {
+      const impact = futureImpactFromApiError(err);
+      setInterestFormFutureImpact(impact);
       setInterestFormError(err.message || (interestEditingId != null
         ? 'Failed to update interest payment.'
         : 'Failed to record interest payment.'));
@@ -2388,6 +2395,7 @@ export default function FixedDeposits() {
               onCancel={closeInterestModal}
               submitting={interestSubmitting}
               error={interestFormError}
+              futureImpact={interestFormFutureImpact}
               currency={interestFd.currency}
               bankAccountName={interestFd.bank_account_name}
             />

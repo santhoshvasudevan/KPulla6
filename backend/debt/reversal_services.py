@@ -123,7 +123,8 @@ def reverse_fixed_deposit_interest_payment(
     if not (reason or "").strip():
         raise InterestPaymentReversalError("reason is required for audit.")
 
-    payment = get_fixed_deposit_interest_payment(user, payment_id)
+    # Same lock order as update: payment row, then linked credit, then eligibility.
+    payment = get_fixed_deposit_interest_payment(user, payment_id, for_update=True)
 
     if payment.is_reversed:
         raise InterestPaymentReversalError(
@@ -143,6 +144,10 @@ def reverse_fixed_deposit_interest_payment(
         )
 
     original_movement = payment.cash_movement
+    if original_movement is None:
+        raise InterestPaymentReversalError(
+            "Linked bank cash movement is missing; payment cannot be reversed."
+        )
     if original_movement.is_reversal:
         raise InterestPaymentReversalError("Cannot reverse a reversal movement.")
     if movement_has_been_reversed(original_movement):
@@ -156,11 +161,14 @@ def reverse_fixed_deposit_interest_payment(
         f"Reversal of fixed deposit interest payment: {trimmed_reason}"
     )
 
+    # Debit the locked credit amount (re-read under select_for_update), not a
+    # stale pre-lock snapshot of payment.net_interest.
+    reversal_amount = original_movement.amount
     reversal_movement = create_cash_movement(
         user,
         bank_account_id=payment.bank_account_id,
         movement_type=CashMovementType.FD_INTEREST_REVERSAL,
-        amount=payment.net_interest,
+        amount=reversal_amount,
         movement_date=effective_date,
         direction=CashMovementDirection.DEBIT,
         portfolio_id=fd.portfolio_id,
