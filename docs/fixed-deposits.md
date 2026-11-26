@@ -219,7 +219,7 @@ To void a duplicate interest credit, select **Reverse interest** on the extra ro
 
 **Excludes:** reversed interest payments; zero-interest settlement/renewal rows; `CANCELLED` FD rows; renewal-linked settlement rows (renewal group used instead); unconfirmed pending payout estimates. Confirmed pending payouts appear once as `PENDING_PAYOUT` rows on the originating term (#45).
 
-**UI (FD-TAX-1A / FD-TAX-2):** Fixed Deposits → **Interest & Tax** section — default date range = current calendar year; **Reset filters**; `group_by` includes **Bank account**; KPI cards (gross/tax/net/row count); grouped totals with readable labels; exclusion/disclaimer notes; FX and mixed-currency warnings near totals; improved empty state; **Export CSV** button (current filters; blob download).
+**UI (FD-TAX-1A / FD-TAX-2):** Fixed Deposits → **Interest & Tax** section — default date range = current calendar year; **Reset filters**; `group_by` includes **Bank account**; KPI cards (gross/tax/net/row count); grouped totals with readable labels; exclusion/disclaimer notes; FX and mixed-currency warnings near totals; improved empty state; **Export CSV** button (current filters; blob download). Recording, editing, or reversing an interest payment refreshes the report while keeping the active portfolio and filters; only the latest fetch may update rows, totals, warnings, errors, or loading state (#63).
 
 **CSV columns:** Date, Source Type, Source Label, Portfolio, Bank / Institution, Bank Account, FD Account, Currency, Gross Interest, Tax Withheld, Net Interest, Display Currency, Gross/Tax/Net Interest Display, Comment. Filename includes date range (e.g. `fd-interest-tax-2026-01-01-to-2026-12-31.csv`). Warnings remain UI-only; CSV is rows-only (header when empty).
 
