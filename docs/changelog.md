@@ -1,5 +1,11 @@
 # Changelog — KPulla6
 
+## 2026-11-26 — Unavailable portfolio valuation release correction (#55 / #62)
+
+- Portfolio XIRR now preserves an unavailable holdings terminal value through currency conversion and aggregate scopes. All Portfolios in EUR no longer raises HTTP 500 when an active MF has missing or conflicting NAV observations. Unknown is not zero; XIRR stays unavailable with a valuation warning instead of a false missing-FX warning.
+- Value History terminal alignment preserves a null current value without attempting to convert it to a number. Earlier historical points are unchanged.
+- Added SQLite regressions across single/All scopes, INR/EUR, legacy/cash-aware modes, missing/conflicting NAVs, read-only data preservation and recovery after a cached provider observation. No migration, transaction rewrite or provider-on-read behavior added.
+
 ## 2026-11-25 — MF NAV corrective main-integration gate (#61)
 
 - Merged `origin/main` (`25419fa`) into the #56–#60 corrective tip on branch `codex/61-main-integration-candidate`; resolved `docs/changelog.md` by keeping both FD payment-correction and MF corrective entries.

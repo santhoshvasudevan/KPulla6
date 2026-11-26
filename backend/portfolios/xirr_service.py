@@ -40,6 +40,9 @@ FX_LOOKBACK_DAYS = 7
 XIRR_FX_WARNING = (
     "FX rates are missing for one or more portfolio XIRR cash flows; XIRR is unavailable."
 )
+XIRR_VALUATION_WARNING = (
+    "Portfolio XIRR is unavailable because one or more holdings have an unavailable valuation."
+)
 
 @dataclass(frozen=True)
 class ScopeXirrResult:
@@ -50,7 +53,7 @@ class ScopeXirrResult:
 @dataclass(frozen=True)
 class _PortfolioXirrInputs:
     flows_by_date: dict[date, Decimal]
-    terminal_value: Decimal
+    terminal_value: Decimal | None
     fx_missing: bool
     warnings: list[str]
 
@@ -59,7 +62,7 @@ def _holdings_terminal_for_scope(
     scope: ResolvedPortfolioScope,
     *,
     portfolio_base: str,
-) -> Decimal:
+) -> Decimal | None:
     queryset = _fifo_eligible_queryset(scope.portfolio_ids)
     all_txns = list(queryset)
     if not all_txns:
@@ -72,12 +75,14 @@ def _holdings_terminal_for_scope(
 
 
 def _convert_amount(
-    amount: Decimal,
+    amount: Decimal | None,
     *,
     from_currency: str,
     to_currency: str,
     conv_date: date,
 ) -> tuple[Decimal | None, bool]:
+    if amount is None:
+        return None, False
     src = norm_display_currency(from_currency)
     dst = norm_display_currency(to_currency)
     if src == dst:
@@ -196,7 +201,10 @@ def _portfolio_xirr_inputs(
             and cash_summary.totals_by_currency
             and any(bal != 0 for _, bal in cash_summary.totals_by_currency)
         )
-        terminal = (holdings_in_calc or Decimal("0")) + cash_summary.total_display_value
+        terminal = (
+            None if holdings_in_calc is None
+            else holdings_in_calc + cash_summary.total_display_value
+        )
         warnings = list(cash_summary.warnings)
         if holdings_fx_missing:
             holdings_in_calc = None
@@ -216,12 +224,13 @@ def _portfolio_xirr_inputs(
         )
         cash_fx_missing = False
         warnings = []
-        terminal = holdings_in_calc or Decimal("0")
+        terminal = holdings_in_calc
 
     fd_terminal, fd_fx_missing, fd_warnings = _fd_terminal_for_scope(
         child_scope, calculation_currency=calc_ccy, today=today
     )
-    terminal += fd_terminal
+    if terminal is not None:
+        terminal += fd_terminal
     warnings.extend(fd_warnings)
 
     bank_fx_missing = False
@@ -229,7 +238,8 @@ def _portfolio_xirr_inputs(
         bank_terminal, bank_fx_missing, bank_warnings = _bank_terminal_for_scope(
             user, child_scope, calculation_currency=calc_ccy, today=today
         )
-        terminal += bank_terminal
+        if terminal is not None:
+            terminal += bank_terminal
         warnings.extend(bank_warnings)
 
     if include_bank_flows and user is not None:
@@ -252,7 +262,6 @@ def _portfolio_xirr_inputs(
         or cash_fx_missing
         or fd_fx_missing
         or bank_fx_missing
-        or holdings_in_calc is None
     )
     return _PortfolioXirrInputs(
         flows_by_date=flows_by_date,
@@ -267,10 +276,15 @@ def _solve_from_inputs(
     *,
     today: date,
 ) -> ScopeXirrResult:
+    unavailable_warnings = []
+    if inputs.terminal_value is None:
+        unavailable_warnings.append(XIRR_VALUATION_WARNING)
     if inputs.fx_missing:
+        unavailable_warnings.append(XIRR_FX_WARNING)
+    if unavailable_warnings:
         return ScopeXirrResult(
             value=None,
-            warnings=list(dict.fromkeys(inputs.warnings + [XIRR_FX_WARNING])),
+            warnings=list(dict.fromkeys(inputs.warnings + unavailable_warnings)),
         )
     dates = sorted(inputs.flows_by_date.keys())
     amounts = [float(inputs.flows_by_date[d]) for d in dates]
@@ -320,6 +334,7 @@ def compute_scope_xirr_detail(
         terminal_total = Decimal("0")
         warnings: list[str] = []
         any_fx_block = False
+        any_valuation_block = False
 
         for portfolio_id in scope.portfolio_ids:
             portfolio = portfolios.get(portfolio_id)
@@ -334,8 +349,9 @@ def compute_scope_xirr_detail(
                 include_bank_flows=False,
             )
             warnings.extend(inputs.warnings)
-            if inputs.fx_missing:
-                any_fx_block = True
+            any_fx_block = any_fx_block or inputs.fx_missing
+            any_valuation_block = any_valuation_block or inputs.terminal_value is None
+            if inputs.fx_missing or inputs.terminal_value is None:
                 continue
             for d, amt in inputs.flows_by_date.items():
                 merged_flows[d] = merged_flows.get(d, Decimal("0")) + amt
@@ -356,10 +372,14 @@ def compute_scope_xirr_detail(
                 for d, amt in bank_flows.items():
                     merged_flows[d] = merged_flows.get(d, Decimal("0")) + amt
 
-        if any_fx_block:
+        if any_fx_block or any_valuation_block:
+            if any_valuation_block:
+                warnings.append(XIRR_VALUATION_WARNING)
+            if any_fx_block:
+                warnings.append(XIRR_FX_WARNING)
             return ScopeXirrResult(
                 value=None,
-                warnings=list(dict.fromkeys(warnings + [XIRR_FX_WARNING])),
+                warnings=list(dict.fromkeys(warnings)),
             )
 
         combined = _PortfolioXirrInputs(

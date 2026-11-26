@@ -64,6 +64,23 @@ A separate lifetime-purchases metric would be a distinct product requirement.
 
 ## Verify
 
+### Dashboard errors with an unavailable mutual-fund value
+
+Before the 2026-11-26 release correction, **All Portfolios + EUR** could return
+HTTP 500 from Summary or Value History when an active mutual fund had missing or
+conflicting NAVs. Portfolio XIRR attempted to convert a null terminal valuation
+through FX. An INR request could instead incorrectly report missing FX.
+
+The corrected behavior is HTTP 200 with unavailable current value / XIRR and a
+valuation warning. This does not mean zero value or missing exchange rates.
+Inspect the affected folio's NAV warnings and source statements; do not add cash,
+invent a NAV or change units to bypass the warning. A later valid cached provider
+NAV restores current valuation, without filling earlier genuinely unknown days.
+Read endpoints do not fetch providers or rewrite transactions.
+
+Regression check: `DJANGO_TEST_USE_SQLITE=1 .venv/bin/python -m pytest -q tests/test_mf_unavailable_dashboard_api.py`
+from `backend/`.
+
 ```bash
 cd backend
 DJANGO_TEST_USE_SQLITE=1 .venv/bin/python -m pytest \

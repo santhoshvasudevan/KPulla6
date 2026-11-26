@@ -7,6 +7,53 @@ nothing: merge to `main`, live migration, and rollout belong to [#62](https://gi
 after explicit human approval. [#48](https://github.com/santhoshvasudevan/KPulla6/issues/48)
 stays open until rollout is verified.
 
+## Release recheck — 2026-11-26
+
+**The older frozen approval candidate below is superseded as a merge recommendation.**
+Independent browser/SQLite verification of `97554fb` found an additional blocker:
+All Portfolios / EUR with an unavailable MF terminal value returned HTTP 500 from
+Summary and Value History through portfolio XIRR FX conversion. The correction
+preserves unavailable values, separates valuation warnings from missing FX, and
+guards nullable terminal history alignment. Durable regression:
+`backend/tests/test_mf_unavailable_dashboard_api.py` (scope × currency × cash mode ×
+missing/conflicting NAV, provider recovery and null alignment).
+
+The corrected tree requires renewed suite/browser evidence and explicit approval
+of its final commit before any merge or live rollout. Neither ticket readiness
+nor the old `18c2ef4` evidence authorizes deploying these changes. Previously
+observed mobile Compare overflow and favicon console-accounting failure are
+separate UX/harness findings, not silently counted as passing checks.
+
+### Correction verification
+
+Verified in `kpulla6-mf-nav-55`, based on `97554fb`, using disposable SQLite and
+temporary ports **18125 / 15185** only. Original checkout and live data untouched.
+
+| Check | Result |
+|-------|--------|
+| New regression suite | **17 passed** (red before correction) |
+| Independent original crash reproduction | **6 passed** (previously 2 failed / 4 passed) |
+| Full backend SQLite suite | **1669 passed** |
+| Frontend Vitest | **735 passed** |
+| Production build | Passed; existing bundle-size warning |
+| Strict MkDocs / documentation consistency | Passed |
+| Migration drift | No changes detected; no new migration |
+| Focused Chrome All Portfolios / EUR check | Summary and performance HTTP 200; unavailable value displayed, not zero; no page exception |
+| Existing Chrome acceptance harness | **111 passed / 1 failed**; favicon console-accounting mismatch remains |
+| Supplemental Chrome checks | **30 passed / 1 failed**; mobile Compare horizontal overflow remains |
+
+Supplemental checks verify rendered EUR **1151.00** headline/latest history,
+observation-date EUR **1142.50**, Compare provider-only series, personal XIRR
+parity, and no provider requests during the tested reads. The new backend blocker
+is corrected. This is **not** an unconditional all-green release claim: mobile
+Compare overflow and the favicon/harness finding remain explicitly outstanding.
+Merge and live rollout are still held for human review/approval under #62.
+
+Private local evidence: `/tmp/kpulla6-unavailable-fix-browser-20261126/` and
+`/tmp/kpulla6-unavailable-fix-*.log`. All fixtures are synthetic; do not use the
+acceptance scripts against live portfolios. No migrations or live acceptance
+transactions were run during this correction.
+
 Prior baseline evidence: [mf-nav-48-release.md](./mf-nav-48-release.md) (`4e01704` feature tip).
 Review findings: [#48 comment 7159691028](https://github.com/santhoshvasudevan/KPulla6/issues/48#issuecomment-7159691028).
 

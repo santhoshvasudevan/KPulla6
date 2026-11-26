@@ -107,7 +107,9 @@ def _align_terminal_value_with_summary(
         if point["date"] == terminal_iso:
             if point.get("portfolio_value") is None:
                 return
-            point["portfolio_value"] = float(summary.current_value)
+            point["portfolio_value"] = (
+                None if summary.current_value is None else float(summary.current_value)
+            )
             return
         if point["date"] < terminal_iso:
             return
