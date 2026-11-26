@@ -7,10 +7,16 @@ from decimal import Decimal
 import pytest
 
 from debt.bank_ledger_services import create_manual_cash_movement
+from debt.portfolio_value import (
+    build_bank_cash_holding_rows,
+    build_bank_cash_value_timeseries,
+    calculate_bank_cash_for_scope,
+)
 from debt.services import create_bank_account, update_bank_account
 from fx.models import FXRate
 from market_data.models import HistoricalPrice
 from portfolios.models import Portfolio
+from portfolios.scope import ResolvedPortfolioScope
 from tests.debt_test_helpers import (
     create_legacy_fixed_deposit_with_opening,
     create_test_bank_account,
@@ -256,3 +262,42 @@ def test_bank_cash_eligibility_and_once_only_all_scope(
     }
     assert "Shared" in bank_names or any("Shared" in (n or "") for n in bank_names)
     assert not any("excl" in (n or "").lower() for n in bank_names)
+
+
+@pytest.mark.django_db
+def test_bank_cash_projections_share_fx_but_use_distinct_balance_dates(test_user):
+    as_of = _sunday()
+    portfolio = _inr_portfolio(test_user)
+    bank = create_test_bank_account(user=test_user, portfolio=portfolio, currency="INR")
+    _fund_for_portfolio(test_user, bank, portfolio, "10000", movement_date=as_of)
+    _fund_for_portfolio(
+        test_user, bank, portfolio, "5000", movement_date=as_of + timedelta(days=1)
+    )
+    _enable(test_user, bank)
+    scope = ResolvedPortfolioScope(kind="single", portfolio_ids=[portfolio.id])
+
+    def projections():
+        current = calculate_bank_cash_for_scope(
+            test_user, scope, display_currency=" eur ", as_of_date=as_of
+        )
+        (holding,) = build_bank_cash_holding_rows(
+            test_user, scope, display_currency=" eur ", as_of_date=as_of
+        )
+        (day,) = build_bank_cash_value_timeseries(
+            test_user, scope, display_currency=" eur ", start_date=as_of, end_date=as_of
+        )
+        return current, holding, day
+
+    _fx(as_of - timedelta(days=8))
+    current, holding, day = projections()
+    assert current.current_value == holding["current_value"] == day["bank_cash_value"] == 0
+    assert current.any_fx_missing
+    assert holding["fx_status"] == day["fx_status"] == "fx_unavailable"
+
+    _fx(as_of - timedelta(days=7))
+    current, holding, day = projections()
+    assert current.current_value == holding["current_value"] == 150
+    assert day["bank_cash_value"] == 100
+    assert not current.any_fx_missing
+    assert holding["display_currency"] == "EUR"
+    assert holding["fx_status"] == day["fx_status"] == "ok"
