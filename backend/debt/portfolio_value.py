@@ -47,6 +47,50 @@ def bank_account_includable_in_scope(
     return associated == {target}
 
 
+def _included_bank_accounts(user, scope: ResolvedPortfolioScope) -> list[BankAccount]:
+    accounts = BankAccount.objects.filter(
+        user=user, is_active=True, include_in_portfolio_value=True
+    ).order_by("name", "id")
+    return [account for account in accounts if bank_account_includable_in_scope(account, scope)]
+
+
+class _BankCashValuation:
+    """Value eligible bank balances in display currency using cached FX."""
+
+    def __init__(
+        self,
+        accounts: list[BankAccount],
+        display_currency: str,
+        start_date: date,
+        end_date: date,
+    ) -> None:
+        self.display_currency = (display_currency or "EUR").strip().upper() or "EUR"
+        pairs = {
+            (account.currency, self.display_currency)
+            for account in accounts
+            if account.currency != self.display_currency
+        }
+        self._fx_maps = load_fx_rate_maps(
+            pairs, start_date - timedelta(days=FX_LOOKBACK_DAYS), end_date
+        ) if pairs else {}
+
+    def display_value(
+        self, balance: Decimal, currency: str, as_of: date
+    ) -> Decimal | None:
+        """Convert positive cash. A missing quote returns None."""
+        if balance <= 0 or currency == self.display_currency:
+            return balance
+        converted, _ = convert_amount_with_fill_from_maps(
+            balance,
+            currency,
+            self.display_currency,
+            as_of,
+            self._fx_maps,
+            max_fill_days=FX_LOOKBACK_DAYS,
+        )
+        return converted
+
+
 @dataclass(frozen=True)
 class BankCashHoldingsCalc:
     total_invested: Decimal
@@ -67,70 +111,31 @@ def calculate_bank_cash_for_scope(
 ) -> BankCashHoldingsCalc:
     """Aggregate ledger-derived bank cash for included accounts in scope."""
     as_of = as_of_date or portfolio_dates.current_date()
-    disp_ccy = (display_currency or "EUR").strip().upper() or "EUR"
-
-    accounts = list(
-        BankAccount.objects.filter(
-            user=user,
-            is_active=True,
-            include_in_portfolio_value=True,
-        ).order_by("name", "id")
-    )
-    eligible = [a for a in accounts if bank_account_includable_in_scope(a, scope)]
-    if not eligible:
-        return BankCashHoldingsCalc(
-            total_invested=Decimal("0"),
-            current_value=Decimal("0"),
-            realized_pl=Decimal("0"),
-            unrealized_pl=Decimal("0"),
-            total_pl=Decimal("0"),
-            any_fx_missing=False,
-            warnings=[],
-        )
-
-    fx_pairs: set[tuple[str, str]] = set()
-    for account in eligible:
-        if account.currency != disp_ccy:
-            fx_pairs.add((account.currency, disp_ccy))
-    fx_start = as_of - timedelta(days=FX_LOOKBACK_DAYS)
-    fx_maps = load_fx_rate_maps(fx_pairs, fx_start, as_of) if fx_pairs else {}
-
-    total_invested = Decimal("0")
+    accounts = _included_bank_accounts(user, scope)
+    valuation = _BankCashValuation(accounts, display_currency, as_of, as_of)
     current_value = Decimal("0")
-    any_fx_missing = False
     warnings: list[str] = []
 
-    for account in eligible:
+    for account in accounts:
         balance = account.current_balance
         if balance <= 0:
             continue
-
-        if account.currency == disp_ccy:
-            converted = balance
-        else:
-            converted, fx_st = convert_amount_with_fill_from_maps(
-                balance, account.currency, disp_ccy, as_of, fx_maps
+        converted = valuation.display_value(balance, account.currency, as_of)
+        if converted is None:
+            warnings.append(
+                f"FX unavailable for bank account {account.name} "
+                f"({account.currency}→{valuation.display_currency})"
             )
-            if converted is None:
-                any_fx_missing = True
-                warnings.append(
-                    f"FX unavailable for bank account {account.name} "
-                    f"({account.currency}→{disp_ccy})"
-                )
-                continue
-            if fx_st == "fx_unavailable":
-                any_fx_missing = True
-
-        total_invested += converted
+            continue
         current_value += converted
 
     return BankCashHoldingsCalc(
-        total_invested=total_invested,
+        total_invested=current_value,
         current_value=current_value,
         realized_pl=Decimal("0"),
         unrealized_pl=Decimal("0"),
         total_pl=Decimal("0"),
-        any_fx_missing=any_fx_missing,
+        any_fx_missing=bool(warnings),
         warnings=warnings,
     )
 
@@ -144,38 +149,15 @@ def build_bank_cash_holding_rows(
 ) -> list[dict]:
     """Holdings-table rows for included bank accounts with ledger balance."""
     as_of = as_of_date or portfolio_dates.current_date()
-    disp_ccy = (display_currency or "EUR").strip().upper() or "EUR"
-
-    accounts = list(
-        BankAccount.objects.filter(
-            user=user,
-            is_active=True,
-            include_in_portfolio_value=True,
-        ).order_by("name", "id")
-    )
-    eligible = [a for a in accounts if bank_account_includable_in_scope(a, scope)]
-
-    fx_pairs: set[tuple[str, str]] = set()
-    for account in eligible:
-        if account.currency != disp_ccy:
-            fx_pairs.add((account.currency, disp_ccy))
-    fx_start = as_of - timedelta(days=FX_LOOKBACK_DAYS)
-    fx_maps = load_fx_rate_maps(fx_pairs, fx_start, as_of) if fx_pairs else {}
+    accounts = _included_bank_accounts(user, scope)
+    valuation = _BankCashValuation(accounts, display_currency, as_of, as_of)
 
     rows: list[dict] = []
-    for account in eligible:
+    for account in accounts:
         balance = account.current_balance
-        fx_missing = False
-        display_value = balance
-        if balance > 0 and account.currency != disp_ccy:
-            converted, fx_st = convert_amount_with_fill_from_maps(
-                balance, account.currency, disp_ccy, as_of, fx_maps
-            )
-            if converted is None or fx_st == "fx_unavailable":
-                fx_missing = True
-                display_value = Decimal("0")
-            else:
-                display_value = converted
+        converted = valuation.display_value(balance, account.currency, as_of)
+        fx_missing = converted is None
+        display_value = Decimal("0") if fx_missing else converted
 
         rows.append(
             {
@@ -194,7 +176,7 @@ def build_bank_cash_holding_rows(
                 "realized_gain_loss": 0.0,
                 "unrealized_gain_loss": 0.0,
                 "currency": account.currency,
-                "display_currency": disp_ccy,
+                "display_currency": valuation.display_currency,
                 "holding_status": "ok" if balance > 0 else "closed",
                 "value_status": "ledger_balance" if balance > 0 else "excluded",
                 "fx_status": "fx_unavailable" if fx_missing else "ok",
@@ -596,18 +578,7 @@ def value_timeseries_inception_date(
     fds = _fds_for_value_timeseries(user, scope)
     if fds:
         candidates.append(min(fd.investment_date for fd in fds))
-    accounts = list(
-        BankAccount.objects.filter(
-            user=user,
-            is_active=True,
-            include_in_portfolio_value=True,
-        )
-    )
-    eligible_ids = [
-        a.id
-        for a in accounts
-        if bank_account_includable_in_scope(a, scope) and bank_account_has_ledger(a)
-    ]
+    eligible_ids = [account.id for account in _included_bank_accounts(user, scope)]
     if eligible_ids:
         first_mov = (
             CashMovement.objects.filter(bank_account_id__in=eligible_ids)
@@ -680,21 +651,11 @@ def build_bank_cash_value_timeseries(
     end_date: date,
 ) -> list[dict]:
     """Daily ledger balance totals for opt-in included bank accounts."""
-    disp_ccy = (display_currency or "EUR").strip().upper() or "EUR"
-    accounts = list(
-        BankAccount.objects.filter(
-            user=user,
-            is_active=True,
-            include_in_portfolio_value=True,
-        ).order_by("name", "id")
-    )
-    eligible = [
-        a for a in accounts if bank_account_includable_in_scope(a, scope) and bank_account_has_ledger(a)
-    ]
-    if not eligible:
+    accounts = _included_bank_accounts(user, scope)
+    if not accounts:
         return []
 
-    account_ids = [a.id for a in eligible]
+    account_ids = [account.id for account in accounts]
     movement_rows = CashMovement.objects.filter(
         bank_account_id__in=account_ids,
         movement_date__lte=end_date,
@@ -713,34 +674,21 @@ def build_bank_cash_value_timeseries(
             )
         )
 
-    fx_pairs: set[tuple[str, str]] = set()
-    for account in eligible:
-        if account.currency != disp_ccy:
-            fx_pairs.add((account.currency, disp_ccy))
-    fx_start = start_date - timedelta(days=FX_LOOKBACK_DAYS)
-    fx_maps = load_fx_rate_maps(fx_pairs, fx_start, end_date) if fx_pairs else {}
+    valuation = _BankCashValuation(accounts, display_currency, start_date, end_date)
 
     rows: list[dict] = []
     for as_of in _date_range_inclusive(start_date, end_date):
         total = Decimal("0")
         any_fx_missing = False
-        for account in eligible:
-            balance = bank_cash_balance(
-                points_by_account.get(account.id, []),
-                as_of_date=as_of,
-            )
+        for account in accounts:
+            balance = bank_cash_balance(points_by_account[account.id], as_of_date=as_of)
             if balance <= 0:
                 continue
-            if account.currency == disp_ccy:
-                total += balance
+            converted = valuation.display_value(balance, account.currency, as_of)
+            if converted is None:
+                any_fx_missing = True
             else:
-                converted, fx_st = convert_amount_with_fill_from_maps(
-                    balance, account.currency, disp_ccy, as_of, fx_maps
-                )
-                if converted is None or fx_st == "fx_unavailable":
-                    any_fx_missing = True
-                else:
-                    total += converted
+                total += converted
         rows.append(
             {
                 "date": as_of.isoformat(),
