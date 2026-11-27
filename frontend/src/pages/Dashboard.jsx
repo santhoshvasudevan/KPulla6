@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { lazy, Suspense, useEffect, useState, useMemo, useRef } from 'react';
 import {
   fetchDashboardSummary,
   fetchPortfolioPerformance,
@@ -104,6 +104,10 @@ function kpiVariantFromTone(tone) {
   if (tone === 'negative') return 'loss';
   return 'neutral';
 }
+
+const WealthPrototype = import.meta.env.DEV
+  ? lazy(() => import('./prototype/WealthPrototype'))
+  : null;
 
 export default function Dashboard() {
   const { apiQuery, selectedPortfolioName, settingsLoaded } = usePortfolio();
@@ -390,6 +394,27 @@ export default function Dashboard() {
     if (isPercentMetric) return `${Number(val).toFixed(2)}%`;
     return formatCurrency(val, displayCurrency);
   };
+
+  if (WealthPrototype && ['A', 'B', 'C'].includes(new URLSearchParams(window.location.search).get('variant'))) {
+    return (
+      <Suspense fallback={<LoadingState message="Loading design preview…" />}>
+        <WealthPrototype
+          scope={selectedPortfolioName || 'All Portfolios'}
+          summary={summary}
+          currency={displayCurrency}
+          buckets={allocationChartData}
+          total={allocationTotal}
+          health={portfolioHealthItems}
+          trend={{
+            data: chartData, lines, controls: performanceControls, loading: seriesLoading,
+            label: chartMetricLabel, dateLabel: axisDateFormatter, valueLabel: formatChartReadoutValue,
+            axisLabel: isPercentMetric ? (value) => `${value}%` : formatChartValue,
+            footer: chartFooter, range: timeRange,
+          }}
+        />
+      </Suspense>
+    );
+  }
 
   return (
     <div className="dashboard">
